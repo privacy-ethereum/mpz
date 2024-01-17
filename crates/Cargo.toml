@@ -15,6 +15,7 @@ members = [
     "mpz-share-conversion-core",
     "matrix-transpose",
     "clmul",
+    "mpz-ole"
 ]
 resolver = "2"
 
