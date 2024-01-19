@@ -1,4 +1,4 @@
-//! Provides implementations of the Random OLE with errors (ROLEe) protocols.
+//! Provides implementations of OLE with errors (OLEe) protocols.
 
 mod evaluator;
 mod provider;

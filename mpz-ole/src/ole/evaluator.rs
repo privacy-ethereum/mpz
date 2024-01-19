@@ -6,7 +6,7 @@ use utils_aio::{sink::IoSink, stream::IoStream};
 
 /// An evaluator for OLEe.
 pub struct OLEeEvaluator<const N: usize, T: RandomOLEeEvaluate<N>> {
-    rot_receiver: T,
+    role_evaluator: T,
 }
 
 impl<const N: usize, T: RandomOLEeEvaluate<N>> ProtocolMessage for OLEeEvaluator<N, T> {

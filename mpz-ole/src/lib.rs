@@ -1,4 +1,4 @@
-//! Implementations of oblivious linear evaluation (OLE) protocols.
+//! Implementations of different oblivious linear evaluation (OLE) protocols.
 //!
 //! An OLE allows a party to obliviously evaluate a linear function. Given party P_A with input x
 //! and party P_B with input a and b, party P_A takes the role of the evaluator and obliviously
@@ -138,5 +138,9 @@ pub trait RandomOLEeProvide<const N: usize>: ProtocolMessage {
 struct Check<const O: usize, G: Field>(std::marker::PhantomData<G>);
 
 impl<const O: usize, G: Field> Check<O, G> {
-    const IS_BITSIZE_CORRECT: () = assert!(O as u32 == G::BIT_SIZE);
+    const IS_BITSIZE_CORRECT: () = assert!(
+        O as u32 == G::BIT_SIZE,
+        "Wrong bit size used for field. \
+         You need to use the correct implementation of this function depending on the bit size of the field."
+    );
 }

@@ -6,7 +6,7 @@ use utils_aio::{sink::IoSink, stream::IoStream};
 
 /// A provider for various OLE constructions.
 pub struct OLEeProvider<const N: usize, T: RandomOLEeProvide<N>> {
-    rot_sender: T,
+    role_provider_sender: T,
 }
 
 impl<const N: usize, T: RandomOLEeProvide<N>> ProtocolMessage for OLEeProvider<N, T> {
