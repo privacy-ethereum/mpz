@@ -17,3 +17,13 @@ tlsn-utils-aio.workspace = true
 
 thiserror.workspace = true
 async-trait.workspace = true
+enum-try-as-inner.workspace = true
+serde = { workspace = true, features = ["derive"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = [
+    "net",
+    "macros",
+    "rt",
+    "rt-multi-thread",
+] }

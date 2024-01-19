@@ -13,26 +13,21 @@ use mpz_core::ProtocolMessage;
 use mpz_share_conversion_core::fields::Field;
 use utils_aio::{sink::IoSink, stream::IoStream};
 
-mod evaluator;
-mod provider;
-
-pub use evaluator::Evaluator;
-pub use provider::Provider;
+pub mod msg;
+pub mod ole;
+pub mod role;
 
 /// An OLE error.
 #[derive(Debug, thiserror::Error)]
 #[allow(missing_docs)]
-pub enum OLEError {
-    #[error("The bit size of the field is not supported")]
-    FieldNotSupported,
-}
+pub enum OLEError {}
 
 /// An OLE with errors (OLEe) evaluator.
 ///
 /// The evaluator provides inputs and obliviously evaluates the linear functions depending on the
-/// inputs of the [`OLEeProvider`]. The provider can introduce additive errors to the evaluation.
+/// inputs of the [`OLEeProvide`]. The provider can introduce additive errors to the evaluation.
 #[async_trait]
-pub trait OLEeEvaluator<const N: usize>: ProtocolMessage {
+pub trait OLEeEvaluate<const N: usize>: ProtocolMessage {
     /// Evaluates linear functions at specific points obliviously.
     ///
     /// The function being evaluated is outputs_i = inputs_i * provider-factors_i +
@@ -58,9 +53,9 @@ pub trait OLEeEvaluator<const N: usize>: ProtocolMessage {
 /// An OLE with errors provider.
 ///
 /// The provider determines with his inputs which linear functions are to be evaluated by the
-/// [`OLEeEvaluator`]. The provider can introduce additive errors to the evaluation.
+/// [`OLEeEvaluate`]. The provider can introduce additive errors to the evaluation.
 #[async_trait]
-pub trait OLEeProvider<const N: usize>: ProtocolMessage {
+pub trait OLEeProvide<const N: usize>: ProtocolMessage {
     /// Provides the functions which are to be evaluated obliviously.
     ///
     /// The function being evaluated is evaluator-outputs_i = evaluator-inputs_i * factors_i +
@@ -90,7 +85,7 @@ pub trait OLEeProvider<const N: usize>: ProtocolMessage {
 /// The evaluator obliviously evaluates random linear functions at random values. The provider
 /// can introduce additive errors to the evaluation.
 #[async_trait]
-pub trait RandomOLEeEvaluator<const N: usize>: ProtocolMessage {
+pub trait RandomOLEeEvaluate<const N: usize>: ProtocolMessage {
     /// Evaluates random linear functions at random points obliviously.
     ///
     /// The function being evaluated is outputs_i = random-inputs_i * random-factors_i +
@@ -115,7 +110,7 @@ pub trait RandomOLEeEvaluator<const N: usize>: ProtocolMessage {
 ///
 /// The provider receives random linear functions. The provider can introduce additive errors to the evaluation.
 #[async_trait]
-pub trait RandomOLEeProvider<const N: usize>: ProtocolMessage {
+pub trait RandomOLEeProvide<const N: usize>: ProtocolMessage {
     /// Provides the random functions which are to be evaluated obliviously.
     ///
     /// The function being evaluated is evaluator-outputs_i = random-inputs_i * random-factors_i +
