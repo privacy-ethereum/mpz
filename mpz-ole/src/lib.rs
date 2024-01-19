@@ -13,12 +13,18 @@ use mpz_core::ProtocolMessage;
 use mpz_share_conversion_core::fields::Field;
 use utils_aio::{sink::IoSink, stream::IoStream};
 
+mod evaluator;
+mod provider;
+
+pub use evaluator::Evaluator;
+pub use provider::Provider;
+
 /// An OLE error.
 #[derive(Debug, thiserror::Error)]
 #[allow(missing_docs)]
 pub enum OLEError {
-    #[error("")]
-    Error,
+    #[error("The bit size of the field is not supported")]
+    FieldNotSupported,
 }
 
 /// An OLE with errors (OLEe) evaluator.
@@ -26,7 +32,7 @@ pub enum OLEError {
 /// The evaluator provides inputs and obliviously evaluates the linear functions depending on the
 /// inputs of the [`OLEeProvider`]. The provider can introduce additive errors to the evaluation.
 #[async_trait]
-pub trait OLEeEvaluator: ProtocolMessage {
+pub trait OLEeEvaluator<const N: usize>: ProtocolMessage {
     /// Evaluates linear functions at specific points obliviously.
     ///
     /// The function being evaluated is outputs_i = inputs_i * provider-factors_i +
@@ -54,7 +60,7 @@ pub trait OLEeEvaluator: ProtocolMessage {
 /// The provider determines with his inputs which linear functions are to be evaluated by the
 /// [`OLEeEvaluator`]. The provider can introduce additive errors to the evaluation.
 #[async_trait]
-pub trait OLEeProvider: ProtocolMessage {
+pub trait OLEeProvider<const N: usize>: ProtocolMessage {
     /// Provides the functions which are to be evaluated obliviously.
     ///
     /// The function being evaluated is evaluator-outputs_i = evaluator-inputs_i * factors_i +
@@ -66,7 +72,7 @@ pub trait OLEeProvider: ProtocolMessage {
     /// * `stream` - The IO stream from the receiver.
     /// * `factors` - Provides the slopes for the linear functions.
     /// * `summands` - Provides the y-intercepts for the linear functions.
-    async fn evaluate<
+    async fn provide<
         Si: IoSink<Self::Msg> + Send + Unpin,
         St: IoStream<Self::Msg> + Send + Unpin,
         F: Field,
@@ -77,4 +83,65 @@ pub trait OLEeProvider: ProtocolMessage {
         factors: Vec<F>,
         summands: Vec<F>,
     ) -> Result<(), OLEError>;
+}
+
+/// A Random OLE with errors (ROLEe) evaluator.
+///
+/// The evaluator obliviously evaluates random linear functions at random values. The provider
+/// can introduce additive errors to the evaluation.
+#[async_trait]
+pub trait RandomOLEeEvaluator<const N: usize>: ProtocolMessage {
+    /// Evaluates random linear functions at random points obliviously.
+    ///
+    /// The function being evaluated is outputs_i = random-inputs_i * random-factors_i +
+    /// random-summands_i. Returns (random-inputs, outputs).
+    ///
+    /// # Arguments
+    ///
+    /// * `sink` - The IO sink to the receiver.
+    /// * `stream` - The IO stream from the receiver.
+    async fn evaluate_random<
+        Si: IoSink<Self::Msg> + Send + Unpin,
+        St: IoStream<Self::Msg> + Send + Unpin,
+        F: Field,
+    >(
+        &mut self,
+        sink: &mut Si,
+        stream: &mut St,
+    ) -> Result<(Vec<F>, Vec<F>), OLEError>;
+}
+
+/// A Random OLE with errors (ROLEe) provider.
+///
+/// The provider receives random linear functions. The provider can introduce additive errors to the evaluation.
+#[async_trait]
+pub trait RandomOLEeProvider<const N: usize>: ProtocolMessage {
+    /// Provides the random functions which are to be evaluated obliviously.
+    ///
+    /// The function being evaluated is evaluator-outputs_i = random-inputs_i * random-factors_i +
+    /// random-summands_i. Returns (random-factors, random-summands).
+    ///
+    /// # Arguments
+    ///
+    /// * `sink` - The IO sink to the receiver.
+    /// * `stream` - The IO stream from the receiver.
+    async fn provide_random<
+        Si: IoSink<Self::Msg> + Send + Unpin,
+        St: IoStream<Self::Msg> + Send + Unpin,
+        F: Field,
+    >(
+        &mut self,
+        sink: &mut Si,
+        stream: &mut St,
+    ) -> Result<(Vec<F>, Vec<F>), OLEError>;
+}
+
+/// Workaround because of feature `generic_const_exprs` not available in stable.
+///
+/// This is used to check at compile-time that the correct const-generic implementation is used for
+/// a specific field.
+struct Check<const O: usize, G: Field>(std::marker::PhantomData<G>);
+
+impl<const O: usize, G: Field> Check<O, G> {
+    const IS_BITSIZE_CORRECT: () = assert!(O as u32 == G::BIT_SIZE);
 }
