@@ -19,6 +19,9 @@ thiserror.workspace = true
 async-trait.workspace = true
 enum-try-as-inner.workspace = true
 serde = { workspace = true, features = ["derive"] }
+futures.workspace = true
+rand.workspace = true
+itybity.workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true, features = [

@@ -10,7 +10,9 @@
 
 use async_trait::async_trait;
 use mpz_core::ProtocolMessage;
+use mpz_ot::OTError;
 use mpz_share_conversion_core::fields::Field;
+use msg::ROLEeMessageError;
 use utils_aio::{sink::IoSink, stream::IoStream};
 
 pub mod msg;
@@ -20,14 +22,21 @@ pub mod role;
 /// An OLE error.
 #[derive(Debug, thiserror::Error)]
 #[allow(missing_docs)]
-pub enum OLEError {}
+pub enum OLEError {
+    #[error(transparent)]
+    OT(#[from] OTError),
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
+    #[error("Error during ROLEe protocol: {0}")]
+    ROLEeError(String),
+}
 
 /// An OLE with errors (OLEe) evaluator.
 ///
 /// The evaluator provides inputs and obliviously evaluates the linear functions depending on the
 /// inputs of the [`OLEeProvide`]. The provider can introduce additive errors to the evaluation.
 #[async_trait]
-pub trait OLEeEvaluate<const N: usize>: ProtocolMessage {
+pub trait OLEeEvaluate<F: Field>: ProtocolMessage {
     /// Evaluates linear functions at specific points obliviously.
     ///
     /// The function being evaluated is outputs_i = inputs_i * provider-factors_i +
@@ -41,7 +50,6 @@ pub trait OLEeEvaluate<const N: usize>: ProtocolMessage {
     async fn evaluate<
         Si: IoSink<Self::Msg> + Send + Unpin,
         St: IoStream<Self::Msg> + Send + Unpin,
-        F: Field,
     >(
         &mut self,
         sink: &mut Si,
@@ -55,7 +63,7 @@ pub trait OLEeEvaluate<const N: usize>: ProtocolMessage {
 /// The provider determines with his inputs which linear functions are to be evaluated by the
 /// [`OLEeEvaluate`]. The provider can introduce additive errors to the evaluation.
 #[async_trait]
-pub trait OLEeProvide<const N: usize>: ProtocolMessage {
+pub trait OLEeProvide<F: Field>: ProtocolMessage {
     /// Provides the functions which are to be evaluated obliviously.
     ///
     /// The function being evaluated is evaluator-outputs_i = evaluator-inputs_i * factors_i +
@@ -67,11 +75,7 @@ pub trait OLEeProvide<const N: usize>: ProtocolMessage {
     /// * `stream` - The IO stream from the receiver.
     /// * `factors` - Provides the slopes for the linear functions.
     /// * `summands` - Provides the y-intercepts for the linear functions.
-    async fn provide<
-        Si: IoSink<Self::Msg> + Send + Unpin,
-        St: IoStream<Self::Msg> + Send + Unpin,
-        F: Field,
-    >(
+    async fn provide<Si: IoSink<Self::Msg> + Send + Unpin, St: IoStream<Self::Msg> + Send + Unpin>(
         &mut self,
         sink: &mut Si,
         stream: &mut St,
@@ -85,7 +89,7 @@ pub trait OLEeProvide<const N: usize>: ProtocolMessage {
 /// The evaluator obliviously evaluates random linear functions at random values. The provider
 /// can introduce additive errors to the evaluation.
 #[async_trait]
-pub trait RandomOLEeEvaluate<const N: usize>: ProtocolMessage {
+pub trait RandomOLEeEvaluate<F: Field>: ProtocolMessage {
     /// Evaluates random linear functions at random points obliviously.
     ///
     /// The function being evaluated is outputs_i = random-inputs_i * random-factors_i +
@@ -98,11 +102,11 @@ pub trait RandomOLEeEvaluate<const N: usize>: ProtocolMessage {
     async fn evaluate_random<
         Si: IoSink<Self::Msg> + Send + Unpin,
         St: IoStream<Self::Msg> + Send + Unpin,
-        F: Field,
     >(
         &mut self,
         sink: &mut Si,
         stream: &mut St,
+        count: usize,
     ) -> Result<(Vec<F>, Vec<F>), OLEError>;
 }
 
@@ -110,7 +114,7 @@ pub trait RandomOLEeEvaluate<const N: usize>: ProtocolMessage {
 ///
 /// The provider receives random linear functions. The provider can introduce additive errors to the evaluation.
 #[async_trait]
-pub trait RandomOLEeProvide<const N: usize>: ProtocolMessage {
+pub trait RandomOLEeProvide<F: Field>: ProtocolMessage {
     /// Provides the random functions which are to be evaluated obliviously.
     ///
     /// The function being evaluated is evaluator-outputs_i = random-inputs_i * random-factors_i +
@@ -123,11 +127,11 @@ pub trait RandomOLEeProvide<const N: usize>: ProtocolMessage {
     async fn provide_random<
         Si: IoSink<Self::Msg> + Send + Unpin,
         St: IoStream<Self::Msg> + Send + Unpin,
-        F: Field,
     >(
         &mut self,
         sink: &mut Si,
         stream: &mut St,
+        count: usize,
     ) -> Result<(Vec<F>, Vec<F>), OLEError>;
 }
 
@@ -135,11 +139,11 @@ pub trait RandomOLEeProvide<const N: usize>: ProtocolMessage {
 ///
 /// This is used to check at compile-time that the correct const-generic implementation is used for
 /// a specific field.
-struct Check<const O: usize, G: Field>(std::marker::PhantomData<G>);
+struct Check<const N: usize, F: Field>(std::marker::PhantomData<F>);
 
-impl<const O: usize, G: Field> Check<O, G> {
+impl<const N: usize, F: Field> Check<N, F> {
     const IS_BITSIZE_CORRECT: () = assert!(
-        O as u32 == G::BIT_SIZE,
+        N as u32 == F::BIT_SIZE,
         "Wrong bit size used for field. \
          You need to use the correct implementation of this function depending on the bit size of the field."
     );
