@@ -1,12 +1,21 @@
 use std::marker::PhantomData;
 
-use crate::{Check, OLEError, RandomOLEeEvaluate};
+use crate::{
+    msg::ROLEeMessage,
+    role::ot::{into_rot_sink, into_rot_stream},
+    Check, OLEError, RandomOLEeEvaluate,
+};
 use async_trait::async_trait;
+use futures::SinkExt;
+use itybity::IntoBitIterator;
 use mpz_core::ProtocolMessage;
 use mpz_ot::RandomOTReceiver;
 use mpz_share_conversion_core::Field;
-use rand::rngs::ThreadRng;
-use utils_aio::{sink::IoSink, stream::IoStream};
+use rand::{rngs::ThreadRng, thread_rng};
+use utils_aio::{
+    sink::IoSink,
+    stream::{ExpectStreamExt, IoStream},
+};
 
 /// An evaluator for ROLEe.
 pub struct ROLEeEvaluator<const N: usize, T: RandomOTReceiver<bool, [u8; N]>, F: Field> {
@@ -15,10 +24,24 @@ pub struct ROLEeEvaluator<const N: usize, T: RandomOTReceiver<bool, [u8; N]>, F:
     field: PhantomData<F>,
 }
 
+impl<const N: usize, T: RandomOTReceiver<bool, [u8; N]>, F: Field> ROLEeEvaluator<N, T, F> {
+    /// Create a new [`ROLEeEvaluator`].
+    pub fn new(rot_receiver: T) -> Self {
+        // Check that the right N is used depending on the needed bit size of the field.
+        let _: () = Check::<N, F>::IS_BITSIZE_CORRECT;
+
+        Self {
+            rot_receiver,
+            rng: thread_rng(),
+            field: PhantomData,
+        }
+    }
+}
+
 impl<const N: usize, T: RandomOTReceiver<bool, [u8; N]>, F: Field> ProtocolMessage
     for ROLEeEvaluator<N, T, F>
 {
-    type Msg = ();
+    type Msg = ROLEeMessage<T::Msg, F>;
 }
 
 #[async_trait]
@@ -36,9 +59,50 @@ where
         stream: &mut St,
         count: usize,
     ) -> Result<(Vec<F>, Vec<F>), OLEError> {
-        // Check that the right N is used depending on the needed bit size of the field.
-        let _: () = Check::<N, F>::IS_BITSIZE_CORRECT;
+        let (fi, tfi): (Vec<bool>, Vec<[u8; N]>) = self
+            .rot_receiver
+            .receive_random(
+                &mut into_rot_sink(sink),
+                &mut into_rot_stream(stream),
+                count * F::BIT_SIZE as usize,
+            )
+            .await?;
 
-        todo!()
+        let fk: Vec<F> = fi
+            .chunks(F::BIT_SIZE as usize)
+            .map(|f| F::from_lsb0_iter(f.into_iter_lsb0()))
+            .collect();
+
+        let dk: Vec<F> = (0..count).map(|_| F::rand(&mut self.rng)).collect();
+
+        let (ui, ek): (Vec<F>, Vec<F>) = stream
+            .expect_next()
+            .await?
+            .try_into_random_provider_msg()
+            .map_err(|err| OLEError::ROLEeError(err.to_string()))?;
+
+        sink.send(ROLEeMessage::RandomEvaluatorMsg(dk.clone()))
+            .await?;
+
+        let bk: Vec<F> = fk.iter().zip(ek).map(|(&f, e)| f + e).collect();
+
+        let yk: Vec<F> = fi
+            .chunks(F::BIT_SIZE as usize)
+            .zip(tfi.chunks(F::BIT_SIZE as usize))
+            .zip(ui.chunks(F::BIT_SIZE as usize))
+            .enumerate()
+            .map(|(k, ((f, t), u))| {
+                f.iter()
+                    .zip(t)
+                    .zip(u)
+                    .fold(F::zero(), |acc, ((&f, t), &u)| {
+                        let f = if f { F::one() } else { F::zero() };
+                        acc + F::two_pow(k as u32)
+                            * (f * (u + dk[k]) + F::from_lsb0_iter(t.into_iter_lsb0()))
+                    })
+            })
+            .collect();
+
+        Ok((bk, yk))
     }
 }

@@ -12,7 +12,6 @@ use async_trait::async_trait;
 use mpz_core::ProtocolMessage;
 use mpz_ot::OTError;
 use mpz_share_conversion_core::fields::Field;
-use msg::ROLEeMessageError;
 use utils_aio::{sink::IoSink, stream::IoStream};
 
 pub mod msg;
@@ -144,7 +143,6 @@ struct Check<const N: usize, F: Field>(std::marker::PhantomData<F>);
 impl<const N: usize, F: Field> Check<N, F> {
     const IS_BITSIZE_CORRECT: () = assert!(
         N as u32 == F::BIT_SIZE,
-        "Wrong bit size used for field. \
-         You need to use the correct implementation of this function depending on the bit size of the field."
+        "Wrong bit size used for field. You need to use `F::BIT_SIZE` for N."
     );
 }

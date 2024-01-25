@@ -61,7 +61,7 @@ where
     ) -> Result<(Vec<F>, Vec<F>), OLEError> {
         let ck: Vec<F> = (0..count).map(|_| F::rand(&mut self.rng)).collect();
 
-        let vec_t = self
+        let ti01 = self
             .rot_sender
             .send_random(
                 &mut into_rot_sink(sink),
@@ -70,7 +70,7 @@ where
             )
             .await?;
 
-        let (ui, t0i): (Vec<F>, Vec<F>) = vec_t
+        let (ui, t0i): (Vec<F>, Vec<F>) = ti01
             .iter()
             .map(|[t0, t1]| {
                 let t0 = F::from_lsb0_iter(t0.into_iter_lsb0());
@@ -92,7 +92,12 @@ where
 
         let t0k: Vec<F> = t0i
             .chunks(F::BIT_SIZE as usize)
-            .map(|chunk| -chunk.iter().fold(F::zero(), |acc, &el| acc + el))
+            .map(|chunk| {
+                -chunk
+                    .iter()
+                    .enumerate()
+                    .fold(F::zero(), |acc, (k, &el)| acc + F::two_pow(k as u32) * el)
+            })
             .collect();
 
         let ak: Vec<F> = ck.iter().zip(dk).map(|(&c, d)| c + d).collect();
