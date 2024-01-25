@@ -95,9 +95,10 @@ where
                 f.iter()
                     .zip(t)
                     .zip(u)
-                    .fold(F::zero(), |acc, ((&f, t), &u)| {
+                    .enumerate()
+                    .fold(F::zero(), |acc, (i, ((&f, t), &u))| {
                         let f = if f { F::one() } else { F::zero() };
-                        acc + F::two_pow(k as u32)
+                        acc + F::two_pow(i as u32)
                             * (f * (u + dk[k]) + F::from_lsb0_iter(t.into_iter_lsb0()))
                     })
             })
