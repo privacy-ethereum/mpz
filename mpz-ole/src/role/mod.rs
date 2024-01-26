@@ -26,8 +26,8 @@ mod tests {
         let mut role_evaluator = ROLEeEvaluator::<256, _, P256>::new(rot_receiver);
 
         let (provider_res, evaluator_res) = tokio::join!(
-            role_provider.provide_random(&mut provider_sink, &mut provider_stream, 32),
-            role_evaluator.evaluate_random(&mut evaluator_sink, &mut evaluator_stream, 32)
+            role_provider.provide_random(&mut provider_sink, &mut provider_stream, 16),
+            role_evaluator.evaluate_random(&mut evaluator_sink, &mut evaluator_stream, 16)
         );
 
         let (ak, xk) = provider_res.unwrap();

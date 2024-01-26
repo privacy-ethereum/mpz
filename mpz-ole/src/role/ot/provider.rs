@@ -77,7 +77,7 @@ where
 
         let (ui, t0i): (Vec<F>, Vec<F>) = ti01
             .chunks(F::BIT_SIZE as usize)
-            .zip(ck.clone())
+            .zip(ck.iter().copied())
             .flat_map(|(chunk, c)| {
                 chunk.iter().map(move |[t0, t1]| {
                     let t0 = F::from_lsb0_iter(t0.into_iter_lsb0());
@@ -99,7 +99,7 @@ where
         let t0k: Vec<F> = t0i
             .chunks(F::BIT_SIZE as usize)
             .map(|chunk| {
-                -chunk
+                chunk
                     .iter()
                     .enumerate()
                     .fold(F::zero(), |acc, (k, &el)| acc + F::two_pow(k as u32) * el)
@@ -111,7 +111,7 @@ where
             .iter()
             .zip(ak.iter().copied())
             .zip(ek)
-            .map(|((&t, a), k)| t + a * k)
+            .map(|((&t, a), k)| t + -(a * k))
             .collect();
 
         Ok((ak, xk))
