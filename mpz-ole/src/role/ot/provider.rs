@@ -11,7 +11,7 @@ use itybity::IntoBitIterator;
 use mpz_core::ProtocolMessage;
 use mpz_ot::RandomOTSender;
 use mpz_share_conversion_core::Field;
-use rand::{rngs::ThreadRng, thread_rng};
+use rand::thread_rng;
 use utils_aio::{
     sink::IoSink,
     stream::{ExpectStreamExt, IoStream},
@@ -20,7 +20,6 @@ use utils_aio::{
 /// A provider for ROLEe.
 pub struct ROLEeProvider<const N: usize, T: RandomOTSender<[[u8; N]; 2]>, F> {
     rot_sender: T,
-    rng: ThreadRng,
     field: PhantomData<F>,
 }
 
@@ -32,7 +31,6 @@ impl<const N: usize, T: RandomOTSender<[[u8; N]; 2]>, F: Field> ROLEeProvider<N,
 
         Self {
             rot_sender,
-            rng: thread_rng(),
             field: PhantomData,
         }
     }
@@ -59,7 +57,14 @@ where
         stream: &mut St,
         count: usize,
     ) -> Result<(Vec<F>, Vec<F>), OLEError> {
-        let ck: Vec<F> = (0..count).map(|_| F::rand(&mut self.rng)).collect();
+        let (ck, ek): (Vec<F>, Vec<F>) = {
+            let mut rng = thread_rng();
+
+            (
+                (0..count).map(|_| F::rand(&mut rng)).collect(),
+                (0..count).map(|_| F::rand(&mut rng)).collect(),
+            )
+        };
 
         let ti01 = self
             .rot_sender
@@ -71,15 +76,16 @@ where
             .await?;
 
         let (ui, t0i): (Vec<F>, Vec<F>) = ti01
-            .iter()
-            .map(|[t0, t1]| {
-                let t0 = F::from_lsb0_iter(t0.into_iter_lsb0());
-                let t1 = F::from_lsb0_iter(t1.into_iter_lsb0());
-                (t0 + -t1 + F::rand(&mut self.rng), t0)
+            .chunks(F::BIT_SIZE as usize)
+            .zip(ck.clone())
+            .flat_map(|(chunk, c)| {
+                chunk.iter().map(move |[t0, t1]| {
+                    let t0 = F::from_lsb0_iter(t0.into_iter_lsb0());
+                    let t1 = F::from_lsb0_iter(t1.into_iter_lsb0());
+                    (t0 + -t1 + c, t0)
+                })
             })
             .unzip();
-
-        let ek: Vec<F> = (0..count).map(|_| F::rand(&mut self.rng)).collect();
 
         sink.send(ROLEeMessage::RandomProviderMsg(ui, ek.clone()))
             .await?;
