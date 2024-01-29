@@ -52,9 +52,6 @@ where
         stream: &mut St,
         inputs: Vec<F>,
     ) -> Result<Vec<F>, OLEError> {
-        // Check that the right N is used depending on the needed bit size of the field.
-        let _: () = Check::<N, F>::IS_BITSIZE_CORRECT;
-
         let (bk, yk) = self
             .role_evaluator
             .evaluate_random(
@@ -79,9 +76,9 @@ where
 
         let beta_k: Vec<F> = yk
             .iter()
-            .zip(bk)
+            .zip(inputs)
             .zip(uk)
-            .map(|((&y, b), u)| y + b * u)
+            .map(|((&y, i), u)| y + i * u)
             .collect();
 
         Ok(beta_k)

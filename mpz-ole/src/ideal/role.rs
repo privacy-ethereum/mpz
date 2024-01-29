@@ -131,7 +131,7 @@ mod tests {
             .unwrap();
 
         ak.iter()
-            .zip(bk.iter().copied())
+            .zip(bk)
             .zip(xk)
             .zip(yk)
             .for_each(|(((&a, b), x), y)| assert_eq!(y, a * b + x));

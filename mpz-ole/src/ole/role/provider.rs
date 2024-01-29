@@ -77,7 +77,7 @@ where
             .iter()
             .zip(ak)
             .zip(vk)
-            .map(|((&x, a), v)| (-x + -a * v))
+            .map(|((&x, a), v)| -(-x + -a * v))
             .collect();
 
         Ok(alpha_k)
