@@ -4,11 +4,11 @@ use crate::{OLEError, RandomOLEeEvaluate, RandomOLEeProvide};
 use async_trait::async_trait;
 use futures::{channel::mpsc, StreamExt};
 use mpz_core::ProtocolMessage;
-use mpz_share_conversion_core::{fields::p256::P256, Field};
+use mpz_share_conversion_core::Field;
 use rand::SeedableRng;
 use rand_chacha::ChaCha12Rng;
 use std::marker::PhantomData;
-use utils_aio::{duplex::MemoryDuplex, sink::IoSink, stream::IoStream};
+use utils_aio::{sink::IoSink, stream::IoStream};
 
 /// Returns an ideal ROLE pair
 pub fn ideal_role_pair<F: Field>() -> (IdealROLEProvider<F>, IdealROLEEvaluator<F>) {
@@ -103,29 +103,37 @@ impl<F: Field> RandomOLEeEvaluate<F> for IdealROLEEvaluator<F> {
     }
 }
 
-#[tokio::test]
-async fn test_ideal_role() {
-    let count = 16;
+#[cfg(test)]
+mod tests {
+    use crate::{ideal::role::ideal_role_pair, RandomOLEeEvaluate, RandomOLEeProvide};
+    use futures::StreamExt;
+    use mpz_share_conversion_core::fields::p256::P256;
+    use utils_aio::duplex::MemoryDuplex;
 
-    let (send_channel, recv_channel) = MemoryDuplex::<()>::new();
+    #[tokio::test]
+    async fn test_ideal_role() {
+        let count = 16;
 
-    let (mut provider_sink, mut provider_stream) = send_channel.split();
-    let (mut evaluator_sink, mut evaluator_stream) = recv_channel.split();
+        let (send_channel, recv_channel) = MemoryDuplex::<()>::new();
 
-    let (mut provider, mut evaluator) = ideal_role_pair::<P256>();
+        let (mut provider_sink, mut provider_stream) = send_channel.split();
+        let (mut evaluator_sink, mut evaluator_stream) = recv_channel.split();
 
-    let (ak, xk) = provider
-        .provide_random(&mut provider_sink, &mut provider_stream, count)
-        .await
-        .unwrap();
-    let (bk, yk) = evaluator
-        .evaluate_random(&mut evaluator_sink, &mut evaluator_stream, count)
-        .await
-        .unwrap();
+        let (mut provider, mut evaluator) = ideal_role_pair::<P256>();
 
-    ak.iter()
-        .zip(bk.iter().copied())
-        .zip(xk)
-        .zip(yk)
-        .for_each(|(((&a, b), x), y)| assert_eq!(y, a * b + x));
+        let (ak, xk) = provider
+            .provide_random(&mut provider_sink, &mut provider_stream, count)
+            .await
+            .unwrap();
+        let (bk, yk) = evaluator
+            .evaluate_random(&mut evaluator_sink, &mut evaluator_stream, count)
+            .await
+            .unwrap();
+
+        ak.iter()
+            .zip(bk.iter().copied())
+            .zip(xk)
+            .zip(yk)
+            .for_each(|(((&a, b), x), y)| assert_eq!(y, a * b + x));
+    }
 }

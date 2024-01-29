@@ -14,7 +14,6 @@ use mpz_ot::OTError;
 use mpz_share_conversion_core::fields::Field;
 use utils_aio::{sink::IoSink, stream::IoStream};
 
-#[cfg(test)]
 pub mod ideal;
 pub mod msg;
 pub mod ole;
