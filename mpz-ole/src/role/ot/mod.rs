@@ -4,11 +4,11 @@ mod evaluator;
 mod provider;
 
 pub use evaluator::ROLEeEvaluator;
-use mpz_share_conversion_core::Field;
 pub use provider::ROLEeProvider;
 
 use crate::msg::ROLEeMessage;
 use futures::{SinkExt, StreamExt};
+use mpz_share_conversion_core::Field;
 use utils_aio::{sink::IoSink, stream::IoStream};
 
 /// Converts a sink of random OLE messages into a sink of random OT messages.
@@ -60,9 +60,9 @@ mod tests {
         let (bk, yk) = evaluator_res.unwrap();
 
         ak.iter()
-            .zip(xk)
             .zip(bk)
+            .zip(xk)
             .zip(yk)
-            .for_each(|(((&a, x), b), y)| assert_eq!(y, a * b + x));
+            .for_each(|(((&a, b), x), y)| assert_eq!(y, a * b + x));
     }
 }

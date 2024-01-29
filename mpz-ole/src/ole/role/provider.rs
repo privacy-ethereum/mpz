@@ -15,8 +15,21 @@ use utils_aio::{
 
 /// A provider for various OLE constructions.
 pub struct OLEeProvider<const N: usize, T: RandomOLEeProvide<F>, F: Field> {
-    role_provider_sender: T,
+    role_provider: T,
     field: PhantomData<F>,
+}
+
+impl<const N: usize, T: RandomOLEeProvide<F>, F: Field> OLEeProvider<N, T, F> {
+    /// Create a new [`OLEeProvider`].
+    pub fn new(role_provider: T) -> Self {
+        // Check that the right N is used depending on the needed bit size of the field.
+        let _: () = Check::<N, F>::IS_BITSIZE_CORRECT;
+
+        Self {
+            role_provider,
+            field: PhantomData,
+        }
+    }
 }
 
 impl<const N: usize, T: RandomOLEeProvide<F>, F: Field> ProtocolMessage for OLEeProvider<N, T, F> {
@@ -38,11 +51,8 @@ where
         stream: &mut St,
         factors: Vec<F>,
     ) -> Result<Vec<F>, OLEError> {
-        // Check that the right N is used depending on the needed bit size of the field.
-        let _: () = Check::<N, F>::IS_BITSIZE_CORRECT;
-
         let (ak, xk) = self
-            .role_provider_sender
+            .role_provider
             .provide_random(
                 &mut into_role_sink(sink),
                 &mut into_role_stream(stream),
@@ -55,8 +65,8 @@ where
             .zip(ak.iter().copied())
             .map(|(&f, a)| a + f)
             .collect();
-        sink.send(OLEeMessage::ProviderDerand(uk)).await?;
 
+        sink.send(OLEeMessage::ProviderDerand(uk)).await?;
         let vk: Vec<F> = stream
             .expect_next()
             .await?

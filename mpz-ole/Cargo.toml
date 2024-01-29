@@ -30,3 +30,4 @@ tokio = { workspace = true, features = [
     "rt",
     "rt-multi-thread",
 ] }
+rand_chacha.workspace = true
