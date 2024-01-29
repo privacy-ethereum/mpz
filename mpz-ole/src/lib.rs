@@ -66,21 +66,19 @@ pub trait OLEeProvide<F: Field>: ProtocolMessage {
     /// Provides the functions which are to be evaluated obliviously.
     ///
     /// The function being evaluated is evaluator-outputs_i = evaluator-inputs_i * factors_i +
-    /// summands_i.
+    /// summands_i. Returns the summands.
     ///
     /// # Arguments
     ///
     /// * `sink` - The IO sink to the receiver.
     /// * `stream` - The IO stream from the receiver.
     /// * `factors` - Provides the slopes for the linear functions.
-    /// * `summands` - Provides the y-intercepts for the linear functions.
     async fn provide<Si: IoSink<Self::Msg> + Send + Unpin, St: IoStream<Self::Msg> + Send + Unpin>(
         &mut self,
         sink: &mut Si,
         stream: &mut St,
         factors: Vec<F>,
-        summands: Vec<F>,
-    ) -> Result<(), OLEError>;
+    ) -> Result<Vec<F>, OLEError>;
 }
 
 /// A Random OLE with errors (ROLEe) evaluator.
