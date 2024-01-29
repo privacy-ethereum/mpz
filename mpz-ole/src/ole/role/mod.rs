@@ -34,7 +34,7 @@ fn into_role_stream<'a, St: IoStream<OLEeMessage<T, F>> + Send + Unpin, T: Send 
 #[cfg(test)]
 mod tests {
     use super::{OLEeEvaluator, OLEeProvider};
-    use crate::{OLEeEvaluate, OLEeProvide};
+    use crate::{ideal::role::ideal_role_pair, OLEeEvaluate, OLEeProvide};
     use futures::StreamExt;
     use mpz_share_conversion_core::fields::{p256::P256, UniformRand};
     use rand::SeedableRng;
@@ -42,7 +42,7 @@ mod tests {
     use utils_aio::duplex::MemoryDuplex;
 
     #[tokio::test]
-    async fn test_role() {
+    async fn test_ole() {
         let count = 16;
         let mut rng = ChaCha12Rng::from_seed([0; 32]);
 
@@ -51,7 +51,7 @@ mod tests {
         let (mut provider_sink, mut provider_stream) = sender_channel.split();
         let (mut evaluator_sink, mut evaluator_stream) = receiver_channel.split();
 
-        let (role_provider, role_evaluator) = ideal_role_pair::<P256>([0; 32]);
+        let (role_provider, role_evaluator) = ideal_role_pair::<P256>();
 
         let mut ole_provider = OLEeProvider::<256, _, P256>::new(role_provider);
         let mut ole_evaluator = OLEeEvaluator::<256, _, P256>::new(role_evaluator);
@@ -60,8 +60,8 @@ mod tests {
         let bk: Vec<P256> = (0..count).map(|_| P256::rand(&mut rng)).collect();
 
         let (provider_res, evaluator_res) = tokio::join!(
-            ole_provider.provide(&mut provider_sink, &mut provider_stream, ak),
-            ole_evaluator.evaluate(&mut evaluator_sink, &mut evaluator_stream, bk)
+            ole_provider.provide(&mut provider_sink, &mut provider_stream, ak.clone()),
+            ole_evaluator.evaluate(&mut evaluator_sink, &mut evaluator_stream, bk.clone())
         );
 
         let xk = provider_res.unwrap();

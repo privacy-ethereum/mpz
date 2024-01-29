@@ -73,7 +73,7 @@ where
         let uk: Vec<F> = stream
             .expect_next()
             .await?
-            .try_into_evaluator_derand()
+            .try_into_provider_derand()
             .map_err(|err| OLEError::ROLEeError(err.to_string()))?;
         sink.send(OLEeMessage::EvaluatorDerand(vk)).await?;
 
