@@ -1,0 +1,12 @@
+[package]
+name = "mpz-ole-core"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "mpz_ole_core"
+
+[dependencies]
+rand.workspace = true
+mpz-share-conversion-core.workspace = true
+mpz-core.workspace = true
