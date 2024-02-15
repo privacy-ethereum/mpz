@@ -44,8 +44,8 @@ pub trait OLEeEvaluate<F: Field>: ProtocolMessage {
     ///
     /// # Arguments
     ///
-    /// * `sink` - The IO sink to the receiver.
-    /// * `stream` - The IO stream from the receiver.
+    /// * `sink` - The IO sink to the provider.
+    /// * `stream` - The IO stream from the provider.
     /// * `inputs` - The points where to evaluate the function.
     async fn evaluate<
         Si: IoSink<Self::Msg> + Send + Unpin,
@@ -71,8 +71,8 @@ pub trait OLEeProvide<F: Field>: ProtocolMessage {
     ///
     /// # Arguments
     ///
-    /// * `sink` - The IO sink to the receiver.
-    /// * `stream` - The IO stream from the receiver.
+    /// * `sink` - The IO sink to the evaluator.
+    /// * `stream` - The IO stream from the evaluator.
     /// * `factors` - Provides the slopes for the linear functions.
     async fn provide<Si: IoSink<Self::Msg> + Send + Unpin, St: IoStream<Self::Msg> + Send + Unpin>(
         &mut self,
@@ -95,8 +95,8 @@ pub trait RandomOLEeEvaluate<F: Field>: ProtocolMessage {
     ///
     /// # Arguments
     ///
-    /// * `sink` - The IO sink to the receiver.
-    /// * `stream` - The IO stream from the receiver.
+    /// * `sink` - The IO sink to the provider.
+    /// * `stream` - The IO stream from the provider.
     async fn evaluate_random<
         Si: IoSink<Self::Msg> + Send + Unpin,
         St: IoStream<Self::Msg> + Send + Unpin,
@@ -120,8 +120,8 @@ pub trait RandomOLEeProvide<F: Field>: ProtocolMessage {
     ///
     /// # Arguments
     ///
-    /// * `sink` - The IO sink to the receiver.
-    /// * `stream` - The IO stream from the receiver.
+    /// * `sink` - The IO sink to the evaluator.
+    /// * `stream` - The IO stream from the evaluator.
     async fn provide_random<
         Si: IoSink<Self::Msg> + Send + Unpin,
         St: IoStream<Self::Msg> + Send + Unpin,
