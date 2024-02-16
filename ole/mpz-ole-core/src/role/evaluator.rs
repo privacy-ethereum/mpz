@@ -29,30 +29,7 @@ impl<const N: usize, F: Field> ROLEeEvaluator<N, F> {
         dk: &[F],
         ek: &[F],
     ) -> Result<(Vec<F>, Vec<F>), OLECoreError> {
-        if fi.len() != tfi.len() || tfi.len() != ui.len() {
-            return Err(OLECoreError::LengthMismatch(format!(
-                "Number of choices {}, recieved OT messages {} and received corrleations {} are not equal.",
-                fi.len(),
-                tfi.len(),
-                ui.len(),
-            )));
-        }
-
-        if dk.len() != ek.len() {
-            return Err(OLECoreError::LengthMismatch(format!(
-                "Vectors of field elements have unequal length: dk: {}, ek: {}.",
-                dk.len(),
-                ek.len(),
-            )));
-        }
-
-        if dk.len() * F::BIT_SIZE as usize != tfi.len() {
-            return Err(OLECoreError::LengthMismatch(format!(
-                "Number of field elements {} does not divide number of OT messages {}.",
-                dk.len(),
-                tfi.len(),
-            )));
-        }
+        check_input(fi, tfi, ui, dk, ek)?;
 
         let fk: Vec<F> = fi
             .chunks(F::BIT_SIZE as usize)
@@ -81,6 +58,41 @@ impl<const N: usize, F: Field> ROLEeEvaluator<N, F> {
 
         Ok((bk, yk))
     }
+}
+
+fn check_input<const N: usize, F: Field>(
+    fi: &[bool],
+    tfi: &[[u8; N]],
+    ui: &[F],
+    dk: &[F],
+    ek: &[F],
+) -> Result<(), OLECoreError> {
+    if fi.len() != tfi.len() || tfi.len() != ui.len() {
+        return Err(OLECoreError::LengthMismatch(format!(
+                "Number of choices {}, received OT messages {} and received correlations {} are not equal.",
+                fi.len(),
+                tfi.len(),
+                ui.len(),
+            )));
+    }
+
+    if dk.len() != ek.len() {
+        return Err(OLECoreError::LengthMismatch(format!(
+            "Vectors of field elements have unequal length: dk: {}, ek: {}.",
+            dk.len(),
+            ek.len(),
+        )));
+    }
+
+    if dk.len() * F::BIT_SIZE as usize != tfi.len() {
+        return Err(OLECoreError::LengthMismatch(format!(
+            "Number of field elements {} does not divide number of OT messages {}.",
+            dk.len(),
+            tfi.len(),
+        )));
+    }
+
+    Ok(())
 }
 
 impl<const N: usize, F: Field> Default for ROLEeEvaluator<N, F> {
