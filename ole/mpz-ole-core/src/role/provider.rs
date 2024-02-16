@@ -32,7 +32,7 @@ impl<const N: usize, F: Field> ROLEeProvider<N, F> {
         ti01: &[[[u8; N]; 2]],
         ck: &[F],
     ) -> Result<(Vec<F>, Vec<F>), OLECoreError> {
-        if ti01.len() % ck.len() != 0 {
+        if ck.len() * F::BIT_SIZE as usize != ti01.len() {
             return Err(OLECoreError::LengthMismatch(format!(
                 "Number of field elements {} does not divide number of OT messages {}.",
                 ck.len(),
@@ -62,7 +62,7 @@ impl<const N: usize, F: Field> ROLEeProvider<N, F> {
         dk: &[F],
         ek: &[F],
     ) -> Result<(Vec<F>, Vec<F>), OLECoreError> {
-        if t0i.len() % ck.len() != 0 {
+        if ck.len() * F::BIT_SIZE as usize != t0i.len() {
             return Err(OLECoreError::LengthMismatch(format!(
                 "Number of field elements {} does not divide number of OT messages {}.",
                 ck.len(),

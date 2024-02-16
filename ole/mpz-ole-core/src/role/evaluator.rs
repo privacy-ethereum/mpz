@@ -29,6 +29,31 @@ impl<const N: usize, F: Field> ROLEeEvaluator<N, F> {
         dk: &[F],
         ek: &[F],
     ) -> Result<(Vec<F>, Vec<F>), OLECoreError> {
+        if fi.len() != tfi.len() || tfi.len() != ui.len() {
+            return Err(OLECoreError::LengthMismatch(format!(
+                "Number of choices {}, recieved OT messages {} and received corrleations {} are not equal.",
+                fi.len(),
+                tfi.len(),
+                ui.len(),
+            )));
+        }
+
+        if dk.len() != ek.len() {
+            return Err(OLECoreError::LengthMismatch(format!(
+                "Vectors of field elements have unequal length: dk: {}, ek: {}.",
+                dk.len(),
+                ek.len(),
+            )));
+        }
+
+        if dk.len() * F::BIT_SIZE as usize != tfi.len() {
+            return Err(OLECoreError::LengthMismatch(format!(
+                "Number of field elements {} does not divide number of OT messages {}.",
+                dk.len(),
+                tfi.len(),
+            )));
+        }
+
         let fk: Vec<F> = fi
             .chunks(F::BIT_SIZE as usize)
             .map(|f| F::from_lsb0_iter(f.into_iter_lsb0()))
