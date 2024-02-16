@@ -1,5 +1,3 @@
-use std::marker::PhantomData;
-
 use crate::{
     msg::ROLEeMessage,
     role::ot::{into_rot_sink, into_rot_stream},
@@ -7,11 +5,10 @@ use crate::{
 };
 use async_trait::async_trait;
 use futures::SinkExt;
-use itybity::IntoBitIterator;
 use mpz_core::ProtocolMessage;
+use mpz_ole_core::role::ROLEeProvider as ROLEeCoreProvider;
 use mpz_ot::RandomOTSender;
 use mpz_share_conversion_core::Field;
-use rand::thread_rng;
 use utils_aio::{
     sink::IoSink,
     stream::{ExpectStreamExt, IoStream},
@@ -20,7 +17,7 @@ use utils_aio::{
 /// A provider for ROLEe.
 pub struct ROLEeProvider<const N: usize, T: RandomOTSender<[[u8; N]; 2]>, F> {
     rot_sender: T,
-    field: PhantomData<F>,
+    role_core: ROLEeCoreProvider<N, F>,
 }
 
 impl<const N: usize, T: RandomOTSender<[[u8; N]; 2]>, F: Field> ROLEeProvider<N, T, F> {
@@ -31,7 +28,7 @@ impl<const N: usize, T: RandomOTSender<[[u8; N]; 2]>, F: Field> ROLEeProvider<N,
 
         Self {
             rot_sender,
-            field: PhantomData,
+            role_core: ROLEeCoreProvider::default(),
         }
     }
 }
@@ -57,15 +54,6 @@ where
         stream: &mut St,
         count: usize,
     ) -> Result<(Vec<F>, Vec<F>), OLEError> {
-        let (ck, ek): (Vec<F>, Vec<F>) = {
-            let mut rng = thread_rng();
-
-            (
-                (0..count).map(|_| F::rand(&mut rng)).collect(),
-                (0..count).map(|_| F::rand(&mut rng)).collect(),
-            )
-        };
-
         let ti01 = self
             .rot_sender
             .send_random(
@@ -75,17 +63,8 @@ where
             )
             .await?;
 
-        let (ui, t0i): (Vec<F>, Vec<F>) = ti01
-            .chunks(F::BIT_SIZE as usize)
-            .zip(ck.iter().copied())
-            .flat_map(|(chunk, c)| {
-                chunk.iter().map(move |[t0, t1]| {
-                    let t0 = F::from_lsb0_iter(t0.into_iter_lsb0());
-                    let t1 = F::from_lsb0_iter(t1.into_iter_lsb0());
-                    (t0 + -t1 + c, t0)
-                })
-            })
-            .unzip();
+        let (ck, ek) = self.role_core.sample_c_and_e(count);
+        let (ui, t0i): (Vec<F>, Vec<F>) = self.role_core.create_correlation(&ti01, &ck);
 
         sink.send(ROLEeMessage::RandomProviderMsg(ui, ek.clone()))
             .await?;
@@ -96,23 +75,7 @@ where
             .try_into_random_evaluator_msg()
             .map_err(|err| OLEError::ROLEeError(err.to_string()))?;
 
-        let t0k: Vec<F> = t0i
-            .chunks(F::BIT_SIZE as usize)
-            .map(|chunk| {
-                chunk
-                    .iter()
-                    .enumerate()
-                    .fold(F::zero(), |acc, (k, &el)| acc + F::two_pow(k as u32) * el)
-            })
-            .collect();
-
-        let ak: Vec<F> = ck.iter().zip(dk).map(|(&c, d)| c + d).collect();
-        let xk: Vec<F> = t0k
-            .iter()
-            .zip(ak.iter().copied())
-            .zip(ek)
-            .map(|((&t, a), k)| t + -(a * k))
-            .collect();
+        let (ak, xk) = self.role_core.generate_output(&t0i, &ck, &dk, &ek);
 
         Ok((ak, xk))
     }

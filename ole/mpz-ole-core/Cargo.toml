@@ -8,5 +8,7 @@ name = "mpz_ole_core"
 
 [dependencies]
 rand.workspace = true
+itybity.workspace = true
+
 mpz-share-conversion-core.workspace = true
 mpz-core.workspace = true
