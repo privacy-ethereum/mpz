@@ -1,4 +1,4 @@
-//! An implementation of a ROLEe provider based on random OT
+//! An implementation of a ROLEe provider based on random OT.
 
 use itybity::IntoBitIterator;
 use mpz_share_conversion_core::Field;
@@ -36,7 +36,8 @@ impl<const N: usize, F: Field> ROLEeProvider<N, F> {
         (ck, ek)
     }
 
-    /// Creates the correlation which masks the provider's input `ck`
+    /// Creates the correlation which masks the provider's input `ck` and also returns the 0
+    /// messages of the ROT.
     ///
     /// # Arguments
     ///
@@ -75,7 +76,7 @@ impl<const N: usize, F: Field> ROLEeProvider<N, F> {
         Ok((ui, t0i))
     }
 
-    /// Generates the provider's ROLEe input and output
+    /// Generates the provider's ROLEe input and output.
     ///
     /// # Arguments
     ///

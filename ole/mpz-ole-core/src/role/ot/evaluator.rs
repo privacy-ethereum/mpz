@@ -6,9 +6,11 @@ use rand::thread_rng;
 use std::marker::PhantomData;
 
 #[derive(Debug)]
+/// A ROLEeEvaluator.
 pub struct ROLEeEvaluator<const N: usize, F>(PhantomData<F>);
 
 impl<const N: usize, F: Field> ROLEeEvaluator<N, F> {
+    /// Creates a new [`ROLEeEvaluator`].
     pub fn new() -> Self {
         // Check that the right N is used depending on the needed bit size of the field.
         let _: () = Check::<N, F>::IS_BITSIZE_CORRECT;
@@ -16,11 +18,30 @@ impl<const N: usize, F: Field> ROLEeEvaluator<N, F> {
         Self(PhantomData)
     }
 
+    /// Randomly samples the field element `d` `count`-times.
+    ///
+    /// # Arguments
+    ///
+    /// * `count` - The batch size, i.e. how many `d`s to sample.
     pub fn sample_d_(&self, count: usize) -> Vec<F> {
         let mut rng = thread_rng();
         (0..count).map(|_| F::rand(&mut rng)).collect()
     }
 
+    /// Generates the evaluator's ROLEe input and output.
+    ///
+    /// # Arguments
+    ///
+    /// * `fi` - The evaluator's random OT choices.
+    /// * `tfi` - The evaluator's random OT messages.
+    /// * `ui` - The correlations, sent by the provider.
+    /// * `dk` - The evaluator's input to the random OLEe.
+    /// * `ek` - The provider's input to the random OLEe.
+    ///
+    /// # Returns
+    ///
+    /// * `bk` - The evaluator's final ROLEe input factor.
+    /// * `yk` - The evaluator's final ROLEe output summand.
     pub fn generate_output(
         &self,
         fi: &[bool],
@@ -60,6 +81,7 @@ impl<const N: usize, F: Field> ROLEeEvaluator<N, F> {
     }
 }
 
+// Some consistency checks.
 fn check_input<const N: usize, F: Field>(
     fi: &[bool],
     tfi: &[[u8; N]],
