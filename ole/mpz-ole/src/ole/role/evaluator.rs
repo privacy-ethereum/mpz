@@ -71,7 +71,7 @@ where
             .expect_next()
             .await?
             .try_into_provider_derand()
-            .map_err(|err| OLEError::ROLEeError(err.to_string()))?;
+            .map_err(|err| OLEError::WrongMessage(err.to_string()))?;
         sink.send(OLEeMessage::EvaluatorDerand(vk)).await?;
 
         let beta_k: Vec<F> = yk

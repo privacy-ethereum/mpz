@@ -10,6 +10,7 @@
 
 use async_trait::async_trait;
 use mpz_core::ProtocolMessage;
+use mpz_ole_core::OLECoreError;
 use mpz_ot::OTError;
 use mpz_share_conversion_core::fields::Field;
 use utils_aio::{sink::IoSink, stream::IoStream};
@@ -27,8 +28,10 @@ pub enum OLEError {
     OT(#[from] OTError),
     #[error(transparent)]
     Io(#[from] std::io::Error),
-    #[error("Error during ROLEe protocol: {0}")]
-    ROLEeError(String),
+    #[error(transparent)]
+    OLECoreError(#[from] OLECoreError),
+    #[error("{0}")]
+    WrongMessage(String),
 }
 
 /// An OLE with errors (OLEe) evaluator.

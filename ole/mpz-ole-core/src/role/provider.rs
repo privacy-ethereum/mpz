@@ -3,6 +3,8 @@ use mpz_share_conversion_core::Field;
 use rand::thread_rng;
 use std::marker::PhantomData;
 
+use crate::OLECoreError;
+
 use super::Check;
 
 #[derive(Debug)]
@@ -25,13 +27,17 @@ impl<const N: usize, F: Field> ROLEeProvider<N, F> {
         (ck, ek)
     }
 
-    pub fn create_correlation(&self, ti01: &[[[u8; N]; 2]], ck: &[F]) -> (Vec<F>, Vec<F>) {
+    pub fn create_correlation(
+        &self,
+        ti01: &[[[u8; N]; 2]],
+        ck: &[F],
+    ) -> Result<(Vec<F>, Vec<F>), OLECoreError> {
         if ti01.len() % ck.len() != 0 {
-            panic!(
+            return Err(OLECoreError::LengthMissmatch(format!(
                 "Number of field elements {} does not divide number of OT messages {}.",
                 ti01.len(),
                 ck.len()
-            );
+            )));
         }
 
         let (ui, t0i): (Vec<F>, Vec<F>) = ti01
@@ -46,25 +52,31 @@ impl<const N: usize, F: Field> ROLEeProvider<N, F> {
             })
             .unzip();
 
-        (ui, t0i)
+        Ok((ui, t0i))
     }
 
-    pub fn generate_output(&self, t0i: &[F], ck: &[F], dk: &[F], ek: &[F]) -> (Vec<F>, Vec<F>) {
+    pub fn generate_output(
+        &self,
+        t0i: &[F],
+        ck: &[F],
+        dk: &[F],
+        ek: &[F],
+    ) -> Result<(Vec<F>, Vec<F>), OLECoreError> {
         if t0i.len() % ck.len() != 0 {
-            panic!(
+            return Err(OLECoreError::LengthMissmatch(format!(
                 "Number of field elements {} does not divide number of OT messages {}.",
                 t0i.len(),
                 ck.len()
-            );
+            )));
         }
 
         if ck.len() != dk.len() || dk.len() != ek.len() {
-            panic!(
+            return Err(OLECoreError::LengthMissmatch(format!(
                 "Vectors of field elements have unequal length: ck: {}, dk: {}, ek: {}.",
                 ck.len(),
                 dk.len(),
                 ek.len(),
-            );
+            )));
         }
 
         let t0k: Vec<F> = t0i
@@ -91,7 +103,7 @@ impl<const N: usize, F: Field> ROLEeProvider<N, F> {
             .map(|((&t, a), k)| t + -(a * k))
             .collect();
 
-        (ak, xk)
+        Ok((ak, xk))
     }
 }
 

@@ -71,7 +71,7 @@ where
             .expect_next()
             .await?
             .try_into_evaluator_derand()
-            .map_err(|err| OLEError::ROLEeError(err.to_string()))?;
+            .map_err(|err| OLEError::WrongMessage(err.to_string()))?;
 
         let alpha_k: Vec<F> = xk
             .iter()

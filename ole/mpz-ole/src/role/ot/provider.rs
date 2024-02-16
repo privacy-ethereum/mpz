@@ -64,7 +64,7 @@ where
             .await?;
 
         let (ck, ek) = self.role_core.sample_c_and_e(count);
-        let (ui, t0i): (Vec<F>, Vec<F>) = self.role_core.create_correlation(&ti01, &ck);
+        let (ui, t0i): (Vec<F>, Vec<F>) = self.role_core.create_correlation(&ti01, &ck)?;
 
         sink.send(ROLEeMessage::RandomProviderMsg(ui, ek.clone()))
             .await?;
@@ -73,9 +73,9 @@ where
             .expect_next()
             .await?
             .try_into_random_evaluator_msg()
-            .map_err(|err| OLEError::ROLEeError(err.to_string()))?;
+            .map_err(|err| OLEError::WrongMessage(err.to_string()))?;
 
-        let (ak, xk) = self.role_core.generate_output(&t0i, &ck, &dk, &ek);
+        let (ak, xk) = self.role_core.generate_output(&t0i, &ck, &dk, &ek)?;
 
         Ok((ak, xk))
     }

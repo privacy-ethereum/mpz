@@ -80,7 +80,7 @@ where
             .expect_next()
             .await?
             .try_into_random_provider_msg()
-            .map_err(|err| OLEError::ROLEeError(err.to_string()))?;
+            .map_err(|err| OLEError::WrongMessage(err.to_string()))?;
 
         sink.send(ROLEeMessage::RandomEvaluatorMsg(dk.clone()))
             .await?;
