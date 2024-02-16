@@ -5,5 +5,5 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 pub enum OLECoreError {
     #[error("{0}")]
-    LengthMissmatch(String),
+    LengthMismatch(String),
 }

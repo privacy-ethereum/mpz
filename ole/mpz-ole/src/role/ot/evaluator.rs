@@ -1,5 +1,3 @@
-use std::marker::PhantomData;
-
 use crate::{
     msg::ROLEeMessage,
     role::ot::{into_rot_sink, into_rot_stream},
@@ -7,11 +5,10 @@ use crate::{
 };
 use async_trait::async_trait;
 use futures::SinkExt;
-use itybity::IntoBitIterator;
 use mpz_core::ProtocolMessage;
+use mpz_ole_core::role::ROLEeEvaluator as ROLEeCoreEvaluator;
 use mpz_ot::RandomOTReceiver;
 use mpz_share_conversion_core::Field;
-use rand::thread_rng;
 use utils_aio::{
     sink::IoSink,
     stream::{ExpectStreamExt, IoStream},
@@ -20,7 +17,7 @@ use utils_aio::{
 /// An evaluator for ROLEe.
 pub struct ROLEeEvaluator<const N: usize, T: RandomOTReceiver<bool, [u8; N]>, F: Field> {
     rot_receiver: T,
-    field: PhantomData<F>,
+    role_core: ROLEeCoreEvaluator<N, F>,
 }
 
 impl<const N: usize, T: RandomOTReceiver<bool, [u8; N]>, F: Field> ROLEeEvaluator<N, T, F> {
@@ -31,7 +28,7 @@ impl<const N: usize, T: RandomOTReceiver<bool, [u8; N]>, F: Field> ROLEeEvaluato
 
         Self {
             rot_receiver,
-            field: PhantomData,
+            role_core: ROLEeCoreEvaluator::default(),
         }
     }
 }
@@ -57,11 +54,6 @@ where
         stream: &mut St,
         count: usize,
     ) -> Result<(Vec<F>, Vec<F>), OLEError> {
-        let dk: Vec<F> = {
-            let mut rng = thread_rng();
-            (0..count).map(|_| F::rand(&mut rng)).collect()
-        };
-
         let (fi, tfi): (Vec<bool>, Vec<[u8; N]>) = self
             .rot_receiver
             .receive_random(
@@ -71,39 +63,18 @@ where
             )
             .await?;
 
-        let fk: Vec<F> = fi
-            .chunks(F::BIT_SIZE as usize)
-            .map(|f| F::from_lsb0_iter(f.into_iter_lsb0()))
-            .collect();
-
         let (ui, ek): (Vec<F>, Vec<F>) = stream
             .expect_next()
             .await?
             .try_into_random_provider_msg()
             .map_err(|err| OLEError::WrongMessage(err.to_string()))?;
 
+        let dk: Vec<F> = self.role_core.sample_d_(count);
+
         sink.send(ROLEeMessage::RandomEvaluatorMsg(dk.clone()))
             .await?;
 
-        let bk: Vec<F> = fk.iter().zip(ek).map(|(&f, e)| f + e).collect();
-
-        let yk: Vec<F> = fi
-            .chunks(F::BIT_SIZE as usize)
-            .zip(tfi.chunks(F::BIT_SIZE as usize))
-            .zip(ui.chunks(F::BIT_SIZE as usize))
-            .zip(dk)
-            .map(|(((f, t), u), d)| {
-                f.iter()
-                    .zip(t)
-                    .zip(u)
-                    .enumerate()
-                    .fold(F::zero(), |acc, (i, ((&f, t), &u))| {
-                        let f = if f { F::one() } else { F::zero() };
-                        acc + F::two_pow(i as u32)
-                            * (f * (u + d) + F::from_lsb0_iter(t.into_iter_lsb0()))
-                    })
-            })
-            .collect();
+        let (bk, yk) = self.role_core.generate_output(&fi, &tfi, &ui, &dk, &ek)?;
 
         Ok((bk, yk))
     }

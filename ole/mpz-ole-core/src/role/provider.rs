@@ -33,17 +33,17 @@ impl<const N: usize, F: Field> ROLEeProvider<N, F> {
         ck: &[F],
     ) -> Result<(Vec<F>, Vec<F>), OLECoreError> {
         if ti01.len() % ck.len() != 0 {
-            return Err(OLECoreError::LengthMissmatch(format!(
+            return Err(OLECoreError::LengthMismatch(format!(
                 "Number of field elements {} does not divide number of OT messages {}.",
-                ti01.len(),
-                ck.len()
+                ck.len(),
+                ti01.len()
             )));
         }
 
         let (ui, t0i): (Vec<F>, Vec<F>) = ti01
             .chunks(F::BIT_SIZE as usize)
-            .zip(ck.iter().copied())
-            .flat_map(|(chunk, c)| {
+            .zip(ck)
+            .flat_map(|(chunk, &c)| {
                 chunk.iter().map(move |[t0, t1]| {
                     let t0 = F::from_lsb0_iter(t0.into_iter_lsb0());
                     let t1 = F::from_lsb0_iter(t1.into_iter_lsb0());
@@ -63,15 +63,15 @@ impl<const N: usize, F: Field> ROLEeProvider<N, F> {
         ek: &[F],
     ) -> Result<(Vec<F>, Vec<F>), OLECoreError> {
         if t0i.len() % ck.len() != 0 {
-            return Err(OLECoreError::LengthMissmatch(format!(
+            return Err(OLECoreError::LengthMismatch(format!(
                 "Number of field elements {} does not divide number of OT messages {}.",
+                ck.len(),
                 t0i.len(),
-                ck.len()
             )));
         }
 
         if ck.len() != dk.len() || dk.len() != ek.len() {
-            return Err(OLECoreError::LengthMissmatch(format!(
+            return Err(OLECoreError::LengthMismatch(format!(
                 "Vectors of field elements have unequal length: ck: {}, dk: {}, ek: {}.",
                 ck.len(),
                 dk.len(),
@@ -89,18 +89,13 @@ impl<const N: usize, F: Field> ROLEeProvider<N, F> {
             })
             .collect();
 
-        let ak: Vec<F> = ck
-            .iter()
-            .copied()
-            .zip(dk.iter().copied())
-            .map(|(c, d)| c + d)
-            .collect();
+        let ak: Vec<F> = ck.iter().zip(dk).map(|(&c, &d)| c + d).collect();
 
         let xk: Vec<F> = t0k
             .iter()
             .zip(ak.iter().copied())
-            .zip(ek.iter().copied())
-            .map(|((&t, a), k)| t + -(a * k))
+            .zip(ek)
+            .map(|((&t, a), &k)| t + -(a * k))
             .collect();
 
         Ok((ak, xk))
