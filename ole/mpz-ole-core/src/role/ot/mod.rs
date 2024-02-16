@@ -20,3 +20,19 @@ impl<const N: usize, F: Field> Check<N, F> {
         "Wrong bit size used for field. You need to use `F::BIT_SIZE` for N."
     );
 }
+
+#[cfg(test)]
+mod tests {
+    use mpz_share_conversion_core::fields::p256::P256;
+
+    use super::{ROLEeEvaluator, ROLEeProvider};
+
+    #[test]
+    fn test_role_ot_core() {
+        // TODO: finish this
+        let provider = ROLEeProvider::<32, P256>::default();
+        let evaluator = ROLEeEvaluator::<32, P256>::default();
+
+        let count = 12;
+    }
+}
