@@ -1,3 +1,5 @@
+//! An implementation of a ROLEe provider based on random OT
+
 use itybity::IntoBitIterator;
 use mpz_share_conversion_core::Field;
 use rand::thread_rng;
@@ -8,9 +10,11 @@ use crate::OLECoreError;
 use super::Check;
 
 #[derive(Debug)]
+/// A ROLEeProvider
 pub struct ROLEeProvider<const N: usize, F>(PhantomData<F>);
 
 impl<const N: usize, F: Field> ROLEeProvider<N, F> {
+    /// Creates a new [`ROLEeProvider`].
     pub fn new() -> Self {
         // Check that the right N is used depending on the needed bit size of the field.
         let _: () = Check::<N, F>::IS_BITSIZE_CORRECT;
@@ -18,6 +22,11 @@ impl<const N: usize, F: Field> ROLEeProvider<N, F> {
         Self(PhantomData)
     }
 
+    /// Randomly samples the field elements `c` and `e` `count`-times.
+    ///
+    /// # Arguments
+    ///
+    /// * `count` - The batch size, i.e. how many `c`s and `e`s to sample.
     pub fn sample_c_and_e(&self, count: usize) -> (Vec<F>, Vec<F>) {
         let mut rng = thread_rng();
 
@@ -27,6 +36,17 @@ impl<const N: usize, F: Field> ROLEeProvider<N, F> {
         (ck, ek)
     }
 
+    /// Creates the correlation which masks the provider's input `ck`
+    ///
+    /// # Arguments
+    ///
+    /// * `ti01` - The random OT messages, which the provider has sent to the evaluator.
+    /// * `ck` - The provider's input to the random OLEe.
+    ///
+    /// # Returns
+    ///
+    /// * `ui` - The correlations, which will be sent to the evaluator.
+    /// * `t0i` - The 0 choice messages of the random OT.
     pub fn create_correlation(
         &self,
         ti01: &[[[u8; N]; 2]],
@@ -55,6 +75,19 @@ impl<const N: usize, F: Field> ROLEeProvider<N, F> {
         Ok((ui, t0i))
     }
 
+    /// Generates the provider's ROLEe input and output
+    ///
+    /// # Arguments
+    ///
+    /// * `t0i` - The 0 choice messages of the random OT.
+    /// * `ck` - The provider's input to the random OLEe.
+    /// * `dk` - The evaluator's input to the random OLEe.
+    /// * `ek` - The provider's input to the random OLEe.
+    ///
+    /// # Returns
+    ///
+    /// * `ak` - The provider's final ROLEe input factor.
+    /// * `xk` - The provider's final ROLEe output summand.
     pub fn generate_output(
         &self,
         t0i: &[F],

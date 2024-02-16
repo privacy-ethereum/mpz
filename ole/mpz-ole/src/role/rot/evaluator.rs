@@ -1,12 +1,12 @@
 use crate::{
     msg::ROLEeMessage,
-    role::ot::{into_rot_sink, into_rot_stream},
+    role::rot::{into_rot_sink, into_rot_stream},
     Check, OLEError, RandomOLEeEvaluate,
 };
 use async_trait::async_trait;
 use futures::SinkExt;
 use mpz_core::ProtocolMessage;
-use mpz_ole_core::role::ROLEeEvaluator as ROLEeCoreEvaluator;
+use mpz_ole_core::role::ot::ROLEeEvaluator as ROLEeCoreEvaluator;
 use mpz_ot::RandomOTReceiver;
 use mpz_share_conversion_core::Field;
 use utils_aio::{

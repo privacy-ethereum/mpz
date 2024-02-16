@@ -1,4 +1,4 @@
-//! Provides implementations of ROLEe protocols based on oblivious transfer.
+//! Provides implementations of ROLEe protocols based on random OT.
 
 mod evaluator;
 mod provider;
