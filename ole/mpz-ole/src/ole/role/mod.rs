@@ -53,8 +53,8 @@ mod tests {
 
         let (role_provider, role_evaluator) = ideal_role_pair::<P256>();
 
-        let mut ole_provider = OLEeProvider::<256, _, P256>::new(role_provider);
-        let mut ole_evaluator = OLEeEvaluator::<256, _, P256>::new(role_evaluator);
+        let mut ole_provider = OLEeProvider::<32, _, P256>::new(role_provider);
+        let mut ole_evaluator = OLEeEvaluator::<32, _, P256>::new(role_evaluator);
 
         let ak: Vec<P256> = (0..count).map(|_| P256::rand(&mut rng)).collect();
         let bk: Vec<P256> = (0..count).map(|_| P256::rand(&mut rng)).collect();

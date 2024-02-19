@@ -144,7 +144,7 @@ struct Check<const N: usize, F: Field>(std::marker::PhantomData<F>);
 
 impl<const N: usize, F: Field> Check<N, F> {
     const IS_BITSIZE_CORRECT: () = assert!(
-        N as u32 == F::BIT_SIZE,
+        N as u32 == F::BIT_SIZE / 8,
         "Wrong bit size used for field. You need to use `F::BIT_SIZE` for N."
     );
 }

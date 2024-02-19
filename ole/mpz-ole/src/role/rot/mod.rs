@@ -47,10 +47,10 @@ mod tests {
         let (mut provider_sink, mut provider_stream) = sender_channel.split();
         let (mut evaluator_sink, mut evaluator_stream) = receiver_channel.split();
 
-        let (rot_sender, rot_receiver) = ideal_random_ot_pair::<[u8; 256]>([0; 32]);
+        let (rot_sender, rot_receiver) = ideal_random_ot_pair::<[u8; 32]>([0; 32]);
 
-        let mut role_provider = ROLEeProvider::<256, _, P256>::new(rot_sender);
-        let mut role_evaluator = ROLEeEvaluator::<256, _, P256>::new(rot_receiver);
+        let mut role_provider = ROLEeProvider::<32, _, P256>::new(rot_sender);
+        let mut role_evaluator = ROLEeEvaluator::<32, _, P256>::new(rot_receiver);
 
         let (provider_res, evaluator_res) = tokio::join!(
             role_provider.provide_random(&mut provider_sink, &mut provider_stream, count),
