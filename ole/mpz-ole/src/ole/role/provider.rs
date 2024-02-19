@@ -63,7 +63,6 @@ where
         let uk: Vec<F> = self.ole_core.create_mask(&ak_dash, &factors)?;
 
         sink.send(OLEeMessage::ProviderDerand(uk)).await?;
-
         let vk: Vec<F> = stream
             .expect_next()
             .await?

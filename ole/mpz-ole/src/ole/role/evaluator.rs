@@ -6,8 +6,8 @@ use crate::{
 use async_trait::async_trait;
 use futures::SinkExt;
 use mpz_core::ProtocolMessage;
+use mpz_ole_core::ole::role::OLEeEvaluator as OLEeCoreEvaluator;
 use mpz_share_conversion_core::Field;
-use std::marker::PhantomData;
 use utils_aio::{
     sink::IoSink,
     stream::{ExpectStreamExt, IoStream},
@@ -16,7 +16,7 @@ use utils_aio::{
 /// An evaluator for OLEe.
 pub struct OLEeEvaluator<const N: usize, T: RandomOLEeEvaluate<F>, F: Field> {
     role_evaluator: T,
-    field: PhantomData<F>,
+    ole_core: OLEeCoreEvaluator<F>,
 }
 
 impl<const N: usize, T: RandomOLEeEvaluate<F>, F: Field> OLEeEvaluator<N, T, F> {
@@ -27,7 +27,7 @@ impl<const N: usize, T: RandomOLEeEvaluate<F>, F: Field> OLEeEvaluator<N, T, F> 
 
         Self {
             role_evaluator,
-            field: PhantomData,
+            ole_core: OLEeCoreEvaluator::default(),
         }
     }
 }
@@ -52,7 +52,7 @@ where
         stream: &mut St,
         inputs: Vec<F>,
     ) -> Result<Vec<F>, OLEError> {
-        let (bk, yk) = self
+        let (bk_dash, yk_dash) = self
             .role_evaluator
             .evaluate_random(
                 &mut into_role_sink(sink),
@@ -61,11 +61,7 @@ where
             )
             .await?;
 
-        let vk: Vec<F> = inputs
-            .iter()
-            .zip(bk.iter().copied())
-            .map(|(&i, b)| i + b)
-            .collect();
+        let vk: Vec<F> = self.ole_core.create_mask(&bk_dash, &inputs)?;
 
         let uk: Vec<F> = stream
             .expect_next()
@@ -74,13 +70,8 @@ where
             .map_err(|err| OLEError::WrongMessage(err.to_string()))?;
         sink.send(OLEeMessage::EvaluatorDerand(vk)).await?;
 
-        let beta_k: Vec<F> = yk
-            .iter()
-            .zip(inputs)
-            .zip(uk)
-            .map(|((&y, i), u)| y + i * u)
-            .collect();
+        let yk: Vec<F> = self.ole_core.generate_output(&inputs, &yk_dash, &uk)?;
 
-        Ok(beta_k)
+        Ok(yk)
     }
 }

@@ -34,7 +34,7 @@ impl<F: Field> OLEeProvider<F> {
         let uk: Vec<F> = ak_dash
             .iter()
             .zip(ak.iter().copied())
-            .map(|(&f, a)| a + f)
+            .map(|(&d, a)| a + d)
             .collect();
 
         Ok(uk)
