@@ -40,8 +40,7 @@ impl<F: Field> OLEFunctionality<F> {
             self.set_xk_yk();
         }
 
-        let xk = std::mem::take(&mut self.xk);
-        xk
+        std::mem::take(&mut self.xk)
     }
 
     /// Generates the OLE evaluator's output `yk`.
@@ -50,8 +49,7 @@ impl<F: Field> OLEFunctionality<F> {
             self.set_xk_yk();
         }
 
-        let yk = std::mem::take(&mut self.yk);
-        yk
+        std::mem::take(&mut self.yk)
     }
 
     fn set_xk_yk(&mut self) {
