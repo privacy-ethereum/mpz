@@ -52,11 +52,10 @@ impl<F: Field> ROLEFunctionality<F> {
         let ak: Vec<F> = (0..count).map(|_| F::rand(&mut self.rng)).collect();
         let bk: Vec<F> = (0..count).map(|_| F::rand(&mut self.rng)).collect();
         let xk: Vec<F> = (0..count).map(|_| F::rand(&mut self.rng)).collect();
-        let yk: Vec<F> = self
-            .xk
+        let yk: Vec<F> = xk
             .iter()
-            .zip(self.ak.iter())
-            .zip(self.bk.iter())
+            .zip(ak.iter())
+            .zip(bk.iter())
             .map(|((&x, &a), &b)| a * b + x)
             .collect();
 
