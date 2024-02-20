@@ -4,3 +4,4 @@ mod ole;
 mod role;
 
 pub use ole::OLEFunctionality;
+pub use role::ROLEFunctionality;
