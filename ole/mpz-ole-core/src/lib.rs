@@ -5,6 +5,7 @@
 //! This crate provides implementations of different Oblivious Linear Evaluation with Errors (OLEe)
 //! flavors. It provides the core logic of the protocols without I/O.
 
+pub mod ideal;
 pub mod ole;
 pub mod role;
 
