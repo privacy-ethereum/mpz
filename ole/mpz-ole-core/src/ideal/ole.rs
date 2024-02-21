@@ -82,15 +82,15 @@ impl<F: Field> Default for OLEFunctionality<F> {
 #[cfg(test)]
 mod tests {
     use super::OLEFunctionality;
+    use mpz_core::{prg::Prg, Block};
     use mpz_share_conversion_core::fields::{p256::P256, UniformRand};
     use rand::SeedableRng;
-    use rand_chacha::ChaCha12Rng;
 
     #[test]
     fn test_ole_functionality() {
         let count = 12;
         let mut ole: OLEFunctionality<P256> = OLEFunctionality::default();
-        let mut rng = ChaCha12Rng::from_seed([0_u8; 32]);
+        let mut rng = Prg::from_seed(Block::ZERO);
 
         let ak: Vec<P256> = (0..count).map(|_| P256::rand(&mut rng)).collect();
         let bk: Vec<P256> = (0..count).map(|_| P256::rand(&mut rng)).collect();

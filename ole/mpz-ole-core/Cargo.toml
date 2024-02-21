@@ -14,6 +14,3 @@ thiserror.workspace = true
 mpz-share-conversion-core.workspace = true
 mpz-core.workspace = true
 mpz-ot-core.workspace = true
-
-[dev-dependencies]
-rand_chacha.workspace = true

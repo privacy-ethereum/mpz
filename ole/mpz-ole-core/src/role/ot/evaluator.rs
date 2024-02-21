@@ -5,8 +5,7 @@ use mpz_share_conversion_core::Field;
 use rand::thread_rng;
 use std::marker::PhantomData;
 
-#[derive(Debug)]
-/// A ROLEeEvaluator.
+/// An evaluator for ROLE with errors.
 pub struct ROLEeEvaluator<const N: usize, F>(PhantomData<F>);
 
 impl<const N: usize, F: Field> ROLEeEvaluator<N, F> {
@@ -23,7 +22,11 @@ impl<const N: usize, F: Field> ROLEeEvaluator<N, F> {
     /// # Arguments
     ///
     /// * `count` - The batch size, i.e. how many `d`s to sample.
-    pub fn sample_d_(&self, count: usize) -> Vec<F> {
+    ///
+    /// # Returns
+    ///
+    /// * `dk` - The evaluator's input to the random OLEe.
+    pub fn sample_d(&self, count: usize) -> Vec<F> {
         let mut rng = thread_rng();
         (0..count).map(|_| F::rand(&mut rng)).collect()
     }
@@ -40,8 +43,8 @@ impl<const N: usize, F: Field> ROLEeEvaluator<N, F> {
     ///
     /// # Returns
     ///
-    /// * `bk` - The evaluator's final ROLEe input factor.
-    /// * `yk` - The evaluator's final ROLEe output summand.
+    /// * `bk` - The evaluator's final ROLEe input factors.
+    /// * `yk` - The evaluator's final ROLEe output summands.
     pub fn generate_output(
         &self,
         fi: &[bool],

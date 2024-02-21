@@ -1,16 +1,11 @@
-//! An implementation of a ROLEe provider based on random OT.
-
+use super::Check;
+use crate::OLECoreError;
 use itybity::IntoBitIterator;
 use mpz_share_conversion_core::Field;
 use rand::thread_rng;
 use std::marker::PhantomData;
 
-use crate::OLECoreError;
-
-use super::Check;
-
-#[derive(Debug)]
-/// A ROLEeProvider
+/// A provider for ROLE with errors.
 pub struct ROLEeProvider<const N: usize, F>(PhantomData<F>);
 
 impl<const N: usize, F: Field> ROLEeProvider<N, F> {
@@ -27,6 +22,11 @@ impl<const N: usize, F: Field> ROLEeProvider<N, F> {
     /// # Arguments
     ///
     /// * `count` - The batch size, i.e. how many `c`s and `e`s to sample.
+    ///
+    /// # Returns
+    ///
+    /// * `ck` - The provider's input to the random OLEe.
+    /// * `ek` - The provider's input to the random OLEe.
     pub fn sample_c_and_e(&self, count: usize) -> (Vec<F>, Vec<F>) {
         let mut rng = thread_rng();
 
@@ -36,7 +36,7 @@ impl<const N: usize, F: Field> ROLEeProvider<N, F> {
         (ck, ek)
     }
 
-    /// Creates the correlation which masks the provider's input `ck` and also returns the 0
+    /// Creates the correlation which masks the provider's input `ck` and also returns the 0-choice
     /// messages of the ROT.
     ///
     /// # Arguments
@@ -127,9 +127,9 @@ impl<const N: usize, F: Field> ROLEeProvider<N, F> {
 
         let xk: Vec<F> = t0k
             .iter()
-            .zip(ak.iter().copied())
+            .zip(ak.iter())
             .zip(ek)
-            .map(|((&t, a), &k)| t + -(a * k))
+            .map(|((&t, &a), &k)| t + -(a * k))
             .collect();
 
         Ok((ak, xk))

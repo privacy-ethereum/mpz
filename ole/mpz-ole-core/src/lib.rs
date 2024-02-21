@@ -11,7 +11,7 @@ pub mod role;
 
 #[allow(missing_docs)]
 #[derive(Debug, thiserror::Error)]
-/// An error for what can go wrong with OLE
+/// An error for what can go wrong with OLE.
 pub enum OLECoreError {
     #[error("{0}")]
     LengthMismatch(String),

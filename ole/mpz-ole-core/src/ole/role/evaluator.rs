@@ -1,10 +1,8 @@
-/// An evaluator for OLE with errors
+use crate::OLECoreError;
 use mpz_share_conversion_core::Field;
 use std::marker::PhantomData;
 
-use crate::OLECoreError;
-
-/// A provider for OLE with errors
+/// An evaluator for OLE with errors.
 pub struct OLEeEvaluator<F>(PhantomData<F>);
 
 impl<F: Field> OLEeEvaluator<F> {
@@ -13,16 +11,16 @@ impl<F: Field> OLEeEvaluator<F> {
         OLEeEvaluator(PhantomData)
     }
 
-    /// Masks the OLEe input with the ROLEe input
+    /// Masks the OLEe input with the ROLEe input.
     ///
     /// # Arguments
     ///
-    /// * `bk_dash` - The ROLEe input factors
-    /// * `bk` - The chosen OLEe input
+    /// * `bk_dash` - The ROLEe input factors.
+    /// * `bk` - The chosen OLEe input factors.
     ///
     /// # Returns
     ///
-    /// * `vk` - The masked chosen input factors, which will be sent to the provider
+    /// * `vk` - The masked chosen input factors, which will be sent to the provider.
     pub fn create_mask(&self, bk_dash: &[F], bk: &[F]) -> Result<Vec<F>, OLECoreError> {
         if bk_dash.len() != bk.len() {
             return Err(OLECoreError::LengthMismatch(format!(
@@ -32,26 +30,22 @@ impl<F: Field> OLEeEvaluator<F> {
             )));
         }
 
-        let vk: Vec<F> = bk_dash
-            .iter()
-            .zip(bk.iter().copied())
-            .map(|(&d, b)| b + d)
-            .collect();
+        let vk: Vec<F> = bk_dash.iter().zip(bk).map(|(&d, &b)| b + d).collect();
 
         Ok(vk)
     }
 
-    /// Generates the OLEe output
+    /// Generates the OLEe output.
     ///
     /// # Arguments
     ///
-    /// * `bk` - The OLEe input
-    /// * `yk_dash` - The ROLEe output
-    /// * `uk` - The masked chosen input factors from the provider
+    /// * `bk` - The OLEe input factors.
+    /// * `yk_dash` - The ROLEe output.
+    /// * `uk` - The masked chosen input factors from the provider.
     ///
     /// # Returns
     ///
-    /// * `yk` - The OLEe output for the evaluator
+    /// * `yk` - The OLEe output for the evaluator.
     pub fn generate_output(
         &self,
         bk: &[F],
@@ -69,9 +63,9 @@ impl<F: Field> OLEeEvaluator<F> {
 
         let yk: Vec<F> = yk_dash
             .iter()
-            .zip(bk.iter().copied())
-            .zip(uk.iter().copied())
-            .map(|((&y, b), u)| y + b * u)
+            .zip(bk)
+            .zip(uk)
+            .map(|((&y, &b), &u)| y + b * u)
             .collect();
 
         Ok(yk)

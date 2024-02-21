@@ -69,7 +69,7 @@ where
             .try_into_random_provider_msg()
             .map_err(|err| OLEError::WrongMessage(err.to_string()))?;
 
-        let dk: Vec<F> = self.role_core.sample_d_(count);
+        let dk: Vec<F> = self.role_core.sample_d(count);
 
         sink.send(ROLEeMessage::RandomEvaluatorMsg(dk.clone()))
             .await?;

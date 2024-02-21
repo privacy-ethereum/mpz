@@ -1,9 +1,8 @@
+use crate::OLECoreError;
 use mpz_share_conversion_core::Field;
 use std::marker::PhantomData;
 
-use crate::OLECoreError;
-
-/// A provider for OLE with errors
+/// A provider for OLE with errors.
 pub struct OLEeProvider<F>(PhantomData<F>);
 
 impl<F: Field> OLEeProvider<F> {
@@ -12,16 +11,16 @@ impl<F: Field> OLEeProvider<F> {
         OLEeProvider(PhantomData)
     }
 
-    /// Masks the OLEe input with the ROLEe input
+    /// Masks the OLEe input with the ROLEe input.
     ///
     /// # Arguments
     ///
-    /// * `ak_dash` - The ROLEe input factors
-    /// * `ak` - The chosen OLEe input
+    /// * `ak_dash` - The ROLEe input factors.
+    /// * `ak` - The chosen OLEe input factors.
     ///
     /// # Returns
     ///
-    /// * `uk` - The masked chosen input factors, which will be sent to the evaluator
+    /// * `uk` - The masked chosen input factors, which will be sent to the evaluator.
     pub fn create_mask(&self, ak_dash: &[F], ak: &[F]) -> Result<Vec<F>, OLECoreError> {
         if ak_dash.len() != ak.len() {
             return Err(OLECoreError::LengthMismatch(format!(
@@ -31,26 +30,22 @@ impl<F: Field> OLEeProvider<F> {
             )));
         }
 
-        let uk: Vec<F> = ak_dash
-            .iter()
-            .zip(ak.iter().copied())
-            .map(|(&d, a)| a + d)
-            .collect();
+        let uk: Vec<F> = ak_dash.iter().zip(ak).map(|(&d, &a)| a + d).collect();
 
         Ok(uk)
     }
 
-    /// Generates the OLEe output
+    /// Generates the OLEe output.
     ///
     /// # Arguments
     ///
-    /// * `ak_dash` - The ROLEe input
-    /// * `xk_dash` - The ROLEe output
-    /// * `vk` - The masked chosen input factors from the evaluator
+    /// * `ak_dash` - The ROLEe input factors.
+    /// * `xk_dash` - The ROLEe output.
+    /// * `vk` - The masked chosen input factors from the evaluator.
     ///
     /// # Returns
     ///
-    /// * `xk` - The OLEe output for the provider
+    /// * `xk` - The OLEe output for the provider.
     pub fn generate_output(
         &self,
         ak_dash: &[F],
@@ -68,9 +63,9 @@ impl<F: Field> OLEeProvider<F> {
 
         let xk: Vec<F> = xk_dash
             .iter()
-            .zip(ak_dash.iter().copied())
-            .zip(vk.iter().copied())
-            .map(|((&x, a), v)| -(-x + -a * v))
+            .zip(ak_dash)
+            .zip(vk)
+            .map(|((&x, &a), &v)| -(-x + -a * v))
             .collect();
 
         Ok(xk)

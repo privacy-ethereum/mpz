@@ -1,4 +1,6 @@
-//! Provides implementations of ROLEe protocols based on random OT.
+//! Provides an implementation of ROLEe based on random OT.
+//!
+//! This module implements the "Random OLE" protocol in <https://github.com/tlsnotary/docs-mdbook/blob/main/research/ole-flavors.typ>.
 
 mod evaluator;
 mod provider;
@@ -52,7 +54,7 @@ mod tests {
         let (ck, ek) = provider.sample_c_and_e(count);
         let (ui, t0i) = provider.create_correlation(&ti01, &ck).unwrap();
 
-        let dk = evaluator.sample_d_(count);
+        let dk = evaluator.sample_d(count);
 
         let (ak, xk) = provider.generate_output(&t0i, &ck, &dk, &ek).unwrap();
         let (bk, yk) = evaluator.generate_output(&fi, &tfi, &ui, &dk, &ek).unwrap();
