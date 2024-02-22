@@ -13,14 +13,14 @@ use utils_aio::{
     stream::{ExpectStreamExt, IoStream},
 };
 
-/// A provider for various OLE constructions.
+/// A provider for OLE with errors.
 pub struct OLEeProvider<const N: usize, T: RandomOLEeProvide<F>, F: Field> {
     role_provider: T,
     ole_core: OLEeCoreProvider<F>,
 }
 
 impl<const N: usize, T: RandomOLEeProvide<F>, F: Field> OLEeProvider<N, T, F> {
-    /// Create a new [`OLEeProvider`].
+    /// Creates a new [`OLEeProvider`].
     pub fn new(role_provider: T) -> Self {
         // Check that the right N is used depending on the needed bit size of the field.
         let _: () = Check::<N, F>::IS_BITSIZE_CORRECT;

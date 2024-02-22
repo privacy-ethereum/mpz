@@ -14,7 +14,7 @@ use utils_aio::{
     stream::{ExpectStreamExt, IoStream},
 };
 
-/// An evaluator for ROLEe.
+/// An evaluator for ROLE with errors.
 pub struct ROLEeEvaluator<const N: usize, T: RandomOTReceiver<bool, [u8; N]>, F: Field> {
     rot_receiver: T,
     role_core: ROLEeCoreEvaluator<N, F>,

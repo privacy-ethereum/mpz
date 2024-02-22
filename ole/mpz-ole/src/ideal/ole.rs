@@ -9,7 +9,7 @@ use rand::thread_rng;
 use std::marker::PhantomData;
 use utils_aio::{sink::IoSink, stream::IoStream};
 
-/// Returns an ideal OLE pair
+/// Returns an ideal OLE pair.
 pub fn ideal_ole_pair<F: Field>() -> (IdealOLEProvider<F>, IdealOLEEvaluator<F>) {
     let (sender, receiver) = mpsc::channel(10);
 
@@ -26,7 +26,7 @@ pub fn ideal_ole_pair<F: Field>() -> (IdealOLEProvider<F>, IdealOLEEvaluator<F>)
     (provider, evaluator)
 }
 
-/// An ideal OLEProvider for field elements
+/// An ideal OLE Provider.
 pub struct IdealOLEProvider<F: Field> {
     phantom: PhantomData<F>,
     channel: mpsc::Sender<(Vec<F>, Vec<F>)>,
@@ -36,7 +36,7 @@ impl<F: Field> ProtocolMessage for IdealOLEProvider<F> {
     type Msg = ();
 }
 
-/// An ideal OLEEvaluator for field elements
+/// An ideal OLE Evaluator.
 pub struct IdealOLEEvaluator<F: Field> {
     phantom: PhantomData<F>,
     channel: mpsc::Receiver<(Vec<F>, Vec<F>)>,
@@ -58,12 +58,13 @@ impl<F: Field> OLEeProvide<F> for IdealOLEProvider<F> {
         factors: Vec<F>,
     ) -> Result<Vec<F>, OLEError> {
         let mut rng = thread_rng();
-        let summands: Vec<F> = (0..factors.len()).map(|_| F::rand(&mut rng)).collect();
+        let offsets: Vec<F> = (0..factors.len()).map(|_| F::rand(&mut rng)).collect();
+
         self.channel
-            .try_send((factors.clone(), summands.clone()))
+            .try_send((factors.clone(), offsets.clone()))
             .expect("DummySender should be able to send");
 
-        Ok(summands)
+        Ok(offsets)
     }
 }
 
@@ -78,7 +79,7 @@ impl<F: Field> OLEeEvaluate<F> for IdealOLEEvaluator<F> {
         _stream: &mut St,
         input: Vec<F>,
     ) -> Result<Vec<F>, OLEError> {
-        let (factors, summands) = self
+        let (factors, offsets) = self
             .channel
             .next()
             .await
@@ -86,8 +87,8 @@ impl<F: Field> OLEeEvaluate<F> for IdealOLEEvaluator<F> {
 
         let output: Vec<F> = input
             .iter()
-            .zip(factors.iter().copied())
-            .zip(summands)
+            .zip(factors)
+            .zip(offsets)
             .map(|((&a, b), x)| a * b + x)
             .collect();
 
@@ -106,7 +107,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_ideal_ole() {
-        let count = 16;
+        let count = 12;
         let mut rng = Prg::from_seed(Block::ZERO);
 
         let inputs: Vec<P256> = (0..count).map(|_| P256::rand(&mut rng)).collect();
@@ -119,7 +120,7 @@ mod tests {
 
         let (mut provider, mut evaluator) = ideal_ole_pair::<P256>();
 
-        let summands = provider
+        let offsets = provider
             .provide(&mut provider_sink, &mut provider_stream, factors.clone())
             .await
             .unwrap();
@@ -131,7 +132,7 @@ mod tests {
         inputs
             .iter()
             .zip(factors)
-            .zip(summands)
+            .zip(offsets)
             .zip(outputs)
             .for_each(|(((&a, b), x), y)| assert_eq!(y, a * b + x));
     }

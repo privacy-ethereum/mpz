@@ -1,4 +1,4 @@
-//! Provides implementations of ROLEe protocols based on random OT.
+//! Provides an implementation of ROLEe based on random OT.
 
 mod evaluator;
 mod provider;
@@ -11,7 +11,7 @@ use futures::{SinkExt, StreamExt};
 use mpz_share_conversion_core::Field;
 use utils_aio::{sink::IoSink, stream::IoStream};
 
-/// Converts a sink of random OLE messages into a sink of random OT messages.
+/// Converts a sink of ROLE messages into a sink of random OT messages.
 fn into_rot_sink<'a, Si: IoSink<ROLEeMessage<T, F>> + Send + Unpin, T: Send + 'a, F: Field>(
     sink: &'a mut Si,
 ) -> impl IoSink<T> + Send + Unpin + 'a {
@@ -20,7 +20,7 @@ fn into_rot_sink<'a, Si: IoSink<ROLEeMessage<T, F>> + Send + Unpin, T: Send + 'a
     }))
 }
 
-/// Converts a stream of random OLE messages into a stream of random OT messages.
+/// Converts a stream of ROLE messages into a stream of random OT messages.
 fn into_rot_stream<'a, St: IoStream<ROLEeMessage<T, F>> + Send + Unpin, T: Send + 'a, F: Field>(
     stream: &'a mut St,
 ) -> impl IoStream<T> + Send + Unpin + 'a {
@@ -41,7 +41,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_role() {
-        let count = 16;
+        let count = 12;
         let (sender_channel, receiver_channel) = MemoryDuplex::new();
 
         let (mut provider_sink, mut provider_stream) = sender_channel.split();

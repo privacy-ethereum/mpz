@@ -14,14 +14,14 @@ use utils_aio::{
     stream::{ExpectStreamExt, IoStream},
 };
 
-/// A provider for ROLEe.
+/// A provider for ROLE with errors.
 pub struct ROLEeProvider<const N: usize, T: RandomOTSender<[[u8; N]; 2]>, F> {
     rot_sender: T,
     role_core: ROLEeCoreProvider<N, F>,
 }
 
 impl<const N: usize, T: RandomOTSender<[[u8; N]; 2]>, F: Field> ROLEeProvider<N, T, F> {
-    /// Create a new [`ROLEeProvider`].
+    /// Creates a new [`ROLEeProvider`].
     pub fn new(rot_sender: T) -> Self {
         // Check that the right N is used depending on the needed bit size of the field.
         let _: () = Check::<N, F>::IS_BITSIZE_CORRECT;

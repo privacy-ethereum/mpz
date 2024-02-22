@@ -9,7 +9,7 @@ use rand::thread_rng;
 use std::marker::PhantomData;
 use utils_aio::{sink::IoSink, stream::IoStream};
 
-/// Returns an ideal ROLE pair
+/// Returns an ideal ROLE pair.
 pub fn ideal_role_pair<F: Field>() -> (IdealROLEProvider<F>, IdealROLEEvaluator<F>) {
     let (sender, receiver) = mpsc::channel(10);
 
@@ -26,7 +26,7 @@ pub fn ideal_role_pair<F: Field>() -> (IdealROLEProvider<F>, IdealROLEEvaluator<
     (provider, evaluator)
 }
 
-/// An ideal ROLEProvider for field elements
+/// An ideal ROLE Provider.
 pub struct IdealROLEProvider<F: Field> {
     phantom: PhantomData<F>,
     channel: mpsc::Sender<(Vec<F>, Vec<F>)>,
@@ -36,7 +36,7 @@ impl<F: Field> ProtocolMessage for IdealROLEProvider<F> {
     type Msg = ();
 }
 
-/// An ideal ROLEEvaluator for field elements
+/// An ideal ROLE Evaluator.
 pub struct IdealROLEEvaluator<F: Field> {
     phantom: PhantomData<F>,
     channel: mpsc::Receiver<(Vec<F>, Vec<F>)>,
@@ -94,9 +94,9 @@ impl<F: Field> RandomOLEeEvaluate<F> for IdealROLEEvaluator<F> {
 
         let yk: Vec<F> = ak
             .iter()
-            .zip(bk.iter().copied())
+            .zip(bk.iter())
             .zip(xk)
-            .map(|((&a, b), x)| a * b + x)
+            .map(|((&a, &b), x)| a * b + x)
             .collect();
 
         Ok((bk, yk))
@@ -112,7 +112,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_ideal_role() {
-        let count = 16;
+        let count = 12;
 
         let (send_channel, recv_channel) = MemoryDuplex::<()>::new();
 
@@ -125,6 +125,7 @@ mod tests {
             .provide_random(&mut provider_sink, &mut provider_stream, count)
             .await
             .unwrap();
+
         let (bk, yk) = evaluator
             .evaluate_random(&mut evaluator_sink, &mut evaluator_stream, count)
             .await

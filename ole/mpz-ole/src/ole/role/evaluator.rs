@@ -13,14 +13,14 @@ use utils_aio::{
     stream::{ExpectStreamExt, IoStream},
 };
 
-/// An evaluator for OLEe.
+/// An evaluator for OLE with errors.
 pub struct OLEeEvaluator<const N: usize, T: RandomOLEeEvaluate<F>, F: Field> {
     role_evaluator: T,
     ole_core: OLEeCoreEvaluator<F>,
 }
 
 impl<const N: usize, T: RandomOLEeEvaluate<F>, F: Field> OLEeEvaluator<N, T, F> {
-    /// Create a new [`OLEeEvaluator`].
+    /// Creates a new [`OLEeEvaluator`].
     pub fn new(role_evaluator: T) -> Self {
         // Check that the right N is used depending on the needed bit size of the field.
         let _: () = Check::<N, F>::IS_BITSIZE_CORRECT;

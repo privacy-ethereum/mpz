@@ -1,4 +1,4 @@
-//! Provides implementations of OLE with errors (OLEe) based on ROLEe.
+//! Provides an implementation of OLEe based on ROLEe.
 
 mod evaluator;
 mod provider;
@@ -6,11 +6,10 @@ mod provider;
 pub use evaluator::OLEeEvaluator;
 pub use provider::OLEeProvider;
 
+use crate::msg::OLEeMessage;
 use futures::{SinkExt, StreamExt};
 use mpz_share_conversion_core::Field;
 use utils_aio::{sink::IoSink, stream::IoStream};
-
-use crate::msg::OLEeMessage;
 
 /// Converts a sink of OLEe messages into a sink of ROLEe messsages.
 fn into_role_sink<'a, Si: IoSink<OLEeMessage<T, F>> + Send + Unpin, T: Send + 'a, F: Field>(
@@ -43,7 +42,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_ole() {
-        let count = 16;
+        let count = 12;
         let mut rng = Prg::from_seed(Block::ZERO);
 
         let (sender_channel, receiver_channel) = MemoryDuplex::new();

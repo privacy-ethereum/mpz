@@ -8,15 +8,15 @@ use serde::{Deserialize, Serialize};
 #[derive_err(Debug)]
 /// A message type for ROLEe protocols.
 pub enum ROLEeMessage<T, F: Field> {
-    /// Ciphertexts of the random OT protocol
+    /// Messages of the random OT protocol.
     RandomOTMessage(T),
-    /// Random field elements sent by the provider
+    /// Random field elements sent by the provider.
     ///
-    /// These are u_i and e_k
+    /// These are u_i and e_k.
     RandomProviderMsg(Vec<F>, Vec<F>),
-    /// Random field elements sent by the evaluator
+    /// Random field elements sent by the evaluator.
     ///
-    /// These are d_k
+    /// These are d_k.
     RandomEvaluatorMsg(Vec<F>),
 }
 
@@ -30,11 +30,11 @@ impl<T, F: Field> From<ROLEeMessageError<T, F>> for std::io::Error {
 #[derive_err(Debug)]
 /// A message type for OLEe protocols.
 pub enum OLEeMessage<T, F: Field> {
-    /// Messages of the underlying ROLEe protocol
+    /// Messages of the underlying ROLEe protocol.
     ROLEeMessage(T),
-    /// Field elements sent by the provider
+    /// Field elements sent by the provider.
     ProviderDerand(Vec<F>),
-    /// Field elements sent by the evaluator
+    /// Field elements sent by the evaluator.
     EvaluatorDerand(Vec<F>),
 }
 
