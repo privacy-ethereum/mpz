@@ -5,20 +5,17 @@ use async_trait::async_trait;
 use futures::{channel::mpsc, StreamExt};
 use mpz_core::ProtocolMessage;
 use mpz_share_conversion_core::Field;
-use rand::SeedableRng;
-use rand_chacha::ChaCha12Rng;
+use rand::thread_rng;
 use std::marker::PhantomData;
 use utils_aio::{sink::IoSink, stream::IoStream};
 
 /// Returns an ideal OLE pair
 pub fn ideal_ole_pair<F: Field>() -> (IdealOLEProvider<F>, IdealOLEEvaluator<F>) {
     let (sender, receiver) = mpsc::channel(10);
-    let rng = ChaCha12Rng::from_seed([1_u8; 32]);
 
     let provider = IdealOLEProvider {
         phantom: PhantomData,
         channel: sender,
-        rng,
     };
 
     let evaluator = IdealOLEEvaluator {
@@ -32,7 +29,6 @@ pub fn ideal_ole_pair<F: Field>() -> (IdealOLEProvider<F>, IdealOLEEvaluator<F>)
 /// An ideal OLEProvider for field elements
 pub struct IdealOLEProvider<F: Field> {
     phantom: PhantomData<F>,
-    rng: ChaCha12Rng,
     channel: mpsc::Sender<(Vec<F>, Vec<F>)>,
 }
 
@@ -61,7 +57,8 @@ impl<F: Field> OLEeProvide<F> for IdealOLEProvider<F> {
         _stream: &mut St,
         factors: Vec<F>,
     ) -> Result<Vec<F>, OLEError> {
-        let summands: Vec<F> = (0..factors.len()).map(|_| F::rand(&mut self.rng)).collect();
+        let mut rng = thread_rng();
+        let summands: Vec<F> = (0..factors.len()).map(|_| F::rand(&mut rng)).collect();
         self.channel
             .try_send((factors.clone(), summands.clone()))
             .expect("DummySender should be able to send");
@@ -102,15 +99,15 @@ impl<F: Field> OLEeEvaluate<F> for IdealOLEEvaluator<F> {
 mod tests {
     use crate::{ideal::ole::ideal_ole_pair, OLEeEvaluate, OLEeProvide};
     use futures::StreamExt;
+    use mpz_core::{prg::Prg, Block};
     use mpz_share_conversion_core::fields::{p256::P256, UniformRand};
     use rand::SeedableRng;
-    use rand_chacha::ChaCha12Rng;
     use utils_aio::duplex::MemoryDuplex;
 
     #[tokio::test]
     async fn test_ideal_ole() {
         let count = 16;
-        let mut rng = ChaCha12Rng::from_seed([0_u8; 32]);
+        let mut rng = Prg::from_seed(Block::ZERO);
 
         let inputs: Vec<P256> = (0..count).map(|_| P256::rand(&mut rng)).collect();
         let factors: Vec<P256> = (0..count).map(|_| P256::rand(&mut rng)).collect();

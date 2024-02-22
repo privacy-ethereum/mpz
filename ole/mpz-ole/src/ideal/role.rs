@@ -5,8 +5,7 @@ use async_trait::async_trait;
 use futures::{channel::mpsc, StreamExt};
 use mpz_core::ProtocolMessage;
 use mpz_share_conversion_core::Field;
-use rand::SeedableRng;
-use rand_chacha::ChaCha12Rng;
+use rand::thread_rng;
 use std::marker::PhantomData;
 use utils_aio::{sink::IoSink, stream::IoStream};
 
@@ -16,13 +15,11 @@ pub fn ideal_role_pair<F: Field>() -> (IdealROLEProvider<F>, IdealROLEEvaluator<
 
     let provider = IdealROLEProvider {
         phantom: PhantomData,
-        rng: ChaCha12Rng::from_seed([1_u8; 32]),
         channel: sender,
     };
 
     let evaluator = IdealROLEEvaluator {
         phantom: PhantomData,
-        rng: ChaCha12Rng::from_seed([2_u8; 32]),
         channel: receiver,
     };
 
@@ -32,7 +29,6 @@ pub fn ideal_role_pair<F: Field>() -> (IdealROLEProvider<F>, IdealROLEEvaluator<
 /// An ideal ROLEProvider for field elements
 pub struct IdealROLEProvider<F: Field> {
     phantom: PhantomData<F>,
-    rng: ChaCha12Rng,
     channel: mpsc::Sender<(Vec<F>, Vec<F>)>,
 }
 
@@ -43,7 +39,6 @@ impl<F: Field> ProtocolMessage for IdealROLEProvider<F> {
 /// An ideal ROLEEvaluator for field elements
 pub struct IdealROLEEvaluator<F: Field> {
     phantom: PhantomData<F>,
-    rng: ChaCha12Rng,
     channel: mpsc::Receiver<(Vec<F>, Vec<F>)>,
 }
 
@@ -62,8 +57,10 @@ impl<F: Field> RandomOLEeProvide<F> for IdealROLEProvider<F> {
         _stream: &mut St,
         count: usize,
     ) -> Result<(Vec<F>, Vec<F>), OLEError> {
-        let ak: Vec<F> = (0..count).map(|_| F::rand(&mut self.rng)).collect();
-        let xk: Vec<F> = (0..count).map(|_| F::rand(&mut self.rng)).collect();
+        let mut rng = thread_rng();
+
+        let ak: Vec<F> = (0..count).map(|_| F::rand(&mut rng)).collect();
+        let xk: Vec<F> = (0..count).map(|_| F::rand(&mut rng)).collect();
 
         self.channel
             .try_send((ak.clone(), xk.clone()))
@@ -84,7 +81,10 @@ impl<F: Field> RandomOLEeEvaluate<F> for IdealROLEEvaluator<F> {
         _stream: &mut St,
         count: usize,
     ) -> Result<(Vec<F>, Vec<F>), OLEError> {
-        let bk: Vec<F> = (0..count).map(|_| F::rand(&mut self.rng)).collect();
+        let bk: Vec<F> = {
+            let mut rng = thread_rng();
+            (0..count).map(|_| F::rand(&mut rng)).collect()
+        };
 
         let (ak, xk) = self
             .channel

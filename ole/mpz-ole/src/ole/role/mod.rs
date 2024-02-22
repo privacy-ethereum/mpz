@@ -36,15 +36,15 @@ mod tests {
     use super::{OLEeEvaluator, OLEeProvider};
     use crate::{ideal::role::ideal_role_pair, OLEeEvaluate, OLEeProvide};
     use futures::StreamExt;
+    use mpz_core::{prg::Prg, Block};
     use mpz_share_conversion_core::fields::{p256::P256, UniformRand};
     use rand::SeedableRng;
-    use rand_chacha::ChaCha12Rng;
     use utils_aio::duplex::MemoryDuplex;
 
     #[tokio::test]
     async fn test_ole() {
         let count = 16;
-        let mut rng = ChaCha12Rng::from_seed([0; 32]);
+        let mut rng = Prg::from_seed(Block::ZERO);
 
         let (sender_channel, receiver_channel) = MemoryDuplex::new();
 
