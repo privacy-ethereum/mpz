@@ -72,8 +72,7 @@ where
         let dk: Vec<F> = stream
             .expect_next()
             .await?
-            .try_into_random_evaluator_msg()
-            .map_err(|err| OLEError::WrongMessage(err.to_string()))?;
+            .try_into_random_evaluator_msg()?;
 
         let (ak, xk) = self.role_core.generate_output(&t0i, &ck, &dk, &ek)?;
 

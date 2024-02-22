@@ -63,11 +63,8 @@ where
             )
             .await?;
 
-        let (ui, ek): (Vec<F>, Vec<F>) = stream
-            .expect_next()
-            .await?
-            .try_into_random_provider_msg()
-            .map_err(|err| OLEError::WrongMessage(err.to_string()))?;
+        let (ui, ek): (Vec<F>, Vec<F>) =
+            stream.expect_next().await?.try_into_random_provider_msg()?;
 
         let dk: Vec<F> = self.role_core.sample_d(count);
 

@@ -63,11 +63,7 @@ where
 
         let vk: Vec<F> = self.ole_core.create_mask(&bk_dash, &inputs)?;
 
-        let uk: Vec<F> = stream
-            .expect_next()
-            .await?
-            .try_into_provider_derand()
-            .map_err(|err| OLEError::WrongMessage(err.to_string()))?;
+        let uk: Vec<F> = stream.expect_next().await?.try_into_provider_derand()?;
         sink.send(OLEeMessage::EvaluatorDerand(vk)).await?;
 
         let yk: Vec<F> = self.ole_core.generate_output(&inputs, &yk_dash, &uk)?;

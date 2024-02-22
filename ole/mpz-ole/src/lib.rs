@@ -1,8 +1,4 @@
-//! Implementations of different oblivious linear evaluation (OLE) protocols.
-//!
-//! An OLE allows a party to obliviously evaluate a linear function. Given party P_A with input x
-//! and party P_B with input a and b, party P_A takes the role of the evaluator and obliviously
-//! evaluates the function y = a * x + b, i.e. P_A learns y and nothing else and P_B learns nothing.
+//! This crate provides IO wrappers for implementations of different oblivious linear evaluation with errors (OLEe) flavors.
 
 #![deny(missing_docs, unreachable_pub, unused_must_use)]
 #![deny(unsafe_code)]
@@ -13,6 +9,8 @@ use mpz_core::ProtocolMessage;
 use mpz_ole_core::OLECoreError;
 use mpz_ot::OTError;
 use mpz_share_conversion_core::fields::Field;
+use msg::{OLEeMessageError, ROLEeMessageError};
+use std::{error::Error, fmt::Debug};
 use utils_aio::{sink::IoSink, stream::IoStream};
 
 pub mod ideal;
@@ -30,26 +28,39 @@ pub enum OLEError {
     Io(#[from] std::io::Error),
     #[error(transparent)]
     OLECoreError(#[from] OLECoreError),
-    #[error("{0}")]
-    WrongMessage(String),
+    #[error(transparent)]
+    Message(Box<dyn Error + Send + 'static>),
 }
 
-/// An OLE with errors (OLEe) evaluator.
+impl<T: Debug + Send + 'static, F: Field> From<OLEeMessageError<T, F>> for OLEError {
+    fn from(value: OLEeMessageError<T, F>) -> Self {
+        OLEError::Message(Box::new(value) as Box<dyn Error + Send + 'static>)
+    }
+}
+
+impl<T: Debug + Send + 'static, F: Field> From<ROLEeMessageError<T, F>> for OLEError {
+    fn from(value: ROLEeMessageError<T, F>) -> Self {
+        OLEError::Message(Box::new(value) as Box<dyn Error + Send + 'static>)
+    }
+}
+
+/// An OLE with errors evaluator.
 ///
-/// The evaluator provides inputs and obliviously evaluates the linear functions depending on the
-/// inputs of the [`OLEeProvide`]. The provider can introduce additive errors to the evaluation.
+/// The evaluator determines the function inputs and obliviously evaluates the linear functions
+/// which depend on the inputs of [`OLEeProvide`]. The evaluator can introduce additive errors to
+/// the evaluation.
 #[async_trait]
 pub trait OLEeEvaluate<F: Field>: ProtocolMessage {
     /// Evaluates linear functions at specific points obliviously.
     ///
-    /// The function being evaluated is outputs_i = inputs_i * provider-factors_i +
-    /// provider-summands_i.
+    /// The functions being evaluated are outputs_k = inputs_k * provider-factors_k +
+    /// provider-offsets_k. Returns the outputs of the functions.
     ///
     /// # Arguments
     ///
     /// * `sink` - The IO sink to the provider.
     /// * `stream` - The IO stream from the provider.
-    /// * `inputs` - The points where to evaluate the function.
+    /// * `inputs` - The points where to evaluate the functions.
     async fn evaluate<
         Si: IoSink<Self::Msg> + Send + Unpin,
         St: IoStream<Self::Msg> + Send + Unpin,
@@ -63,14 +74,14 @@ pub trait OLEeEvaluate<F: Field>: ProtocolMessage {
 
 /// An OLE with errors provider.
 ///
-/// The provider determines with his inputs which linear functions are to be evaluated by the
+/// The provider determines with his inputs which linear functions are to be evaluated by
 /// [`OLEeEvaluate`]. The provider can introduce additive errors to the evaluation.
 #[async_trait]
 pub trait OLEeProvide<F: Field>: ProtocolMessage {
-    /// Provides the functions which are to be evaluated obliviously.
+    /// Provides the linear functions which are to be evaluated obliviously.
     ///
-    /// The function being evaluated is evaluator-outputs_i = evaluator-inputs_i * factors_i +
-    /// summands_i. Returns the summands.
+    /// The functions being evaluated are evaluator-outputs_k = evaluator-inputs_k * factors_k +
+    /// offsets_k. Returns the offsets of the functions.
     ///
     /// # Arguments
     ///
@@ -85,21 +96,22 @@ pub trait OLEeProvide<F: Field>: ProtocolMessage {
     ) -> Result<Vec<F>, OLEError>;
 }
 
-/// A Random OLE with errors (ROLEe) evaluator.
+/// A random OLE with errors (ROLEe) evaluator.
 ///
-/// The evaluator obliviously evaluates random linear functions at random values. The provider
+/// The evaluator obliviously evaluates random linear functions at random values. The evaluator
 /// can introduce additive errors to the evaluation.
 #[async_trait]
 pub trait RandomOLEeEvaluate<F: Field>: ProtocolMessage {
     /// Evaluates random linear functions at random points obliviously.
     ///
-    /// The function being evaluated is outputs_i = random-inputs_i * random-factors_i +
-    /// random-summands_i. Returns (random-inputs, outputs).
+    /// The function being evaluated is outputs_k = random-inputs_k * random-factors_k +
+    /// random-offsets_k. Returns (random-inputs, outputs).
     ///
     /// # Arguments
     ///
     /// * `sink` - The IO sink to the provider.
     /// * `stream` - The IO stream from the provider.
+    /// * `count` - The number of functions to evaluate.
     async fn evaluate_random<
         Si: IoSink<Self::Msg> + Send + Unpin,
         St: IoStream<Self::Msg> + Send + Unpin,
@@ -111,20 +123,21 @@ pub trait RandomOLEeEvaluate<F: Field>: ProtocolMessage {
     ) -> Result<(Vec<F>, Vec<F>), OLEError>;
 }
 
-/// A Random OLE with errors (ROLEe) provider.
+/// A random OLE with errors (ROLEe) provider.
 ///
 /// The provider receives random linear functions. The provider can introduce additive errors to the evaluation.
 #[async_trait]
 pub trait RandomOLEeProvide<F: Field>: ProtocolMessage {
     /// Provides the random functions which are to be evaluated obliviously.
     ///
-    /// The function being evaluated is evaluator-outputs_i = random-inputs_i * random-factors_i +
-    /// random-summands_i. Returns (random-factors, random-summands).
+    /// The function being evaluated is evaluator-outputs_k = random-inputs_k * random-factors_k +
+    /// random-offsets_k. Returns (random-factors, random-offsets).
     ///
     /// # Arguments
     ///
     /// * `sink` - The IO sink to the evaluator.
     /// * `stream` - The IO stream from the evaluator.
+    /// * `count` - The number of functions to provide.
     async fn provide_random<
         Si: IoSink<Self::Msg> + Send + Unpin,
         St: IoStream<Self::Msg> + Send + Unpin,
