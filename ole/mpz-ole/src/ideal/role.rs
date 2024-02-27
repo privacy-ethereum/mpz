@@ -7,7 +7,6 @@ use mpz_core::ProtocolMessage;
 use mpz_share_conversion_core::Field;
 use rand::thread_rng;
 use std::marker::PhantomData;
-use utils_aio::{sink::IoSink, stream::IoStream};
 
 /// Returns an ideal ROLE pair.
 pub fn ideal_role_pair<F: Field>() -> (IdealROLEProvider<F>, IdealROLEEvaluator<F>) {
@@ -48,15 +47,7 @@ impl<F: Field> ProtocolMessage for IdealROLEEvaluator<F> {
 
 #[async_trait]
 impl<F: Field> RandomOLEeProvide<F> for IdealROLEProvider<F> {
-    async fn provide_random<
-        Si: IoSink<Self::Msg> + Send + Unpin,
-        St: IoStream<Self::Msg> + Send + Unpin,
-    >(
-        &mut self,
-        _sink: &mut Si,
-        _stream: &mut St,
-        count: usize,
-    ) -> Result<(Vec<F>, Vec<F>), OLEError> {
+    async fn provide_random(&mut self, count: usize) -> Result<(Vec<F>, Vec<F>), OLEError> {
         let mut rng = thread_rng();
 
         let ak: Vec<F> = (0..count).map(|_| F::rand(&mut rng)).collect();
@@ -72,15 +63,7 @@ impl<F: Field> RandomOLEeProvide<F> for IdealROLEProvider<F> {
 
 #[async_trait]
 impl<F: Field> RandomOLEeEvaluate<F> for IdealROLEEvaluator<F> {
-    async fn evaluate_random<
-        Si: IoSink<Self::Msg> + Send + Unpin,
-        St: IoStream<Self::Msg> + Send + Unpin,
-    >(
-        &mut self,
-        _sink: &mut Si,
-        _stream: &mut St,
-        count: usize,
-    ) -> Result<(Vec<F>, Vec<F>), OLEError> {
+    async fn evaluate_random(&mut self, count: usize) -> Result<(Vec<F>, Vec<F>), OLEError> {
         let bk: Vec<F> = {
             let mut rng = thread_rng();
             (0..count).map(|_| F::rand(&mut rng)).collect()
@@ -106,30 +89,17 @@ impl<F: Field> RandomOLEeEvaluate<F> for IdealROLEEvaluator<F> {
 #[cfg(test)]
 mod tests {
     use crate::{ideal::role::ideal_role_pair, RandomOLEeEvaluate, RandomOLEeProvide};
-    use futures::StreamExt;
     use mpz_share_conversion_core::fields::p256::P256;
-    use utils_aio::duplex::MemoryDuplex;
 
     #[tokio::test]
     async fn test_ideal_role() {
         let count = 12;
 
-        let (send_channel, recv_channel) = MemoryDuplex::<()>::new();
-
-        let (mut provider_sink, mut provider_stream) = send_channel.split();
-        let (mut evaluator_sink, mut evaluator_stream) = recv_channel.split();
-
         let (mut provider, mut evaluator) = ideal_role_pair::<P256>();
 
-        let (ak, xk) = provider
-            .provide_random(&mut provider_sink, &mut provider_stream, count)
-            .await
-            .unwrap();
+        let (ak, xk) = provider.provide_random(count).await.unwrap();
 
-        let (bk, yk) = evaluator
-            .evaluate_random(&mut evaluator_sink, &mut evaluator_stream, count)
-            .await
-            .unwrap();
+        let (bk, yk) = evaluator.evaluate_random(count).await.unwrap();
 
         ak.iter()
             .zip(bk)

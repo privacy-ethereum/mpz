@@ -10,7 +10,6 @@ pub use provider::OLEeProvider;
 mod tests {
     use super::{OLEeEvaluator, OLEeProvider};
     use crate::{ideal::role::ideal_role_pair, OLEeEvaluate, OLEeProvide};
-    use futures::StreamExt;
     use mpz_core::{prg::Prg, Block};
     use mpz_share_conversion_core::fields::{p256::P256, UniformRand};
     use rand::SeedableRng;
@@ -23,20 +22,18 @@ mod tests {
 
         let (sender_channel, receiver_channel) = MemoryDuplex::new();
 
-        let (mut provider_sink, mut provider_stream) = sender_channel.split();
-        let (mut evaluator_sink, mut evaluator_stream) = receiver_channel.split();
-
         let (role_provider, role_evaluator) = ideal_role_pair::<P256>();
 
-        let mut ole_provider = OLEeProvider::<32, _, P256>::new(role_provider);
-        let mut ole_evaluator = OLEeEvaluator::<32, _, P256>::new(role_evaluator);
+        let mut ole_provider = OLEeProvider::<32, _, P256, _>::new(sender_channel, role_provider);
+        let mut ole_evaluator =
+            OLEeEvaluator::<32, _, P256, _>::new(receiver_channel, role_evaluator);
 
         let ak: Vec<P256> = (0..count).map(|_| P256::rand(&mut rng)).collect();
         let bk: Vec<P256> = (0..count).map(|_| P256::rand(&mut rng)).collect();
 
         let (provider_res, evaluator_res) = tokio::join!(
-            ole_provider.provide(&mut provider_sink, &mut provider_stream, ak.clone()),
-            ole_evaluator.evaluate(&mut evaluator_sink, &mut evaluator_stream, bk.clone())
+            ole_provider.provide(ak.clone()),
+            ole_evaluator.evaluate(bk.clone())
         );
 
         let xk = provider_res.unwrap();

@@ -7,7 +7,6 @@ use mpz_core::ProtocolMessage;
 use mpz_share_conversion_core::Field;
 use rand::thread_rng;
 use std::marker::PhantomData;
-use utils_aio::{sink::IoSink, stream::IoStream};
 
 /// Returns an ideal OLE pair.
 pub fn ideal_ole_pair<F: Field>() -> (IdealOLEProvider<F>, IdealOLEEvaluator<F>) {
@@ -48,15 +47,7 @@ impl<F: Field> ProtocolMessage for IdealOLEEvaluator<F> {
 
 #[async_trait]
 impl<F: Field> OLEeProvide<F> for IdealOLEProvider<F> {
-    async fn provide<
-        Si: IoSink<Self::Msg> + Send + Unpin,
-        St: IoStream<Self::Msg> + Send + Unpin,
-    >(
-        &mut self,
-        _sink: &mut Si,
-        _stream: &mut St,
-        factors: Vec<F>,
-    ) -> Result<Vec<F>, OLEError> {
+    async fn provide(&mut self, factors: Vec<F>) -> Result<Vec<F>, OLEError> {
         let mut rng = thread_rng();
         let offsets: Vec<F> = (0..factors.len()).map(|_| F::rand(&mut rng)).collect();
 
@@ -70,15 +61,7 @@ impl<F: Field> OLEeProvide<F> for IdealOLEProvider<F> {
 
 #[async_trait]
 impl<F: Field> OLEeEvaluate<F> for IdealOLEEvaluator<F> {
-    async fn evaluate<
-        Si: IoSink<Self::Msg> + Send + Unpin,
-        St: IoStream<Self::Msg> + Send + Unpin,
-    >(
-        &mut self,
-        _sink: &mut Si,
-        _stream: &mut St,
-        input: Vec<F>,
-    ) -> Result<Vec<F>, OLEError> {
+    async fn evaluate(&mut self, input: Vec<F>) -> Result<Vec<F>, OLEError> {
         let (factors, offsets) = self
             .channel
             .next()
@@ -99,11 +82,9 @@ impl<F: Field> OLEeEvaluate<F> for IdealOLEEvaluator<F> {
 #[cfg(test)]
 mod tests {
     use crate::{ideal::ole::ideal_ole_pair, OLEeEvaluate, OLEeProvide};
-    use futures::StreamExt;
     use mpz_core::{prg::Prg, Block};
     use mpz_share_conversion_core::fields::{p256::P256, UniformRand};
     use rand::SeedableRng;
-    use utils_aio::duplex::MemoryDuplex;
 
     #[tokio::test]
     async fn test_ideal_ole() {
@@ -113,21 +94,10 @@ mod tests {
         let inputs: Vec<P256> = (0..count).map(|_| P256::rand(&mut rng)).collect();
         let factors: Vec<P256> = (0..count).map(|_| P256::rand(&mut rng)).collect();
 
-        let (send_channel, recv_channel) = MemoryDuplex::<()>::new();
-
-        let (mut provider_sink, mut provider_stream) = send_channel.split();
-        let (mut evaluator_sink, mut evaluator_stream) = recv_channel.split();
-
         let (mut provider, mut evaluator) = ideal_ole_pair::<P256>();
 
-        let offsets = provider
-            .provide(&mut provider_sink, &mut provider_stream, factors.clone())
-            .await
-            .unwrap();
-        let outputs = evaluator
-            .evaluate(&mut evaluator_sink, &mut evaluator_stream, inputs.clone())
-            .await
-            .unwrap();
+        let offsets = provider.provide(factors.clone()).await.unwrap();
+        let outputs = evaluator.evaluate(inputs.clone()).await.unwrap();
 
         inputs
             .iter()

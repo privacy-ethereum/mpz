@@ -3,24 +3,23 @@ use async_trait::async_trait;
 use futures::SinkExt;
 use mpz_ole_core::ole::role::OLEeEvaluator as OLEeCoreEvaluator;
 use mpz_share_conversion_core::Field;
-use utils_aio::{
-    sink::IoSink,
-    stream::{ExpectStreamExt, IoStream},
-};
+use utils_aio::{duplex::Duplex, stream::ExpectStreamExt};
 
 /// An evaluator for OLE with errors.
-pub struct OLEeEvaluator<const N: usize, T: RandomOLEeEvaluate<F>, F: Field> {
+pub struct OLEeEvaluator<const N: usize, T, F, IO> {
+    channel: IO,
     role_evaluator: T,
     ole_core: OLEeCoreEvaluator<F>,
 }
 
-impl<const N: usize, T: RandomOLEeEvaluate<F>, F: Field> OLEeEvaluator<N, T, F> {
+impl<const N: usize, T, F: Field, IO> OLEeEvaluator<N, T, F, IO> {
     /// Creates a new [`OLEeEvaluator`].
-    pub fn new(role_evaluator: T) -> Self {
+    pub fn new(channel: IO, role_evaluator: T) -> Self {
         // Check that the right N is used depending on the needed bit size of the field.
         let _: () = Check::<N, F>::IS_BITSIZE_CORRECT;
 
         Self {
+            channel,
             role_evaluator,
             ole_core: OLEeCoreEvaluator::default(),
         }
@@ -28,8 +27,9 @@ impl<const N: usize, T: RandomOLEeEvaluate<F>, F: Field> OLEeEvaluator<N, T, F> 
 }
 
 #[async_trait]
-impl<const N: usize, T, F: Field> OLEeEvaluate<F> for OLEeEvaluator<N, T, F>
+impl<const N: usize, T, F: Field, IO> OLEeEvaluate<F> for OLEeEvaluator<N, T, F, IO>
 where
+    IO: Duplex<OLEeMessage<F>>,
     T: RandomOLEeEvaluate<F> + Send,
 {
     async fn evaluate(&mut self, inputs: Vec<F>) -> Result<Vec<F>, OLEError> {
@@ -37,8 +37,12 @@ where
 
         let vk: Vec<F> = self.ole_core.create_mask(&bk_dash, &inputs)?;
 
-        let uk: Vec<F> = stream.expect_next().await?.try_into_provider_derand()?;
-        sink.send(OLEeMessage::EvaluatorDerand(vk)).await?;
+        let uk: Vec<F> = self
+            .channel
+            .expect_next()
+            .await?
+            .try_into_provider_derand()?;
+        self.channel.send(OLEeMessage::EvaluatorDerand(vk)).await?;
 
         let yk: Vec<F> = self.ole_core.generate_output(&inputs, &yk_dash, &uk)?;
 
