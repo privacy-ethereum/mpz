@@ -5,13 +5,11 @@
 #![deny(clippy::all)]
 
 use async_trait::async_trait;
-use mpz_core::ProtocolMessage;
 use mpz_ole_core::OLECoreError;
 use mpz_ot::OTError;
 use mpz_share_conversion_core::fields::Field;
 use msg::{OLEeMessageError, ROLEeMessageError};
 use std::{error::Error, fmt::Debug};
-use utils_aio::{sink::IoSink, stream::IoStream};
 
 pub mod ideal;
 pub mod msg;
@@ -32,14 +30,14 @@ pub enum OLEError {
     Message(Box<dyn Error + Send + 'static>),
 }
 
-impl<T: Debug + Send + 'static, F: Field> From<OLEeMessageError<T, F>> for OLEError {
-    fn from(value: OLEeMessageError<T, F>) -> Self {
+impl<F: Field> From<OLEeMessageError<F>> for OLEError {
+    fn from(value: OLEeMessageError<F>) -> Self {
         OLEError::Message(Box::new(value) as Box<dyn Error + Send + 'static>)
     }
 }
 
-impl<T: Debug + Send + 'static, F: Field> From<ROLEeMessageError<T, F>> for OLEError {
-    fn from(value: ROLEeMessageError<T, F>) -> Self {
+impl<F: Field> From<ROLEeMessageError<F>> for OLEError {
+    fn from(value: ROLEeMessageError<F>) -> Self {
         OLEError::Message(Box::new(value) as Box<dyn Error + Send + 'static>)
     }
 }
@@ -50,7 +48,7 @@ impl<T: Debug + Send + 'static, F: Field> From<ROLEeMessageError<T, F>> for OLEE
 /// which depend on the inputs of [`OLEeProvide`]. The evaluator can introduce additive errors to
 /// the evaluation.
 #[async_trait]
-pub trait OLEeEvaluate<F: Field>: ProtocolMessage {
+pub trait OLEeEvaluate<F: Field> {
     /// Evaluates linear functions at specific points obliviously.
     ///
     /// The functions being evaluated are outputs_k = inputs_k * provider-factors_k +
@@ -58,18 +56,8 @@ pub trait OLEeEvaluate<F: Field>: ProtocolMessage {
     ///
     /// # Arguments
     ///
-    /// * `sink` - The IO sink to the provider.
-    /// * `stream` - The IO stream from the provider.
     /// * `inputs` - The points where to evaluate the functions.
-    async fn evaluate<
-        Si: IoSink<Self::Msg> + Send + Unpin,
-        St: IoStream<Self::Msg> + Send + Unpin,
-    >(
-        &mut self,
-        sink: &mut Si,
-        stream: &mut St,
-        inputs: Vec<F>,
-    ) -> Result<Vec<F>, OLEError>;
+    async fn evaluate(&mut self, inputs: Vec<F>) -> Result<Vec<F>, OLEError>;
 }
 
 /// An OLE with errors provider.
@@ -77,7 +65,7 @@ pub trait OLEeEvaluate<F: Field>: ProtocolMessage {
 /// The provider determines with his inputs which linear functions are to be evaluated by
 /// [`OLEeEvaluate`]. The provider can introduce additive errors to the evaluation.
 #[async_trait]
-pub trait OLEeProvide<F: Field>: ProtocolMessage {
+pub trait OLEeProvide<F: Field> {
     /// Provides the linear functions which are to be evaluated obliviously.
     ///
     /// The functions being evaluated are evaluator-outputs_k = evaluator-inputs_k * factors_k +
@@ -85,15 +73,8 @@ pub trait OLEeProvide<F: Field>: ProtocolMessage {
     ///
     /// # Arguments
     ///
-    /// * `sink` - The IO sink to the evaluator.
-    /// * `stream` - The IO stream from the evaluator.
     /// * `factors` - Provides the slopes for the linear functions.
-    async fn provide<Si: IoSink<Self::Msg> + Send + Unpin, St: IoStream<Self::Msg> + Send + Unpin>(
-        &mut self,
-        sink: &mut Si,
-        stream: &mut St,
-        factors: Vec<F>,
-    ) -> Result<Vec<F>, OLEError>;
+    async fn provide(&mut self, factors: Vec<F>) -> Result<Vec<F>, OLEError>;
 }
 
 /// A random OLE with errors (ROLEe) evaluator.
@@ -101,7 +82,7 @@ pub trait OLEeProvide<F: Field>: ProtocolMessage {
 /// The evaluator obliviously evaluates random linear functions at random values. The evaluator
 /// can introduce additive errors to the evaluation.
 #[async_trait]
-pub trait RandomOLEeEvaluate<F: Field>: ProtocolMessage {
+pub trait RandomOLEeEvaluate<F: Field> {
     /// Evaluates random linear functions at random points obliviously.
     ///
     /// The function being evaluated is outputs_k = random-inputs_k * random-factors_k +
@@ -109,25 +90,15 @@ pub trait RandomOLEeEvaluate<F: Field>: ProtocolMessage {
     ///
     /// # Arguments
     ///
-    /// * `sink` - The IO sink to the provider.
-    /// * `stream` - The IO stream from the provider.
     /// * `count` - The number of functions to evaluate.
-    async fn evaluate_random<
-        Si: IoSink<Self::Msg> + Send + Unpin,
-        St: IoStream<Self::Msg> + Send + Unpin,
-    >(
-        &mut self,
-        sink: &mut Si,
-        stream: &mut St,
-        count: usize,
-    ) -> Result<(Vec<F>, Vec<F>), OLEError>;
+    async fn evaluate_random(&mut self, count: usize) -> Result<(Vec<F>, Vec<F>), OLEError>;
 }
 
 /// A random OLE with errors (ROLEe) provider.
 ///
 /// The provider receives random linear functions. The provider can introduce additive errors to the evaluation.
 #[async_trait]
-pub trait RandomOLEeProvide<F: Field>: ProtocolMessage {
+pub trait RandomOLEeProvide<F: Field> {
     /// Provides the random functions which are to be evaluated obliviously.
     ///
     /// The function being evaluated is evaluator-outputs_k = random-inputs_k * random-factors_k +
@@ -135,18 +106,8 @@ pub trait RandomOLEeProvide<F: Field>: ProtocolMessage {
     ///
     /// # Arguments
     ///
-    /// * `sink` - The IO sink to the evaluator.
-    /// * `stream` - The IO stream from the evaluator.
     /// * `count` - The number of functions to provide.
-    async fn provide_random<
-        Si: IoSink<Self::Msg> + Send + Unpin,
-        St: IoStream<Self::Msg> + Send + Unpin,
-    >(
-        &mut self,
-        sink: &mut Si,
-        stream: &mut St,
-        count: usize,
-    ) -> Result<(Vec<F>, Vec<F>), OLEError>;
+    async fn provide_random(&mut self, count: usize) -> Result<(Vec<F>, Vec<F>), OLEError>;
 }
 
 /// Workaround because of feature `generic_const_exprs` not available in stable.

@@ -7,9 +7,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, EnumTryAsInner, Serialize, Deserialize)]
 #[derive_err(Debug)]
 /// A message type for ROLEe protocols.
-pub enum ROLEeMessage<T, F: Field> {
-    /// Messages of the random OT protocol.
-    RandomOTMessage(T),
+pub enum ROLEeMessage<F: Field> {
     /// Random field elements sent by the provider.
     ///
     /// These are u_i and e_k.
@@ -20,8 +18,8 @@ pub enum ROLEeMessage<T, F: Field> {
     RandomEvaluatorMsg(Vec<F>),
 }
 
-impl<T, F: Field> From<ROLEeMessageError<T, F>> for std::io::Error {
-    fn from(err: ROLEeMessageError<T, F>) -> Self {
+impl<F: Field> From<ROLEeMessageError<F>> for std::io::Error {
+    fn from(err: ROLEeMessageError<F>) -> Self {
         std::io::Error::new(std::io::ErrorKind::InvalidData, err.to_string())
     }
 }
@@ -29,17 +27,15 @@ impl<T, F: Field> From<ROLEeMessageError<T, F>> for std::io::Error {
 #[derive(Debug, Clone, EnumTryAsInner, Serialize, Deserialize)]
 #[derive_err(Debug)]
 /// A message type for OLEe protocols.
-pub enum OLEeMessage<T, F: Field> {
-    /// Messages of the underlying ROLEe protocol.
-    ROLEeMessage(T),
+pub enum OLEeMessage<F: Field> {
     /// Field elements sent by the provider.
     ProviderDerand(Vec<F>),
     /// Field elements sent by the evaluator.
     EvaluatorDerand(Vec<F>),
 }
 
-impl<T, F: Field> From<OLEeMessageError<T, F>> for std::io::Error {
-    fn from(err: OLEeMessageError<T, F>) -> Self {
+impl<F: Field> From<OLEeMessageError<F>> for std::io::Error {
+    fn from(err: OLEeMessageError<F>) -> Self {
         std::io::Error::new(std::io::ErrorKind::InvalidData, err.to_string())
     }
 }

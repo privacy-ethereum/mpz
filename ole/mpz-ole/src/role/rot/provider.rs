@@ -1,8 +1,4 @@
-use crate::{
-    msg::ROLEeMessage,
-    role::rot::{into_rot_sink, into_rot_stream},
-    Check, OLEError, RandomOLEeProvide,
-};
+use crate::{msg::ROLEeMessage, Check, OLEError, RandomOLEeProvide};
 use async_trait::async_trait;
 use futures::SinkExt;
 use mpz_core::ProtocolMessage;
@@ -33,34 +29,16 @@ impl<const N: usize, T: RandomOTSender<[[u8; N]; 2]>, F: Field> ROLEeProvider<N,
     }
 }
 
-impl<const N: usize, T: RandomOTSender<[[u8; N]; 2]>, F: Field> ProtocolMessage
-    for ROLEeProvider<N, T, F>
-{
-    type Msg = ROLEeMessage<T::Msg, F>;
-}
-
 #[async_trait]
 impl<const N: usize, T, F: Field> RandomOLEeProvide<F> for ROLEeProvider<N, T, F>
 where
-    T: RandomOTSender<[[u8; N]; 2]> + Send + ProtocolMessage,
+    T: RandomOTSender<[[u8; N]; 2]> + Send,
     Self: Send,
 {
-    async fn provide_random<
-        Si: IoSink<Self::Msg> + Send + Unpin,
-        St: IoStream<Self::Msg> + Send + Unpin,
-    >(
-        &mut self,
-        sink: &mut Si,
-        stream: &mut St,
-        count: usize,
-    ) -> Result<(Vec<F>, Vec<F>), OLEError> {
+    async fn provide_random(&mut self, count: usize) -> Result<(Vec<F>, Vec<F>), OLEError> {
         let ti01 = self
             .rot_sender
-            .send_random(
-                &mut into_rot_sink(sink),
-                &mut into_rot_stream(stream),
-                count * F::BIT_SIZE as usize,
-            )
+            .send_random(count * F::BIT_SIZE as usize)
             .await?;
 
         let (ck, ek) = self.role_core.sample_c_and_e(count);

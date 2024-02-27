@@ -1,11 +1,6 @@
-use crate::{
-    msg::ROLEeMessage,
-    role::rot::{into_rot_sink, into_rot_stream},
-    Check, OLEError, RandomOLEeEvaluate,
-};
+use crate::{msg::ROLEeMessage, Check, OLEError, RandomOLEeEvaluate};
 use async_trait::async_trait;
 use futures::SinkExt;
-use mpz_core::ProtocolMessage;
 use mpz_ole_core::role::ot::ROLEeEvaluator as ROLEeCoreEvaluator;
 use mpz_ot::RandomOTReceiver;
 use mpz_share_conversion_core::Field;
@@ -33,34 +28,16 @@ impl<const N: usize, T: RandomOTReceiver<bool, [u8; N]>, F: Field> ROLEeEvaluato
     }
 }
 
-impl<const N: usize, T: RandomOTReceiver<bool, [u8; N]>, F: Field> ProtocolMessage
-    for ROLEeEvaluator<N, T, F>
-{
-    type Msg = ROLEeMessage<T::Msg, F>;
-}
-
 #[async_trait]
 impl<const N: usize, T, F: Field> RandomOLEeEvaluate<F> for ROLEeEvaluator<N, T, F>
 where
     T: RandomOTReceiver<bool, [u8; N]> + Send,
     Self: Send,
 {
-    async fn evaluate_random<
-        Si: IoSink<Self::Msg> + Send + Unpin,
-        St: IoStream<Self::Msg> + Send + Unpin,
-    >(
-        &mut self,
-        sink: &mut Si,
-        stream: &mut St,
-        count: usize,
-    ) -> Result<(Vec<F>, Vec<F>), OLEError> {
+    async fn evaluate_random(&mut self, count: usize) -> Result<(Vec<F>, Vec<F>), OLEError> {
         let (fi, tfi): (Vec<bool>, Vec<[u8; N]>) = self
             .rot_receiver
-            .receive_random(
-                &mut into_rot_sink(sink),
-                &mut into_rot_stream(stream),
-                count * F::BIT_SIZE as usize,
-            )
+            .receive_random(count * F::BIT_SIZE as usize)
             .await?;
 
         let (ui, ek): (Vec<F>, Vec<F>) =

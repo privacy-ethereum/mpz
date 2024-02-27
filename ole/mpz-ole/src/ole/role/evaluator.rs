@@ -1,11 +1,6 @@
-use crate::{
-    msg::OLEeMessage,
-    ole::role::{into_role_sink, into_role_stream},
-    Check, OLEError, OLEeEvaluate, RandomOLEeEvaluate,
-};
+use crate::{msg::OLEeMessage, Check, OLEError, OLEeEvaluate, RandomOLEeEvaluate};
 use async_trait::async_trait;
 use futures::SinkExt;
-use mpz_core::ProtocolMessage;
 use mpz_ole_core::ole::role::OLEeEvaluator as OLEeCoreEvaluator;
 use mpz_share_conversion_core::Field;
 use utils_aio::{
@@ -32,34 +27,13 @@ impl<const N: usize, T: RandomOLEeEvaluate<F>, F: Field> OLEeEvaluator<N, T, F> 
     }
 }
 
-impl<const N: usize, T: RandomOLEeEvaluate<F>, F: Field> ProtocolMessage
-    for OLEeEvaluator<N, T, F>
-{
-    type Msg = OLEeMessage<T::Msg, F>;
-}
-
 #[async_trait]
 impl<const N: usize, T, F: Field> OLEeEvaluate<F> for OLEeEvaluator<N, T, F>
 where
     T: RandomOLEeEvaluate<F> + Send,
 {
-    async fn evaluate<
-        Si: IoSink<Self::Msg> + Send + Unpin,
-        St: IoStream<Self::Msg> + Send + Unpin,
-    >(
-        &mut self,
-        sink: &mut Si,
-        stream: &mut St,
-        inputs: Vec<F>,
-    ) -> Result<Vec<F>, OLEError> {
-        let (bk_dash, yk_dash) = self
-            .role_evaluator
-            .evaluate_random(
-                &mut into_role_sink(sink),
-                &mut into_role_stream(stream),
-                inputs.len(),
-            )
-            .await?;
+    async fn evaluate(&mut self, inputs: Vec<F>) -> Result<Vec<F>, OLEError> {
+        let (bk_dash, yk_dash) = self.role_evaluator.evaluate_random(inputs.len()).await?;
 
         let vk: Vec<F> = self.ole_core.create_mask(&bk_dash, &inputs)?;
 
