@@ -1,10 +1,8 @@
+use mpz_core::{commit::HashCommit, Block};
+
 use crate::{
-    cointoss::{
-        msgs::{ReceiverPayload, SenderCommitment, SenderPayload},
-        CointossError,
-    },
-    commit::HashCommit,
-    Block,
+    msgs::{ReceiverPayload, SenderCommitment, SenderPayload},
+    CointossError,
 };
 
 /// A coin-toss sender.
@@ -40,11 +38,12 @@ impl Sender {
 }
 
 impl Sender<sender_state::Committed> {
-    /// Finalizes the coin-toss, returning the random seeds and the sender's payload.
-    pub fn finalize(
+    /// Receives the receiver's payload and computes the output of the
+    /// coin-toss.
+    pub fn receive(
         self,
         payload: ReceiverPayload,
-    ) -> Result<(Vec<Block>, SenderPayload), CointossError> {
+    ) -> Result<(Vec<Block>, Sender<sender_state::Received>), CointossError> {
         let receiver_seeds = payload.seeds;
         let sender_seeds = self.state.seeds;
 
@@ -63,16 +62,27 @@ impl Sender<sender_state::Committed> {
 
         Ok((
             seeds,
-            SenderPayload {
-                decommitment: self.state.decommitment,
+            Sender {
+                state: sender_state::Received {
+                    decommitment: self.state.decommitment,
+                },
             },
         ))
     }
 }
 
+impl Sender<sender_state::Received> {
+    /// Finalizes the coin-toss, decommitting the sender's seeds.
+    pub fn finalize(self) -> SenderPayload {
+        SenderPayload {
+            decommitment: self.state.decommitment,
+        }
+    }
+}
+
 /// Coin-toss sender state.
 pub mod sender_state {
-    use crate::commit::Decommitment;
+    use mpz_core::commit::Decommitment;
 
     use super::*;
 
@@ -83,6 +93,7 @@ pub mod sender_state {
 
         impl Sealed for Initialized {}
         impl Sealed for Committed {}
+        impl Sealed for Received {}
     }
 
     /// The sender's state.
@@ -106,4 +117,14 @@ pub mod sender_state {
     impl State for Committed {}
 
     opaque_debug::implement!(Committed);
+
+    /// The sender's state after they've received the payload from the
+    /// receiver.
+    pub struct Received {
+        pub(super) decommitment: Decommitment<Vec<Block>>,
+    }
+
+    impl State for Received {}
+
+    opaque_debug::implement!(Received);
 }

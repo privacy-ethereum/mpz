@@ -10,6 +10,8 @@ members = [
     "matrix-transpose",
     "clmul",
     "mpz-common",
+    "mpz-cointoss",
+    "mpz-cointoss-core",
 ]
 resolver = "2"
 
@@ -23,6 +25,8 @@ resolver = "2"
 mpz-core = { path = "mpz-core" }
 mpz-common = { path = "mpz-common" }
 mpz-circuits = { path = "mpz-circuits" }
+mpz-cointoss-core = { path = "mpz-cointoss-core" }
+mpz-cointoss = { path = "mpz-cointoss" }
 mpz-ot-core = { path = "ot/mpz-ot-core" }
 mpz-ot = { path = "ot/mpz-ot" }
 mpz-garble-core = { path = "garble/mpz-garble-core" }

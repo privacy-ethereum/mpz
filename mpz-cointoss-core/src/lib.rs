@@ -4,8 +4,7 @@
 //!
 //! ```
 //! use rand::{thread_rng, Rng};
-//! use mpz_core::cointoss::{Sender, Receiver};
-//! # use mpz_core::cointoss::CointossError;
+//! use mpz_cointoss_core::{Sender, Receiver, CointossError};
 //! use mpz_core::Block;
 //!
 //! # fn main() -> Result<(), CointossError> {
@@ -17,13 +16,23 @@
 //!
 //! let (sender, commitment) = sender.send();
 //! let (receiver, receiver_payload) = receiver.reveal(commitment)?;
-//! let (sender_output, sender_payload) = sender.finalize(receiver_payload)?;
+//! let (sender_output, sender) = sender.receive(receiver_payload)?;
+//! let sender_payload = sender.finalize();
 //! let receiver_output = receiver.finalize(sender_payload)?;
 //!
 //! assert_eq!(sender_output, receiver_output);
 //! # Ok(())
 //! # }
 //! ```
+
+#![deny(
+    unsafe_code,
+    missing_docs,
+    unused_imports,
+    unused_must_use,
+    unreachable_pub,
+    clippy::all
+)]
 
 pub mod msgs;
 mod receiver;
@@ -36,8 +45,8 @@ pub use sender::{sender_state, Sender};
 #[derive(Debug, thiserror::Error)]
 #[allow(missing_docs)]
 pub enum CointossError {
-    #[error(transparent)]
-    CommitmentError(#[from] crate::commit::CommitmentError),
+    #[error("commitment error")]
+    CommitmentError(#[from] mpz_core::commit::CommitmentError),
     #[error("count mismatch, expected {expected}, got {actual}")]
     CountMismatch { expected: usize, actual: usize },
 }

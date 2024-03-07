@@ -1,10 +1,8 @@
+use mpz_core::{hash::Hash, Block};
+
 use crate::{
-    cointoss::{
-        msgs::{ReceiverPayload, SenderCommitment, SenderPayload},
-        CointossError,
-    },
-    hash::Hash,
-    Block,
+    msgs::{ReceiverPayload, SenderCommitment, SenderPayload},
+    CointossError,
 };
 
 /// A coin-toss receiver.

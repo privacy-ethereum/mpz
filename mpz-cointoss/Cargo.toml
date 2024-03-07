@@ -1,0 +1,18 @@
+[package]
+name = "mpz-cointoss"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+mpz-core.workspace = true
+mpz-common.workspace = true
+mpz-cointoss-core.workspace = true
+
+futures.workspace = true
+serio.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+mpz-common = { workspace = true, features = ["test-utils"] }
+
+rand.workspace = true

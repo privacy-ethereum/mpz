@@ -1,0 +1,14 @@
+[package]
+name = "mpz-cointoss-core"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+mpz-core.workspace = true
+
+serde.workspace = true
+thiserror.workspace = true
+opaque-debug.workspace = true
+
+[dev-dependencies]
+rand.workspace = true

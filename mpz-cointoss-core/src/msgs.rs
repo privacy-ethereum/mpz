@@ -2,16 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::{commit::Decommitment, hash::Hash, Block};
-
-/// A coin-toss message.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[allow(missing_docs)]
-pub enum Message {
-    SenderCommitments(SenderCommitment),
-    SenderPayload(SenderPayload),
-    ReceiverPayload(ReceiverPayload),
-}
+use mpz_core::{commit::Decommitment, hash::Hash, Block};
 
 /// The coin-toss sender's commitment.
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -4,7 +4,6 @@
 
 pub mod aes;
 pub mod block;
-pub mod cointoss;
 pub mod commit;
 pub mod ggm_tree;
 pub mod hash;
