@@ -71,6 +71,8 @@ impl CryptoRng for PrgCore {}
 #[derive(Clone)]
 pub struct Prg(BlockRng<PrgCore>);
 
+opaque_debug::implement!(Prg);
+
 impl RngCore for Prg {
     #[inline(always)]
     fn next_u32(&mut self) -> u32 {
