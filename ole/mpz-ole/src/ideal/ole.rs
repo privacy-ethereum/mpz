@@ -3,6 +3,7 @@
 use crate::{OLEError, OLEeEvaluate, OLEeProvide};
 use async_trait::async_trait;
 use futures::{channel::mpsc, StreamExt};
+use mpz_common::Context;
 use mpz_core::ProtocolMessage;
 use mpz_fields::Field;
 use rand::thread_rng;
@@ -46,8 +47,8 @@ impl<F: Field> ProtocolMessage for IdealOLEEvaluator<F> {
 }
 
 #[async_trait]
-impl<F: Field> OLEeProvide<F> for IdealOLEProvider<F> {
-    async fn provide(&mut self, factors: Vec<F>) -> Result<Vec<F>, OLEError> {
+impl<F: Field, C: Context> OLEeProvide<C, F> for IdealOLEProvider<F> {
+    async fn provide(&mut self, _ctx: &mut C, factors: Vec<F>) -> Result<Vec<F>, OLEError> {
         let mut rng = thread_rng();
         let offsets: Vec<F> = (0..factors.len()).map(|_| F::rand(&mut rng)).collect();
 
@@ -60,8 +61,8 @@ impl<F: Field> OLEeProvide<F> for IdealOLEProvider<F> {
 }
 
 #[async_trait]
-impl<F: Field> OLEeEvaluate<F> for IdealOLEEvaluator<F> {
-    async fn evaluate(&mut self, input: Vec<F>) -> Result<Vec<F>, OLEError> {
+impl<F: Field, C: Context> OLEeEvaluate<C, F> for IdealOLEEvaluator<F> {
+    async fn evaluate(&mut self, _ctx: &mut C, input: Vec<F>) -> Result<Vec<F>, OLEError> {
         let (factors, offsets) = self
             .channel
             .next()
@@ -82,6 +83,7 @@ impl<F: Field> OLEeEvaluate<F> for IdealOLEEvaluator<F> {
 #[cfg(test)]
 mod tests {
     use crate::{ideal::ole::ideal_ole_pair, OLEeEvaluate, OLEeProvide};
+    use mpz_common::executor::test_st_executor;
     use mpz_core::{prg::Prg, Block};
     use mpz_fields::{p256::P256, UniformRand};
     use rand::SeedableRng;
@@ -96,8 +98,16 @@ mod tests {
 
         let (mut provider, mut evaluator) = ideal_ole_pair::<P256>();
 
-        let offsets = provider.provide(factors.clone()).await.unwrap();
-        let outputs = evaluator.evaluate(inputs.clone()).await.unwrap();
+        let (mut ctx_provider, mut ctx_evaluator) = test_st_executor(10);
+
+        let offsets = provider
+            .provide(&mut ctx_provider, factors.clone())
+            .await
+            .unwrap();
+        let outputs = evaluator
+            .evaluate(&mut ctx_evaluator, inputs.clone())
+            .await
+            .unwrap();
 
         inputs
             .iter()

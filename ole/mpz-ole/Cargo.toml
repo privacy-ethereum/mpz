@@ -13,9 +13,10 @@ mpz-fields.workspace = true
 mpz-ot.workspace = true
 mpz-core.workspace = true
 mpz-ole-core.workspace = true
-mpz-common.workspace = true
+mpz-common = { workspace = true, features = ["test-utils"] }
 
 tlsn-utils-aio.workspace = true
+serio.workspace = true
 
 thiserror.workspace = true
 async-trait.workspace = true

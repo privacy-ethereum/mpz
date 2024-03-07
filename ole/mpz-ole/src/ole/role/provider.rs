@@ -1,25 +1,24 @@
 use crate::{msg::OLEeMessage, Check, OLEError, OLEeProvide, RandomOLEeProvide};
 use async_trait::async_trait;
-use futures::SinkExt;
+use mpz_common::Context;
 use mpz_fields::Field;
 use mpz_ole_core::ole::role::OLEeProvider as OLEeCoreProvider;
-use utils_aio::{duplex::Duplex, stream::ExpectStreamExt};
+use serde::{de::DeserializeOwned, Serialize};
+use serio::{stream::IoStreamExt, SinkExt};
 
 /// A provider for OLE with errors.
-pub struct OLEeProvider<const N: usize, T, F, IO> {
-    channel: IO,
+pub struct OLEeProvider<const N: usize, T, F> {
     role_provider: T,
     ole_core: OLEeCoreProvider<F>,
 }
 
-impl<const N: usize, T, F: Field, IO> OLEeProvider<N, T, F, IO> {
+impl<const N: usize, T, F: Field> OLEeProvider<N, T, F> {
     /// Creates a new [`OLEeProvider`].
-    pub fn new(channel: IO, role_provider: T) -> Self {
+    pub fn new(role_provider: T) -> Self {
         // Check that the right N is used depending on the needed bit size of the field.
         let _: () = Check::<N, F>::IS_BITSIZE_CORRECT;
 
         Self {
-            channel,
             role_provider,
             ole_core: OLEeCoreProvider::default(),
         }
@@ -27,21 +26,25 @@ impl<const N: usize, T, F: Field, IO> OLEeProvider<N, T, F, IO> {
 }
 
 #[async_trait]
-impl<const N: usize, T, F: Field, IO> OLEeProvide<F> for OLEeProvider<N, T, F, IO>
+impl<const N: usize, T, F: Field + Serialize + DeserializeOwned, C: Context> OLEeProvide<C, F>
+    for OLEeProvider<N, T, F>
 where
-    T: RandomOLEeProvide<F> + Send,
-    IO: Duplex<OLEeMessage<F>>,
+    T: RandomOLEeProvide<C, F> + Send,
     Self: Send,
 {
-    async fn provide(&mut self, factors: Vec<F>) -> Result<Vec<F>, OLEError> {
-        let (ak_dash, xk_dash) = self.role_provider.provide_random(factors.len()).await?;
+    async fn provide(&mut self, ctx: &mut C, factors: Vec<F>) -> Result<Vec<F>, OLEError> {
+        let (ak_dash, xk_dash) = self
+            .role_provider
+            .provide_random(ctx, factors.len())
+            .await?;
 
         let uk: Vec<F> = self.ole_core.create_mask(&ak_dash, &factors)?;
 
-        self.channel.send(OLEeMessage::ProviderDerand(uk)).await?;
-        let vk: Vec<F> = self
-            .channel
-            .expect_next()
+        let channel = ctx.io_mut();
+
+        channel.send(OLEeMessage::ProviderDerand(uk)).await?;
+        let vk: Vec<F> = channel
+            .expect_next::<OLEeMessage<F>>()
             .await?
             .try_into_evaluator_derand()?;
 

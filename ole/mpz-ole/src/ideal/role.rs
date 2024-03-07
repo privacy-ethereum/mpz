@@ -3,6 +3,7 @@
 use crate::{OLEError, RandomOLEeEvaluate, RandomOLEeProvide};
 use async_trait::async_trait;
 use futures::{channel::mpsc, StreamExt};
+use mpz_common::Context;
 use mpz_core::ProtocolMessage;
 use mpz_fields::Field;
 use rand::thread_rng;
@@ -46,8 +47,12 @@ impl<F: Field> ProtocolMessage for IdealROLEEvaluator<F> {
 }
 
 #[async_trait]
-impl<F: Field> RandomOLEeProvide<F> for IdealROLEProvider<F> {
-    async fn provide_random(&mut self, count: usize) -> Result<(Vec<F>, Vec<F>), OLEError> {
+impl<F: Field, C: Context> RandomOLEeProvide<C, F> for IdealROLEProvider<F> {
+    async fn provide_random(
+        &mut self,
+        _ctx: &mut C,
+        count: usize,
+    ) -> Result<(Vec<F>, Vec<F>), OLEError> {
         let mut rng = thread_rng();
 
         let ak: Vec<F> = (0..count).map(|_| F::rand(&mut rng)).collect();
@@ -62,8 +67,12 @@ impl<F: Field> RandomOLEeProvide<F> for IdealROLEProvider<F> {
 }
 
 #[async_trait]
-impl<F: Field> RandomOLEeEvaluate<F> for IdealROLEEvaluator<F> {
-    async fn evaluate_random(&mut self, count: usize) -> Result<(Vec<F>, Vec<F>), OLEError> {
+impl<F: Field, C: Context> RandomOLEeEvaluate<C, F> for IdealROLEEvaluator<F> {
+    async fn evaluate_random(
+        &mut self,
+        _ctx: &mut C,
+        count: usize,
+    ) -> Result<(Vec<F>, Vec<F>), OLEError> {
         let bk: Vec<F> = {
             let mut rng = thread_rng();
             (0..count).map(|_| F::rand(&mut rng)).collect()
@@ -89,6 +98,7 @@ impl<F: Field> RandomOLEeEvaluate<F> for IdealROLEEvaluator<F> {
 #[cfg(test)]
 mod tests {
     use crate::{ideal::role::ideal_role_pair, RandomOLEeEvaluate, RandomOLEeProvide};
+    use mpz_common::executor::test_st_executor;
     use mpz_fields::p256::P256;
 
     #[tokio::test]
@@ -97,9 +107,17 @@ mod tests {
 
         let (mut provider, mut evaluator) = ideal_role_pair::<P256>();
 
-        let (ak, xk) = provider.provide_random(count).await.unwrap();
+        let (mut ctx_provider, mut ctx_evaluator) = test_st_executor(10);
 
-        let (bk, yk) = evaluator.evaluate_random(count).await.unwrap();
+        let (ak, xk) = provider
+            .provide_random(&mut ctx_provider, count)
+            .await
+            .unwrap();
+
+        let (bk, yk) = evaluator
+            .evaluate_random(&mut ctx_evaluator, count)
+            .await
+            .unwrap();
 
         ak.iter()
             .zip(bk)
