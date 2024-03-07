@@ -14,26 +14,16 @@ This project is currently under active development and should not be used in pro
 
 ## Crates
 
-**Core**
-  - `mpz-core` - Assortment of low-level primitives.
-  - `matrix-transpose` - Bit-wise matrix transposition.
-  - `clmul` - Carry-less multiplication
-
-**Circuits**
-  - `mpz-circuits` - Boolean circuit DSL
-  - `mpz-circuits-macros` - Proc-macros for `mpz-circuits`
-
-**Oblivious Transfer**
-  - `mpz-ot` - High-level async APIs
-  - `mpz-ot-core` - Low-level types for OT, and core implementations of OT protocols.
-  
-**Garbled Circuits**
-  - `mpz-garble` - High-level APIs for boolean garbled circuit protocols, including VM abstractions.
-  - `mpz-garble-core` - Low-level types for boolean half-gate garbling algorithm.
-
-**Share Conversion**
-  - `mpz-share-conversion` - High-level APIs for Multiplicative-to-Additive and Additive-to-Multiplicative share conversion protocols for a variety of fields.
-  - `mpz-share-conversion-core` - Low-level types for share conversion protocols.
+  - [`mpz-core`](./crates/mpz-core/) - Core cryptographic primitives.
+  - [`mpz-common`](./crates/mpz-common) - Common functionalities needed for modeling protocol execution, I/O, and multi-threading.
+  - [`mpz-fields`](./crates/mpz-fields/) - Finite-fields.
+  - [`mpz-circuits`](./crates/mpz-circuits/) ([`macros`](./crates/mpz-circuits-macros/)) - Boolean circuit DSL.
+  - [`mpz-ot`](./crates/mpz-ot) ([`core`](./crates/mpz-ot-core/)) - Oblivious transfer protocols.
+  - [`mpz-garble`](./crates/mpz-garble/) ([`core`](./crates/mpz-garble-core/)) - Boolean garbled circuit protocols.
+  - [`mpz-share-conversion`](./crates/mpz-share-conversion/) ([`core`](./crates/mpz-share-conversion-core/)) - Multiplicative-to-Additive and Additive-to-Multiplicative share conversion protocols for a variety of fields.
+  - [`mpz-cointoss`](./crates/mpz-cointoss/) ([`core`](./crates/mpz-cointoss-core/)) - 2-party cointoss protocol.
+  - [`matrix-transpose`](./crates/matrix-transpose/) - Bit-wise matrix transposition.
+  - [`clmul`](./crates/clmul/) - Carry-less multiplication.
 
 ## License
 All crates in this repository are licensed under either of

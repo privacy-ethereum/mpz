@@ -1,17 +1,20 @@
 [workspace]
 members = [
     "mpz-core",
-    "garble/*",
-    "ot/*",
+    "mpz-common",
+    "mpz-fields",
     "mpz-circuits",
     "mpz-circuits-macros",
-    "mpz-fields",
-    "share-conversion/*",
-    "matrix-transpose",
-    "clmul",
-    "mpz-common",
     "mpz-cointoss",
     "mpz-cointoss-core",
+    "mpz-ot",
+    "mpz-ot-core",
+    "mpz-garble",
+    "mpz-garble-core",
+    "mpz-share-conversion",
+    "mpz-share-conversion-core",
+    "matrix-transpose",
+    "clmul",
 ]
 resolver = "2"
 
@@ -24,16 +27,17 @@ resolver = "2"
 [workspace.dependencies]
 mpz-core = { path = "mpz-core" }
 mpz-common = { path = "mpz-common" }
-mpz-circuits = { path = "mpz-circuits" }
-mpz-cointoss-core = { path = "mpz-cointoss-core" }
-mpz-cointoss = { path = "mpz-cointoss" }
-mpz-ot-core = { path = "ot/mpz-ot-core" }
-mpz-ot = { path = "ot/mpz-ot" }
-mpz-garble-core = { path = "garble/mpz-garble-core" }
-mpz-garble = { path = "garble/mpz-garble" }
-mpz-share-conversion-core = { path = "share-conversion/mpz-share-conversion-core" }
-mpz-share-conversion = { path = "share-conversion/mpz-share-conversion" }
 mpz-fields = { path = "mpz-fields" }
+mpz-circuits = { path = "mpz-circuits" }
+mpz-circuits-macros = { path = "mpz-circuits-macros" }
+mpz-cointoss = { path = "mpz-cointoss" }
+mpz-cointoss-core = { path = "mpz-cointoss-core" }
+mpz-ot = { path = "mpz-ot" }
+mpz-ot-core = { path = "mpz-ot-core" }
+mpz-garble = { path = "mpz-garble" }
+mpz-garble-core = { path = "mpz-garble-core" }
+mpz-share-conversion = { path = "mpz-share-conversion" }
+mpz-share-conversion-core = { path = "mpz-share-conversion-core" }
 clmul = { path = "clmul" }
 matrix-transpose = { path = "matrix-transpose" }
 
