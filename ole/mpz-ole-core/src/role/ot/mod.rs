@@ -8,7 +8,7 @@ mod provider;
 pub use evaluator::ROLEeEvaluator;
 pub use provider::ROLEeProvider;
 
-use mpz_share_conversion_core::Field;
+use mpz_fields::Field;
 
 /// Workaround because of feature `generic_const_exprs` not available in stable.
 ///
@@ -26,8 +26,8 @@ impl<const N: usize, F: Field> Check<N, F> {
 #[cfg(test)]
 mod tests {
     use mpz_core::{prg::Prg, Block};
+    use mpz_fields::{p256::P256, Field};
     use mpz_ot_core::ideal::ideal_rot::IdealROT;
-    use mpz_share_conversion_core::{fields::p256::P256, Field};
     use rand::{RngCore, SeedableRng};
 
     use super::{ROLEeEvaluator, ROLEeProvider};

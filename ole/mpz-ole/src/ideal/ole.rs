@@ -4,7 +4,7 @@ use crate::{OLEError, OLEeEvaluate, OLEeProvide};
 use async_trait::async_trait;
 use futures::{channel::mpsc, StreamExt};
 use mpz_core::ProtocolMessage;
-use mpz_share_conversion_core::Field;
+use mpz_fields::Field;
 use rand::thread_rng;
 use std::marker::PhantomData;
 
@@ -83,7 +83,7 @@ impl<F: Field> OLEeEvaluate<F> for IdealOLEEvaluator<F> {
 mod tests {
     use crate::{ideal::ole::ideal_ole_pair, OLEeEvaluate, OLEeProvide};
     use mpz_core::{prg::Prg, Block};
-    use mpz_share_conversion_core::fields::{p256::P256, UniformRand};
+    use mpz_fields::{p256::P256, UniformRand};
     use rand::SeedableRng;
 
     #[tokio::test]

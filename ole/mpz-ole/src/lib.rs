@@ -5,9 +5,9 @@
 #![deny(clippy::all)]
 
 use async_trait::async_trait;
+use mpz_fields::Field;
 use mpz_ole_core::OLECoreError;
 use mpz_ot::OTError;
-use mpz_share_conversion_core::fields::Field;
 use msg::{OLEeMessageError, ROLEeMessageError};
 use std::{error::Error, fmt::Debug};
 

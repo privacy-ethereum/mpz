@@ -10,8 +10,8 @@ pub use provider::ROLEeProvider;
 mod tests {
     use super::{ROLEeEvaluator, ROLEeProvider};
     use crate::{RandomOLEeEvaluate, RandomOLEeProvide};
+    use mpz_fileds::p256::P256;
     use mpz_ot::ideal::ideal_random_ot_pair;
-    use mpz_share_conversion_core::fields::p256::P256;
     use utils_aio::duplex::MemoryDuplex;
 
     #[tokio::test]

@@ -1,7 +1,7 @@
 use super::Check;
 use crate::OLECoreError;
 use itybity::IntoBitIterator;
-use mpz_share_conversion_core::Field;
+use mpz_fields::Field;
 use rand::thread_rng;
 use std::marker::PhantomData;
 

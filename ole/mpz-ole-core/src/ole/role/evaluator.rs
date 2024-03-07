@@ -1,5 +1,5 @@
 use crate::OLECoreError;
-use mpz_share_conversion_core::Field;
+use mpz_fields::Field;
 use std::marker::PhantomData;
 
 /// An evaluator for OLE with errors.

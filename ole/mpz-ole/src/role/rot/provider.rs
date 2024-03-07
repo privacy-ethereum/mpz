@@ -1,9 +1,9 @@
 use crate::{msg::ROLEeMessage, Check, OLEError, RandomOLEeProvide};
 use async_trait::async_trait;
 use futures::SinkExt;
+use mpz_fields::Field;
 use mpz_ole_core::role::ot::ROLEeProvider as ROLEeCoreProvider;
 use mpz_ot::RandomOTSender;
-use mpz_share_conversion_core::Field;
 use utils_aio::{duplex::Duplex, stream::ExpectStreamExt};
 
 /// A provider for ROLE with errors.

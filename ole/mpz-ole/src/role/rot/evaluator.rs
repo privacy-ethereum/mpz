@@ -1,9 +1,9 @@
 use crate::{msg::ROLEeMessage, Check, OLEError, RandomOLEeEvaluate};
 use async_trait::async_trait;
 use futures::SinkExt;
+use mpz_fields::Field;
 use mpz_ole_core::role::ot::ROLEeEvaluator as ROLEeCoreEvaluator;
 use mpz_ot::RandomOTReceiver;
-use mpz_share_conversion_core::Field;
 use utils_aio::{duplex::Duplex, stream::ExpectStreamExt};
 
 /// An evaluator for ROLE with errors.

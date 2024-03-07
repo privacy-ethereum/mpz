@@ -4,7 +4,7 @@ use crate::{OLEError, RandomOLEeEvaluate, RandomOLEeProvide};
 use async_trait::async_trait;
 use futures::{channel::mpsc, StreamExt};
 use mpz_core::ProtocolMessage;
-use mpz_share_conversion_core::Field;
+use mpz_fields::Field;
 use rand::thread_rng;
 use std::marker::PhantomData;
 
@@ -89,7 +89,7 @@ impl<F: Field> RandomOLEeEvaluate<F> for IdealROLEEvaluator<F> {
 #[cfg(test)]
 mod tests {
     use crate::{ideal::role::ideal_role_pair, RandomOLEeEvaluate, RandomOLEeProvide};
-    use mpz_share_conversion_core::fields::p256::P256;
+    use mpz_fields::p256::P256;
 
     #[tokio::test]
     async fn test_ideal_role() {

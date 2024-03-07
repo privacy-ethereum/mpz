@@ -9,7 +9,7 @@ name = "mpz_ole"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-mpz-share-conversion-core.workspace = true
+mpz-fields.workspace = true
 mpz-ot.workspace = true
 mpz-core.workspace = true
 mpz-ole-core.workspace = true

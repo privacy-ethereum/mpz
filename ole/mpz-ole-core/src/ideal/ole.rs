@@ -1,6 +1,6 @@
 //! This module provides an ideal OLE functionality.
 
-use mpz_share_conversion_core::Field;
+use mpz_fields::Field;
 use rand::{rngs::ThreadRng, thread_rng};
 
 /// The OLE functionality
@@ -83,7 +83,7 @@ impl<F: Field> Default for OLEFunctionality<F> {
 mod tests {
     use super::OLEFunctionality;
     use mpz_core::{prg::Prg, Block};
-    use mpz_share_conversion_core::fields::{p256::P256, UniformRand};
+    use mpz_fields::{p256::P256, UniformRand};
     use rand::SeedableRng;
 
     #[test]

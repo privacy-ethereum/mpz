@@ -1,8 +1,8 @@
 use crate::{msg::OLEeMessage, Check, OLEError, OLEeProvide, RandomOLEeProvide};
 use async_trait::async_trait;
 use futures::SinkExt;
+use mpz_fields::Field;
 use mpz_ole_core::ole::role::OLEeProvider as OLEeCoreProvider;
-use mpz_share_conversion_core::Field;
 use utils_aio::{duplex::Duplex, stream::ExpectStreamExt};
 
 /// A provider for OLE with errors.

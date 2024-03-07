@@ -1,6 +1,6 @@
 //! This module provides an ideal ROLE functionality.
 
-use mpz_share_conversion_core::Field;
+use mpz_fields::Field;
 use rand::{rngs::ThreadRng, thread_rng};
 
 /// The ROLE functionality
@@ -75,7 +75,7 @@ impl<F: Field> Default for ROLEFunctionality<F> {
 #[cfg(test)]
 mod tests {
     use super::ROLEFunctionality;
-    use mpz_share_conversion_core::fields::p256::P256;
+    use mpz_fields::p256::P256;
 
     #[test]
     fn test_role_functionality() {

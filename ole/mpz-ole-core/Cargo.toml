@@ -11,6 +11,6 @@ rand.workspace = true
 itybity.workspace = true
 thiserror.workspace = true
 
-mpz-share-conversion-core.workspace = true
+mpz-fields.workspace = true
 mpz-core.workspace = true
 mpz-ot-core.workspace = true

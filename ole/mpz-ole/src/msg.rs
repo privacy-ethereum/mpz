@@ -1,7 +1,7 @@
 //! Message types for different OLE protocols.
 
 use enum_try_as_inner::EnumTryAsInner;
-use mpz_share_conversion_core::Field;
+use mpz_fields::Field;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, EnumTryAsInner, Serialize, Deserialize)]

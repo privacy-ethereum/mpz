@@ -11,7 +11,7 @@ mod tests {
     use super::{OLEeEvaluator, OLEeProvider};
     use crate::{ideal::role::ideal_role_pair, OLEeEvaluate, OLEeProvide};
     use mpz_core::{prg::Prg, Block};
-    use mpz_share_conversion_core::fields::{p256::P256, UniformRand};
+    use mpz_fields::{p256::P256, UniformRand};
     use rand::SeedableRng;
     use utils_aio::duplex::MemoryDuplex;
 
