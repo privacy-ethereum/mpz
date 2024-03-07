@@ -5,6 +5,7 @@
 #![deny(clippy::all)]
 
 use async_trait::async_trait;
+use mpz_common::Context;
 use mpz_fields::Field;
 use mpz_ole_core::OLECoreError;
 use mpz_ot::OTError;
@@ -48,7 +49,7 @@ impl<F: Field> From<ROLEeMessageError<F>> for OLEError {
 /// which depend on the inputs of [`OLEeProvide`]. The evaluator can introduce additive errors to
 /// the evaluation.
 #[async_trait]
-pub trait OLEeEvaluate<F: Field> {
+pub trait OLEeEvaluate<C: Context, F: Field> {
     /// Evaluates linear functions at specific points obliviously.
     ///
     /// The functions being evaluated are outputs_k = inputs_k * provider-factors_k +
@@ -56,8 +57,9 @@ pub trait OLEeEvaluate<F: Field> {
     ///
     /// # Arguments
     ///
+    /// * `ctx` - The context, which provides IO channels.
     /// * `inputs` - The points where to evaluate the functions.
-    async fn evaluate(&mut self, inputs: Vec<F>) -> Result<Vec<F>, OLEError>;
+    async fn evaluate(&mut self, ctx: &mut C, inputs: Vec<F>) -> Result<Vec<F>, OLEError>;
 }
 
 /// An OLE with errors provider.
@@ -65,7 +67,7 @@ pub trait OLEeEvaluate<F: Field> {
 /// The provider determines with his inputs which linear functions are to be evaluated by
 /// [`OLEeEvaluate`]. The provider can introduce additive errors to the evaluation.
 #[async_trait]
-pub trait OLEeProvide<F: Field> {
+pub trait OLEeProvide<C: Context, F: Field> {
     /// Provides the linear functions which are to be evaluated obliviously.
     ///
     /// The functions being evaluated are evaluator-outputs_k = evaluator-inputs_k * factors_k +
@@ -73,8 +75,9 @@ pub trait OLEeProvide<F: Field> {
     ///
     /// # Arguments
     ///
+    /// * `ctx` - The context, which provides IO channels.
     /// * `factors` - Provides the slopes for the linear functions.
-    async fn provide(&mut self, factors: Vec<F>) -> Result<Vec<F>, OLEError>;
+    async fn provide(&mut self, ctx: &mut C, factors: Vec<F>) -> Result<Vec<F>, OLEError>;
 }
 
 /// A random OLE with errors (ROLEe) evaluator.
@@ -82,7 +85,7 @@ pub trait OLEeProvide<F: Field> {
 /// The evaluator obliviously evaluates random linear functions at random values. The evaluator
 /// can introduce additive errors to the evaluation.
 #[async_trait]
-pub trait RandomOLEeEvaluate<F: Field> {
+pub trait RandomOLEeEvaluate<C: Context, F: Field> {
     /// Evaluates random linear functions at random points obliviously.
     ///
     /// The function being evaluated is outputs_k = random-inputs_k * random-factors_k +
@@ -90,15 +93,20 @@ pub trait RandomOLEeEvaluate<F: Field> {
     ///
     /// # Arguments
     ///
+    /// * `ctx` - The context, which provides IO channels.
     /// * `count` - The number of functions to evaluate.
-    async fn evaluate_random(&mut self, count: usize) -> Result<(Vec<F>, Vec<F>), OLEError>;
+    async fn evaluate_random(
+        &mut self,
+        ctx: &mut C,
+        count: usize,
+    ) -> Result<(Vec<F>, Vec<F>), OLEError>;
 }
 
 /// A random OLE with errors (ROLEe) provider.
 ///
 /// The provider receives random linear functions. The provider can introduce additive errors to the evaluation.
 #[async_trait]
-pub trait RandomOLEeProvide<F: Field> {
+pub trait RandomOLEeProvide<C: Context, F: Field> {
     /// Provides the random functions which are to be evaluated obliviously.
     ///
     /// The function being evaluated is evaluator-outputs_k = random-inputs_k * random-factors_k +
@@ -106,8 +114,13 @@ pub trait RandomOLEeProvide<F: Field> {
     ///
     /// # Arguments
     ///
+    /// * `ctx` - The context, which provides IO channels.
     /// * `count` - The number of functions to provide.
-    async fn provide_random(&mut self, count: usize) -> Result<(Vec<F>, Vec<F>), OLEError>;
+    async fn provide_random(
+        &mut self,
+        ctx: &mut C,
+        count: usize,
+    ) -> Result<(Vec<F>, Vec<F>), OLEError>;
 }
 
 /// Workaround because of feature `generic_const_exprs` not available in stable.
