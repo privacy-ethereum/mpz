@@ -13,7 +13,7 @@ mpz-fields.workspace = true
 mpz-ot.workspace = true
 mpz-core.workspace = true
 mpz-ole-core.workspace = true
-mpz-common = { workspace = true, features = ["test-utils"] }
+mpz-common.workspace = true
 
 tlsn-utils-aio.workspace = true
 serio.workspace = true
@@ -33,3 +33,4 @@ tokio = { workspace = true, features = [
     "rt",
     "rt-multi-thread",
 ] }
+mpz-common = { workspace = true, features = ["test-utils"] }
