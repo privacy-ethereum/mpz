@@ -15,8 +15,8 @@ members = [
     "mpz-share-conversion-core",
     "matrix-transpose",
     "clmul",
-    "ole/*"
->>>>>>> d68fb3b (Added crate `mpz-ole-core`):Cargo.toml
+    "mpz-ole",
+    "mpz-ole-core"
 ]
 resolver = "2"
 
@@ -40,7 +40,8 @@ mpz-garble = { path = "mpz-garble" }
 mpz-garble-core = { path = "mpz-garble-core" }
 mpz-share-conversion = { path = "mpz-share-conversion" }
 mpz-share-conversion-core = { path = "mpz-share-conversion-core" }
-mpz-ole-core = { path = "ole/mpz-ole-core" }
+mpz-ole = { path = "mpz-ole" }
+mpz-ole-core = { path = "mpz-ole-core" }
 clmul = { path = "clmul" }
 matrix-transpose = { path = "matrix-transpose" }
 
