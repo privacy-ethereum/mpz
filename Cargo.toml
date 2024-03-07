@@ -9,6 +9,7 @@ members = [
     "share-conversion/*",
     "matrix-transpose",
     "clmul",
+    "mpz-common",
 ]
 resolver = "2"
 
@@ -20,6 +21,7 @@ resolver = "2"
 
 [workspace.dependencies]
 mpz-core = { path = "mpz-core" }
+mpz-common = { path = "mpz-common" }
 mpz-circuits = { path = "mpz-circuits" }
 mpz-ot-core = { path = "ot/mpz-ot-core" }
 mpz-ot = { path = "ot/mpz-ot" }
@@ -31,8 +33,8 @@ mpz-fields = { path = "mpz-fields" }
 clmul = { path = "clmul" }
 matrix-transpose = { path = "matrix-transpose" }
 
-tlsn-utils = { git = "https://github.com/tlsnotary/tlsn-utils", rev = "51f313d" }
-tlsn-utils-aio = { git = "https://github.com/tlsnotary/tlsn-utils", rev = "51f313d" }
+tlsn-utils = { git = "https://github.com/tlsnotary/tlsn-utils", rev = "8f2fc9e" }
+tlsn-utils-aio = { git = "https://github.com/tlsnotary/tlsn-utils", rev = "8f2fc9e" }
 
 # rand
 rand_chacha = "0.3"
@@ -61,6 +63,7 @@ futures = "0.3"
 futures-util = "0.3"
 tokio = "1.23"
 tokio-util = "0.7"
+scoped-futures = "0.1.3"
 
 # serialization
 ark-serialize = "0.4"
@@ -72,6 +75,7 @@ prost-build = "0.9"
 bytes = "1"
 yamux = "0.10"
 bytemuck = { version = "1.13", features = ["derive"] }
+serio = { git = "https://github.com/tlsnotary/tlsn-utils", rev = "8f2fc9e" }
 
 # testing
 prost = "0.9"
