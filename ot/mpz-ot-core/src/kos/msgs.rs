@@ -1,38 +1,7 @@
 //! Messages for the KOS15 protocol.
 
-use enum_try_as_inner::EnumTryAsInner;
-use mpz_core::{
-    cointoss::msgs::{
-        ReceiverPayload as CointossReceiverPayload, SenderCommitment,
-        SenderPayload as CointossSenderPayload,
-    },
-    Block,
-};
+use mpz_core::Block;
 use serde::{Deserialize, Serialize};
-
-use crate::msgs::Derandomize;
-
-/// A KOS15 protocol message.
-#[derive(Debug, Clone, EnumTryAsInner, Serialize, Deserialize)]
-#[derive_err(Debug)]
-#[allow(missing_docs)]
-pub enum Message<BaseMsg> {
-    BaseMsg(BaseMsg),
-    StartExtend(StartExtend),
-    Extend(Extend),
-    Check(Check),
-    Derandomize(Derandomize),
-    SenderPayload(SenderPayload),
-    CointossCommit(SenderCommitment),
-    CointossReceiverPayload(CointossReceiverPayload),
-    CointossSenderPayload(CointossSenderPayload),
-}
-
-impl<BaseMsg> From<MessageError<BaseMsg>> for std::io::Error {
-    fn from(err: MessageError<BaseMsg>) -> Self {
-        std::io::Error::new(std::io::ErrorKind::InvalidData, err.to_string())
-    }
-}
 
 /// Extension message sent by the receiver to agree upon the number of OTs to set up.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

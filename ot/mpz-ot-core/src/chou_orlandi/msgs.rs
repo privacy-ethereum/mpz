@@ -1,29 +1,8 @@
 //! Messages for the Chou-Orlandi protocol.
 
 use curve25519_dalek::RistrettoPoint;
-use enum_try_as_inner::EnumTryAsInner;
-use mpz_core::{cointoss, Block};
+use mpz_core::Block;
 use serde::{Deserialize, Serialize};
-
-/// A CO15 protocol message.
-#[derive(Debug, Clone, EnumTryAsInner, Serialize, Deserialize)]
-#[derive_err(Debug)]
-#[allow(missing_docs)]
-pub enum Message {
-    SenderSetup(SenderSetup),
-    SenderPayload(SenderPayload),
-    ReceiverPayload(ReceiverPayload),
-    ReceiverReveal(ReceiverReveal),
-    CointossSenderCommitment(cointoss::msgs::SenderCommitment),
-    CointossSenderPayload(cointoss::msgs::SenderPayload),
-    CointossReceiverPayload(cointoss::msgs::ReceiverPayload),
-}
-
-impl From<MessageError> for std::io::Error {
-    fn from(err: MessageError) -> Self {
-        std::io::Error::new(std::io::ErrorKind::InvalidData, err.to_string())
-    }
-}
 
 /// Sender setup message.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]

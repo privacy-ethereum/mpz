@@ -1,3 +1,5 @@
+//! Ideal functionality for oblivious transfer.
+
 use crate::{
     CommittedOTReceiver, CommittedOTSender, OTError, OTReceiver, OTSender, OTSetup,
     VerifiableOTReceiver, VerifiableOTSender,
@@ -7,8 +9,7 @@ use futures::{
     channel::{mpsc, oneshot},
     StreamExt,
 };
-use mpz_core::ProtocolMessage;
-use utils_aio::{sink::IoSink, stream::IoStream};
+use mpz_common::Context;
 
 /// Ideal OT sender.
 #[derive(Debug)]
@@ -24,14 +25,6 @@ pub struct IdealOTReceiver<T> {
     receiver: mpsc::Receiver<Vec<[T; 2]>>,
     choices: Vec<bool>,
     choices_sender: Option<oneshot::Sender<Vec<bool>>>,
-}
-
-impl<T> ProtocolMessage for IdealOTSender<T> {
-    type Msg = ();
-}
-
-impl<T> ProtocolMessage for IdealOTReceiver<T> {
-    type Msg = ();
 }
 
 /// Creates a pair of ideal OT sender and receiver.
@@ -54,30 +47,23 @@ pub fn ideal_ot_pair<T: Send + Sync + 'static>() -> (IdealOTSender<T>, IdealOTRe
 }
 
 #[async_trait]
-impl<T> OTSetup for IdealOTSender<T>
+impl<Ctx, T> OTSetup<Ctx> for IdealOTSender<T>
 where
+    Ctx: Context,
     T: Send + Sync,
 {
-    async fn setup<Si: IoSink<()> + Send + Unpin, St: IoStream<()> + Send + Unpin>(
-        &mut self,
-        _sink: &mut Si,
-        _stream: &mut St,
-    ) -> Result<(), OTError> {
+    async fn setup(&mut self, _ctx: &mut Ctx) -> Result<(), OTError> {
         Ok(())
     }
 }
 
 #[async_trait]
-impl<T> OTSender<[T; 2]> for IdealOTSender<T>
+impl<Ctx, T> OTSender<Ctx, [T; 2]> for IdealOTSender<T>
 where
+    Ctx: Context,
     T: Send + Sync + Clone + 'static,
 {
-    async fn send<Si: IoSink<()> + Send + Unpin, St: IoStream<()> + Send + Unpin>(
-        &mut self,
-        _sink: &mut Si,
-        _stream: &mut St,
-        msgs: &[[T; 2]],
-    ) -> Result<(), OTError> {
+    async fn send(&mut self, _ctx: &mut Ctx, msgs: &[[T; 2]]) -> Result<(), OTError> {
         self.msgs.extend(msgs.iter().cloned());
 
         self.sender
@@ -89,30 +75,23 @@ where
 }
 
 #[async_trait]
-impl<T> OTSetup for IdealOTReceiver<T>
+impl<Ctx, T> OTSetup<Ctx> for IdealOTReceiver<T>
 where
+    Ctx: Context,
     T: Send + Sync,
 {
-    async fn setup<Si: IoSink<()> + Send + Unpin, St: IoStream<()> + Send + Unpin>(
-        &mut self,
-        _sink: &mut Si,
-        _stream: &mut St,
-    ) -> Result<(), OTError> {
+    async fn setup(&mut self, _ctx: &mut Ctx) -> Result<(), OTError> {
         Ok(())
     }
 }
 
 #[async_trait]
-impl<T> OTReceiver<bool, T> for IdealOTReceiver<T>
+impl<Ctx, T> OTReceiver<Ctx, bool, T> for IdealOTReceiver<T>
 where
+    Ctx: Context,
     T: Send + Sync + 'static,
 {
-    async fn receive<Si: IoSink<()> + Send + Unpin, St: IoStream<()> + Send + Unpin>(
-        &mut self,
-        _sink: &mut Si,
-        _stream: &mut St,
-        choices: &[bool],
-    ) -> Result<Vec<T>, OTError> {
+    async fn receive(&mut self, _ctx: &mut Ctx, choices: &[bool]) -> Result<Vec<T>, OTError> {
         self.choices.extend(choices.iter().copied());
 
         let payload = self
@@ -137,46 +116,35 @@ where
 }
 
 #[async_trait]
-impl<U, V> VerifiableOTReceiver<bool, U, V> for IdealOTReceiver<U>
+impl<Ctx, U, V> VerifiableOTReceiver<Ctx, bool, U, V> for IdealOTReceiver<U>
 where
+    Ctx: Context,
     U: Send + Sync + 'static,
     V: Send + Sync + 'static,
 {
-    async fn verify<Si: IoSink<()> + Send + Unpin, St: IoStream<()> + Send + Unpin>(
-        &mut self,
-        _sink: &mut Si,
-        _stream: &mut St,
-        _index: usize,
-        _msgs: &[V],
-    ) -> Result<(), OTError> {
+    async fn verify(&mut self, _ctx: &mut Ctx, _index: usize, _msgs: &[V]) -> Result<(), OTError> {
         Ok(())
     }
 }
 
 #[async_trait]
-impl<T> CommittedOTSender<[T; 2]> for IdealOTSender<T>
+impl<Ctx, T> CommittedOTSender<Ctx, [T; 2]> for IdealOTSender<T>
 where
+    Ctx: Context,
     T: Send + Sync + Clone + 'static,
 {
-    async fn reveal<Si: IoSink<()> + Send + Unpin, St: IoStream<()> + Send + Unpin>(
-        &mut self,
-        _sink: &mut Si,
-        _stream: &mut St,
-    ) -> Result<(), OTError> {
+    async fn reveal(&mut self, _ctx: &mut Ctx) -> Result<(), OTError> {
         Ok(())
     }
 }
 
 #[async_trait]
-impl<T> CommittedOTReceiver<bool, T> for IdealOTReceiver<T>
+impl<Ctx, T> CommittedOTReceiver<Ctx, bool, T> for IdealOTReceiver<T>
 where
+    Ctx: Context,
     T: Send + Sync + 'static,
 {
-    async fn reveal_choices<Si: IoSink<()> + Send + Unpin, St: IoStream<()> + Send + Unpin>(
-        &mut self,
-        _sink: &mut Si,
-        _stream: &mut St,
-    ) -> Result<(), OTError> {
+    async fn reveal_choices(&mut self, _ctx: &mut Ctx) -> Result<(), OTError> {
         self.choices_sender
             .take()
             .expect("choices should not be revealed twice")
@@ -188,15 +156,12 @@ where
 }
 
 #[async_trait]
-impl<T> VerifiableOTSender<bool, [T; 2]> for IdealOTSender<T>
+impl<Ctx, T> VerifiableOTSender<Ctx, bool, [T; 2]> for IdealOTSender<T>
 where
+    Ctx: Context,
     T: Send + Sync + Clone + 'static,
 {
-    async fn verify_choices<Si: IoSink<()> + Send + Unpin, St: IoStream<()> + Send + Unpin>(
-        &mut self,
-        _sink: &mut Si,
-        _stream: &mut St,
-    ) -> Result<Vec<bool>, OTError> {
+    async fn verify_choices(&mut self, _ctx: &mut Ctx) -> Result<Vec<bool>, OTError> {
         Ok(self
             .choices_receiver
             .take()
@@ -208,31 +173,22 @@ where
 
 #[cfg(test)]
 mod tests {
-    use utils_aio::duplex::MemoryDuplex;
+    use mpz_common::executor::test_st_executor;
 
     use super::*;
 
     // Test that the sender and receiver can be used to send and receive values
     #[tokio::test]
     async fn test_ideal_ot_owned() {
-        let (send_channel, recv_channel) = MemoryDuplex::<()>::new();
-
-        let (mut send_sink, mut send_stream) = send_channel.split();
-        let (mut recv_sink, mut recv_stream) = recv_channel.split();
+        let (mut ctx_sender, mut ctx_receiver) = test_st_executor(8);
 
         let values = vec![[0, 1], [2, 3]];
         let choices = vec![false, true];
         let (mut sender, mut receiver) = ideal_ot_pair::<u8>();
 
-        sender
-            .send(&mut send_sink, &mut send_stream, &values)
-            .await
-            .unwrap();
+        sender.send(&mut ctx_sender, &values).await.unwrap();
 
-        let received = receiver
-            .receive(&mut recv_sink, &mut recv_stream, &choices)
-            .await
-            .unwrap();
+        let received = receiver.receive(&mut ctx_receiver, &choices).await.unwrap();
 
         assert_eq!(received, vec![0, 3]);
     }

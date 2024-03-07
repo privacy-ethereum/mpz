@@ -1,11 +1,13 @@
+//! Ideal functionality for random correlated oblivious transfer.
+
 use crate::{OTError, OTSetup, RandomCOTReceiver, RandomCOTSender};
 use async_trait::async_trait;
 use futures::{channel::mpsc, StreamExt};
-use mpz_core::{Block, ProtocolMessage};
+use mpz_common::Context;
+use mpz_core::Block;
 use rand::Rng;
 use rand_chacha::ChaCha12Rng;
 use rand_core::SeedableRng;
-use utils_aio::{sink::IoSink, stream::IoStream};
 
 /// Ideal random OT sender.
 #[derive(Debug)]
@@ -20,14 +22,6 @@ pub struct IdealRandomCOTSender<T = Block> {
 pub struct IdealRandomCOTReceiver<T = Block> {
     receiver: mpsc::Receiver<Vec<[T; 2]>>,
     rng: ChaCha12Rng,
-}
-
-impl<T> ProtocolMessage for IdealRandomCOTSender<T> {
-    type Msg = ();
-}
-
-impl<T> ProtocolMessage for IdealRandomCOTReceiver<T> {
-    type Msg = ();
 }
 
 /// Creates a pair of ideal random COT sender and receiver.
@@ -51,28 +45,21 @@ pub fn ideal_random_cot_pair<T: Send + Sync + 'static>(
 }
 
 #[async_trait]
-impl<T> OTSetup for IdealRandomCOTSender<T>
+impl<Ctx, T> OTSetup<Ctx> for IdealRandomCOTSender<T>
 where
+    Ctx: Context,
     T: Send + Sync,
 {
-    async fn setup<Si: IoSink<()> + Send + Unpin, St: IoStream<()> + Send + Unpin>(
-        &mut self,
-        _sink: &mut Si,
-        _stream: &mut St,
-    ) -> Result<(), OTError> {
+    async fn setup(&mut self, _ctx: &mut Ctx) -> Result<(), OTError> {
         Ok(())
     }
 }
 
 #[async_trait]
-impl RandomCOTSender<Block> for IdealRandomCOTSender<Block> {
-    async fn send_random_correlated<
-        Si: IoSink<()> + Send + Unpin,
-        St: IoStream<()> + Send + Unpin,
-    >(
+impl<Ctx: Context> RandomCOTSender<Ctx, Block> for IdealRandomCOTSender<Block> {
+    async fn send_random_correlated(
         &mut self,
-        _sink: &mut Si,
-        _stream: &mut St,
+        _ctx: &mut Ctx,
         count: usize,
     ) -> Result<Vec<Block>, OTError> {
         let low = (0..count)
@@ -92,28 +79,21 @@ impl RandomCOTSender<Block> for IdealRandomCOTSender<Block> {
 }
 
 #[async_trait]
-impl<T> OTSetup for IdealRandomCOTReceiver<T>
+impl<Ctx, T> OTSetup<Ctx> for IdealRandomCOTReceiver<T>
 where
+    Ctx: Context,
     T: Send + Sync,
 {
-    async fn setup<Si: IoSink<()> + Send + Unpin, St: IoStream<()> + Send + Unpin>(
-        &mut self,
-        _sink: &mut Si,
-        _stream: &mut St,
-    ) -> Result<(), OTError> {
+    async fn setup(&mut self, _ctx: &mut Ctx) -> Result<(), OTError> {
         Ok(())
     }
 }
 
 #[async_trait]
-impl RandomCOTReceiver<bool, Block> for IdealRandomCOTReceiver<Block> {
-    async fn receive_random_correlated<
-        Si: IoSink<()> + Send + Unpin,
-        St: IoStream<()> + Send + Unpin,
-    >(
+impl<Ctx: Context> RandomCOTReceiver<Ctx, bool, Block> for IdealRandomCOTReceiver<Block> {
+    async fn receive_random_correlated(
         &mut self,
-        _sink: &mut Si,
-        _stream: &mut St,
+        _ctx: &mut Ctx,
         count: usize,
     ) -> Result<(Vec<bool>, Vec<Block>), OTError> {
         let payload = self
@@ -144,7 +124,7 @@ impl RandomCOTReceiver<bool, Block> for IdealRandomCOTReceiver<Block> {
 
 #[cfg(test)]
 mod tests {
-    use utils_aio::duplex::MemoryDuplex;
+    use mpz_common::executor::test_st_executor;
 
     use super::*;
 
@@ -152,21 +132,18 @@ mod tests {
     #[tokio::test]
     async fn test_ideal_random_cot_owned() {
         let seed = [0u8; 32];
-        let (send_channel, recv_channel) = MemoryDuplex::<()>::new();
-
-        let (mut send_sink, mut send_stream) = send_channel.split();
-        let (mut recv_sink, mut recv_stream) = recv_channel.split();
+        let (mut ctx_sender, mut ctx_receiver) = test_st_executor(8);
 
         let delta = Block::from([42u8; 16]);
         let (mut sender, mut receiver) = ideal_random_cot_pair::<Block>(seed, delta);
 
         let values = sender
-            .send_random_correlated(&mut send_sink, &mut send_stream, 8)
+            .send_random_correlated(&mut ctx_sender, 8)
             .await
             .unwrap();
 
         let (choices, received) = receiver
-            .receive_random_correlated(&mut recv_sink, &mut recv_stream, 8)
+            .receive_random_correlated(&mut ctx_receiver, 8)
             .await
             .unwrap();
 

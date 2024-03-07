@@ -1,5 +1,3 @@
-use mpz_ot_core::kos::msgs::MessageError;
-
 use crate::OTError;
 
 /// A KOS sender error.
@@ -12,8 +10,8 @@ pub enum SenderError {
     CoreError(#[from] mpz_ot_core::kos::SenderError),
     #[error(transparent)]
     BaseOTError(#[from] crate::OTError),
-    #[error(transparent)]
-    CointossError(#[from] mpz_core::cointoss::CointossError),
+    #[error("coin-toss error: {0}")]
+    CointossError(#[from] mpz_cointoss::CointossError),
     #[error("{0}")]
     StateError(String),
     #[error("configuration error: {0}")]
@@ -43,15 +41,6 @@ impl From<mpz_ot_core::kos::SenderError> for OTError {
     }
 }
 
-impl<BaseMsg> From<MessageError<BaseMsg>> for SenderError {
-    fn from(err: MessageError<BaseMsg>) -> Self {
-        SenderError::from(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            err.to_string(),
-        ))
-    }
-}
-
 /// A KOS receiver error.
 #[derive(Debug, thiserror::Error)]
 #[allow(missing_docs)]
@@ -62,8 +51,8 @@ pub enum ReceiverError {
     CoreError(#[from] mpz_ot_core::kos::ReceiverError),
     #[error(transparent)]
     BaseOTError(#[from] crate::OTError),
-    #[error(transparent)]
-    CointossError(#[from] mpz_core::cointoss::CointossError),
+    #[error("coin-toss error: {0}")]
+    CointossError(#[from] mpz_cointoss::CointossError),
     #[error("{0}")]
     StateError(String),
     #[error("configuration error: {0}")]
@@ -92,15 +81,6 @@ impl From<crate::kos::ReceiverStateError> for ReceiverError {
 impl From<mpz_ot_core::kos::ReceiverError> for OTError {
     fn from(err: mpz_ot_core::kos::ReceiverError) -> Self {
         ReceiverError::from(err).into()
-    }
-}
-
-impl<BaseMsg> From<MessageError<BaseMsg>> for ReceiverError {
-    fn from(err: MessageError<BaseMsg>) -> Self {
-        ReceiverError::from(std::io::Error::new(
-            std::io::ErrorKind::InvalidData,
-            err.to_string(),
-        ))
     }
 }
 

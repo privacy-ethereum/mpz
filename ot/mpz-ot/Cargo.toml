@@ -10,21 +10,20 @@ workspace = true
 name = "mpz_ot"
 
 [features]
-default = ["ideal", "rayon", "actor"]
+default = ["ideal", "rayon"]
 rayon = ["mpz-ot-core/rayon"]
-actor = ["dep:serde"]
 ideal = []
 
 [dependencies]
 mpz-core.workspace = true
+mpz-common.workspace = true
+mpz-cointoss.workspace = true
 mpz-ot-core.workspace = true
+
 tlsn-utils-aio.workspace = true
+
 async-trait.workspace = true
-prost.workspace = true
 futures.workspace = true
-futures-util.workspace = true
-aes.workspace = true
-cipher.workspace = true
 rand.workspace = true
 rand_core.workspace = true
 rand_chacha.workspace = true
@@ -35,9 +34,11 @@ itybity.workspace = true
 enum-try-as-inner.workspace = true
 opaque-debug.workspace = true
 serde = { workspace = true, optional = true }
+serio.workspace = true
 cfg-if.workspace = true
 
 [dev-dependencies]
+mpz-common = { workspace = true, features = ["test-utils"] }
 rstest = { workspace = true }
 criterion = { workspace = true, features = ["async_tokio"] }
 tokio = { workspace = true, features = [

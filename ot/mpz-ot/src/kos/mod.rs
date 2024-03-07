@@ -3,11 +3,14 @@
 mod error;
 mod receiver;
 mod sender;
+mod shared_receiver;
+mod shared_sender;
 
 pub use error::{ReceiverError, ReceiverVerifyError, SenderError};
-use futures_util::{SinkExt, StreamExt};
 pub use receiver::Receiver;
 pub use sender::Sender;
+pub use shared_receiver::SharedReceiver;
+pub use shared_sender::SharedSender;
 
 pub(crate) use receiver::StateError as ReceiverStateError;
 pub(crate) use sender::StateError as SenderStateError;
@@ -16,7 +19,6 @@ pub use mpz_ot_core::kos::{
     msgs, PayloadRecord, ReceiverConfig, ReceiverConfigBuilder, ReceiverConfigBuilderError,
     ReceiverKeys, SenderConfig, SenderConfigBuilder, SenderConfigBuilderError, SenderKeys,
 };
-use utils_aio::{sink::IoSink, stream::IoStream};
 
 // If we're testing we use a smaller chunk size to make sure the chunking code paths are tested.
 cfg_if::cfg_if! {
@@ -28,41 +30,23 @@ cfg_if::cfg_if! {
     }
 }
 
-/// Converts a sink of KOS messages into a sink of base OT messages.
-pub(crate) fn into_base_sink<'a, Si: IoSink<msgs::Message<T>> + Send + Unpin, T: Send + 'a>(
-    sink: &'a mut Si,
-) -> impl IoSink<T> + Send + Unpin + 'a {
-    Box::pin(SinkExt::with(sink, |msg| async move {
-        Ok(msgs::Message::BaseMsg(msg))
-    }))
-}
-
-/// Converts a stream of KOS messages into a stream of base OT messages.
-pub(crate) fn into_base_stream<'a, St: IoStream<msgs::Message<T>> + Send + Unpin, T: Send + 'a>(
-    stream: &'a mut St,
-) -> impl IoStream<T> + Send + Unpin + 'a {
-    StreamExt::map(stream, |msg| match msg {
-        Ok(msg) => msg.try_into_base_msg().map_err(From::from),
-        Err(err) => Err(err),
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use rstest::*;
 
+    use futures::TryFutureExt;
     use itybity::ToBits;
+    use mpz_common::{executor::test_st_executor, Context};
     use mpz_core::Block;
-    use mpz_ot_core::kos::msgs::Message;
     use rand::Rng;
     use rand_chacha::ChaCha12Rng;
     use rand_core::SeedableRng;
-    use utils_aio::duplex::MemoryDuplex;
 
     use crate::{
-        ideal::{ideal_ot_pair, IdealOTReceiver, IdealOTSender},
-        OTReceiver, OTSender, OTSetup, RandomOTReceiver, RandomOTSender, VerifiableOTReceiver,
+        ideal::ot::{ideal_ot_pair, IdealOTReceiver, IdealOTSender},
+        OTError, OTReceiver, OTSender, OTSetup, RandomOTReceiver, RandomOTSender,
+        VerifiableOTReceiver,
     };
 
     #[fixture]
@@ -87,16 +71,11 @@ mod tests {
             .map(|([zero, one], choice)| if choice { one } else { zero })
     }
 
-    async fn setup<
-        Si: IoSink<Message<()>> + Send + Unpin,
-        St: IoStream<Message<()>> + Send + Unpin,
-    >(
+    async fn setup<Ctx: Context>(
         sender_config: SenderConfig,
         receiver_config: ReceiverConfig,
-        sender_sink: &mut Si,
-        sender_stream: &mut St,
-        receiver_sink: &mut Si,
-        receiver_stream: &mut St,
+        ctx_sender: &mut Ctx,
+        ctx_receiver: &mut Ctx,
         count: usize,
     ) -> (
         Sender<IdealOTReceiver<Block>>,
@@ -107,21 +86,12 @@ mod tests {
         let mut sender = Sender::new(sender_config, base_receiver);
         let mut receiver = Receiver::new(receiver_config, base_sender);
 
-        let (sender_res, receiver_res) = tokio::join!(
-            sender.setup(sender_sink, sender_stream),
-            receiver.setup(receiver_sink, receiver_stream)
-        );
-
-        sender_res.unwrap();
-        receiver_res.unwrap();
-
-        let (sender_res, receiver_res) = tokio::join!(
-            sender.extend(sender_sink, sender_stream, count),
-            receiver.extend(receiver_sink, receiver_stream, count)
-        );
-
-        sender_res.unwrap();
-        receiver_res.unwrap();
+        tokio::try_join!(sender.setup(ctx_sender), receiver.setup(ctx_receiver)).unwrap();
+        tokio::try_join!(
+            sender.extend(ctx_sender, count).map_err(OTError::from),
+            receiver.extend(ctx_receiver, count).map_err(OTError::from)
+        )
+        .unwrap();
 
         (sender, receiver)
     }
@@ -129,29 +99,23 @@ mod tests {
     #[rstest]
     #[tokio::test]
     async fn test_kos(data: Vec<[Block; 2]>, choices: Vec<bool>) {
-        let (sender_channel, receiver_channel) = MemoryDuplex::new();
-
-        let (mut sender_sink, mut sender_stream) = sender_channel.split();
-        let (mut receiver_sink, mut receiver_stream) = receiver_channel.split();
-
+        let (mut ctx_sender, mut ctx_receiver) = test_st_executor(8);
         let (mut sender, mut receiver) = setup(
             SenderConfig::default(),
             ReceiverConfig::default(),
-            &mut sender_sink,
-            &mut sender_stream,
-            &mut receiver_sink,
-            &mut receiver_stream,
+            &mut ctx_sender,
+            &mut ctx_receiver,
             data.len(),
         )
         .await;
 
-        let (sender_res, receiver_res) = tokio::join!(
-            sender.send(&mut sender_sink, &mut sender_stream, &data),
-            receiver.receive(&mut receiver_sink, &mut receiver_stream, &choices)
-        );
-
-        sender_res.unwrap();
-        let received: Vec<Block> = receiver_res.unwrap();
+        let (_, received): (_, Vec<Block>) = tokio::try_join!(
+            sender.send(&mut ctx_sender, &data).map_err(OTError::from),
+            receiver
+                .receive(&mut ctx_receiver, &choices)
+                .map_err(OTError::from)
+        )
+        .unwrap();
 
         let expected = choose(data.iter().copied(), choices.iter_lsb0()).collect::<Vec<_>>();
 
@@ -160,34 +124,24 @@ mod tests {
 
     #[tokio::test]
     async fn test_kos_random() {
-        let (sender_channel, receiver_channel) = MemoryDuplex::new();
-
-        let (mut sender_sink, mut sender_stream) = sender_channel.split();
-        let (mut receiver_sink, mut receiver_stream) = receiver_channel.split();
-
+        let (mut ctx_sender, mut ctx_receiver) = test_st_executor(8);
         let (mut sender, mut receiver) = setup(
             SenderConfig::default(),
             ReceiverConfig::default(),
-            &mut sender_sink,
-            &mut sender_stream,
-            &mut receiver_sink,
-            &mut receiver_stream,
+            &mut ctx_sender,
+            &mut ctx_receiver,
             10,
         )
         .await;
 
-        let (sender_res, receiver_res) = tokio::join!(
-            RandomOTSender::send_random(&mut sender, &mut sender_sink, &mut sender_stream, 10),
-            RandomOTReceiver::receive_random(
-                &mut receiver,
-                &mut receiver_sink,
-                &mut receiver_stream,
-                10
-            )
-        );
-
-        let sender_output: Vec<[Block; 2]> = sender_res.unwrap();
-        let (choices, receiver_output): (Vec<bool>, Vec<Block>) = receiver_res.unwrap();
+        let (sender_output, (choices, receiver_output)): (
+            Vec<[Block; 2]>,
+            (Vec<bool>, Vec<Block>),
+        ) = tokio::try_join!(
+            RandomOTSender::send_random(&mut sender, &mut ctx_sender, 10),
+            RandomOTReceiver::receive_random(&mut receiver, &mut ctx_receiver, 10)
+        )
+        .unwrap();
 
         let expected = sender_output
             .into_iter()
@@ -201,18 +155,12 @@ mod tests {
     #[rstest]
     #[tokio::test]
     async fn test_kos_bytes(data: Vec<[Block; 2]>, choices: Vec<bool>) {
-        let (sender_channel, receiver_channel) = MemoryDuplex::new();
-
-        let (mut sender_sink, mut sender_stream) = sender_channel.split();
-        let (mut receiver_sink, mut receiver_stream) = receiver_channel.split();
-
+        let (mut ctx_sender, mut ctx_receiver) = test_st_executor(8);
         let (mut sender, mut receiver) = setup(
             SenderConfig::default(),
             ReceiverConfig::default(),
-            &mut sender_sink,
-            &mut sender_stream,
-            &mut receiver_sink,
-            &mut receiver_stream,
+            &mut ctx_sender,
+            &mut ctx_receiver,
             data.len(),
         )
         .await;
@@ -222,13 +170,13 @@ mod tests {
             .map(|[a, b]| [a.to_bytes(), b.to_bytes()])
             .collect();
 
-        let (sender_res, receiver_res) = tokio::join!(
-            sender.send(&mut sender_sink, &mut sender_stream, &data),
-            receiver.receive(&mut receiver_sink, &mut receiver_stream, &choices)
-        );
-
-        sender_res.unwrap();
-        let received: Vec<[u8; 16]> = receiver_res.unwrap();
+        let (_, received): (_, Vec<[u8; 16]>) = tokio::try_join!(
+            sender.send(&mut ctx_sender, &data).map_err(OTError::from),
+            receiver
+                .receive(&mut ctx_receiver, &choices)
+                .map_err(OTError::from)
+        )
+        .unwrap();
 
         let expected = choose(data.iter().copied(), choices.iter_lsb0()).collect::<Vec<_>>();
 
@@ -238,40 +186,63 @@ mod tests {
     #[rstest]
     #[tokio::test]
     async fn test_kos_committed_sender(data: Vec<[Block; 2]>, choices: Vec<bool>) {
-        let (sender_channel, receiver_channel) = MemoryDuplex::new();
-
-        let (mut sender_sink, mut sender_stream) = sender_channel.split();
-        let (mut receiver_sink, mut receiver_stream) = receiver_channel.split();
-
+        let (mut ctx_sender, mut ctx_receiver) = test_st_executor(8);
         let (mut sender, mut receiver) = setup(
             SenderConfig::builder().sender_commit().build().unwrap(),
             ReceiverConfig::builder().sender_commit().build().unwrap(),
-            &mut sender_sink,
-            &mut sender_stream,
-            &mut receiver_sink,
-            &mut receiver_stream,
+            &mut ctx_sender,
+            &mut ctx_receiver,
             data.len(),
         )
         .await;
 
-        let (sender_res, receiver_res) = tokio::join!(
-            sender.send(&mut sender_sink, &mut sender_stream, &data),
-            receiver.receive(&mut receiver_sink, &mut receiver_stream, &choices)
-        );
-
-        sender_res.unwrap();
-        let received: Vec<Block> = receiver_res.unwrap();
+        let (_, received): (_, Vec<Block>) = tokio::try_join!(
+            sender.send(&mut ctx_sender, &data).map_err(OTError::from),
+            receiver
+                .receive(&mut ctx_receiver, &choices)
+                .map_err(OTError::from)
+        )
+        .unwrap();
 
         let expected = choose(data.iter().copied(), choices.iter_lsb0()).collect::<Vec<_>>();
 
         assert_eq!(received, expected);
 
-        let (sender_res, receiver_res) = tokio::join!(
-            sender.reveal(&mut sender_sink, &mut sender_stream),
-            receiver.verify(&mut receiver_sink, &mut receiver_stream, 0, &data)
-        );
+        tokio::try_join!(
+            sender.reveal(&mut ctx_sender).map_err(OTError::from),
+            receiver
+                .verify(&mut ctx_receiver, 0, &data)
+                .map_err(OTError::from)
+        )
+        .unwrap();
+    }
 
-        sender_res.unwrap();
-        receiver_res.unwrap();
+    #[rstest]
+    #[tokio::test]
+    async fn test_shared_kos(data: Vec<[Block; 2]>, choices: Vec<bool>) {
+        let (mut ctx_sender, mut ctx_receiver) = test_st_executor(8);
+        let (sender, receiver) = setup(
+            SenderConfig::default(),
+            ReceiverConfig::default(),
+            &mut ctx_sender,
+            &mut ctx_receiver,
+            data.len(),
+        )
+        .await;
+
+        let mut receiver = SharedReceiver::new(receiver);
+        let mut sender = SharedSender::new(sender);
+
+        let (_, received): (_, Vec<Block>) = tokio::try_join!(
+            sender.send(&mut ctx_sender, &data).map_err(OTError::from),
+            receiver
+                .receive(&mut ctx_receiver, &choices)
+                .map_err(OTError::from)
+        )
+        .unwrap();
+
+        let expected = choose(data.iter().copied(), choices.iter_lsb0()).collect::<Vec<_>>();
+
+        assert_eq!(received, expected);
     }
 }

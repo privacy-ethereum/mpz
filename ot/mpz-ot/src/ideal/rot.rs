@@ -1,11 +1,13 @@
+//! Ideal functionality for random oblivious transfer.
+
 use crate::{OTError, OTSetup, RandomOTReceiver, RandomOTSender};
 use async_trait::async_trait;
 use futures::{channel::mpsc, StreamExt};
-use mpz_core::{prg::Prg, Block, ProtocolMessage};
+use mpz_common::Context;
+use mpz_core::{prg::Prg, Block};
 use rand::Rng;
 use rand_chacha::ChaCha12Rng;
 use rand_core::{RngCore, SeedableRng};
-use utils_aio::{sink::IoSink, stream::IoStream};
 
 /// Ideal random OT sender.
 #[derive(Debug)]
@@ -19,14 +21,6 @@ pub struct IdealRandomOTSender<T = Block> {
 pub struct IdealRandomOTReceiver<T = Block> {
     receiver: mpsc::Receiver<Vec<[T; 2]>>,
     rng: ChaCha12Rng,
-}
-
-impl<T> ProtocolMessage for IdealRandomOTSender<T> {
-    type Msg = ();
-}
-
-impl<T> ProtocolMessage for IdealRandomOTReceiver<T> {
-    type Msg = ();
 }
 
 /// Creates a pair of ideal random OT sender and receiver.
@@ -48,25 +42,21 @@ pub fn ideal_random_ot_pair<T: Send + Sync + 'static>(
 }
 
 #[async_trait]
-impl<T> OTSetup for IdealRandomOTSender<T>
+impl<Ctx, T> OTSetup<Ctx> for IdealRandomOTSender<T>
 where
+    Ctx: Context,
     T: Send + Sync,
 {
-    async fn setup<Si: IoSink<()> + Send + Unpin, St: IoStream<()> + Send + Unpin>(
-        &mut self,
-        _sink: &mut Si,
-        _stream: &mut St,
-    ) -> Result<(), OTError> {
+    async fn setup(&mut self, _ctx: &mut Ctx) -> Result<(), OTError> {
         Ok(())
     }
 }
 
 #[async_trait]
-impl RandomOTSender<[Block; 2]> for IdealRandomOTSender<Block> {
-    async fn send_random<Si: IoSink<()> + Send + Unpin, St: IoStream<()> + Send + Unpin>(
+impl<Ctx: Context> RandomOTSender<Ctx, [Block; 2]> for IdealRandomOTSender<Block> {
+    async fn send_random(
         &mut self,
-        _sink: &mut Si,
-        _stream: &mut St,
+        _ctx: &mut Ctx,
         count: usize,
     ) -> Result<Vec<[Block; 2]>, OTError> {
         let messages = (0..count)
@@ -82,11 +72,12 @@ impl RandomOTSender<[Block; 2]> for IdealRandomOTSender<Block> {
 }
 
 #[async_trait]
-impl<const N: usize> RandomOTSender<[[u8; N]; 2]> for IdealRandomOTSender<[u8; N]> {
-    async fn send_random<Si: IoSink<()> + Send + Unpin, St: IoStream<()> + Send + Unpin>(
+impl<Ctx: Context, const N: usize> RandomOTSender<Ctx, [[u8; N]; 2]>
+    for IdealRandomOTSender<[u8; N]>
+{
+    async fn send_random(
         &mut self,
-        _sink: &mut Si,
-        _stream: &mut St,
+        _ctx: &mut Ctx,
         count: usize,
     ) -> Result<Vec<[[u8; N]; 2]>, OTError> {
         let prng = |block| {
@@ -114,25 +105,21 @@ impl<const N: usize> RandomOTSender<[[u8; N]; 2]> for IdealRandomOTSender<[u8; N
 }
 
 #[async_trait]
-impl<T> OTSetup for IdealRandomOTReceiver<T>
+impl<Ctx, T> OTSetup<Ctx> for IdealRandomOTReceiver<T>
 where
+    Ctx: Context,
     T: Send + Sync,
 {
-    async fn setup<Si: IoSink<()> + Send + Unpin, St: IoStream<()> + Send + Unpin>(
-        &mut self,
-        _sink: &mut Si,
-        _stream: &mut St,
-    ) -> Result<(), OTError> {
+    async fn setup(&mut self, _ctx: &mut Ctx) -> Result<(), OTError> {
         Ok(())
     }
 }
 
 #[async_trait]
-impl RandomOTReceiver<bool, Block> for IdealRandomOTReceiver<Block> {
-    async fn receive_random<Si: IoSink<()> + Send + Unpin, St: IoStream<()> + Send + Unpin>(
+impl<Ctx: Context> RandomOTReceiver<Ctx, bool, Block> for IdealRandomOTReceiver<Block> {
+    async fn receive_random(
         &mut self,
-        _sink: &mut Si,
-        _stream: &mut St,
+        _ctx: &mut Ctx,
         count: usize,
     ) -> Result<(Vec<bool>, Vec<Block>), OTError> {
         let payload = self
@@ -162,11 +149,12 @@ impl RandomOTReceiver<bool, Block> for IdealRandomOTReceiver<Block> {
 }
 
 #[async_trait]
-impl<const N: usize> RandomOTReceiver<bool, [u8; N]> for IdealRandomOTReceiver<[u8; N]> {
-    async fn receive_random<Si: IoSink<()> + Send + Unpin, St: IoStream<()> + Send + Unpin>(
+impl<Ctx: Context, const N: usize> RandomOTReceiver<Ctx, bool, [u8; N]>
+    for IdealRandomOTReceiver<[u8; N]>
+{
+    async fn receive_random(
         &mut self,
-        _sink: &mut Si,
-        _stream: &mut St,
+        _ctx: &mut Ctx,
         count: usize,
     ) -> Result<(Vec<bool>, Vec<[u8; N]>), OTError> {
         let payload = self
@@ -198,24 +186,20 @@ impl<const N: usize> RandomOTReceiver<bool, [u8; N]> for IdealRandomOTReceiver<[
 #[cfg(test)]
 mod tests {
     use super::*;
-    use utils_aio::duplex::MemoryDuplex;
+    use mpz_common::executor::test_st_executor;
 
     #[tokio::test]
     async fn test_ideal_random_ot_owned_block() {
         let seed = [0u8; 32];
-        let (send_channel, recv_channel) = MemoryDuplex::<()>::new();
-
-        let (mut send_sink, mut send_stream) = send_channel.split();
-        let (mut recv_sink, mut recv_stream) = recv_channel.split();
-
+        let (mut ctx_sender, mut ctx_receiver) = test_st_executor(8);
         let (mut sender, mut receiver) = ideal_random_ot_pair::<Block>(seed);
 
-        let values = RandomOTSender::send_random(&mut sender, &mut send_sink, &mut send_stream, 8)
+        let values = RandomOTSender::send_random(&mut sender, &mut ctx_sender, 8)
             .await
             .unwrap();
 
         let (choices, received) =
-            RandomOTReceiver::receive_random(&mut receiver, &mut recv_sink, &mut recv_stream, 8)
+            RandomOTReceiver::receive_random(&mut receiver, &mut ctx_receiver, 8)
                 .await
                 .unwrap();
 
@@ -231,19 +215,15 @@ mod tests {
     #[tokio::test]
     async fn test_ideal_random_ot_owned_array() {
         let seed = [0u8; 32];
-        let (send_channel, recv_channel) = MemoryDuplex::<()>::new();
-
-        let (mut send_sink, mut send_stream) = send_channel.split();
-        let (mut recv_sink, mut recv_stream) = recv_channel.split();
-
+        let (mut ctx_sender, mut ctx_receiver) = test_st_executor(8);
         let (mut sender, mut receiver) = ideal_random_ot_pair::<[u8; 64]>(seed);
 
-        let values = RandomOTSender::send_random(&mut sender, &mut send_sink, &mut send_stream, 8)
+        let values = RandomOTSender::send_random(&mut sender, &mut ctx_sender, 8)
             .await
             .unwrap();
 
         let (choices, received) =
-            RandomOTReceiver::receive_random(&mut receiver, &mut recv_sink, &mut recv_stream, 8)
+            RandomOTReceiver::receive_random(&mut receiver, &mut ctx_receiver, 8)
                 .await
                 .unwrap();
 

@@ -1,19 +1,17 @@
 use async_trait::async_trait;
-use futures::SinkExt;
 
 use itybity::BitIterable;
-use mpz_core::{cointoss, Block, ProtocolMessage};
+use mpz_cointoss as cointoss;
+use mpz_common::Context;
+use mpz_core::Block;
 use mpz_ot_core::chou_orlandi::{
-    msgs::Message, receiver_state as state, Receiver as ReceiverCore, ReceiverConfig,
+    receiver_state as state, Receiver as ReceiverCore, ReceiverConfig,
 };
 
 use enum_try_as_inner::EnumTryAsInner;
 use rand::{thread_rng, Rng};
-use utils_aio::{
-    non_blocking_backend::{Backend, NonBlockingBackend},
-    sink::IoSink,
-    stream::{ExpectStreamExt, IoStream},
-};
+use serio::{stream::IoStreamExt as _, SinkExt as _};
+use utils_aio::non_blocking_backend::{Backend, NonBlockingBackend};
 
 use crate::{CommittedOTReceiver, OTError, OTReceiver, OTSetup};
 
@@ -35,7 +33,19 @@ pub(crate) enum State {
 #[derive(Debug)]
 pub struct Receiver {
     state: State,
-    cointoss_payload: Option<cointoss::msgs::SenderPayload>,
+    cointoss_sender: Option<cointoss::Sender<cointoss::sender_state::Received>>,
+}
+
+impl Default for Receiver {
+    fn default() -> Self {
+        Self {
+            state: State::Initialized {
+                config: ReceiverConfig::default(),
+                seed: None,
+            },
+            cointoss_sender: None,
+        }
+    }
 }
 
 impl Receiver {
@@ -47,7 +57,7 @@ impl Receiver {
     pub fn new(config: ReceiverConfig) -> Self {
         Self {
             state: State::Initialized { config, seed: None },
-            cointoss_payload: None,
+            cointoss_sender: None,
         }
     }
 
@@ -63,18 +73,14 @@ impl Receiver {
                 config,
                 seed: Some(seed),
             },
-            cointoss_payload: None,
+            cointoss_sender: None,
         }
     }
 }
 
 #[async_trait]
-impl OTSetup for Receiver {
-    async fn setup<Si: IoSink<Message> + Send + Unpin, St: IoStream<Message> + Send + Unpin>(
-        &mut self,
-        sink: &mut Si,
-        stream: &mut St,
-    ) -> Result<(), OTError> {
+impl<Ctx: Context> OTSetup<Ctx> for Receiver {
+    async fn setup(&mut self, ctx: &mut Ctx) -> Result<(), OTError> {
         if self.state.is_setup() {
             return Ok(());
         }
@@ -84,29 +90,39 @@ impl OTSetup for Receiver {
             .map_err(ReceiverError::from)?;
 
         // If the receiver is committed, we generate the seed using a cointoss.
-        let receiver = if config.receiver_commit() {
+        let seed = if config.receiver_commit() {
             if seed.is_some() {
                 return Err(ReceiverError::InvalidConfig(
                     "committed receiver seed must be generated using coin toss".to_string(),
                 ))?;
             }
 
-            let (seed, cointoss_payload) = execute_cointoss(sink, stream).await?;
+            let cointoss_seed = thread_rng().gen();
+            let (seeds, cointoss_sender) = cointoss::Sender::new(vec![cointoss_seed])
+                .commit(ctx)
+                .await
+                .map_err(ReceiverError::from)?
+                .receive(ctx)
+                .await
+                .map_err(ReceiverError::from)?;
 
-            self.cointoss_payload = Some(cointoss_payload);
+            self.cointoss_sender = Some(cointoss_sender);
 
-            ReceiverCore::new_with_seed(config, seed)
+            let seed = seeds[0].to_bytes();
+            // Stretch seed to 32 bytes
+            let mut stretched_seed = [0u8; 32];
+            stretched_seed[..16].copy_from_slice(&seed);
+            stretched_seed[16..].copy_from_slice(&seed);
+
+            stretched_seed
         } else {
-            ReceiverCore::new_with_seed(config, seed.unwrap_or_else(|| thread_rng().gen()))
+            seed.unwrap_or_else(|| thread_rng().gen())
         };
 
-        let sender_setup = stream
-            .expect_next()
-            .await?
-            .try_into_sender_setup()
-            .map_err(ReceiverError::from)?;
-
-        let receiver = Backend::spawn(move || receiver.setup(sender_setup)).await;
+        let sender_setup = ctx.io_mut().expect_next().await?;
+        let receiver =
+            Backend::spawn(move || ReceiverCore::new_with_seed(config, seed).setup(sender_setup))
+                .await;
 
         self.state = State::Setup(Box::new(receiver));
 
@@ -114,52 +130,13 @@ impl OTSetup for Receiver {
     }
 }
 
-/// Executes the coin toss protocol as the sender up until the point when we should send
-/// a decommitment. The decommitment will be sent later during verification.
-async fn execute_cointoss<
-    Si: IoSink<Message> + Send + Unpin,
-    St: IoStream<Message> + Send + Unpin,
->(
-    sink: &mut Si,
-    stream: &mut St,
-) -> Result<([u8; 32], cointoss::msgs::SenderPayload), ReceiverError> {
-    let (sender, commitment) = cointoss::Sender::new(vec![thread_rng().gen()]).send();
-
-    sink.send(Message::CointossSenderCommitment(commitment))
-        .await?;
-
-    let payload = stream
-        .expect_next()
-        .await?
-        .try_into_cointoss_receiver_payload()?;
-
-    let (seeds, payload) = sender.finalize(payload)?;
-
-    let mut seed = [0u8; 32];
-    seed[..16].copy_from_slice(&seeds[0].to_bytes());
-    seed[16..].copy_from_slice(&seeds[0].to_bytes());
-
-    Ok((seed, payload))
-}
-
-impl ProtocolMessage for Receiver {
-    type Msg = Message;
-}
-
 #[async_trait]
-impl<T> OTReceiver<T, Block> for Receiver
+impl<Ctx, T> OTReceiver<Ctx, T, Block> for Receiver
 where
+    Ctx: Context,
     T: BitIterable + Send + Sync + Clone + 'static,
 {
-    async fn receive<
-        Si: IoSink<Self::Msg> + Send + Unpin,
-        St: IoStream<Self::Msg> + Send + Unpin,
-    >(
-        &mut self,
-        sink: &mut Si,
-        stream: &mut St,
-        choices: &[T],
-    ) -> Result<Vec<Block>, OTError> {
+    async fn receive(&mut self, ctx: &mut Ctx, choices: &[T]) -> Result<Vec<Block>, OTError> {
         let mut receiver = std::mem::replace(&mut self.state, State::Error)
             .try_into_setup()
             .map_err(ReceiverError::from)?;
@@ -171,22 +148,17 @@ where
         })
         .await;
 
-        sink.send(Message::ReceiverPayload(receiver_payload))
-            .await?;
+        ctx.io_mut().send(receiver_payload).await?;
 
-        let sender_payload = stream
-            .expect_next()
-            .await?
-            .try_into_sender_payload()
-            .map_err(ReceiverError::from)?;
+        let sender_payload = ctx.io_mut().expect_next().await?;
 
         let (receiver, data) = Backend::spawn(move || {
-            let data = receiver.receive(sender_payload);
-            (receiver, data)
+            receiver
+                .receive(sender_payload)
+                .map(|data| (receiver, data))
         })
-        .await;
-
-        let data = data.map_err(ReceiverError::from)?;
+        .await
+        .map_err(ReceiverError::from)?;
 
         self.state = State::Setup(receiver);
 
@@ -195,32 +167,26 @@ where
 }
 
 #[async_trait]
-impl CommittedOTReceiver<bool, Block> for Receiver {
-    async fn reveal_choices<
-        Si: IoSink<Self::Msg> + Send + Unpin,
-        St: IoStream<Self::Msg> + Send + Unpin,
-    >(
-        &mut self,
-        sink: &mut Si,
-        _stream: &mut St,
-    ) -> Result<(), OTError> {
+impl<Ctx: Context> CommittedOTReceiver<Ctx, bool, Block> for Receiver {
+    async fn reveal_choices(&mut self, ctx: &mut Ctx) -> Result<(), OTError> {
         let receiver = std::mem::replace(&mut self.state, State::Error)
             .try_into_setup()
             .map_err(ReceiverError::from)?;
 
-        let Some(cointoss_payload) = self.cointoss_payload.take() else {
+        let Some(cointoss_sender) = self.cointoss_sender.take() else {
             return Err(ReceiverError::InvalidConfig(
                 "receiver not configured to commit".to_string(),
             )
             .into());
         };
 
-        let reveal = receiver.reveal_choices().map_err(ReceiverError::from)?;
+        cointoss_sender
+            .finalize(ctx)
+            .await
+            .map_err(ReceiverError::from)?;
 
-        sink.feed(Message::CointossSenderPayload(cointoss_payload))
-            .await?;
-        sink.feed(Message::ReceiverReveal(reveal)).await?;
-        sink.flush().await?;
+        let reveal = receiver.reveal_choices().map_err(ReceiverError::from)?;
+        ctx.io_mut().send(reveal).await?;
 
         self.state = State::Complete;
 

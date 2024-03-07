@@ -52,6 +52,7 @@ mod tests {
 
     use rand::Rng;
     use rand_chacha::ChaCha12Rng;
+    use rand_core::SeedableRng;
 
     #[fixture]
     fn choices() -> Vec<bool> {

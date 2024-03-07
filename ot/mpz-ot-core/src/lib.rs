@@ -10,9 +10,14 @@
 //!
 //! USE AT YOUR OWN RISK.
 
-#![deny(missing_docs, unreachable_pub, unused_must_use)]
-#![deny(unsafe_code)]
-#![deny(clippy::all)]
+#![deny(
+    unsafe_code,
+    missing_docs,
+    unused_imports,
+    unused_must_use,
+    unreachable_pub,
+    clippy::all
+)]
 
 pub mod chou_orlandi;
 pub mod ferret;
