@@ -1,10 +1,13 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
 
 use mpz_core::{block::Block, prg::Prg};
 use rand_core::RngCore;
 
 fn criterion_benchmark(c: &mut Criterion) {
-    c.bench_function("Prg::byte", move |bench| {
+    let mut group = c.benchmark_group("prg");
+
+    group.throughput(Throughput::Bytes(1));
+    group.bench_function("byte", move |bench| {
         let mut prg = Prg::new();
         let mut x = 0u8;
         bench.iter(|| {
@@ -13,9 +16,11 @@ fn criterion_benchmark(c: &mut Criterion) {
         });
     });
 
-    c.bench_function("Prg::bytes", move |bench| {
+    const BYTES_PER: u64 = 16 * 1024;
+    group.throughput(Throughput::Bytes(BYTES_PER));
+    group.bench_function("bytes", move |bench| {
         let mut prg = Prg::new();
-        let mut x = (0..16 * 1024)
+        let mut x = (0..BYTES_PER)
             .map(|_| rand::random::<u8>())
             .collect::<Vec<u8>>();
         bench.iter(|| {
@@ -23,7 +28,8 @@ fn criterion_benchmark(c: &mut Criterion) {
         });
     });
 
-    c.bench_function("Prg::block", move |bench| {
+    group.throughput(Throughput::Elements(1));
+    group.bench_function("block", move |bench| {
         let mut prg = Prg::new();
         let mut x = Block::ZERO;
         bench.iter(|| {
@@ -32,9 +38,11 @@ fn criterion_benchmark(c: &mut Criterion) {
         });
     });
 
-    c.bench_function("Prg::blocks", move |bench| {
+    const BLOCKS_PER: u64 = 16 * 1024;
+    group.throughput(Throughput::Elements(BLOCKS_PER));
+    group.bench_function("blocks", move |bench| {
         let mut prg = Prg::new();
-        let mut x = (0..16 * 1024)
+        let mut x = (0..BLOCKS_PER)
             .map(|_| rand::random::<Block>())
             .collect::<Vec<Block>>();
         bench.iter(|| {
