@@ -3,6 +3,8 @@
 use mpz_core::Block;
 use serde::{Deserialize, Serialize};
 
+use crate::TransferId;
+
 /// Extension message sent by the receiver to agree upon the number of OTs to set up.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct StartExtend {
@@ -60,7 +62,7 @@ pub struct Check {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SenderPayload {
     /// Transfer ID
-    pub id: u32,
+    pub id: TransferId,
     /// Sender's ciphertexts
     pub ciphertexts: Ciphertexts,
 }

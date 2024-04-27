@@ -3,24 +3,33 @@
 use mpz_core::{prg::Prg, Block};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+use crate::TransferId;
+
 /// The message that sender receives from the COT functionality.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CotMsgForSender {
+    /// The transfer id.
+    pub id: TransferId,
     /// The random blocks that sender receives from the COT functionality.
     pub qs: Vec<Block>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 /// The message that receiver receives from the COT functionality.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CotMsgForReceiver {
+    /// The transfer id.
+    pub id: TransferId,
     /// The random bits that receiver receives from the COT functionality.
     pub rs: Vec<bool>,
     /// The chosen blocks that receiver receives from the COT functionality.
     pub ts: Vec<Block>,
 }
-#[allow(missing_docs)]
+
+/// The ideal COT functionality.
+#[derive(Debug)]
 pub struct IdealCOT {
     delta: Block,
+    transfer_id: TransferId,
     counter: usize,
     prg: Prg,
 }
@@ -32,6 +41,7 @@ impl IdealCOT {
         let delta = prg.random_block();
         IdealCOT {
             delta,
+            transfer_id: TransferId::default(),
             counter: 0,
             prg,
         }
@@ -42,6 +52,7 @@ impl IdealCOT {
         let prg = Prg::new();
         IdealCOT {
             delta,
+            transfer_id: TransferId::default(),
             counter: 0,
             prg,
         }
@@ -56,10 +67,10 @@ impl IdealCOT {
     ///
     /// # Argument
     ///
-    /// * `counter` - The number of COT to extend.
-    pub fn extend(&mut self, counter: usize) -> (CotMsgForSender, CotMsgForReceiver) {
-        let mut qs = vec![Block::ZERO; counter];
-        let mut rs = vec![false; counter];
+    /// * `count` - The number of COT to extend.
+    pub fn extend(&mut self, count: usize) -> (CotMsgForSender, CotMsgForReceiver) {
+        let mut qs = vec![Block::ZERO; count];
+        let mut rs = vec![false; count];
 
         self.prg.random_blocks(&mut qs);
         self.prg.random_bools(&mut rs);
@@ -70,29 +81,10 @@ impl IdealCOT {
             .map(|(&q, &r)| if r { q ^ self.delta } else { q })
             .collect();
 
-        self.counter += counter;
-        (CotMsgForSender { qs }, CotMsgForReceiver { rs, ts })
-    }
+        let id = self.transfer_id.next();
+        self.counter += count;
 
-    /// Checks if the outputs satisfy the relation with Delta, this is only used for test.
-    ///
-    /// # Arguments
-    ///
-    /// * `sender_msg` - The message that the ideal COT sends to the sender.
-    /// * `receiver_msg` - The message that the ideal COT sends to the receiver.
-    pub fn check(&self, sender_msg: CotMsgForSender, receiver_msg: CotMsgForReceiver) -> bool {
-        let CotMsgForSender { qs } = sender_msg;
-        let CotMsgForReceiver { rs, ts } = receiver_msg;
-
-        qs.into_iter().zip(ts).zip(rs).all(
-            |((q, t), r)| {
-                if !r {
-                    q == t
-                } else {
-                    q == t ^ self.delta
-                }
-            },
-        )
+        (CotMsgForSender { id, qs }, CotMsgForReceiver { id, rs, ts })
     }
 }
 
@@ -101,16 +93,24 @@ impl Default for IdealCOT {
         Self::new()
     }
 }
+
 #[cfg(test)]
 mod tests {
-    use crate::ideal::ideal_cot::IdealCOT;
+    use super::*;
 
     #[test]
     fn ideal_cot_test() {
         let num = 100;
         let mut ideal_cot = IdealCOT::new();
-        let (sender, receiver) = ideal_cot.extend(num);
+        let delta = ideal_cot.delta();
+        let (CotMsgForSender { qs, .. }, CotMsgForReceiver { rs, ts, .. }) = ideal_cot.extend(num);
 
-        assert!(ideal_cot.check(sender, receiver));
+        assert!(qs.into_iter().zip(ts).zip(rs).all(|((q, t), r)| {
+            if !r {
+                q == t
+            } else {
+                q == t ^ delta
+            }
+        }));
     }
 }

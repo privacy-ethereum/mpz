@@ -2,13 +2,15 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::TransferId;
+
 /// A message sent by the receiver which a sender can use to perform
 /// Beaver derandomization.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "UncheckedDerandomize")]
 pub struct Derandomize {
     /// Transfer ID
-    pub id: u32,
+    pub id: TransferId,
     /// The number of choices to derandomize.
     pub count: u32,
     /// Correction bits
@@ -17,7 +19,7 @@ pub struct Derandomize {
 
 #[derive(Debug, Deserialize)]
 struct UncheckedDerandomize {
-    id: u32,
+    id: TransferId,
     count: u32,
     flip: Vec<u8>,
 }
@@ -51,14 +53,14 @@ mod tests {
     #[test]
     fn test_unchecked_derandomize() {
         assert!(Derandomize::try_from(UncheckedDerandomize {
-            id: 0,
+            id: TransferId::default(),
             count: 0,
             flip: vec![],
         })
         .is_ok());
 
         assert!(Derandomize::try_from(UncheckedDerandomize {
-            id: 0,
+            id: TransferId::default(),
             count: 9,
             flip: vec![0],
         })

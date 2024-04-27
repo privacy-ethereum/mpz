@@ -321,13 +321,15 @@ mod tests {
         sender_keys.derandomize(derandomize).unwrap();
         let payload = sender_keys.encrypt_blocks(&data).unwrap();
 
+        let id = payload.id;
+
         let received = receiver_keys.decrypt_blocks(payload).unwrap();
 
         assert_eq!(received, expected);
 
         let receiver = receiver.start_verification(delta).unwrap();
 
-        receiver.remove_record(0).unwrap().verify(&data).unwrap();
+        receiver.remove_record(id).unwrap().verify(&data).unwrap();
     }
 
     #[rstest]
@@ -359,6 +361,8 @@ mod tests {
         sender_keys.derandomize(derandomize).unwrap();
         let payload = sender_keys.encrypt_blocks(&data).unwrap();
 
+        let id = payload.id;
+
         let received = receiver_keys.decrypt_blocks(payload).unwrap();
 
         assert_eq!(received, expected);
@@ -368,7 +372,7 @@ mod tests {
         let receiver = receiver.start_verification(delta).unwrap();
 
         let err = receiver
-            .remove_record(0)
+            .remove_record(id)
             .unwrap()
             .verify(&data)
             .unwrap_err();

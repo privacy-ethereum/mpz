@@ -12,7 +12,7 @@ mod tests {
     use super::{receiver::Receiver as SpcotReceiver, sender::Sender as SpcotSender};
     use crate::{
         ferret::CSP,
-        ideal::ideal_cot::{CotMsgForReceiver, CotMsgForSender, IdealCOT},
+        ideal::cot::{CotMsgForReceiver, CotMsgForSender, IdealCOT},
     };
 
     #[test]
@@ -34,8 +34,8 @@ mod tests {
         // Extend once
         let (msg_for_sender, msg_for_receiver) = ideal_cot.extend(h1);
 
-        let CotMsgForReceiver { rs, ts } = msg_for_receiver;
-        let CotMsgForSender { qs } = msg_for_sender;
+        let CotMsgForReceiver { rs, ts, .. } = msg_for_receiver;
+        let CotMsgForSender { qs, .. } = msg_for_sender;
         let maskbits = receiver.extend_mask_bits(h1, alpha1, &rs).unwrap();
 
         let msg_from_sender = sender.extend(h1, &qs, maskbits).unwrap();
@@ -48,8 +48,8 @@ mod tests {
 
         let (msg_for_sender, msg_for_receiver) = ideal_cot.extend(h2);
 
-        let CotMsgForReceiver { rs, ts } = msg_for_receiver;
-        let CotMsgForSender { qs } = msg_for_sender;
+        let CotMsgForReceiver { rs, ts, .. } = msg_for_receiver;
+        let CotMsgForSender { qs, .. } = msg_for_sender;
 
         let maskbits = receiver.extend_mask_bits(h2, alpha2, &rs).unwrap();
 
@@ -63,9 +63,10 @@ mod tests {
         let CotMsgForReceiver {
             rs: x_star,
             ts: z_star,
+            ..
         } = msg_for_receiver;
 
-        let CotMsgForSender { qs: y_star } = msg_for_sender;
+        let CotMsgForSender { qs: y_star, .. } = msg_for_sender;
 
         let check_from_receiver = receiver.check_pre(&x_star).unwrap();
 

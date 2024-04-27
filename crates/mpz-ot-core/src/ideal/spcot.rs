@@ -3,23 +3,31 @@
 use mpz_core::{prg::Prg, Block};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+use crate::TransferId;
+
 /// The message that sender receivers from the SPCOT functionality.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SpcotMsgForSender {
+    /// The transfer id.
+    pub id: TransferId,
     /// The random blocks that sender receives from the SPCOT functionality.
     pub v: Vec<Vec<Block>>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 /// The message that receiver receives from the SPCOT functionality.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SpcotMsgForReceiver {
+    /// The transfer id.
+    pub id: TransferId,
     /// The random blocks that receiver receives from the SPCOT functionality.
     pub w: Vec<Vec<Block>>,
 }
 
-#[allow(missing_docs)]
+/// The ideal SPCOT functionality.
+#[derive(Debug)]
 pub struct IdealSpcot {
     delta: Block,
+    transfer_id: TransferId,
     counter: usize,
     prg: Prg,
 }
@@ -31,6 +39,7 @@ impl IdealSpcot {
         let delta = prg.random_block();
         IdealSpcot {
             delta,
+            transfer_id: TransferId::default(),
             counter: 0,
             prg,
         }
@@ -41,6 +50,7 @@ impl IdealSpcot {
         let prg = Prg::new();
         IdealSpcot {
             delta,
+            transfer_id: TransferId::default(),
             counter: 0,
             prg,
         }
@@ -66,38 +76,10 @@ impl IdealSpcot {
             w.push(w_tmp);
             self.counter += n;
         }
-        (SpcotMsgForSender { v }, SpcotMsgForReceiver { w })
-    }
 
-    /// Checks if the outputs satisfy the relation with Delta, this is only used for test.
-    ///
-    /// # Arguments
-    ///
-    /// * `sender_msg` - The message that the ideal SPCOT sends to the sender.
-    /// * `receiver_msg` - The message that the ideal SPCOT sends to the receiver.
-    pub fn check(
-        &self,
-        sender_msg: SpcotMsgForSender,
-        receiver_msg: SpcotMsgForReceiver,
-        pos: &[(usize, u32)],
-    ) -> bool {
-        let SpcotMsgForSender { mut v } = sender_msg;
-        let SpcotMsgForReceiver { w } = receiver_msg;
+        let id = self.transfer_id.next();
 
-        v.iter_mut()
-            .zip(w.iter())
-            .zip(pos.iter())
-            .for_each(|((v, w), (n, p))| {
-                assert_eq!(v.len(), *n);
-                assert_eq!(w.len(), *n);
-                v[*p as usize] ^= self.delta;
-            });
-
-        let res = v
-            .iter()
-            .zip(w.iter())
-            .all(|(v, w)| v.iter().zip(w.iter()).all(|(x, y)| *x == *y));
-        res
+        (SpcotMsgForSender { id, v }, SpcotMsgForReceiver { id, w })
     }
 }
 
@@ -109,14 +91,30 @@ impl Default for IdealSpcot {
 
 #[cfg(test)]
 mod tests {
-    use crate::ideal::ideal_spcot::IdealSpcot;
+    use super::*;
 
     #[test]
     fn ideal_spcot_test() {
         let mut ideal_spcot = IdealSpcot::new();
+        let delta = ideal_spcot.delta;
 
-        let (sender_msg, receiver_msg) = ideal_spcot.extend(&[(10, 2), (20, 3)]);
+        let pos = [(10, 2), (20, 3)];
 
-        assert!(ideal_spcot.check(sender_msg, receiver_msg, &[(10, 2), (20, 3)]));
+        let (SpcotMsgForSender { mut v, .. }, SpcotMsgForReceiver { w, .. }) =
+            ideal_spcot.extend(&pos);
+
+        v.iter_mut()
+            .zip(w.iter())
+            .zip(pos.iter())
+            .for_each(|((v, w), (n, p))| {
+                assert_eq!(v.len(), *n);
+                assert_eq!(w.len(), *n);
+                v[*p as usize] ^= delta;
+            });
+
+        assert!(v
+            .iter()
+            .zip(w.iter())
+            .all(|(v, w)| v.iter().zip(w.iter()).all(|(x, y)| *x == *y)));
     }
 }

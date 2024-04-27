@@ -3,16 +3,22 @@
 use mpz_core::{prg::Prg, Block};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+use crate::TransferId;
+
 /// The message that sender receives from the ROT functionality.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RotMsgForSender {
+    /// The transfer id.
+    pub id: TransferId,
     /// The random blocks that sender receives from the ROT functionality.
     pub qs: Vec<[Block; 2]>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 /// The message that receiver receives from the ROT functionality.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RotMsgForReceiver {
+    /// The transfer id.
+    pub id: TransferId,
     /// The random bits that receiver receives from the ROT functionality.
     pub rs: Vec<bool>,
     /// The chosen blocks that receiver receives from the ROT functionality.
@@ -22,6 +28,7 @@ pub struct RotMsgForReceiver {
 /// An ideal functionality for random OT
 #[derive(Debug)]
 pub struct IdealROT {
+    transfer_id: TransferId,
     counter: usize,
     prg: Prg,
 }
@@ -30,7 +37,11 @@ impl IdealROT {
     /// Initiate the functionality
     pub fn new() -> Self {
         let prg = Prg::new();
-        IdealROT { counter: 0, prg }
+        IdealROT {
+            transfer_id: TransferId::default(),
+            counter: 0,
+            prg,
+        }
     }
 
     /// Performs the extension with random choice bits.
@@ -57,8 +68,10 @@ impl IdealROT {
             .map(|(&q, &r)| q[r as usize])
             .collect();
 
+        let id = self.transfer_id.next();
         self.counter += counter;
-        (RotMsgForSender { qs }, RotMsgForReceiver { rs, ts })
+
+        (RotMsgForSender { id, qs }, RotMsgForReceiver { id, rs, ts })
     }
 }
 
@@ -70,20 +83,18 @@ impl Default for IdealROT {
 
 #[cfg(test)]
 mod tests {
-    use super::{IdealROT, RotMsgForReceiver};
+    use super::*;
 
     #[test]
     fn ideal_rot_test() {
         let num = 100;
         let mut ideal_rot = IdealROT::new();
-        let (sender, receiver) = ideal_rot.extend(num);
+        let (RotMsgForSender { qs, .. }, RotMsgForReceiver { rs, ts, .. }) = ideal_rot.extend(num);
 
-        let qs = sender.qs;
-        let RotMsgForReceiver { rs, ts } = receiver;
-
-        qs.iter()
+        assert!(qs
+            .iter()
             .zip(ts)
             .zip(rs)
-            .for_each(|((q, t), r)| assert_eq!(q[r as usize], t));
+            .all(|((q, t), r)| q[r as usize] == t));
     }
 }
