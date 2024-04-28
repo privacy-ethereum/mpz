@@ -109,18 +109,18 @@ mod tests {
         )
         .await;
 
-        let (id_s, (id_r, received)): (_, (_, Vec<Block>)) = tokio::try_join!(
-            sender.send(&mut ctx_sender, &data).map_err(OTError::from),
-            receiver
-                .receive(&mut ctx_receiver, &choices)
+        let (output_sender, output_receiver) = tokio::try_join!(
+            OTSender::<_, [Block; 2]>::send(&mut sender, &mut ctx_sender, &data)
+                .map_err(OTError::from),
+            OTReceiver::<_, bool, Block>::receive(&mut receiver, &mut ctx_receiver, &choices)
                 .map_err(OTError::from)
         )
         .unwrap();
 
         let expected = choose(data.iter().copied(), choices.iter_lsb0()).collect::<Vec<_>>();
 
-        assert_eq!(id_s, id_r);
-        assert_eq!(received, expected);
+        assert_eq!(output_sender.id, output_receiver.id);
+        assert_eq!(output_receiver.data, expected);
     }
 
     #[tokio::test]
@@ -135,7 +135,7 @@ mod tests {
         )
         .await;
 
-        let ((id_s, sender_output), (id_r, (choices, receiver_output))) = tokio::try_join!(
+        let (output_sender, output_receiver) = tokio::try_join!(
             RandomOTSender::<_, [Block; 2]>::send_random(&mut sender, &mut ctx_sender, 10),
             RandomOTReceiver::<_, bool, Block>::receive_random(
                 &mut receiver,
@@ -145,14 +145,15 @@ mod tests {
         )
         .unwrap();
 
-        let expected = sender_output
+        let expected = output_sender
+            .data
             .into_iter()
-            .zip(choices)
+            .zip(output_receiver.data.0)
             .map(|(output, choice)| output[choice as usize])
             .collect::<Vec<_>>();
 
-        assert_eq!(id_s, id_r);
-        assert_eq!(receiver_output, expected);
+        assert_eq!(output_sender.id, output_receiver.id);
+        assert_eq!(output_receiver.data.1, expected);
     }
 
     #[rstest]
@@ -173,7 +174,7 @@ mod tests {
             .map(|[a, b]| [a.to_bytes(), b.to_bytes()])
             .collect();
 
-        let (id_s, (id_r, received)) = tokio::try_join!(
+        let (output_sender, output_receiver) = tokio::try_join!(
             OTSender::<_, [[u8; 16]; 2]>::send(&mut sender, &mut ctx_sender, &data)
                 .map_err(OTError::from),
             OTReceiver::<_, bool, [u8; 16]>::receive(&mut receiver, &mut ctx_receiver, &choices)
@@ -183,8 +184,8 @@ mod tests {
 
         let expected = choose(data.iter().copied(), choices.iter_lsb0()).collect::<Vec<_>>();
 
-        assert_eq!(id_s, id_r);
-        assert_eq!(received, expected);
+        assert_eq!(output_sender.id, output_receiver.id);
+        assert_eq!(output_receiver.data, expected);
     }
 
     #[rstest]
@@ -200,23 +201,23 @@ mod tests {
         )
         .await;
 
-        let (id_s, (id_r, received)): (_, (_, Vec<Block>)) = tokio::try_join!(
-            sender.send(&mut ctx_sender, &data).map_err(OTError::from),
-            receiver
-                .receive(&mut ctx_receiver, &choices)
+        let (output_sender, output_receiver) = tokio::try_join!(
+            OTSender::<_, [Block; 2]>::send(&mut sender, &mut ctx_sender, &data)
+                .map_err(OTError::from),
+            OTReceiver::<_, bool, Block>::receive(&mut receiver, &mut ctx_receiver, &choices)
                 .map_err(OTError::from)
         )
         .unwrap();
 
         let expected = choose(data.iter().copied(), choices.iter_lsb0()).collect::<Vec<_>>();
 
-        assert_eq!(id_s, id_r);
-        assert_eq!(received, expected);
+        assert_eq!(output_sender.id, output_receiver.id);
+        assert_eq!(output_receiver.data, expected);
 
         tokio::try_join!(
             sender.reveal(&mut ctx_sender).map_err(OTError::from),
             receiver
-                .verify(&mut ctx_receiver, id_r, &data)
+                .verify(&mut ctx_receiver, output_receiver.id, &data)
                 .map_err(OTError::from)
         )
         .unwrap();
@@ -238,17 +239,17 @@ mod tests {
         let mut receiver = SharedReceiver::new(receiver);
         let mut sender = SharedSender::new(sender);
 
-        let (id_s, (id_r, received)): (_, (_, Vec<Block>)) = tokio::try_join!(
-            sender.send(&mut ctx_sender, &data).map_err(OTError::from),
-            receiver
-                .receive(&mut ctx_receiver, &choices)
+        let (output_sender, output_receiver) = tokio::try_join!(
+            OTSender::<_, [Block; 2]>::send(&mut sender, &mut ctx_sender, &data)
+                .map_err(OTError::from),
+            OTReceiver::<_, bool, Block>::receive(&mut receiver, &mut ctx_receiver, &choices)
                 .map_err(OTError::from)
         )
         .unwrap();
 
         let expected = choose(data.iter().copied(), choices.iter_lsb0()).collect::<Vec<_>>();
 
-        assert_eq!(id_s, id_r);
-        assert_eq!(received, expected);
+        assert_eq!(output_sender.id, output_receiver.id);
+        assert_eq!(output_receiver.data, expected);
     }
 }

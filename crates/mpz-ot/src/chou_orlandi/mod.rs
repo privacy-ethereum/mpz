@@ -111,7 +111,7 @@ mod tests {
         )
         .await;
 
-        let (id_s, (id_r, received)) = tokio::try_join!(
+        let (output_sender, output_receiver) = tokio::try_join!(
             sender.send(&mut sender_ctx, &data).map_err(OTError::from),
             receiver
                 .receive(&mut receiver_ctx, &choices)
@@ -121,8 +121,8 @@ mod tests {
 
         let expected = choose(data.iter().copied(), choices.iter_lsb0()).collect::<Vec<_>>();
 
-        assert_eq!(id_s, id_r);
-        assert_eq!(received, expected);
+        assert_eq!(output_sender.id, output_receiver.id);
+        assert_eq!(output_receiver.data, expected);
     }
 
     #[rstest]

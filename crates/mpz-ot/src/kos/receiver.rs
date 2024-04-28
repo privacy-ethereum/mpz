@@ -20,7 +20,7 @@ use utils_aio::non_blocking_backend::{Backend, NonBlockingBackend};
 
 use super::{ReceiverError, ReceiverVerifyError, EXTEND_CHUNK_SIZE};
 use crate::{
-    OTError, OTReceiver, OTSender, OTSetup, RandomOTReceiver, VerifiableOTReceiver,
+    OTError, OTReceiver, OTSender, OTSetup, Output, RandomOTReceiver, VerifiableOTReceiver,
     VerifiableOTSender,
 };
 
@@ -231,7 +231,7 @@ where
         &mut self,
         ctx: &mut Ctx,
         choices: &[bool],
-    ) -> Result<(TransferId, Vec<Block>), OTError> {
+    ) -> Result<Output<Vec<Block>>, OTError> {
         let receiver = self
             .state
             .try_as_extension_mut()
@@ -258,7 +258,7 @@ where
         })
         .await?;
 
-        Ok((id, received))
+        Ok(Output { id, data: received })
     }
 }
 
@@ -272,7 +272,7 @@ where
         &mut self,
         _ctx: &mut Ctx,
         count: usize,
-    ) -> Result<(TransferId, (Vec<bool>, Vec<Block>)), OTError> {
+    ) -> Result<Output<(Vec<bool>, Vec<Block>)>, OTError> {
         let receiver = self
             .state
             .try_as_extension_mut()
@@ -281,7 +281,10 @@ where
         let keys = receiver.keys(count).map_err(ReceiverError::from)?;
         let id = keys.id();
 
-        Ok((id, keys.take_choices_and_keys()))
+        Ok(Output {
+            id,
+            data: keys.take_choices_and_keys(),
+        })
     }
 }
 
@@ -295,7 +298,7 @@ where
         &mut self,
         ctx: &mut Ctx,
         choices: &[bool],
-    ) -> Result<(TransferId, Vec<[u8; N]>), OTError> {
+    ) -> Result<Output<Vec<[u8; N]>>, OTError> {
         let receiver = self
             .state
             .try_as_extension_mut()
@@ -322,7 +325,7 @@ where
         })
         .await?;
 
-        Ok((id, received))
+        Ok(Output { id, data: received })
     }
 }
 
@@ -336,7 +339,7 @@ where
         &mut self,
         _ctx: &mut Ctx,
         count: usize,
-    ) -> Result<(TransferId, (Vec<bool>, Vec<[u8; N]>)), OTError> {
+    ) -> Result<Output<(Vec<bool>, Vec<[u8; N]>)>, OTError> {
         let receiver = self
             .state
             .try_as_extension_mut()
@@ -347,9 +350,9 @@ where
 
         let (choices, random_outputs) = keys.take_choices_and_keys();
 
-        Ok((
+        Ok(Output {
             id,
-            (
+            data: (
                 choices,
                 random_outputs
                     .into_iter()
@@ -361,7 +364,7 @@ where
                     })
                     .collect(),
             ),
-        ))
+        })
     }
 }
 

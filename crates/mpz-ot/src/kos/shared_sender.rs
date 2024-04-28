@@ -4,12 +4,11 @@ use async_trait::async_trait;
 
 use mpz_common::{sync::Mutex, Context};
 use mpz_core::Block;
-use mpz_ot_core::TransferId;
 use serio::{stream::IoStreamExt as _, SinkExt as _};
 
 use crate::{
     kos::{Sender, SenderError},
-    OTError, OTReceiver, OTSender,
+    OTError, OTReceiver, OTSender, Output,
 };
 
 /// A shared KOS sender.
@@ -34,7 +33,7 @@ where
     Ctx: Context,
     BaseOT: OTReceiver<Ctx, bool, Block> + Send + 'static,
 {
-    async fn send(&mut self, ctx: &mut Ctx, msgs: &[[Block; 2]]) -> Result<TransferId, OTError> {
+    async fn send(&mut self, ctx: &mut Ctx, msgs: &[[Block; 2]]) -> Result<Output<()>, OTError> {
         let mut keys = self.inner.lock(ctx).await?.take_keys(msgs.len())?;
 
         let derandomize = ctx.io_mut().expect_next().await?;
@@ -48,6 +47,6 @@ where
             .await
             .map_err(SenderError::from)?;
 
-        Ok(id)
+        Ok(Output { id, data: () })
     }
 }

@@ -1,3 +1,4 @@
+use crate::Output;
 use crate::{chou_orlandi::SenderError, OTError, OTSender, OTSetup, VerifiableOTSender};
 
 use async_trait::async_trait;
@@ -5,7 +6,6 @@ use mpz_cointoss as cointoss;
 use mpz_common::Context;
 use mpz_core::Block;
 use mpz_ot_core::chou_orlandi::{sender_state as state, Sender as SenderCore, SenderConfig};
-use mpz_ot_core::TransferId;
 use rand::{thread_rng, Rng};
 use serio::{stream::IoStreamExt, SinkExt as _};
 use utils_aio::non_blocking_backend::{Backend, NonBlockingBackend};
@@ -100,7 +100,7 @@ impl<Ctx: Context> OTSetup<Ctx> for Sender {
 
 #[async_trait]
 impl<Ctx: Context> OTSender<Ctx, [Block; 2]> for Sender {
-    async fn send(&mut self, ctx: &mut Ctx, input: &[[Block; 2]]) -> Result<TransferId, OTError> {
+    async fn send(&mut self, ctx: &mut Ctx, input: &[[Block; 2]]) -> Result<Output<()>, OTError> {
         let mut sender = std::mem::replace(&mut self.state, State::Error)
             .try_into_setup()
             .map_err(SenderError::from)?;
@@ -122,7 +122,7 @@ impl<Ctx: Context> OTSender<Ctx, [Block; 2]> for Sender {
 
         self.state = State::Setup(sender);
 
-        Ok(id)
+        Ok(Output { id, data: () })
     }
 }
 

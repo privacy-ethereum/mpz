@@ -8,14 +8,13 @@ use mpz_ot_core::chou_orlandi::msgs::SenderPayload;
 use mpz_ot_core::chou_orlandi::{
     receiver_state as state, Receiver as ReceiverCore, ReceiverConfig,
 };
-use mpz_ot_core::TransferId;
 
 use enum_try_as_inner::EnumTryAsInner;
 use rand::{thread_rng, Rng};
 use serio::{stream::IoStreamExt as _, SinkExt as _};
 use utils_aio::non_blocking_backend::{Backend, NonBlockingBackend};
 
-use crate::{CommittedOTReceiver, OTError, OTReceiver, OTSetup};
+use crate::{CommittedOTReceiver, OTError, OTReceiver, OTSetup, Output};
 
 use super::ReceiverError;
 
@@ -142,7 +141,7 @@ where
         &mut self,
         ctx: &mut Ctx,
         choices: &[T],
-    ) -> Result<(TransferId, Vec<Block>), OTError> {
+    ) -> Result<Output<Vec<Block>>, OTError> {
         let mut receiver = std::mem::replace(&mut self.state, State::Error)
             .try_into_setup()
             .map_err(ReceiverError::from)?;
@@ -169,7 +168,7 @@ where
 
         self.state = State::Setup(receiver);
 
-        Ok((id, data))
+        Ok(Output { id, data })
     }
 }
 

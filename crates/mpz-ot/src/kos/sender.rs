@@ -16,7 +16,7 @@ use utils_aio::non_blocking_backend::{Backend, NonBlockingBackend};
 
 use crate::{
     kos::SenderError, CommittedOTReceiver, CommittedOTSender, OTError, OTReceiver, OTSender,
-    OTSetup, RandomOTSender, TransferId,
+    OTSetup, Output, RandomOTSender,
 };
 
 #[derive(Debug, EnumTryAsInner)]
@@ -99,9 +99,12 @@ impl<BaseOT: Send> Sender<BaseOT> {
         let ext_sender = std::mem::replace(&mut self.state, State::Error).try_into_initialized()?;
 
         let choices = delta.into_lsb0_vec();
-        let (_, seeds) = self.base.receive(ctx, &choices).await?;
+        let base_output = self.base.receive(ctx, &choices).await?;
 
-        let seeds: [Block; CSP] = seeds.try_into().expect("seeds should be CSP length");
+        let seeds: [Block; CSP] = base_output
+            .data
+            .try_into()
+            .expect("seeds should be CSP length");
 
         let ext_sender = ext_sender.setup(delta, seeds);
 
@@ -262,7 +265,7 @@ where
     Ctx: Context,
     BaseOT: Send,
 {
-    async fn send(&mut self, ctx: &mut Ctx, msgs: &[[Block; 2]]) -> Result<TransferId, OTError> {
+    async fn send(&mut self, ctx: &mut Ctx, msgs: &[[Block; 2]]) -> Result<Output<()>, OTError> {
         let sender = self
             .state
             .try_as_extension_mut()
@@ -284,7 +287,7 @@ where
             .await
             .map_err(SenderError::from)?;
 
-        Ok(id)
+        Ok(Output { id, data: () })
     }
 }
 
@@ -298,7 +301,7 @@ where
         &mut self,
         _ctx: &mut Ctx,
         count: usize,
-    ) -> Result<(TransferId, Vec<[Block; 2]>), OTError> {
+    ) -> Result<Output<Vec<[Block; 2]>>, OTError> {
         let sender = self
             .state
             .try_as_extension_mut()
@@ -307,7 +310,10 @@ where
         let random_outputs = sender.keys(count).map_err(SenderError::from)?;
         let id = random_outputs.id();
 
-        Ok((id, random_outputs.take_keys()))
+        Ok(Output {
+            id,
+            data: random_outputs.take_keys(),
+        })
     }
 }
 
@@ -317,7 +323,7 @@ where
     Ctx: Context,
     BaseOT: Send,
 {
-    async fn send(&mut self, ctx: &mut Ctx, msgs: &[[[u8; N]; 2]]) -> Result<TransferId, OTError> {
+    async fn send(&mut self, ctx: &mut Ctx, msgs: &[[[u8; N]; 2]]) -> Result<Output<()>, OTError> {
         let sender = self
             .state
             .try_as_extension_mut()
@@ -337,7 +343,7 @@ where
             .await
             .map_err(SenderError::from)?;
 
-        Ok(id)
+        Ok(Output { id, data: () })
     }
 }
 
@@ -351,7 +357,7 @@ where
         &mut self,
         _ctx: &mut Ctx,
         count: usize,
-    ) -> Result<(TransferId, Vec<[[u8; N]; 2]>), OTError> {
+    ) -> Result<Output<Vec<[[u8; N]; 2]>>, OTError> {
         let sender = self
             .state
             .try_as_extension_mut()
@@ -367,14 +373,14 @@ where
             out
         };
 
-        Ok((
+        Ok(Output {
             id,
-            random_outputs
+            data: random_outputs
                 .take_keys()
                 .into_iter()
                 .map(|[a, b]| [prng(a), prng(b)])
                 .collect(),
-        ))
+        })
     }
 }
 
