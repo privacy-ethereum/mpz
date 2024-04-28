@@ -16,7 +16,7 @@ use utils_aio::non_blocking_backend::{Backend, NonBlockingBackend};
 
 use crate::{
     kos::SenderError, CommittedOTReceiver, CommittedOTSender, OTError, OTReceiver, OTSender,
-    OTSetup, RandomOTSender,
+    OTSetup, RandomOTSender, TransferId,
 };
 
 #[derive(Debug, EnumTryAsInner)]
@@ -99,7 +99,7 @@ impl<BaseOT: Send> Sender<BaseOT> {
         let ext_sender = std::mem::replace(&mut self.state, State::Error).try_into_initialized()?;
 
         let choices = delta.into_lsb0_vec();
-        let seeds = self.base.receive(ctx, &choices).await?;
+        let (_, seeds) = self.base.receive(ctx, &choices).await?;
 
         let seeds: [Block; CSP] = seeds.try_into().expect("seeds should be CSP length");
 
@@ -262,7 +262,7 @@ where
     Ctx: Context,
     BaseOT: Send,
 {
-    async fn send(&mut self, ctx: &mut Ctx, msgs: &[[Block; 2]]) -> Result<(), OTError> {
+    async fn send(&mut self, ctx: &mut Ctx, msgs: &[[Block; 2]]) -> Result<TransferId, OTError> {
         let sender = self
             .state
             .try_as_extension_mut()
@@ -277,13 +277,14 @@ where
         let payload = sender_keys
             .encrypt_blocks(msgs)
             .map_err(SenderError::from)?;
+        let id = payload.id;
 
         ctx.io_mut()
             .send(payload)
             .await
             .map_err(SenderError::from)?;
 
-        Ok(())
+        Ok(id)
     }
 }
 
@@ -297,14 +298,16 @@ where
         &mut self,
         _ctx: &mut Ctx,
         count: usize,
-    ) -> Result<Vec<[Block; 2]>, OTError> {
+    ) -> Result<(TransferId, Vec<[Block; 2]>), OTError> {
         let sender = self
             .state
             .try_as_extension_mut()
             .map_err(SenderError::from)?;
 
         let random_outputs = sender.keys(count).map_err(SenderError::from)?;
-        Ok(random_outputs.take_keys())
+        let id = random_outputs.id();
+
+        Ok((id, random_outputs.take_keys()))
     }
 }
 
@@ -314,7 +317,7 @@ where
     Ctx: Context,
     BaseOT: Send,
 {
-    async fn send(&mut self, ctx: &mut Ctx, msgs: &[[[u8; N]; 2]]) -> Result<(), OTError> {
+    async fn send(&mut self, ctx: &mut Ctx, msgs: &[[[u8; N]; 2]]) -> Result<TransferId, OTError> {
         let sender = self
             .state
             .try_as_extension_mut()
@@ -327,13 +330,14 @@ where
             .derandomize(derandomize)
             .map_err(SenderError::from)?;
         let payload = sender_keys.encrypt_bytes(msgs).map_err(SenderError::from)?;
+        let id = payload.id;
 
         ctx.io_mut()
             .send(payload)
             .await
             .map_err(SenderError::from)?;
 
-        Ok(())
+        Ok(id)
     }
 }
 
@@ -347,13 +351,14 @@ where
         &mut self,
         _ctx: &mut Ctx,
         count: usize,
-    ) -> Result<Vec<[[u8; N]; 2]>, OTError> {
+    ) -> Result<(TransferId, Vec<[[u8; N]; 2]>), OTError> {
         let sender = self
             .state
             .try_as_extension_mut()
             .map_err(SenderError::from)?;
 
         let random_outputs = sender.keys(count).map_err(SenderError::from)?;
+        let id = random_outputs.id();
 
         let prng = |block| {
             let mut prg = Prg::from_seed(block);
@@ -362,11 +367,14 @@ where
             out
         };
 
-        Ok(random_outputs
-            .take_keys()
-            .into_iter()
-            .map(|[a, b]| [prng(a), prng(b)])
-            .collect())
+        Ok((
+            id,
+            random_outputs
+                .take_keys()
+                .into_iter()
+                .map(|[a, b]| [prng(a), prng(b)])
+                .collect(),
+        ))
     }
 }
 

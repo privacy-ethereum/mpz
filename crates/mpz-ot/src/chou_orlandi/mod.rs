@@ -49,6 +49,7 @@ pub use mpz_ot_core::chou_orlandi::{
 
 #[cfg(test)]
 mod tests {
+    use futures::TryFutureExt;
     use itybity::ToBits;
     use mpz_common::executor::test_st_executor;
     use mpz_common::Context;
@@ -57,7 +58,7 @@ mod tests {
     use rand_chacha::ChaCha12Rng;
     use rand_core::SeedableRng;
 
-    use crate::{CommittedOTReceiver, OTReceiver, OTSender, OTSetup, VerifiableOTSender};
+    use crate::{CommittedOTReceiver, OTError, OTReceiver, OTSender, OTSetup, VerifiableOTSender};
 
     use super::*;
     use rstest::*;
@@ -110,16 +111,17 @@ mod tests {
         )
         .await;
 
-        let (sender_res, receiver_res) = tokio::join!(
-            sender.send(&mut sender_ctx, &data),
-            receiver.receive(&mut receiver_ctx, &choices)
-        );
-
-        sender_res.unwrap();
-        let received = receiver_res.unwrap();
+        let (id_s, (id_r, received)) = tokio::try_join!(
+            sender.send(&mut sender_ctx, &data).map_err(OTError::from),
+            receiver
+                .receive(&mut receiver_ctx, &choices)
+                .map_err(OTError::from)
+        )
+        .unwrap();
 
         let expected = choose(data.iter().copied(), choices.iter_lsb0()).collect::<Vec<_>>();
 
+        assert_eq!(id_s, id_r);
         assert_eq!(received, expected);
     }
 

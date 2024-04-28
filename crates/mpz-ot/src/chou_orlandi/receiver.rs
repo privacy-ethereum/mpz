@@ -4,9 +4,11 @@ use itybity::BitIterable;
 use mpz_cointoss as cointoss;
 use mpz_common::Context;
 use mpz_core::Block;
+use mpz_ot_core::chou_orlandi::msgs::SenderPayload;
 use mpz_ot_core::chou_orlandi::{
     receiver_state as state, Receiver as ReceiverCore, ReceiverConfig,
 };
+use mpz_ot_core::TransferId;
 
 use enum_try_as_inner::EnumTryAsInner;
 use rand::{thread_rng, Rng};
@@ -136,7 +138,11 @@ where
     Ctx: Context,
     T: BitIterable + Send + Sync + Clone + 'static,
 {
-    async fn receive(&mut self, ctx: &mut Ctx, choices: &[T]) -> Result<Vec<Block>, OTError> {
+    async fn receive(
+        &mut self,
+        ctx: &mut Ctx,
+        choices: &[T],
+    ) -> Result<(TransferId, Vec<Block>), OTError> {
         let mut receiver = std::mem::replace(&mut self.state, State::Error)
             .try_into_setup()
             .map_err(ReceiverError::from)?;
@@ -150,7 +156,8 @@ where
 
         ctx.io_mut().send(receiver_payload).await?;
 
-        let sender_payload = ctx.io_mut().expect_next().await?;
+        let sender_payload: SenderPayload = ctx.io_mut().expect_next().await?;
+        let id = sender_payload.id;
 
         let (receiver, data) = Backend::spawn(move || {
             receiver
@@ -162,7 +169,7 @@ where
 
         self.state = State::Setup(receiver);
 
-        Ok(data)
+        Ok((id, data))
     }
 }
 
