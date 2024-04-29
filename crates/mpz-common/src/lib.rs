@@ -17,6 +17,8 @@
 mod context;
 pub mod executor;
 mod id;
+#[cfg(any(test, feature = "ideal"))]
+pub mod ideal;
 #[cfg(feature = "sync")]
 pub mod sync;
 
