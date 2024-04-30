@@ -16,21 +16,21 @@
 //! let mut sender = Sender::default();
 //! let mut receiver = Receiver::default();
 //!
-//! // Perform the setup phase.
-//! let (sender_res, receiver_res) = futures::try_join!(
+//! // Perform the setup.
+//! futures::try_join!(
 //!     sender.setup(&mut ctx_sender),
 //!     receiver.setup(&mut ctx_receiver)
 //! ).unwrap();
 //!
-//! // Perform the transfer phase.
+//! // Perform the transfer.
 //! let messages = vec![[Block::ZERO, Block::ONES], [Block::ZERO, Block::ONES]];
 //!
-//! let (_, received) = futures::try_join!(
+//! let (_, output_receiver) = futures::try_join!(
 //!     sender.send(&mut ctx_sender, &messages),
 //!     receiver.receive(&mut ctx_receiver, &[true, false])
 //! ).unwrap();
 //!
-//! assert_eq!(received, vec![Block::ONES, Block::ZERO]);
+//! assert_eq!(output_receiver.msgs, vec![Block::ONES, Block::ZERO]);
 //! # });
 //! ```
 
@@ -122,7 +122,7 @@ mod tests {
         let expected = choose(data.iter().copied(), choices.iter_lsb0()).collect::<Vec<_>>();
 
         assert_eq!(output_sender.id, output_receiver.id);
-        assert_eq!(output_receiver.data, expected);
+        assert_eq!(output_receiver.msgs, expected);
     }
 
     #[rstest]

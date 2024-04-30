@@ -10,14 +10,17 @@
 )]
 
 pub mod chou_orlandi;
-#[cfg(feature = "ideal")]
+#[cfg(any(test, feature = "ideal"))]
 pub mod ideal;
 pub mod kos;
 
 use async_trait::async_trait;
 use mpz_common::Context;
 
-pub use mpz_ot_core::TransferId;
+pub use mpz_ot_core::{
+    COTReceiverOutput, COTSenderOutput, OTReceiverOutput, OTSenderOutput, RCOTReceiverOutput,
+    ROTReceiverOutput, ROTSenderOutput, TransferId,
+};
 
 /// An oblivious transfer error.
 #[derive(Debug, thiserror::Error)]
@@ -32,16 +35,6 @@ pub enum OTError {
     #[error("receiver error: {0}")]
     ReceiverError(Box<dyn std::error::Error + Send + Sync>),
 }
-
-/// Output of an oblivious transfer.
-pub struct Output<T> {
-    /// The transfer id.
-    pub id: TransferId,
-    /// The output data of the oblivious transfer.
-    pub data: T,
-}
-
-opaque_debug::implement!(Output<T>);
 
 /// An oblivious transfer protocol that needs to perform a one-time setup.
 #[async_trait]
@@ -59,60 +52,19 @@ where
 
 /// An oblivious transfer sender.
 #[async_trait]
-pub trait OTSender<Ctx, T>
-where
-    Ctx: Context,
-    T: Send + Sync,
-{
+pub trait OTSender<Ctx, T> {
     /// Obliviously transfers the messages to the receiver.
     ///
     /// # Arguments
     ///
     /// * `ctx` - The thread context.
     /// * `msgs` - The messages to obliviously transfer.
-    async fn send(&mut self, ctx: &mut Ctx, msgs: &[T]) -> Result<Output<()>, OTError>;
+    async fn send(&mut self, ctx: &mut Ctx, msgs: &[T]) -> Result<OTSenderOutput, OTError>;
 }
 
 /// A correlated oblivious transfer sender.
 #[async_trait]
-pub trait COTSender<Ctx, T>
-where
-    Ctx: Context,
-    T: Send + Sync,
-{
-    /// Obliviously transfers the correlated messages to the receiver.
-    ///
-    /// # Arguments
-    ///
-    /// * `ctx` - The thread context.
-    /// * `msgs` - The `0`-bit messages to use during the oblivious transfer.
-    async fn send_correlated(&mut self, ctx: &mut Ctx, msgs: &[T]) -> Result<Output<()>, OTError>;
-}
-
-/// A random OT sender.
-#[async_trait]
-pub trait RandomOTSender<Ctx, T>
-where
-    Ctx: Context,
-    T: Send + Sync,
-{
-    /// Outputs pairs of random messages.
-    ///
-    /// # Arguments
-    ///
-    /// * `ctx` - The thread context.
-    /// * `count` - The number of pairs of random messages to output.
-    async fn send_random(&mut self, ctx: &mut Ctx, count: usize)
-        -> Result<Output<Vec<T>>, OTError>;
-}
-
-/// A random correlated oblivious transfer sender.
-#[async_trait]
-pub trait RandomCOTSender<Ctx, T>
-where
-    Ctx: Context,
-    T: Send + Sync,
-{
+pub trait COTSender<Ctx, T> {
     /// Obliviously transfers the correlated messages to the receiver.
     ///
     /// Returns the `0`-bit messages that were obliviously transferred.
@@ -121,28 +73,43 @@ where
     ///
     /// * `ctx` - The thread context.
     /// * `count` - The number of correlated messages to obliviously transfer.
-    async fn send_random_correlated(
+    async fn send_correlated(
         &mut self,
         ctx: &mut Ctx,
         count: usize,
-    ) -> Result<Output<Vec<T>>, OTError>;
+    ) -> Result<COTSenderOutput<T>, OTError>;
+}
+
+/// A random OT sender.
+#[async_trait]
+pub trait RandomOTSender<Ctx, T> {
+    /// Outputs pairs of random messages.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - The thread context.
+    /// * `count` - The number of pairs of random messages to output.
+    async fn send_random(
+        &mut self,
+        ctx: &mut Ctx,
+        count: usize,
+    ) -> Result<ROTSenderOutput<T>, OTError>;
 }
 
 /// An oblivious transfer receiver.
 #[async_trait]
-pub trait OTReceiver<Ctx, T, U>
-where
-    Ctx: Context,
-    T: Send + Sync,
-    U: Send + Sync,
-{
+pub trait OTReceiver<Ctx, T, U> {
     /// Obliviously receives data from the sender.
     ///
     /// # Arguments
     ///
     /// * `ctx` - The thread context.
     /// * `choices` - The choices made by the receiver.
-    async fn receive(&mut self, ctx: &mut Ctx, choices: &[T]) -> Result<Output<Vec<U>>, OTError>;
+    async fn receive(
+        &mut self,
+        ctx: &mut Ctx,
+        choices: &[T],
+    ) -> Result<OTReceiverOutput<U>, OTError>;
 }
 
 /// A correlated oblivious transfer receiver.
@@ -163,7 +130,7 @@ where
         &mut self,
         ctx: &mut Ctx,
         choices: &[T],
-    ) -> Result<Output<Vec<U>>, OTError>;
+    ) -> Result<COTReceiverOutput<U>, OTError>;
 }
 
 /// A random OT receiver.
@@ -184,7 +151,7 @@ where
         &mut self,
         ctx: &mut Ctx,
         count: usize,
-    ) -> Result<Output<(Vec<T>, Vec<U>)>, OTError>;
+    ) -> Result<ROTReceiverOutput<T, U>, OTError>;
 }
 
 /// A random correlated oblivious transfer receiver.
@@ -207,7 +174,7 @@ where
         &mut self,
         ctx: &mut Ctx,
         count: usize,
-    ) -> Result<Output<(Vec<T>, Vec<U>)>, OTError>;
+    ) -> Result<RCOTReceiverOutput<T, U>, OTError>;
 }
 
 /// An oblivious transfer sender that is committed to its messages and can reveal them
@@ -232,11 +199,7 @@ where
 
 /// An oblivious transfer sender that can verify the receiver's choices.
 #[async_trait]
-pub trait VerifiableOTSender<Ctx, T, U>: OTSender<Ctx, U>
-where
-    Ctx: Context,
-    U: Send + Sync,
-{
+pub trait VerifiableOTSender<Ctx, T, U>: OTSender<Ctx, U> {
     /// Receives the purported choices made by the receiver and verifies them.
     ///
     /// # Arguments
@@ -248,12 +211,7 @@ where
 /// An oblivious transfer receiver that is committed to its choices and can reveal them
 /// to the sender to verify them.
 #[async_trait]
-pub trait CommittedOTReceiver<Ctx, T, U>: OTReceiver<Ctx, T, U>
-where
-    Ctx: Context,
-    T: Send + Sync,
-    U: Send + Sync,
-{
+pub trait CommittedOTReceiver<Ctx, T, U>: OTReceiver<Ctx, T, U> {
     /// Reveals the choices made by the receiver.
     ///
     /// # Warning

@@ -14,7 +14,7 @@ use rand::{thread_rng, Rng};
 use serio::{stream::IoStreamExt as _, SinkExt as _};
 use utils_aio::non_blocking_backend::{Backend, NonBlockingBackend};
 
-use crate::{CommittedOTReceiver, OTError, OTReceiver, OTSetup, Output};
+use crate::{CommittedOTReceiver, OTError, OTReceiver, OTReceiverOutput, OTSetup};
 
 use super::ReceiverError;
 
@@ -141,7 +141,7 @@ where
         &mut self,
         ctx: &mut Ctx,
         choices: &[T],
-    ) -> Result<Output<Vec<Block>>, OTError> {
+    ) -> Result<OTReceiverOutput<Block>, OTError> {
         let mut receiver = std::mem::replace(&mut self.state, State::Error)
             .try_into_setup()
             .map_err(ReceiverError::from)?;
@@ -158,17 +158,17 @@ where
         let sender_payload: SenderPayload = ctx.io_mut().expect_next().await?;
         let id = sender_payload.id;
 
-        let (receiver, data) = Backend::spawn(move || {
+        let (receiver, msgs) = Backend::spawn(move || {
             receiver
                 .receive(sender_payload)
-                .map(|data| (receiver, data))
+                .map(|msgs| (receiver, msgs))
         })
         .await
         .map_err(ReceiverError::from)?;
 
         self.state = State::Setup(receiver);
 
-        Ok(Output { id, data })
+        Ok(OTReceiverOutput { id, msgs })
     }
 }
 

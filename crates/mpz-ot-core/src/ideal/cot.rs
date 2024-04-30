@@ -1,29 +1,11 @@
-//! Define ideal functionality of COT with random choice bit.
+//! Ideal Correlated Oblivious Transfer functionality.
 
 use mpz_core::{prg::Prg, Block};
-use serde::{Deserialize, Serialize};
+use rand::{Rng, SeedableRng};
+use rand_chacha::ChaCha8Rng;
 
 use crate::TransferId;
-
-/// The message that sender receives from the COT functionality.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct CotMsgForSender {
-    /// The transfer id.
-    pub id: TransferId,
-    /// The random blocks that sender receives from the COT functionality.
-    pub qs: Vec<Block>,
-}
-
-/// The message that receiver receives from the COT functionality.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct CotMsgForReceiver {
-    /// The transfer id.
-    pub id: TransferId,
-    /// The random bits that receiver receives from the COT functionality.
-    pub rs: Vec<bool>,
-    /// The chosen blocks that receiver receives from the COT functionality.
-    pub ts: Vec<Block>,
-}
+use crate::{COTReceiverOutput, COTSenderOutput, RCOTReceiverOutput, RCOTSenderOutput};
 
 /// The ideal COT functionality.
 #[derive(Debug)]
@@ -35,62 +17,115 @@ pub struct IdealCOT {
 }
 
 impl IdealCOT {
-    /// Initiate the functionality
-    pub fn new() -> Self {
-        let mut prg = Prg::new();
-        let delta = prg.random_block();
+    /// Creates a new ideal OT functionality.
+    ///
+    /// # Arguments
+    ///
+    /// * `seed` - The seed for the PRG.
+    /// * `delta` - The correlation.
+    pub fn new(seed: Block, delta: Block) -> Self {
         IdealCOT {
             delta,
             transfer_id: TransferId::default(),
             counter: 0,
-            prg,
+            prg: Prg::from_seed(seed),
         }
     }
 
-    /// Initiate with a given delta
-    pub fn new_with_delta(delta: Block) -> Self {
-        let prg = Prg::new();
-        IdealCOT {
-            delta,
-            transfer_id: TransferId::default(),
-            counter: 0,
-            prg,
-        }
-    }
-
-    /// Output delta
+    /// Returns the correlation, delta.
     pub fn delta(&self) -> Block {
         self.delta
     }
 
-    /// Performs the extension with random choice bits.
-    ///
-    /// # Argument
-    ///
-    /// * `count` - The number of COT to extend.
-    pub fn extend(&mut self, count: usize) -> (CotMsgForSender, CotMsgForReceiver) {
-        let mut qs = vec![Block::ZERO; count];
-        let mut rs = vec![false; count];
+    /// Sets the correlation, delta.
+    pub fn set_delta(&mut self, delta: Block) {
+        self.delta = delta;
+    }
 
-        self.prg.random_blocks(&mut qs);
-        self.prg.random_bools(&mut rs);
+    /// Returns the current transfer id.
+    pub fn transfer_id(&self) -> TransferId {
+        self.transfer_id
+    }
 
-        let ts: Vec<Block> = qs
+    /// Returns the number of OTs executed.
+    pub fn count(&self) -> usize {
+        self.counter
+    }
+
+    /// Executes random correlated oblivious transfers.
+    ///
+    /// The functionality deals random choices to the receiver, along with the corresponding messages.
+    ///
+    /// # Arguments
+    ///
+    /// * `count` - The number of COTs to execute.
+    pub fn random_correlated(
+        &mut self,
+        count: usize,
+    ) -> (RCOTSenderOutput<Block>, RCOTReceiverOutput<bool, Block>) {
+        let mut msgs = vec![Block::ZERO; count];
+        let mut choices = vec![false; count];
+
+        self.prg.random_blocks(&mut msgs);
+        self.prg.random_bools(&mut choices);
+
+        let chosen: Vec<Block> = msgs
             .iter()
-            .zip(rs.iter())
+            .zip(choices.iter())
             .map(|(&q, &r)| if r { q ^ self.delta } else { q })
             .collect();
 
-        let id = self.transfer_id.next();
         self.counter += count;
+        let id = self.transfer_id.next();
 
-        (CotMsgForSender { id, qs }, CotMsgForReceiver { id, rs, ts })
+        (
+            RCOTSenderOutput { id, msgs },
+            RCOTReceiverOutput {
+                id,
+                choices,
+                msgs: chosen,
+            },
+        )
+    }
+
+    /// Executes correlated oblivious transfers with choices provided by the receiver.
+    ///
+    /// # Arguments
+    ///
+    /// * `choices` - The choices made by the receiver.
+    pub fn correlated(
+        &mut self,
+        choices: Vec<bool>,
+    ) -> (COTSenderOutput<Block>, COTReceiverOutput<Block>) {
+        let (sender_output, mut receiver_output) = self.random_correlated(choices.len());
+
+        receiver_output
+            .msgs
+            .iter_mut()
+            .zip(choices.iter().zip(receiver_output.choices))
+            .for_each(|(msg, (&actual_choice, random_choice))| {
+                if actual_choice ^ random_choice {
+                    *msg ^= self.delta
+                }
+            });
+
+        (
+            COTSenderOutput {
+                id: sender_output.id,
+                msgs: sender_output.msgs,
+            },
+            COTReceiverOutput {
+                id: receiver_output.id,
+                msgs: receiver_output.msgs,
+            },
+        )
     }
 }
 
 impl Default for IdealCOT {
     fn default() -> Self {
-        Self::new()
+        let mut rng = ChaCha8Rng::seed_from_u64(0);
+        Self::new(rng.gen(), rng.gen())
     }
 }
 
@@ -98,19 +133,35 @@ impl Default for IdealCOT {
 mod tests {
     use super::*;
 
-    #[test]
-    fn ideal_cot_test() {
-        let num = 100;
-        let mut ideal_cot = IdealCOT::new();
-        let delta = ideal_cot.delta();
-        let (CotMsgForSender { qs, .. }, CotMsgForReceiver { rs, ts, .. }) = ideal_cot.extend(num);
+    use crate::test::assert_cot;
 
-        assert!(qs.into_iter().zip(ts).zip(rs).all(|((q, t), r)| {
-            if !r {
-                q == t
-            } else {
-                q == t ^ delta
-            }
-        }));
+    #[test]
+    fn test_ideal_rcot() {
+        let mut ideal = IdealCOT::default();
+
+        let (
+            RCOTSenderOutput { msgs, .. },
+            RCOTReceiverOutput {
+                choices,
+                msgs: received,
+                ..
+            },
+        ) = ideal.random_correlated(100);
+
+        assert_cot(ideal.delta(), &choices, &msgs, &received)
+    }
+
+    #[test]
+    fn test_ideal_cot() {
+        let mut ideal = IdealCOT::default();
+
+        let mut rng = ChaCha8Rng::seed_from_u64(0);
+        let mut choices = vec![false; 100];
+        rng.fill(&mut choices[..]);
+
+        let (COTSenderOutput { msgs, .. }, COTReceiverOutput { msgs: received, .. }) =
+            ideal.correlated(choices.clone());
+
+        assert_cot(ideal.delta(), &choices, &msgs, &received)
     }
 }

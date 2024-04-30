@@ -4,13 +4,13 @@ use async_trait::async_trait;
 use itybity::IntoBitIterator;
 use mpz_common::{sync::Mutex, Context};
 use mpz_core::Block;
-use mpz_ot_core::kos::msgs::SenderPayload;
+use mpz_ot_core::{kos::msgs::SenderPayload, OTReceiverOutput};
 use serio::{stream::IoStreamExt, SinkExt};
 use utils_aio::non_blocking_backend::{Backend, NonBlockingBackend};
 
 use crate::{
     kos::{Receiver, ReceiverError},
-    OTError, OTReceiver, Output,
+    OTError, OTReceiver,
 };
 
 /// A shared KOS receiver.
@@ -39,7 +39,7 @@ where
         &mut self,
         ctx: &mut Ctx,
         choices: &[bool],
-    ) -> Result<Output<Vec<Block>>, OTError> {
+    ) -> Result<OTReceiverOutput<Block>, OTError> {
         let mut keys = self.inner.lock(ctx).await?.take_keys(choices.len())?;
 
         let choices = choices.into_lsb0_vec();
@@ -52,10 +52,10 @@ where
         let payload: SenderPayload = ctx.io_mut().expect_next().await?;
         let id = payload.id;
 
-        let received =
+        let msgs =
             Backend::spawn(move || keys.decrypt_blocks(payload).map_err(ReceiverError::from))
                 .await?;
 
-        Ok(Output { id, data: received })
+        Ok(OTReceiverOutput { id, msgs })
     }
 }

@@ -44,7 +44,7 @@ mod tests {
     use rand_core::SeedableRng;
 
     use crate::{
-        ideal::ot::{ideal_ot_pair, IdealOTReceiver, IdealOTSender},
+        ideal::ot::{ideal_ot, IdealOTReceiver, IdealOTSender},
         OTError, OTReceiver, OTSender, OTSetup, RandomOTReceiver, RandomOTSender,
         VerifiableOTReceiver,
     };
@@ -79,9 +79,9 @@ mod tests {
         count: usize,
     ) -> (
         Sender<IdealOTReceiver<Block>>,
-        Receiver<IdealOTSender<Block>>,
+        Receiver<IdealOTSender<[Block; 2]>>,
     ) {
-        let (base_sender, base_receiver) = ideal_ot_pair();
+        let (base_sender, base_receiver) = ideal_ot();
 
         let mut sender = Sender::new(sender_config, base_receiver);
         let mut receiver = Receiver::new(receiver_config, base_sender);
@@ -120,7 +120,7 @@ mod tests {
         let expected = choose(data.iter().copied(), choices.iter_lsb0()).collect::<Vec<_>>();
 
         assert_eq!(output_sender.id, output_receiver.id);
-        assert_eq!(output_receiver.data, expected);
+        assert_eq!(output_receiver.msgs, expected);
     }
 
     #[tokio::test]
@@ -146,14 +146,14 @@ mod tests {
         .unwrap();
 
         let expected = output_sender
-            .data
+            .msgs
             .into_iter()
-            .zip(output_receiver.data.0)
+            .zip(output_receiver.choices)
             .map(|(output, choice)| output[choice as usize])
             .collect::<Vec<_>>();
 
         assert_eq!(output_sender.id, output_receiver.id);
-        assert_eq!(output_receiver.data.1, expected);
+        assert_eq!(output_receiver.msgs, expected);
     }
 
     #[rstest]
@@ -185,7 +185,7 @@ mod tests {
         let expected = choose(data.iter().copied(), choices.iter_lsb0()).collect::<Vec<_>>();
 
         assert_eq!(output_sender.id, output_receiver.id);
-        assert_eq!(output_receiver.data, expected);
+        assert_eq!(output_receiver.msgs, expected);
     }
 
     #[rstest]
@@ -212,7 +212,7 @@ mod tests {
         let expected = choose(data.iter().copied(), choices.iter_lsb0()).collect::<Vec<_>>();
 
         assert_eq!(output_sender.id, output_receiver.id);
-        assert_eq!(output_receiver.data, expected);
+        assert_eq!(output_receiver.msgs, expected);
 
         tokio::try_join!(
             sender.reveal(&mut ctx_sender).map_err(OTError::from),
@@ -250,6 +250,6 @@ mod tests {
         let expected = choose(data.iter().copied(), choices.iter_lsb0()).collect::<Vec<_>>();
 
         assert_eq!(output_sender.id, output_receiver.id);
-        assert_eq!(output_receiver.data, expected);
+        assert_eq!(output_receiver.msgs, expected);
     }
 }

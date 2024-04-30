@@ -4,10 +4,13 @@ use itybity::IntoBits;
 use mpz_cointoss as cointoss;
 use mpz_common::{scoped_futures::ScopedFutureExt, Context};
 use mpz_core::{prg::Prg, Block};
-use mpz_ot_core::kos::{
-    extension_matrix_size,
-    msgs::{Extend, StartExtend},
-    pad_ot_count, sender_state as state, Sender as SenderCore, SenderConfig, SenderKeys, CSP,
+use mpz_ot_core::{
+    kos::{
+        extension_matrix_size,
+        msgs::{Extend, StartExtend},
+        pad_ot_count, sender_state as state, Sender as SenderCore, SenderConfig, SenderKeys, CSP,
+    },
+    OTSenderOutput, ROTSenderOutput,
 };
 use rand::{thread_rng, Rng};
 use rand_core::{RngCore, SeedableRng};
@@ -16,7 +19,7 @@ use utils_aio::non_blocking_backend::{Backend, NonBlockingBackend};
 
 use crate::{
     kos::SenderError, CommittedOTReceiver, CommittedOTSender, OTError, OTReceiver, OTSender,
-    OTSetup, Output, RandomOTSender,
+    OTSetup, RandomOTSender,
 };
 
 #[derive(Debug, EnumTryAsInner)]
@@ -102,7 +105,7 @@ impl<BaseOT: Send> Sender<BaseOT> {
         let base_output = self.base.receive(ctx, &choices).await?;
 
         let seeds: [Block; CSP] = base_output
-            .data
+            .msgs
             .try_into()
             .expect("seeds should be CSP length");
 
@@ -265,7 +268,11 @@ where
     Ctx: Context,
     BaseOT: Send,
 {
-    async fn send(&mut self, ctx: &mut Ctx, msgs: &[[Block; 2]]) -> Result<Output<()>, OTError> {
+    async fn send(
+        &mut self,
+        ctx: &mut Ctx,
+        msgs: &[[Block; 2]],
+    ) -> Result<OTSenderOutput, OTError> {
         let sender = self
             .state
             .try_as_extension_mut()
@@ -287,7 +294,7 @@ where
             .await
             .map_err(SenderError::from)?;
 
-        Ok(Output { id, data: () })
+        Ok(OTSenderOutput { id })
     }
 }
 
@@ -301,7 +308,7 @@ where
         &mut self,
         _ctx: &mut Ctx,
         count: usize,
-    ) -> Result<Output<Vec<[Block; 2]>>, OTError> {
+    ) -> Result<ROTSenderOutput<[Block; 2]>, OTError> {
         let sender = self
             .state
             .try_as_extension_mut()
@@ -310,9 +317,9 @@ where
         let random_outputs = sender.keys(count).map_err(SenderError::from)?;
         let id = random_outputs.id();
 
-        Ok(Output {
+        Ok(ROTSenderOutput {
             id,
-            data: random_outputs.take_keys(),
+            msgs: random_outputs.take_keys(),
         })
     }
 }
@@ -323,7 +330,11 @@ where
     Ctx: Context,
     BaseOT: Send,
 {
-    async fn send(&mut self, ctx: &mut Ctx, msgs: &[[[u8; N]; 2]]) -> Result<Output<()>, OTError> {
+    async fn send(
+        &mut self,
+        ctx: &mut Ctx,
+        msgs: &[[[u8; N]; 2]],
+    ) -> Result<OTSenderOutput, OTError> {
         let sender = self
             .state
             .try_as_extension_mut()
@@ -343,7 +354,7 @@ where
             .await
             .map_err(SenderError::from)?;
 
-        Ok(Output { id, data: () })
+        Ok(OTSenderOutput { id })
     }
 }
 
@@ -357,7 +368,7 @@ where
         &mut self,
         _ctx: &mut Ctx,
         count: usize,
-    ) -> Result<Output<Vec<[[u8; N]; 2]>>, OTError> {
+    ) -> Result<ROTSenderOutput<[[u8; N]; 2]>, OTError> {
         let sender = self
             .state
             .try_as_extension_mut()
@@ -373,9 +384,9 @@ where
             out
         };
 
-        Ok(Output {
+        Ok(ROTSenderOutput {
             id,
-            data: random_outputs
+            msgs: random_outputs
                 .take_keys()
                 .into_iter()
                 .map(|[a, b]| [prng(a), prng(b)])

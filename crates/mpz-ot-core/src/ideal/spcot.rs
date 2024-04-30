@@ -1,27 +1,8 @@
-//! Define ideal functionality of SPCOT.
+//! Ideal functionality for single-point correlated OT.
 
 use mpz_core::{prg::Prg, Block};
-use serde::{Deserialize, Serialize};
 
-use crate::TransferId;
-
-/// The message that sender receivers from the SPCOT functionality.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct SpcotMsgForSender {
-    /// The transfer id.
-    pub id: TransferId,
-    /// The random blocks that sender receives from the SPCOT functionality.
-    pub v: Vec<Vec<Block>>,
-}
-
-/// The message that receiver receives from the SPCOT functionality.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct SpcotMsgForReceiver {
-    /// The transfer id.
-    pub id: TransferId,
-    /// The random blocks that receiver receives from the SPCOT functionality.
-    pub w: Vec<Vec<Block>>,
-}
+use crate::{SPCOTReceiverOutput, SPCOTSenderOutput, TransferId};
 
 /// The ideal SPCOT functionality.
 #[derive(Debug)]
@@ -61,7 +42,10 @@ impl IdealSpcot {
     /// # Argument
     ///
     /// * `pos` - The positions in each extension.
-    pub fn extend(&mut self, pos: &[(usize, u32)]) -> (SpcotMsgForSender, SpcotMsgForReceiver) {
+    pub fn extend(
+        &mut self,
+        pos: &[(usize, u32)],
+    ) -> (SPCOTSenderOutput<Block>, SPCOTReceiverOutput<Block>) {
         let mut v = vec![];
         let mut w = vec![];
 
@@ -79,7 +63,7 @@ impl IdealSpcot {
 
         let id = self.transfer_id.next();
 
-        (SpcotMsgForSender { id, v }, SpcotMsgForReceiver { id, w })
+        (SPCOTSenderOutput { id, v }, SPCOTReceiverOutput { id, w })
     }
 }
 
@@ -100,7 +84,7 @@ mod tests {
 
         let pos = [(10, 2), (20, 3)];
 
-        let (SpcotMsgForSender { mut v, .. }, SpcotMsgForReceiver { w, .. }) =
+        let (SPCOTSenderOutput { mut v, .. }, SPCOTReceiverOutput { w, .. }) =
             ideal_spcot.extend(&pos);
 
         v.iter_mut()

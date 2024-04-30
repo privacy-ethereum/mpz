@@ -9,7 +9,7 @@ use mpz_ot_core::{
         pad_ot_count, receiver_state as state, Receiver as ReceiverCore, ReceiverConfig,
         ReceiverKeys, CSP,
     },
-    TransferId,
+    OTReceiverOutput, ROTReceiverOutput, TransferId,
 };
 
 use enum_try_as_inner::EnumTryAsInner;
@@ -20,7 +20,7 @@ use utils_aio::non_blocking_backend::{Backend, NonBlockingBackend};
 
 use super::{ReceiverError, ReceiverVerifyError, EXTEND_CHUNK_SIZE};
 use crate::{
-    OTError, OTReceiver, OTSender, OTSetup, Output, RandomOTReceiver, VerifiableOTReceiver,
+    OTError, OTReceiver, OTSender, OTSetup, RandomOTReceiver, VerifiableOTReceiver,
     VerifiableOTSender,
 };
 
@@ -231,7 +231,7 @@ where
         &mut self,
         ctx: &mut Ctx,
         choices: &[bool],
-    ) -> Result<Output<Vec<Block>>, OTError> {
+    ) -> Result<OTReceiverOutput<Block>, OTError> {
         let receiver = self
             .state
             .try_as_extension_mut()
@@ -258,7 +258,7 @@ where
         })
         .await?;
 
-        Ok(Output { id, data: received })
+        Ok(OTReceiverOutput { id, msgs: received })
     }
 }
 
@@ -272,7 +272,7 @@ where
         &mut self,
         _ctx: &mut Ctx,
         count: usize,
-    ) -> Result<Output<(Vec<bool>, Vec<Block>)>, OTError> {
+    ) -> Result<ROTReceiverOutput<bool, Block>, OTError> {
         let receiver = self
             .state
             .try_as_extension_mut()
@@ -280,11 +280,9 @@ where
 
         let keys = receiver.keys(count).map_err(ReceiverError::from)?;
         let id = keys.id();
+        let (choices, msgs) = keys.take_choices_and_keys();
 
-        Ok(Output {
-            id,
-            data: keys.take_choices_and_keys(),
-        })
+        Ok(ROTReceiverOutput { id, choices, msgs })
     }
 }
 
@@ -298,7 +296,7 @@ where
         &mut self,
         ctx: &mut Ctx,
         choices: &[bool],
-    ) -> Result<Output<Vec<[u8; N]>>, OTError> {
+    ) -> Result<OTReceiverOutput<[u8; N]>, OTError> {
         let receiver = self
             .state
             .try_as_extension_mut()
@@ -325,7 +323,7 @@ where
         })
         .await?;
 
-        Ok(Output { id, data: received })
+        Ok(OTReceiverOutput { id, msgs: received })
     }
 }
 
@@ -339,7 +337,7 @@ where
         &mut self,
         _ctx: &mut Ctx,
         count: usize,
-    ) -> Result<Output<(Vec<bool>, Vec<[u8; N]>)>, OTError> {
+    ) -> Result<ROTReceiverOutput<bool, [u8; N]>, OTError> {
         let receiver = self
             .state
             .try_as_extension_mut()
@@ -349,22 +347,17 @@ where
         let id = keys.id();
 
         let (choices, random_outputs) = keys.take_choices_and_keys();
+        let msgs = random_outputs
+            .into_iter()
+            .map(|block| {
+                let mut prg = Prg::from_seed(block);
+                let mut out = [0_u8; N];
+                prg.fill_bytes(&mut out);
+                out
+            })
+            .collect();
 
-        Ok(Output {
-            id,
-            data: (
-                choices,
-                random_outputs
-                    .into_iter()
-                    .map(|block| {
-                        let mut prg = Prg::from_seed(block);
-                        let mut out = [0_u8; N];
-                        prg.fill_bytes(&mut out);
-                        out
-                    })
-                    .collect(),
-            ),
-        })
+        Ok(ROTReceiverOutput { id, choices, msgs })
     }
 }
 

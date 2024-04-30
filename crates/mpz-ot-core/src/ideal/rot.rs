@@ -1,31 +1,12 @@
-//! Define ideal functionality of ROT with random choice bit.
+//! Ideal Random Oblivious Transfer functionality.
 
 use mpz_core::{prg::Prg, Block};
-use serde::{Deserialize, Serialize};
+use rand::{Rng, SeedableRng};
+use rand_chacha::ChaCha8Rng;
 
-use crate::TransferId;
+use crate::{ROTReceiverOutput, ROTSenderOutput, TransferId};
 
-/// The message that sender receives from the ROT functionality.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct RotMsgForSender {
-    /// The transfer id.
-    pub id: TransferId,
-    /// The random blocks that sender receives from the ROT functionality.
-    pub qs: Vec<[Block; 2]>,
-}
-
-/// The message that receiver receives from the ROT functionality.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct RotMsgForReceiver {
-    /// The transfer id.
-    pub id: TransferId,
-    /// The random bits that receiver receives from the ROT functionality.
-    pub rs: Vec<bool>,
-    /// The chosen blocks that receiver receives from the ROT functionality.
-    pub ts: Vec<Block>,
-}
-
-/// An ideal functionality for random OT
+/// The ideal ROT functionality.
 #[derive(Debug)]
 pub struct IdealROT {
     transfer_id: TransferId,
@@ -34,50 +15,110 @@ pub struct IdealROT {
 }
 
 impl IdealROT {
-    /// Initiate the functionality
-    pub fn new() -> Self {
-        let prg = Prg::new();
+    /// Creates a new ideal ROT functionality.
+    ///
+    /// # Arguments
+    ///
+    /// * `seed` - The seed for the PRG.
+    pub fn new(seed: Block) -> Self {
         IdealROT {
             transfer_id: TransferId::default(),
             counter: 0,
-            prg,
+            prg: Prg::from_seed(seed),
         }
     }
 
-    /// Performs the extension with random choice bits.
+    /// Returns the current transfer id.
+    pub fn transfer_id(&self) -> TransferId {
+        self.transfer_id
+    }
+
+    /// Returns the number of OTs executed.
+    pub fn count(&self) -> usize {
+        self.counter
+    }
+
+    /// Executes random oblivious transfers.
     ///
-    /// # Argument
+    /// # Arguments
     ///
-    /// * `counter` - The number of ROT to extend.
-    pub fn extend(&mut self, counter: usize) -> (RotMsgForSender, RotMsgForReceiver) {
-        let mut qs1 = vec![Block::ZERO; counter];
-        let mut qs2 = vec![Block::ZERO; counter];
+    /// * `count` - The number of OTs to execute.
+    pub fn random(
+        &mut self,
+        count: usize,
+    ) -> (ROTSenderOutput<[Block; 2]>, ROTReceiverOutput<bool, Block>) {
+        let mut choices = vec![false; count];
 
-        self.prg.random_blocks(&mut qs1);
-        self.prg.random_blocks(&mut qs2);
+        self.prg.random_bools(&mut choices);
 
-        let qs: Vec<[Block; 2]> = qs1.iter().zip(qs2).map(|(&q1, q2)| [q1, q2]).collect();
-
-        let mut rs = vec![false; counter];
-
-        self.prg.random_bools(&mut rs);
-
-        let ts: Vec<Block> = qs
-            .iter()
-            .zip(rs.iter())
-            .map(|(&q, &r)| q[r as usize])
+        let msgs: Vec<[Block; 2]> = (0..count)
+            .map(|_| {
+                let mut msg = [Block::ZERO, Block::ZERO];
+                self.prg.random_blocks(&mut msg);
+                msg
+            })
             .collect();
 
-        let id = self.transfer_id.next();
-        self.counter += counter;
+        let chosen = choices
+            .iter()
+            .zip(msgs.iter())
+            .map(|(&choice, [zero, one])| if choice { *one } else { *zero })
+            .collect();
 
-        (RotMsgForSender { id, qs }, RotMsgForReceiver { id, rs, ts })
+        self.counter += count;
+        let id = self.transfer_id.next();
+
+        (
+            ROTSenderOutput { id, msgs },
+            ROTReceiverOutput {
+                id,
+                choices,
+                msgs: chosen,
+            },
+        )
+    }
+
+    /// Executes random oblivious transfers with choices provided by the receiver.
+    ///
+    /// # Arguments
+    ///
+    /// * `choices` - The choices made by the receiver.
+    pub fn random_with_choices(
+        &mut self,
+        choices: Vec<bool>,
+    ) -> (ROTSenderOutput<[Block; 2]>, ROTReceiverOutput<bool, Block>) {
+        let msgs: Vec<[Block; 2]> = (0..choices.len())
+            .map(|_| {
+                let mut msg = [Block::ZERO, Block::ZERO];
+                self.prg.random_blocks(&mut msg);
+                msg
+            })
+            .collect();
+
+        let chosen = choices
+            .iter()
+            .zip(msgs.iter())
+            .map(|(&choice, [zero, one])| if choice { *one } else { *zero })
+            .collect();
+
+        self.counter += choices.len();
+        let id = self.transfer_id.next();
+
+        (
+            ROTSenderOutput { id, msgs },
+            ROTReceiverOutput {
+                id,
+                choices,
+                msgs: chosen,
+            },
+        )
     }
 }
 
 impl Default for IdealROT {
     fn default() -> Self {
-        Self::new()
+        let mut rng = ChaCha8Rng::seed_from_u64(0);
+        Self::new(rng.gen())
     }
 }
 
@@ -86,15 +127,50 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ideal_rot_test() {
-        let num = 100;
-        let mut ideal_rot = IdealROT::new();
-        let (RotMsgForSender { qs, .. }, RotMsgForReceiver { rs, ts, .. }) = ideal_rot.extend(num);
+    fn test_ideal_rot() {
+        let (
+            ROTSenderOutput { msgs, .. },
+            ROTReceiverOutput {
+                choices,
+                msgs: chosen,
+                ..
+            },
+        ) = IdealROT::default().random(100);
 
-        assert!(qs
-            .iter()
-            .zip(ts)
-            .zip(rs)
-            .all(|((q, t), r)| q[r as usize] == t));
+        assert!(choices.into_iter().zip(msgs.into_iter().zip(chosen)).all(
+            |(choice, (msg, chosen))| {
+                if choice {
+                    chosen == msg[1]
+                } else {
+                    chosen == msg[0]
+                }
+            }
+        ));
+    }
+
+    #[test]
+    fn test_ideal_rot_with_choices() {
+        let mut rng = ChaCha8Rng::seed_from_u64(0);
+        let mut choices = vec![false; 100];
+        rng.fill(&mut choices[..]);
+
+        let (
+            ROTSenderOutput { msgs, .. },
+            ROTReceiverOutput {
+                choices,
+                msgs: chosen,
+                ..
+            },
+        ) = IdealROT::default().random_with_choices(choices);
+
+        assert!(choices.into_iter().zip(msgs.into_iter().zip(chosen)).all(
+            |(choice, (msg, chosen))| {
+                if choice {
+                    chosen == msg[1]
+                } else {
+                    chosen == msg[0]
+                }
+            }
+        ));
     }
 }
