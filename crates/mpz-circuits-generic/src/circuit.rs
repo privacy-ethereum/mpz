@@ -1,3 +1,7 @@
+//! Circuit Module
+//!
+//! Main circuit module.
+
 use std::marker::PhantomData;
 use thiserror::Error;
 
