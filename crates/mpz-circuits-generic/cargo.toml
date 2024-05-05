@@ -1,0 +1,13 @@
+[package]
+name = "mpz-circuit-generic"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "mpz_circuit_generic"
+
+[lints]
+workspace = true
+
+[dependencies]
+thiserror = "1.0.59"

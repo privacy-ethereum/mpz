@@ -4,6 +4,7 @@ members = [
     "mpz-common",
     "mpz-fields",
     "mpz-circuits",
+    "mpz-circuits-generic",
     "mpz-circuits-macros",
     "mpz-cointoss",
     "mpz-cointoss-core",
@@ -29,6 +30,7 @@ mpz-core = { path = "mpz-core" }
 mpz-common = { path = "mpz-common" }
 mpz-fields = { path = "mpz-fields" }
 mpz-circuits = { path = "mpz-circuits" }
+mpz-circuits-generic = { path = "mpz-circuits-generic" }
 mpz-circuits-macros = { path = "mpz-circuits-macros" }
 mpz-cointoss = { path = "mpz-cointoss" }
 mpz-cointoss-core = { path = "mpz-cointoss-core" }
