@@ -124,6 +124,8 @@ impl Default for IdealROT {
 
 #[cfg(test)]
 mod tests {
+    use crate::test::assert_rot;
+
     use super::*;
 
     #[test]
@@ -132,20 +134,12 @@ mod tests {
             ROTSenderOutput { msgs, .. },
             ROTReceiverOutput {
                 choices,
-                msgs: chosen,
+                msgs: received,
                 ..
             },
         ) = IdealROT::default().random(100);
 
-        assert!(choices.into_iter().zip(msgs.into_iter().zip(chosen)).all(
-            |(choice, (msg, chosen))| {
-                if choice {
-                    chosen == msg[1]
-                } else {
-                    chosen == msg[0]
-                }
-            }
-        ));
+        assert_rot(&choices, &msgs, &received)
     }
 
     #[test]
@@ -158,19 +152,11 @@ mod tests {
             ROTSenderOutput { msgs, .. },
             ROTReceiverOutput {
                 choices,
-                msgs: chosen,
+                msgs: received,
                 ..
             },
         ) = IdealROT::default().random_with_choices(choices);
 
-        assert!(choices.into_iter().zip(msgs.into_iter().zip(chosen)).all(
-            |(choice, (msg, chosen))| {
-                if choice {
-                    chosen == msg[1]
-                } else {
-                    chosen == msg[0]
-                }
-            }
-        ));
+        assert_rot(&choices, &msgs, &received)
     }
 }

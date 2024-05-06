@@ -12,3 +12,16 @@ pub(crate) fn assert_cot(delta: Block, choices: &[bool], msgs: &[Block], receive
         }
     ));
 }
+
+/// Asserts the correctness of random oblivious transfer.
+pub(crate) fn assert_rot<T: Copy + PartialEq>(choices: &[bool], msgs: &[[T; 2]], received: &[T]) {
+    assert!(choices.into_iter().zip(msgs.into_iter().zip(received)).all(
+        |(&choice, (&msg, &received))| {
+            if choice {
+                received == msg[1]
+            } else {
+                received == msg[0]
+            }
+        }
+    ));
+}
