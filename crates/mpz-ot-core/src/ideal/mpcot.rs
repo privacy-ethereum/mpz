@@ -45,11 +45,9 @@ impl IdealMpcot {
     pub fn extend(
         &mut self,
         alphas: &[u32],
-        t: usize,
         n: usize,
     ) -> (MPCOTSenderOutput<Block>, MPCOTReceiverOutput<Block>) {
-        assert_eq!(alphas.len(), t);
-        assert!(t < n);
+        assert!(alphas.len() < n);
         let mut s = vec![Block::ZERO; n];
         let mut r = vec![Block::ZERO; n];
         self.prg.random_blocks(&mut s);
@@ -87,7 +85,7 @@ mod tests {
         let n = 20;
 
         let (MPCOTSenderOutput { mut s, .. }, MPCOTReceiverOutput { r, .. }) =
-            ideal.extend(&alphas, alphas.len(), n);
+            ideal.extend(&alphas, n);
 
         for alpha in alphas {
             assert!((alpha as usize) < n);

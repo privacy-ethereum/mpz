@@ -141,7 +141,7 @@ impl Sender<state::Setup> {
         // Check that the transfer id matches
         let expected_id = current_id.next();
         if id != expected_id {
-            return Err(SenderError::IdMismatch(id, expected_id));
+            return Err(SenderError::IdMismatch(expected_id, id));
         }
 
         // Check that the number of inputs matches the number of choices

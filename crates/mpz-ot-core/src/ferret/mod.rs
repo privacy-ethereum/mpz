@@ -119,7 +119,7 @@ mod tests {
         let query = receiver.get_mpcot_query();
 
         let (MPCOTSenderOutput { s, .. }, MPCOTReceiverOutput { r, .. }) =
-            ideal_mpcot.extend(&query.0, query.1, query.2);
+            ideal_mpcot.extend(&query.0, query.1);
 
         let msgs = sender.extend(&s).unwrap();
         let (choices, received) = receiver.extend(&r).unwrap();
@@ -131,7 +131,7 @@ mod tests {
         let query = receiver.get_mpcot_query();
 
         let (MPCOTSenderOutput { s, .. }, MPCOTReceiverOutput { r, .. }) =
-            ideal_mpcot.extend(&query.0, query.1, query.2);
+            ideal_mpcot.extend(&query.0, query.1);
 
         let msgs = sender.extend(&s).unwrap();
         let (choices, received) = receiver.extend(&r).unwrap();

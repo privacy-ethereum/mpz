@@ -155,7 +155,7 @@ impl Receiver<state::Setup> {
         // Check that the transfer id matches
         let expected_id = current_id.next();
         if id != expected_id {
-            return Err(ReceiverError::IdMismatch(id, expected_id));
+            return Err(ReceiverError::IdMismatch(expected_id, id));
         }
 
         // Check that the number of ciphertexts does not exceed the number of pending keys
