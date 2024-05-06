@@ -28,6 +28,7 @@ pub enum BinaryOperation {
 }
 
 impl BinaryOperation {
+    /// Returns the number of inputs the operation requires.
     pub fn input_count(&self) -> usize {
         match self {
             Self::AND | Self::XOR => 2,
@@ -35,6 +36,7 @@ impl BinaryOperation {
         }
     }
 
+    /// Performs the operation on the given inputs.
     pub fn evaluate(&self, inputs: &[&BinaryGateValue]) -> Result<BinaryGateValue, CircuitError> {
         match self {
             Self::AND => Ok(inputs[0]
@@ -83,7 +85,7 @@ pub enum BinaryCircuitReprValue {
     U8(u8),
 }
 
-// Implement RepresentedValue for BinaryCircuitReprValue.
+// Implement the binary circuit represented value.
 impl RepresentedValue<BinaryGateValue> for BinaryCircuitReprValue {
     fn from_value(value: &BinaryGateValue) -> Result<Self, CircuitError> {
         match value.len() {
@@ -127,9 +129,9 @@ impl RepresentedValue<BinaryGateValue> for BinaryCircuitReprValue {
 
 /// Binary gate.
 pub struct BinaryGate {
-    /// Gate inputs. Each input is a usize that represents the index of the input gate.
+    /// Gate inputs. Each input is a usize that represents the index of the input nodes.
     inputs: Vec<usize>,
-    /// Gate output. A usize that represents the index of the output gate.
+    /// Gate output. A usize that represents the index of the output node.
     output: usize,
     /// Gate operation.
     op: BinaryOperation,
@@ -137,7 +139,7 @@ pub struct BinaryGate {
 
 impl Evaluate<BinaryGateValue> for BinaryGate {
     fn evaluate(&self, feeds: &mut Vec<Option<BinaryGateValue>>) -> Result<(), CircuitError> {
-        let input_values: Vec<_> = self
+        let input_values = self
             .inputs
             .iter()
             .map(|&idx| {
@@ -146,7 +148,7 @@ impl Evaluate<BinaryGateValue> for BinaryGate {
                     .and_then(|v| v.as_ref())
                     .ok_or(CircuitError::MissingNodeValue(idx))
             })
-            .collect::<Result<_, _>>()?;
+            .collect::<Result<Vec<&BinaryGateValue>, _>>()?;
 
         if input_values.len() != self.op.input_count() {
             return Err(CircuitError::InvalidGateInputCount(
@@ -180,10 +182,10 @@ mod tests {
 
     #[test]
     fn test_circuit() {
-        // Initialize the circuit
+        // Setup circuit
         let mut circuit = Circuit::<BinaryCircuitReprValue, BinaryGate, BinaryGateValue>::new();
 
-        // Add gates
+        // Add gate
         let gate = BinaryGate {
             inputs: vec![0, 1],
             output: 2,
@@ -191,7 +193,6 @@ mod tests {
         };
         circuit.add_gate(gate);
 
-        // Prepare inputs
         let input_a: u8 = 0b10101010;
         let input_b: u8 = 0b00001111;
 
@@ -206,13 +207,10 @@ mod tests {
         circuit.add_output(2);
 
         // Expected output
-        let expected_output: u8 = 0b00001010;
+        let expected_output: u8 = input_a & input_b;
         let repr_expected_output = BinaryCircuitReprValue::U8(expected_output);
 
-        // Run the circuit and verify the outputs
         let output_values = circuit.run().unwrap();
-
-        // Check if the number of outputs and their values are as expected
         assert_eq!(output_values.len(), 1);
         assert_eq!(output_values[0], repr_expected_output);
     }

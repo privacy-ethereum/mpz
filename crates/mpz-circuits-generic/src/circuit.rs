@@ -100,7 +100,7 @@ where
 
 /// A trait that circuit gates should implement to perform an evaluation.
 pub trait Evaluate<T> {
-    /// Performs an evaluation. Receives a mutable slice of optional values that represent the circuit nodes.
+    /// Performs an evaluation. Receives a mutable vector of optional values that represent the circuit nodes.
     fn evaluate(&self, nodes: &mut Vec<Option<T>>) -> Result<(), CircuitError>;
 }
 
