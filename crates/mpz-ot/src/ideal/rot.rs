@@ -1,4 +1,4 @@
-//! Ideal functionality for correlated oblivious transfer.
+//! Ideal functionality for random oblivious transfer.
 
 use async_trait::async_trait;
 
