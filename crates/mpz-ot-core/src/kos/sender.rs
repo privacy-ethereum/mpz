@@ -5,6 +5,7 @@ use crate::{
         Aes128Ctr, Rng, RngSeed, SenderConfig, SenderError, CSP, SSP,
     },
     msgs::Derandomize,
+    TransferId,
 };
 
 use cipher::{KeyIvInit, StreamCipher};
@@ -80,7 +81,7 @@ impl Sender {
                 delta,
                 rngs,
                 keys: Vec::default(),
-                transfer_id: 0,
+                transfer_id: TransferId::default(),
                 counter: 0,
                 extended: false,
                 unchecked_qs: Vec::default(),
@@ -293,8 +294,7 @@ impl Sender<state::Extension> {
             return Err(SenderError::InsufficientSetup(count, self.state.keys.len()));
         }
 
-        let id = self.state.transfer_id;
-        self.state.transfer_id += 1;
+        let id = self.state.transfer_id.next();
 
         Ok(SenderKeys {
             id,
@@ -311,7 +311,7 @@ impl Sender<state::Extension> {
 /// other payloads.
 pub struct SenderKeys {
     /// Transfer ID
-    id: u32,
+    id: TransferId,
     /// Encryption keys
     keys: Vec<[Block; 2]>,
     /// Derandomization
@@ -320,7 +320,7 @@ pub struct SenderKeys {
 
 impl SenderKeys {
     /// Returns the transfer ID.
-    pub fn id(&self) -> u32 {
+    pub fn id(&self) -> TransferId {
         self.id
     }
 
@@ -486,7 +486,7 @@ pub mod state {
         pub(super) keys: Vec<[Block; 2]>,
 
         /// Current transfer id
-        pub(super) transfer_id: u32,
+        pub(super) transfer_id: TransferId,
         /// Current OT counter
         pub(super) counter: usize,
 

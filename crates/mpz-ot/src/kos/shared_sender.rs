@@ -4,6 +4,7 @@ use async_trait::async_trait;
 
 use mpz_common::{sync::Mutex, Context};
 use mpz_core::Block;
+use mpz_ot_core::OTSenderOutput;
 use serio::{stream::IoStreamExt as _, SinkExt as _};
 
 use crate::{
@@ -33,19 +34,24 @@ where
     Ctx: Context,
     BaseOT: OTReceiver<Ctx, bool, Block> + Send + 'static,
 {
-    async fn send(&mut self, ctx: &mut Ctx, msgs: &[[Block; 2]]) -> Result<(), OTError> {
+    async fn send(
+        &mut self,
+        ctx: &mut Ctx,
+        msgs: &[[Block; 2]],
+    ) -> Result<OTSenderOutput, OTError> {
         let mut keys = self.inner.lock(ctx).await?.take_keys(msgs.len())?;
 
         let derandomize = ctx.io_mut().expect_next().await?;
 
         keys.derandomize(derandomize).map_err(SenderError::from)?;
         let payload = keys.encrypt_blocks(msgs).map_err(SenderError::from)?;
+        let id = payload.id;
 
         ctx.io_mut()
             .send(payload)
             .await
             .map_err(SenderError::from)?;
 
-        Ok(())
+        Ok(OTSenderOutput { id })
     }
 }

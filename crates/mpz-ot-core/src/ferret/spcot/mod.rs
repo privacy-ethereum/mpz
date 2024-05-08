@@ -10,14 +10,11 @@ mod tests {
     use mpz_core::prg::Prg;
 
     use super::{receiver::Receiver as SpcotReceiver, sender::Sender as SpcotSender};
-    use crate::{
-        ferret::CSP,
-        ideal::ideal_cot::{CotMsgForReceiver, CotMsgForSender, IdealCOT},
-    };
+    use crate::{ferret::CSP, ideal::cot::IdealCOT, RCOTReceiverOutput, RCOTSenderOutput};
 
     #[test]
     fn spcot_test() {
-        let mut ideal_cot = IdealCOT::new();
+        let mut ideal_cot = IdealCOT::default();
         let sender = SpcotSender::new();
         let receiver = SpcotReceiver::new();
 
@@ -32,10 +29,14 @@ mod tests {
         let alpha1 = 3;
 
         // Extend once
-        let (msg_for_sender, msg_for_receiver) = ideal_cot.extend(h1);
+        let (msg_for_sender, msg_for_receiver) = ideal_cot.random_correlated(h1);
 
-        let CotMsgForReceiver { rs, ts } = msg_for_receiver;
-        let CotMsgForSender { qs } = msg_for_sender;
+        let RCOTReceiverOutput {
+            choices: rs,
+            msgs: ts,
+            ..
+        } = msg_for_receiver;
+        let RCOTSenderOutput { msgs: qs, .. } = msg_for_sender;
         let maskbits = receiver.extend_mask_bits(h1, alpha1, &rs).unwrap();
 
         let msg_from_sender = sender.extend(h1, &qs, maskbits).unwrap();
@@ -46,10 +47,14 @@ mod tests {
         let h2 = 4;
         let alpha2 = 2;
 
-        let (msg_for_sender, msg_for_receiver) = ideal_cot.extend(h2);
+        let (msg_for_sender, msg_for_receiver) = ideal_cot.random_correlated(h2);
 
-        let CotMsgForReceiver { rs, ts } = msg_for_receiver;
-        let CotMsgForSender { qs } = msg_for_sender;
+        let RCOTReceiverOutput {
+            choices: rs,
+            msgs: ts,
+            ..
+        } = msg_for_receiver;
+        let RCOTSenderOutput { msgs: qs, .. } = msg_for_sender;
 
         let maskbits = receiver.extend_mask_bits(h2, alpha2, &rs).unwrap();
 
@@ -58,14 +63,15 @@ mod tests {
         receiver.extend(h2, alpha2, &ts, msg_from_sender).unwrap();
 
         // Check
-        let (msg_for_sender, msg_for_receiver) = ideal_cot.extend(CSP);
+        let (msg_for_sender, msg_for_receiver) = ideal_cot.random_correlated(CSP);
 
-        let CotMsgForReceiver {
-            rs: x_star,
-            ts: z_star,
+        let RCOTReceiverOutput {
+            choices: x_star,
+            msgs: z_star,
+            ..
         } = msg_for_receiver;
 
-        let CotMsgForSender { qs: y_star } = msg_for_sender;
+        let RCOTSenderOutput { msgs: y_star, .. } = msg_for_sender;
 
         let check_from_receiver = receiver.check_pre(&x_star).unwrap();
 

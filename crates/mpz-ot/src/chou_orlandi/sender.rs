@@ -1,4 +1,6 @@
-use crate::{chou_orlandi::SenderError, OTError, OTSender, OTSetup, VerifiableOTSender};
+use crate::{
+    chou_orlandi::SenderError, OTError, OTSender, OTSenderOutput, OTSetup, VerifiableOTSender,
+};
 
 use async_trait::async_trait;
 use mpz_cointoss as cointoss;
@@ -99,7 +101,11 @@ impl<Ctx: Context> OTSetup<Ctx> for Sender {
 
 #[async_trait]
 impl<Ctx: Context> OTSender<Ctx, [Block; 2]> for Sender {
-    async fn send(&mut self, ctx: &mut Ctx, input: &[[Block; 2]]) -> Result<(), OTError> {
+    async fn send(
+        &mut self,
+        ctx: &mut Ctx,
+        input: &[[Block; 2]],
+    ) -> Result<OTSenderOutput, OTError> {
         let mut sender = std::mem::replace(&mut self.state, State::Error)
             .try_into_setup()
             .map_err(SenderError::from)?;
@@ -115,11 +121,13 @@ impl<Ctx: Context> OTSender<Ctx, [Block; 2]> for Sender {
         .await
         .map_err(SenderError::from)?;
 
+        let id = payload.id;
+
         ctx.io_mut().send(payload).await?;
 
         self.state = State::Setup(sender);
 
-        Ok(())
+        Ok(OTSenderOutput { id })
     }
 }
 

@@ -13,7 +13,8 @@ mod tests {
         receiver::Receiver as MpcotReceiver, receiver_regular::Receiver as RegularReceiver,
         sender::Sender as MpcotSender, sender_regular::Sender as RegularSender,
     };
-    use crate::ideal::ideal_spcot::{IdealSpcot, SpcotMsgForReceiver, SpcotMsgForSender};
+    use crate::ideal::spcot::IdealSpcot;
+    use crate::{SPCOTReceiverOutput, SPCOTSenderOutput};
     use mpz_core::prg::Prg;
     use rand::SeedableRng;
 
@@ -50,8 +51,8 @@ mod tests {
 
         let (sender_spcot_msg, receiver_spcot_msg) = ideal_spcot.extend(&queries);
 
-        let SpcotMsgForSender { v: st } = sender_spcot_msg;
-        let SpcotMsgForReceiver { w: rt } = receiver_spcot_msg;
+        let SPCOTSenderOutput { v: st, .. } = sender_spcot_msg;
+        let SPCOTReceiverOutput { w: rt, .. } = receiver_spcot_msg;
 
         let (sender_pre, mut output_sender) = sender.extend(&st).unwrap();
         let (receiver_pre, output_receiver) = receiver.extend(&rt).unwrap();
@@ -80,8 +81,8 @@ mod tests {
 
         let (sender_spcot_msg, receiver_spcot_msg) = ideal_spcot.extend(&queries);
 
-        let SpcotMsgForSender { v: st } = sender_spcot_msg;
-        let SpcotMsgForReceiver { w: rt } = receiver_spcot_msg;
+        let SPCOTSenderOutput { v: st, .. } = sender_spcot_msg;
+        let SPCOTReceiverOutput { w: rt, .. } = receiver_spcot_msg;
 
         let (_, mut output_sender) = sender.extend(&st).unwrap();
         let (_, output_receiver) = receiver.extend(&rt).unwrap();
@@ -123,8 +124,8 @@ mod tests {
 
         let (sender_spcot_msg, receiver_spcot_msg) = ideal_spcot.extend(&queries);
 
-        let SpcotMsgForSender { v: st } = sender_spcot_msg;
-        let SpcotMsgForReceiver { w: rt } = receiver_spcot_msg;
+        let SPCOTSenderOutput { v: st, .. } = sender_spcot_msg;
+        let SPCOTReceiverOutput { w: rt, .. } = receiver_spcot_msg;
 
         let (sender_pre, mut output_sender) = sender.extend(&st).unwrap();
         let (receiver_pre, output_receiver) = receiver.extend(&rt).unwrap();
@@ -153,8 +154,8 @@ mod tests {
 
         let (sender_spcot_msg, receiver_spcot_msg) = ideal_spcot.extend(&queries);
 
-        let SpcotMsgForSender { v: st } = sender_spcot_msg;
-        let SpcotMsgForReceiver { w: rt } = receiver_spcot_msg;
+        let SPCOTSenderOutput { v: st, .. } = sender_spcot_msg;
+        let SPCOTReceiverOutput { w: rt, .. } = receiver_spcot_msg;
 
         let (_, mut output_sender) = sender.extend(&st).unwrap();
         let (_, output_receiver) = receiver.extend(&rt).unwrap();

@@ -1,9 +1,13 @@
+use crate::TransferId;
+
 /// Errors that can occur when using the CO15 sender.
 #[derive(Debug, thiserror::Error)]
 #[allow(missing_docs)]
 pub enum SenderError {
     #[error("invalid state: expected {0}")]
     InvalidState(String),
+    #[error("id mismatch: expected {0}, got {1}")]
+    IdMismatch(TransferId, TransferId),
     #[error("count mismatch: sender expected {0} but receiver sent {1}")]
     CountMismatch(usize, usize),
     #[error(transparent)]
@@ -16,6 +20,8 @@ pub enum SenderError {
 pub enum ReceiverError {
     #[error("invalid state: expected {0}")]
     InvalidState(String),
+    #[error("id mismatch: expected {0}, got {1}")]
+    IdMismatch(TransferId, TransferId),
     #[error("count mismatch: receiver expected {0} but sender sent {1}")]
     CountMismatch(usize, usize),
 }

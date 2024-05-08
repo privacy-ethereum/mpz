@@ -1,5 +1,7 @@
 //! Define ideal functionalities of OTs.
-pub mod ideal_cot;
-pub mod ideal_mpcot;
-pub mod ideal_rot;
-pub mod ideal_spcot;
+
+pub mod cot;
+pub mod mpcot;
+pub mod ot;
+pub mod rot;
+pub mod spcot;

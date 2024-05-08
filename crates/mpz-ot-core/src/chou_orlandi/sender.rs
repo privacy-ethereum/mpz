@@ -1,7 +1,10 @@
-use crate::chou_orlandi::{
-    hash_point,
-    msgs::{ReceiverPayload, ReceiverReveal, SenderPayload, SenderSetup},
-    Receiver, ReceiverConfig, SenderConfig, SenderError, SenderVerifyError,
+use crate::{
+    chou_orlandi::{
+        hash_point,
+        msgs::{ReceiverPayload, ReceiverReveal, SenderPayload, SenderSetup},
+        Receiver, ReceiverConfig, SenderConfig, SenderError, SenderVerifyError,
+    },
+    TransferId,
 };
 
 use itybity::IntoBitIterator;
@@ -101,6 +104,7 @@ impl Sender {
                 state: state::Setup {
                     private_key,
                     public_key,
+                    transfer_id: TransferId::default(),
                     counter: 0,
                 },
                 tape: self.tape,
@@ -124,11 +128,21 @@ impl Sender<state::Setup> {
         let state::Setup {
             private_key,
             public_key,
+            transfer_id: current_id,
             counter,
             ..
         } = &mut self.state;
 
-        let ReceiverPayload { blinded_choices } = receiver_payload;
+        let ReceiverPayload {
+            id,
+            blinded_choices,
+        } = receiver_payload;
+
+        // Check that the transfer id matches
+        let expected_id = current_id.next();
+        if id != expected_id {
+            return Err(SenderError::IdMismatch(expected_id, id));
+        }
 
         // Check that the number of inputs matches the number of choices
         if inputs.len() != blinded_choices.len() {
@@ -154,7 +168,7 @@ impl Sender<state::Setup> {
             payload[1] = input[1] ^ payload[1];
         }
 
-        Ok(SenderPayload { payload })
+        Ok(SenderPayload { id, payload })
     }
 
     /// Returns the Receiver choices after verifying them against the tape.
@@ -199,7 +213,9 @@ impl Sender<state::Setup> {
 
         let mut receiver = receiver.setup(SenderSetup { public_key });
 
-        let ReceiverPayload { blinded_choices } = receiver.receive_random(&choices);
+        let ReceiverPayload {
+            blinded_choices, ..
+        } = receiver.receive_random(&choices);
 
         // Check that the simulated receiver's choices match the ones recorded in the tape
         if blinded_choices != tape.receiver_choices {
@@ -296,6 +312,8 @@ pub mod state {
         pub(super) private_key: Scalar,
         // The public_key is `A == g^a` in [ref1]
         pub(super) public_key: RistrettoPoint,
+        /// Current transfer id.
+        pub(super) transfer_id: TransferId,
         /// Number of OTs sent so far
         pub(super) counter: usize,
     }

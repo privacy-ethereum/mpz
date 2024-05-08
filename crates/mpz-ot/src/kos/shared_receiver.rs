@@ -4,6 +4,7 @@ use async_trait::async_trait;
 use itybity::IntoBitIterator;
 use mpz_common::{sync::Mutex, Context};
 use mpz_core::Block;
+use mpz_ot_core::{kos::msgs::SenderPayload, OTReceiverOutput};
 use serio::{stream::IoStreamExt, SinkExt};
 use utils_aio::non_blocking_backend::{Backend, NonBlockingBackend};
 
@@ -34,7 +35,11 @@ where
     Ctx: Context,
     BaseOT: Send,
 {
-    async fn receive(&mut self, ctx: &mut Ctx, choices: &[bool]) -> Result<Vec<Block>, OTError> {
+    async fn receive(
+        &mut self,
+        ctx: &mut Ctx,
+        choices: &[bool],
+    ) -> Result<OTReceiverOutput<Block>, OTError> {
         let mut keys = self.inner.lock(ctx).await?.take_keys(choices.len())?;
 
         let choices = choices.into_lsb0_vec();
@@ -44,12 +49,13 @@ where
         ctx.io_mut().send(derandomize).await?;
 
         // Receive payload
-        let payload = ctx.io_mut().expect_next().await?;
+        let payload: SenderPayload = ctx.io_mut().expect_next().await?;
+        let id = payload.id;
 
-        let received =
+        let msgs =
             Backend::spawn(move || keys.decrypt_blocks(payload).map_err(ReceiverError::from))
                 .await?;
 
-        Ok(received)
+        Ok(OTReceiverOutput { id, msgs })
     }
 }

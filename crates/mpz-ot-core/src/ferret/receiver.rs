@@ -73,7 +73,7 @@ impl Receiver<state::Extension> {
     /// # Arguments.
     ///
     /// * `lpn_type` - The type of LPN parameters.
-    pub fn get_mpcot_query(&mut self) -> (Vec<u32>, usize, usize) {
+    pub fn get_mpcot_query(&mut self) -> (Vec<u32>, usize) {
         match self.state.lpn_type {
             LpnType::Uniform => {
                 self.state.e = self.state.lpn_parameters.sample_uniform_error_vector();
@@ -89,11 +89,7 @@ impl Receiver<state::Extension> {
                 alphas.push(i as u32);
             }
         }
-        (
-            alphas,
-            self.state.lpn_parameters.t,
-            self.state.lpn_parameters.n,
-        )
+        (alphas, self.state.lpn_parameters.n)
     }
 
     /// Performs the Ferret extension.

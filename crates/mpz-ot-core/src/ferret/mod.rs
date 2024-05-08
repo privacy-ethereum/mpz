@@ -36,6 +36,7 @@ pub const LPN_PARAMETERS_UNIFORM: LpnParameters = LpnParameters {
 };
 
 /// The type of Lpn parameters.
+#[derive(Debug)]
 pub enum LpnType {
     /// Uniform error distribution.
     Uniform,
@@ -45,14 +46,15 @@ pub enum LpnType {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        msgs::LpnMatrixSeed, receiver::Receiver as FerretReceiver, sender::Sender as FerretSender,
-        LpnType,
-    };
-    use crate::ideal::{
-        ideal_cot::{CotMsgForReceiver, CotMsgForSender, IdealCOT},
-        ideal_mpcot::{IdealMpcot, MpcotMsgForReceiver, MpcotMsgForSender},
-    };
+    use super::*;
+
+    use msgs::LpnMatrixSeed;
+    use receiver::Receiver;
+    use sender::Sender;
+
+    use crate::ideal::{cot::IdealCOT, mpcot::IdealMpcot};
+    use crate::test::assert_cot;
+    use crate::{MPCOTReceiverOutput, MPCOTSenderOutput, RCOTReceiverOutput, RCOTSenderOutput};
     use mpz_core::{lpn::LpnParameters, prg::Prg};
     use rand::SeedableRng;
 
@@ -66,17 +68,24 @@ mod tests {
     fn ferret_test() {
         let mut prg = Prg::from_seed([1u8; 16].into());
         let delta = prg.random_block();
-        let mut ideal_cot = IdealCOT::new_with_delta(delta);
-        let mut ideal_mpcot = IdealMpcot::init_with_delta(delta);
+        let mut ideal_cot = IdealCOT::default();
+        let mut ideal_mpcot = IdealMpcot::default();
 
-        let sender = FerretSender::new();
-        let receiver = FerretReceiver::new();
+        ideal_cot.set_delta(delta);
+        ideal_mpcot.set_delta(delta);
+
+        let sender = Sender::new();
+        let receiver = Receiver::new();
 
         // Invoke Ideal COT to init the Ferret setup phase.
-        let (sender_cot, receiver_cot) = ideal_cot.extend(LPN_PARAMETERS_TEST.k);
+        let (sender_cot, receiver_cot) = ideal_cot.random_correlated(LPN_PARAMETERS_TEST.k);
 
-        let CotMsgForSender { qs: v } = sender_cot;
-        let CotMsgForReceiver { rs: u, ts: w } = receiver_cot;
+        let RCOTSenderOutput { msgs: v, .. } = sender_cot;
+        let RCOTReceiverOutput {
+            choices: u,
+            msgs: w,
+            ..
+        } = receiver_cot;
 
         // receiver generates the random seed of lpn matrix.
         let lpn_matrix_seed = prg.random_block();
@@ -110,40 +119,24 @@ mod tests {
         let _ = sender.get_mpcot_query();
         let query = receiver.get_mpcot_query();
 
-        let (sender_mpcot, receiver_mpcot) = ideal_mpcot.extend(&query.0, query.1, query.2);
+        let (MPCOTSenderOutput { s, .. }, MPCOTReceiverOutput { r, .. }) =
+            ideal_mpcot.extend(&query.0, query.1);
 
-        let MpcotMsgForSender { s } = sender_mpcot;
-        let MpcotMsgForReceiver { r } = receiver_mpcot;
+        let msgs = sender.extend(&s).unwrap();
+        let (choices, received) = receiver.extend(&r).unwrap();
 
-        let sender_out = sender.extend(&s).unwrap();
-        let receiver_out = receiver.extend(&r).unwrap();
-
-        assert!(ideal_cot.check(
-            CotMsgForSender { qs: sender_out },
-            CotMsgForReceiver {
-                rs: receiver_out.0,
-                ts: receiver_out.1,
-            },
-        ));
+        assert_cot(delta, &choices, &msgs, &received);
 
         // extend twice
         let _ = sender.get_mpcot_query();
         let query = receiver.get_mpcot_query();
 
-        let (sender_mpcot, receiver_mpcot) = ideal_mpcot.extend(&query.0, query.1, query.2);
+        let (MPCOTSenderOutput { s, .. }, MPCOTReceiverOutput { r, .. }) =
+            ideal_mpcot.extend(&query.0, query.1);
 
-        let MpcotMsgForSender { s } = sender_mpcot;
-        let MpcotMsgForReceiver { r } = receiver_mpcot;
+        let msgs = sender.extend(&s).unwrap();
+        let (choices, received) = receiver.extend(&r).unwrap();
 
-        let sender_out = sender.extend(&s).unwrap();
-        let receiver_out = receiver.extend(&r).unwrap();
-
-        assert!(ideal_cot.check(
-            CotMsgForSender { qs: sender_out },
-            CotMsgForReceiver {
-                rs: receiver_out.0,
-                ts: receiver_out.1,
-            },
-        ));
+        assert_cot(delta, &choices, &msgs, &received);
     }
 }

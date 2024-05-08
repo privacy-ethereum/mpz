@@ -1,3 +1,5 @@
+use crate::TransferId;
+
 /// Errors that can occur when using the KOS15 sender.
 #[derive(Debug, thiserror::Error)]
 #[allow(missing_docs)]
@@ -9,7 +11,7 @@ pub enum SenderError {
     #[error("count mismatch: expected {0}, got {1}")]
     CountMismatch(usize, usize),
     #[error("id mismatch: expected {0}, got {1}")]
-    IdMismatch(u32, u32),
+    IdMismatch(TransferId, TransferId),
     #[error("invalid extend")]
     InvalidExtend,
     #[error("consistency check failed")]
@@ -29,7 +31,7 @@ pub enum ReceiverError {
     #[error("count mismatch: expected {0}, got {1}")]
     CountMismatch(usize, usize),
     #[error("id mismatch: expected {0}, got {1}")]
-    IdMismatch(u32, u32),
+    IdMismatch(TransferId, TransferId),
     #[error("not enough OTs are setup: expected {0}, actual {1}")]
     InsufficientSetup(usize, usize),
     #[error("invalid payload")]
@@ -45,7 +47,7 @@ pub enum ReceiverVerifyError {
     #[error("tape was not recorded")]
     TapeNotRecorded,
     #[error("invalid transfer id: {0}")]
-    InvalidTransferId(u32),
+    InvalidTransferId(TransferId),
     #[error("payload inconsistent")]
     InconsistentPayload,
 }

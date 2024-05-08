@@ -10,9 +10,9 @@ workspace = true
 name = "mpz_ot"
 
 [features]
-default = ["ideal", "rayon"]
+default = ["rayon"]
 rayon = ["mpz-ot-core/rayon"]
-ideal = []
+ideal = ["mpz-common/ideal"]
 
 [dependencies]
 mpz-core.workspace = true
@@ -38,7 +38,7 @@ serio.workspace = true
 cfg-if.workspace = true
 
 [dev-dependencies]
-mpz-common = { workspace = true, features = ["test-utils"] }
+mpz-common = { workspace = true, features = ["test-utils", "ideal"] }
 rstest = { workspace = true }
 criterion = { workspace = true, features = ["async_tokio"] }
 tokio = { workspace = true, features = [

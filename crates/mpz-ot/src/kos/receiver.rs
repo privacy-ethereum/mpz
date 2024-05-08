@@ -3,9 +3,13 @@ use itybity::{FromBitIterator, IntoBitIterator};
 use mpz_cointoss as cointoss;
 use mpz_common::{scoped_futures::ScopedFutureExt, Context};
 use mpz_core::{prg::Prg, Block};
-use mpz_ot_core::kos::{
-    msgs::StartExtend, pad_ot_count, receiver_state as state, Receiver as ReceiverCore,
-    ReceiverConfig, ReceiverKeys, CSP,
+use mpz_ot_core::{
+    kos::{
+        msgs::{SenderPayload, StartExtend},
+        pad_ot_count, receiver_state as state, Receiver as ReceiverCore, ReceiverConfig,
+        ReceiverKeys, CSP,
+    },
+    OTReceiverOutput, ROTReceiverOutput, TransferId,
 };
 
 use enum_try_as_inner::EnumTryAsInner;
@@ -223,7 +227,11 @@ where
     Ctx: Context,
     BaseOT: Send,
 {
-    async fn receive(&mut self, ctx: &mut Ctx, choices: &[bool]) -> Result<Vec<Block>, OTError> {
+    async fn receive(
+        &mut self,
+        ctx: &mut Ctx,
+        choices: &[bool],
+    ) -> Result<OTReceiverOutput<Block>, OTError> {
         let receiver = self
             .state
             .try_as_extension_mut()
@@ -240,7 +248,8 @@ where
         ctx.io_mut().send(derandomize).await?;
 
         // Receive payload
-        let payload = ctx.io_mut().expect_next().await?;
+        let payload: SenderPayload = ctx.io_mut().expect_next().await?;
+        let id = payload.id;
 
         let received = Backend::spawn(move || {
             receiver_keys
@@ -249,7 +258,7 @@ where
         })
         .await?;
 
-        Ok(received)
+        Ok(OTReceiverOutput { id, msgs: received })
     }
 }
 
@@ -263,18 +272,17 @@ where
         &mut self,
         _ctx: &mut Ctx,
         count: usize,
-    ) -> Result<(Vec<bool>, Vec<Block>), OTError> {
+    ) -> Result<ROTReceiverOutput<bool, Block>, OTError> {
         let receiver = self
             .state
             .try_as_extension_mut()
             .map_err(ReceiverError::from)?;
 
-        let (choices, random_outputs) = receiver
-            .keys(count)
-            .map_err(ReceiverError::from)?
-            .take_choices_and_keys();
+        let keys = receiver.keys(count).map_err(ReceiverError::from)?;
+        let id = keys.id();
+        let (choices, msgs) = keys.take_choices_and_keys();
 
-        Ok((choices, random_outputs))
+        Ok(ROTReceiverOutput { id, choices, msgs })
     }
 }
 
@@ -284,7 +292,11 @@ where
     Ctx: Context,
     BaseOT: Send,
 {
-    async fn receive(&mut self, ctx: &mut Ctx, choices: &[bool]) -> Result<Vec<[u8; N]>, OTError> {
+    async fn receive(
+        &mut self,
+        ctx: &mut Ctx,
+        choices: &[bool],
+    ) -> Result<OTReceiverOutput<[u8; N]>, OTError> {
         let receiver = self
             .state
             .try_as_extension_mut()
@@ -301,7 +313,8 @@ where
         ctx.io_mut().send(derandomize).await?;
 
         // Receive payload
-        let payload = ctx.io_mut().expect_next().await?;
+        let payload: SenderPayload = ctx.io_mut().expect_next().await?;
+        let id = payload.id;
 
         let received = Backend::spawn(move || {
             receiver_keys
@@ -310,7 +323,7 @@ where
         })
         .await?;
 
-        Ok(received)
+        Ok(OTReceiverOutput { id, msgs: received })
     }
 }
 
@@ -324,29 +337,27 @@ where
         &mut self,
         _ctx: &mut Ctx,
         count: usize,
-    ) -> Result<(Vec<bool>, Vec<[u8; N]>), OTError> {
+    ) -> Result<ROTReceiverOutput<bool, [u8; N]>, OTError> {
         let receiver = self
             .state
             .try_as_extension_mut()
             .map_err(ReceiverError::from)?;
 
-        let (choices, random_outputs) = receiver
-            .keys(count)
-            .map_err(ReceiverError::from)?
-            .take_choices_and_keys();
+        let keys = receiver.keys(count).map_err(ReceiverError::from)?;
+        let id = keys.id();
 
-        Ok((
-            choices,
-            random_outputs
-                .into_iter()
-                .map(|block| {
-                    let mut prg = Prg::from_seed(block);
-                    let mut out = [0_u8; N];
-                    prg.fill_bytes(&mut out);
-                    out
-                })
-                .collect(),
-        ))
+        let (choices, random_outputs) = keys.take_choices_and_keys();
+        let msgs = random_outputs
+            .into_iter()
+            .map(|block| {
+                let mut prg = Prg::from_seed(block);
+                let mut out = [0_u8; N];
+                prg.fill_bytes(&mut out);
+                out
+            })
+            .collect();
+
+        Ok(ROTReceiverOutput { id, choices, msgs })
     }
 }
 
@@ -359,7 +370,7 @@ where
     async fn verify(
         &mut self,
         ctx: &mut Ctx,
-        id: usize,
+        id: TransferId,
         msgs: &[[Block; 2]],
     ) -> Result<(), OTError> {
         // Verify delta if we haven't yet.
@@ -369,9 +380,7 @@ where
 
         let receiver = self.state.try_as_verify().map_err(ReceiverError::from)?;
 
-        let record = receiver
-            .remove_record(id as u32)
-            .map_err(ReceiverError::from)?;
+        let record = receiver.remove_record(id).map_err(ReceiverError::from)?;
 
         let msgs = msgs.to_vec();
         Backend::spawn(move || record.verify(&msgs))

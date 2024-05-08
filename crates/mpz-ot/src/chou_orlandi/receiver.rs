@@ -4,6 +4,7 @@ use itybity::BitIterable;
 use mpz_cointoss as cointoss;
 use mpz_common::Context;
 use mpz_core::Block;
+use mpz_ot_core::chou_orlandi::msgs::SenderPayload;
 use mpz_ot_core::chou_orlandi::{
     receiver_state as state, Receiver as ReceiverCore, ReceiverConfig,
 };
@@ -13,7 +14,7 @@ use rand::{thread_rng, Rng};
 use serio::{stream::IoStreamExt as _, SinkExt as _};
 use utils_aio::non_blocking_backend::{Backend, NonBlockingBackend};
 
-use crate::{CommittedOTReceiver, OTError, OTReceiver, OTSetup};
+use crate::{CommittedOTReceiver, OTError, OTReceiver, OTReceiverOutput, OTSetup};
 
 use super::ReceiverError;
 
@@ -136,7 +137,11 @@ where
     Ctx: Context,
     T: BitIterable + Send + Sync + Clone + 'static,
 {
-    async fn receive(&mut self, ctx: &mut Ctx, choices: &[T]) -> Result<Vec<Block>, OTError> {
+    async fn receive(
+        &mut self,
+        ctx: &mut Ctx,
+        choices: &[T],
+    ) -> Result<OTReceiverOutput<Block>, OTError> {
         let mut receiver = std::mem::replace(&mut self.state, State::Error)
             .try_into_setup()
             .map_err(ReceiverError::from)?;
@@ -150,19 +155,20 @@ where
 
         ctx.io_mut().send(receiver_payload).await?;
 
-        let sender_payload = ctx.io_mut().expect_next().await?;
+        let sender_payload: SenderPayload = ctx.io_mut().expect_next().await?;
+        let id = sender_payload.id;
 
-        let (receiver, data) = Backend::spawn(move || {
+        let (receiver, msgs) = Backend::spawn(move || {
             receiver
                 .receive(sender_payload)
-                .map(|data| (receiver, data))
+                .map(|msgs| (receiver, msgs))
         })
         .await
         .map_err(ReceiverError::from)?;
 
         self.state = State::Setup(receiver);
 
-        Ok(data)
+        Ok(OTReceiverOutput { id, msgs })
     }
 }
 

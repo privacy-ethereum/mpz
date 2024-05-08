@@ -4,6 +4,8 @@ use curve25519_dalek::RistrettoPoint;
 use mpz_core::Block;
 use serde::{Deserialize, Serialize};
 
+use crate::TransferId;
+
 /// Sender setup message.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct SenderSetup {
@@ -14,6 +16,8 @@ pub struct SenderSetup {
 /// Sender payload message.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SenderPayload {
+    /// The transfer ID.
+    pub id: TransferId,
     /// The sender's ciphertexts
     pub payload: Vec<[Block; 2]>,
 }
@@ -21,6 +25,8 @@ pub struct SenderPayload {
 /// Receiver payload message.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ReceiverPayload {
+    /// The transfer ID.
+    pub id: TransferId,
     /// The receiver's blinded choices.
     pub blinded_choices: Vec<RistrettoPoint>,
 }

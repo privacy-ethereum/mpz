@@ -16,21 +16,21 @@
 //! let mut sender = Sender::default();
 //! let mut receiver = Receiver::default();
 //!
-//! // Perform the setup phase.
-//! let (sender_res, receiver_res) = futures::try_join!(
+//! // Perform the setup.
+//! futures::try_join!(
 //!     sender.setup(&mut ctx_sender),
 //!     receiver.setup(&mut ctx_receiver)
 //! ).unwrap();
 //!
-//! // Perform the transfer phase.
+//! // Perform the transfer.
 //! let messages = vec![[Block::ZERO, Block::ONES], [Block::ZERO, Block::ONES]];
 //!
-//! let (_, received) = futures::try_join!(
+//! let (_, output_receiver) = futures::try_join!(
 //!     sender.send(&mut ctx_sender, &messages),
 //!     receiver.receive(&mut ctx_receiver, &[true, false])
 //! ).unwrap();
 //!
-//! assert_eq!(received, vec![Block::ONES, Block::ZERO]);
+//! assert_eq!(output_receiver.msgs, vec![Block::ONES, Block::ZERO]);
 //! # });
 //! ```
 
@@ -49,6 +49,7 @@ pub use mpz_ot_core::chou_orlandi::{
 
 #[cfg(test)]
 mod tests {
+    use futures::TryFutureExt;
     use itybity::ToBits;
     use mpz_common::executor::test_st_executor;
     use mpz_common::Context;
@@ -57,7 +58,7 @@ mod tests {
     use rand_chacha::ChaCha12Rng;
     use rand_core::SeedableRng;
 
-    use crate::{CommittedOTReceiver, OTReceiver, OTSender, OTSetup, VerifiableOTSender};
+    use crate::{CommittedOTReceiver, OTError, OTReceiver, OTSender, OTSetup, VerifiableOTSender};
 
     use super::*;
     use rstest::*;
@@ -110,17 +111,18 @@ mod tests {
         )
         .await;
 
-        let (sender_res, receiver_res) = tokio::join!(
-            sender.send(&mut sender_ctx, &data),
-            receiver.receive(&mut receiver_ctx, &choices)
-        );
-
-        sender_res.unwrap();
-        let received = receiver_res.unwrap();
+        let (output_sender, output_receiver) = tokio::try_join!(
+            sender.send(&mut sender_ctx, &data).map_err(OTError::from),
+            receiver
+                .receive(&mut receiver_ctx, &choices)
+                .map_err(OTError::from)
+        )
+        .unwrap();
 
         let expected = choose(data.iter().copied(), choices.iter_lsb0()).collect::<Vec<_>>();
 
-        assert_eq!(received, expected);
+        assert_eq!(output_sender.id, output_receiver.id);
+        assert_eq!(output_receiver.msgs, expected);
     }
 
     #[rstest]

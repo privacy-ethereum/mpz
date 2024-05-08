@@ -3,6 +3,7 @@ use crate::chou_orlandi::{
     msgs::{ReceiverPayload, ReceiverReveal, SenderPayload, SenderSetup},
     ReceiverConfig, ReceiverError,
 };
+use crate::TransferId;
 
 use itybity::{BitIterable, FromBitIterator, ToBits};
 use mpz_core::Block;
@@ -89,6 +90,7 @@ impl Receiver {
             state: state::Setup {
                 rng,
                 sender_base_table: RistrettoBasepointTable::create(&sender_setup.public_key),
+                transfer_id: TransferId::default(),
                 counter: 0,
                 choice_log: Vec::default(),
                 decryption_keys: Vec::default(),
@@ -129,7 +131,10 @@ impl Receiver<state::Setup> {
             choice_log.extend(choices.iter_lsb0());
         }
 
-        ReceiverPayload { blinded_choices }
+        ReceiverPayload {
+            id: self.state.transfer_id,
+            blinded_choices,
+        }
     }
 
     /// Receives the encrypted payload from the Sender, returning the plaintext messages corresponding
@@ -140,10 +145,18 @@ impl Receiver<state::Setup> {
     /// * `payload` - The encrypted payload from the Sender
     pub fn receive(&mut self, payload: SenderPayload) -> Result<Vec<Block>, ReceiverError> {
         let state::Setup {
-            decryption_keys, ..
+            transfer_id: current_id,
+            decryption_keys,
+            ..
         } = &mut self.state;
 
-        let SenderPayload { payload } = payload;
+        let SenderPayload { id, payload } = payload;
+
+        // Check that the transfer id matches
+        let expected_id = current_id.next();
+        if id != expected_id {
+            return Err(ReceiverError::IdMismatch(expected_id, id));
+        }
 
         // Check that the number of ciphertexts does not exceed the number of pending keys
         if payload.len() > decryption_keys.len() {
@@ -267,6 +280,8 @@ pub mod state {
         pub(super) rng: ChaCha20Rng,
         /// Sender's public key (precomputed table)
         pub(super) sender_base_table: RistrettoBasepointTable,
+        /// Current transfer id.
+        pub(super) transfer_id: TransferId,
         /// Counts how many decryption keys we've computed so far
         pub(super) counter: usize,
         /// Log of the receiver's choice bits

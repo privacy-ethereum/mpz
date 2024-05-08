@@ -10,6 +10,7 @@ use crate::{
         Aes128Ctr, ReceiverConfig, ReceiverError, Rng, RngSeed, CSP, SSP,
     },
     msgs::Derandomize,
+    TransferId,
 };
 
 use itybity::{FromBitIterator, IntoBits, ToBits};
@@ -26,7 +27,7 @@ use rayon::prelude::*;
 
 #[derive(Debug, Default)]
 struct Tape {
-    records: HashMap<u32, PayloadRecordNoDelta>,
+    records: HashMap<TransferId, PayloadRecordNoDelta>,
 }
 
 /// KOS15 receiver.
@@ -94,7 +95,7 @@ impl Receiver {
                 keys: Vec::default(),
                 choices: Vec::default(),
                 index: 0,
-                transfer_id: 0,
+                transfer_id: TransferId::default(),
                 extended: false,
                 unchecked_ts: Vec::default(),
                 unchecked_choices: Vec::default(),
@@ -106,7 +107,7 @@ impl Receiver {
 
 impl Receiver<state::Extension> {
     /// Returns the current transfer id.
-    pub fn current_transfer_id(&self) -> u32 {
+    pub fn current_transfer_id(&self) -> TransferId {
         self.state.transfer_id
     }
 
@@ -329,10 +330,8 @@ impl Receiver<state::Extension> {
             ));
         }
 
-        let id = self.state.transfer_id;
+        let id = self.state.transfer_id.next();
         let index = self.state.index - self.state.keys.len();
-
-        self.state.transfer_id += 1;
 
         Ok(ReceiverKeys {
             id,
@@ -383,7 +382,7 @@ impl Receiver<state::Verify> {
     /// # Arguments
     ///
     /// * `id` - The transfer id
-    pub fn remove_record(&self, id: u32) -> Result<PayloadRecord, ReceiverError> {
+    pub fn remove_record(&self, id: TransferId) -> Result<PayloadRecord, ReceiverError> {
         let PayloadRecordNoDelta {
             index,
             choices,
@@ -418,7 +417,7 @@ impl Receiver<state::Verify> {
 /// payload.
 pub struct ReceiverKeys {
     /// Transfer ID
-    id: u32,
+    id: TransferId,
     /// Start index of the OTs
     index: usize,
     /// Decryption keys
@@ -437,7 +436,7 @@ opaque_debug::implement!(ReceiverKeys);
 
 impl ReceiverKeys {
     /// Returns the transfer ID.
-    pub fn id(&self) -> u32 {
+    pub fn id(&self) -> TransferId {
         self.id
     }
 
@@ -713,7 +712,7 @@ pub mod state {
         /// Current OT index
         pub(super) index: usize,
         /// Current transfer id
-        pub(super) transfer_id: u32,
+        pub(super) transfer_id: TransferId,
 
         /// Whether extension has occurred yet
         ///
