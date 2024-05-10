@@ -145,9 +145,10 @@ impl LpnParameters {
         assert_eq!(self.n % self.t, 0);
         let one: Block = bytemuck::cast(1_u128);
         let mut res = vec![Block::ZERO; self.n];
+        let mut rng = thread_rng();
+
         res.chunks_exact_mut(self.n / self.t).for_each(|x| {
             x[0] = one;
-            let mut rng = thread_rng();
             x.shuffle(&mut rng);
         });
         res
