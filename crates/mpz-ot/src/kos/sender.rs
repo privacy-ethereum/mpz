@@ -1,8 +1,9 @@
 use async_trait::async_trait;
 use enum_try_as_inner::EnumTryAsInner;
+use futures::TryFutureExt;
 use itybity::IntoBits;
 use mpz_cointoss as cointoss;
-use mpz_common::{scoped_futures::ScopedFutureExt, Context};
+use mpz_common::{try_join, Context};
 use mpz_core::{prg::Prg, Block};
 use mpz_ot_core::{
     kos::{
@@ -223,27 +224,20 @@ where
         // If the sender is committed, we sample delta using a coin toss.
         let delta = if sender.config().sender_commit() {
             let cointoss_seed = thread_rng().gen();
-            let base = &mut self.base;
+
             // Execute coin-toss protocol and base OT setup concurrently.
-            let ((seeds, cointoss_sender), _) = ctx
-                .try_join(
-                    |ctx| {
-                        async move {
-                            cointoss::Sender::new(vec![cointoss_seed])
-                                .commit(ctx)
-                                .await?
-                                .receive(ctx)
-                                .await
-                                .map_err(SenderError::from)
-                        }
-                        .scope_boxed()
-                    },
-                    |ctx| {
-                        async move { base.setup(ctx).await.map_err(SenderError::from) }
-                            .scope_boxed()
-                    },
-                )
-                .await?;
+            let ((seeds, cointoss_sender), _) = try_join!(
+                ctx,
+                async {
+                    cointoss::Sender::new(vec![cointoss_seed])
+                        .commit(ctx)
+                        .await?
+                        .receive(ctx)
+                        .await
+                        .map_err(SenderError::from)
+                },
+                self.base.setup(ctx).map_err(SenderError::from)
+            )?;
 
             // Store the sender to finalize the cointoss protocol later.
             self.cointoss_sender = Some(cointoss_sender);
