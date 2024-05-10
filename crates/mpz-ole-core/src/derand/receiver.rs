@@ -2,29 +2,29 @@ use crate::OLECoreError;
 use mpz_fields::Field;
 use std::marker::PhantomData;
 
-/// An evaluator for OLE with errors.
-pub struct OLEeEvaluator<F>(PhantomData<F>);
+/// An OLE receiver.
+pub struct OLEReceiver<F>(PhantomData<F>);
 
-impl<F: Field> OLEeEvaluator<F> {
-    /// Creates a new [`OLEeEvaluator`].
+impl<F: Field> OLEReceiver<F> {
+    /// Creates a new [`OLEReceiver`].
     pub fn new() -> Self {
-        OLEeEvaluator(PhantomData)
+        OLEReceiver(PhantomData)
     }
 
-    /// Masks the OLEe input with the ROLEe input.
+    /// Masks the OLE input with the base OLE input.
     ///
     /// # Arguments
     ///
-    /// * `bk_dash` - The ROLEe input factors.
-    /// * `bk` - The chosen OLEe input factors.
+    /// * `bk_dash` - The base OLE input factors.
+    /// * `bk` - The chosen OLE input factors.
     ///
     /// # Returns
     ///
-    /// * `vk` - The masked chosen input factors, which will be sent to the provider.
+    /// * `vk` - The masked chosen input factors, which will be sent to the sender.
     pub fn create_mask(&self, bk_dash: &[F], bk: &[F]) -> Result<Vec<F>, OLECoreError> {
         if bk_dash.len() != bk.len() {
             return Err(OLECoreError::LengthMismatch(format!(
-                "Number of ROLE inputs {} does not match number of OLE inputs {}.",
+                "Number of base OLE inputs {} does not match number of OLE inputs {}.",
                 bk_dash.len(),
                 bk.len(),
             )));
@@ -35,17 +35,17 @@ impl<F: Field> OLEeEvaluator<F> {
         Ok(vk)
     }
 
-    /// Generates the OLEe output.
+    /// Generates the OLE output.
     ///
     /// # Arguments
     ///
-    /// * `bk` - The OLEe input factors.
-    /// * `yk_dash` - The ROLEe output.
-    /// * `uk` - The masked chosen input factors from the provider.
+    /// * `bk` - The OLE input factors.
+    /// * `yk_dash` - The base OLE output.
+    /// * `uk` - The masked chosen input factors from the sender.
     ///
     /// # Returns
     ///
-    /// * `yk` - The OLEe output for the evaluator.
+    /// * `yk` - The OLE output for the receiver.
     pub fn generate_output(
         &self,
         bk: &[F],
@@ -72,7 +72,7 @@ impl<F: Field> OLEeEvaluator<F> {
     }
 }
 
-impl<F: Field> Default for OLEeEvaluator<F> {
+impl<F: Field> Default for OLEReceiver<F> {
     fn default() -> Self {
         Self::new()
     }

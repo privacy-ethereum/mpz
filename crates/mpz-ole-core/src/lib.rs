@@ -2,12 +2,12 @@
 #![deny(unsafe_code)]
 #![deny(clippy::all)]
 
-//! This crate provides implementations of different Oblivious Linear Evaluation with Errors (OLEe)
-//! flavors. It provides the core logic of the protocols without I/O.
+//! Implementations of Oblivious Linear Evaluation (OLE).
+//! Core logic of the protocols without I/O.
 
+pub mod cope;
+pub mod derand;
 pub mod ideal;
-pub mod ole;
-pub mod role;
 
 #[allow(missing_docs)]
 #[derive(Debug, thiserror::Error)]

@@ -2,29 +2,29 @@ use crate::OLECoreError;
 use mpz_fields::Field;
 use std::marker::PhantomData;
 
-/// A provider for OLE with errors.
-pub struct OLEeProvider<F>(PhantomData<F>);
+/// An OLE sender.
+pub struct OLESender<F>(PhantomData<F>);
 
-impl<F: Field> OLEeProvider<F> {
-    /// Creates a new [`OLEeProvider`].
+impl<F: Field> OLESender<F> {
+    /// Creates a new [`OLESender`].
     pub fn new() -> Self {
-        OLEeProvider(PhantomData)
+        OLESender(PhantomData)
     }
 
-    /// Masks the OLEe input with the ROLEe input.
+    /// Masks the OLE input with the base OLE input.
     ///
     /// # Arguments
     ///
-    /// * `ak_dash` - The ROLEe input factors.
-    /// * `ak` - The chosen OLEe input factors.
+    /// * `ak_dash` - The base OLE input factors.
+    /// * `ak` - The chosen OLE input factors.
     ///
     /// # Returns
     ///
-    /// * `uk` - The masked chosen input factors, which will be sent to the evaluator.
+    /// * `uk` - The masked chosen input factors, which will be sent to the receiver.
     pub fn create_mask(&self, ak_dash: &[F], ak: &[F]) -> Result<Vec<F>, OLECoreError> {
         if ak_dash.len() != ak.len() {
             return Err(OLECoreError::LengthMismatch(format!(
-                "Number of ROLE inputs {} does not match number of OLE inputs {}.",
+                "Number of base OLE inputs {} does not match number of OLE inputs {}.",
                 ak_dash.len(),
                 ak.len(),
             )));
@@ -35,17 +35,17 @@ impl<F: Field> OLEeProvider<F> {
         Ok(uk)
     }
 
-    /// Generates the OLEe output.
+    /// Generates the OLE output.
     ///
     /// # Arguments
     ///
-    /// * `ak_dash` - The ROLEe input factors.
-    /// * `xk_dash` - The ROLEe output.
-    /// * `vk` - The masked chosen input factors from the evaluator.
+    /// * `ak_dash` - The base OLE input factors.
+    /// * `xk_dash` - The base OLE output.
+    /// * `vk` - The masked chosen input factors from the receiver.
     ///
     /// # Returns
     ///
-    /// * `xk` - The OLEe output for the provider.
+    /// * `xk` - The OLE output for the sender.
     pub fn generate_output(
         &self,
         ak_dash: &[F],
@@ -72,7 +72,7 @@ impl<F: Field> OLEeProvider<F> {
     }
 }
 
-impl<F: Field> Default for OLEeProvider<F> {
+impl<F: Field> Default for OLESender<F> {
     fn default() -> Self {
         Self::new()
     }

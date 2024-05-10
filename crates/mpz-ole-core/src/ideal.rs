@@ -1,4 +1,4 @@
-//! This module provides an ideal OLE functionality.
+//! Ideal functionality for OLE.
 
 use mpz_fields::Field;
 use rand::{rngs::ThreadRng, thread_rng};
@@ -24,18 +24,18 @@ impl<F: Field> OLEFunctionality<F> {
         }
     }
 
-    /// Sets the OLE provider's input `ak`.
-    pub fn provider_input(&mut self, ak: Vec<F>) {
+    /// Sets the OLE sender's input `ak`.
+    pub fn sender_input(&mut self, ak: Vec<F>) {
         self.ak = ak;
     }
 
-    /// Sets the OLE evaluator's input `bk`.
-    pub fn evaluator_input(&mut self, bk: Vec<F>) {
+    /// Sets the OLE receiver's input `bk`.
+    pub fn receiver_input(&mut self, bk: Vec<F>) {
         self.bk = bk;
     }
 
-    /// Generates the OLE provider's output `xk`.
-    pub fn provide(&mut self) -> Vec<F> {
+    /// Generates the OLE sender's output `xk`.
+    pub fn send(&mut self) -> Vec<F> {
         if self.xk.is_empty() && !self.ak.is_empty() && !self.bk.is_empty() {
             self.set_xk_yk();
         }
@@ -43,8 +43,8 @@ impl<F: Field> OLEFunctionality<F> {
         std::mem::take(&mut self.xk)
     }
 
-    /// Generates the OLE evaluator's output `yk`.
-    pub fn evaluate(&mut self) -> Vec<F> {
+    /// Generates the OLE receiver's output `yk`.
+    pub fn receive(&mut self) -> Vec<F> {
         if self.yk.is_empty() && !self.ak.is_empty() && !self.bk.is_empty() {
             self.set_xk_yk();
         }
@@ -95,11 +95,11 @@ mod tests {
         let ak: Vec<P256> = (0..count).map(|_| P256::rand(&mut rng)).collect();
         let bk: Vec<P256> = (0..count).map(|_| P256::rand(&mut rng)).collect();
 
-        ole.provider_input(ak.clone());
-        ole.evaluator_input(bk.clone());
+        ole.sender_input(ak.clone());
+        ole.receiver_input(bk.clone());
 
-        let xk = ole.provide();
-        let yk = ole.evaluate();
+        let xk = ole.send();
+        let yk = ole.receive();
 
         yk.iter()
             .zip(xk.iter())
