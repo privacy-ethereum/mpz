@@ -15,10 +15,11 @@ mod tests {
     };
     use crate::ideal::ideal_spcot::{IdealSpcot, SpcotMsgForReceiver, SpcotMsgForSender};
     use mpz_core::prg::Prg;
+    use rand::SeedableRng;
 
     #[test]
     fn mpcot_general_test() {
-        let mut prg = Prg::new();
+        let mut prg = Prg::from_seed([1u8; 16].into());
         let delta = prg.random_block();
         let mut ideal_spcot = IdealSpcot::new_with_delta(delta);
 
@@ -94,7 +95,7 @@ mod tests {
 
     #[test]
     fn mpcot_regular_test() {
-        let mut prg = Prg::new();
+        let mut prg = Prg::from_seed([2u8; 16].into());
         let delta = prg.random_block();
         let mut ideal_spcot = IdealSpcot::new_with_delta(delta);
 

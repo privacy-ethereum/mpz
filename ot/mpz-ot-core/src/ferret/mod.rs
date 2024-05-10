@@ -54,6 +54,7 @@ mod tests {
         ideal_mpcot::{IdealMpcot, MpcotMsgForReceiver, MpcotMsgForSender},
     };
     use mpz_core::{lpn::LpnParameters, prg::Prg};
+    use rand::SeedableRng;
 
     const LPN_PARAMETERS_TEST: LpnParameters = LpnParameters {
         n: 9600,
@@ -63,7 +64,7 @@ mod tests {
 
     #[test]
     fn ferret_test() {
-        let mut prg = Prg::new();
+        let mut prg = Prg::from_seed([1u8; 16].into());
         let delta = prg.random_block();
         let mut ideal_cot = IdealCOT::new_with_delta(delta);
         let mut ideal_mpcot = IdealMpcot::init_with_delta(delta);
