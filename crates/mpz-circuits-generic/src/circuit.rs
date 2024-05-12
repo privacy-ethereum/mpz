@@ -95,18 +95,20 @@ where
 /// Circuit errors.
 #[derive(Debug, Error)]
 pub enum CircuitError {
+    #[error("Circuit execution error")]
+    CircuitExecutionError,
     #[error("Cycle detected involving gate {0}")]
     CycleDetected(usize),
     #[error("Gate execution failed: {0}")]
     GateExecutionError(String),
     #[error("Generic circuit error: {0}")]
     GenericCircuitError(String),
+    #[error("Invalid gate input count")]
+    InvalidGateInputCount,
     #[error("Missing node value at index {0}")]
     MissingNodeValue(usize),
     #[error("Output index out of range: {0}")]
     OutputIndexOutOfRange(usize),
     #[error("Topological sort failed")]
     TopologicalSortFailed,
-    #[error("Circuit execution error")]
-    CircuitExecutionError,
 }
