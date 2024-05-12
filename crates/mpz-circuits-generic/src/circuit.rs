@@ -2,136 +2,111 @@
 //!
 //! Main circuit module.
 
-use std::marker::PhantomData;
+use crate::model::{Component, Executable, Executor};
 use thiserror::Error;
 
-#[derive(Default)]
-/// Represents the circuit interface, generic over represented values.
-pub struct CircuitInterface<T> {
-    /// Circuit inputs.
-    inputs: Vec<T>,
-    /// Circuit outputs indices.
-    outputs: Vec<usize>,
-}
-
-impl<T> CircuitInterface<T> {
-    /// Creates a new circuit interface.
-    pub fn new() -> Self {
-        CircuitInterface {
-            inputs: Vec::new(),
-            outputs: Vec::new(),
-        }
-    }
-}
-
-/// Generic circuit implementation.
+/// A `CircuitBuilder` struct that represents a builder for a circuit.
 ///
-/// T: Circuit interface type. This is the type the input and output values use.
-/// U: Generic gate type. Must implement the Evaluate<V> trait.
-/// V: Gates value type. This is the type the gates perform operations on.
-pub struct Circuit<T, U, V>
+/// This struct is responsible for assembling a collection of gates into a circuit.
+///
+/// The built output is ensured to be a directed acyclic graph (DAG), and the gates
+/// topologically sorted in the order they should be executed.
+pub struct CircuitBuilder<T>
 where
-    T: RepresentedValue<V>,
-    U: Evaluate<V>,
+    T: Component,
 {
-    interface: CircuitInterface<T>,
-    gates: Vec<U>,
-    _phantom: PhantomData<V>,
+    gates: Vec<T>,
 }
 
-impl<T, U, V> Circuit<T, U, V>
+impl<T> CircuitBuilder<T>
 where
-    T: RepresentedValue<V>,
-    U: Evaluate<V>,
+    T: Component,
 {
-    /// Creates a new circuit.
+    /// Creates a new circuit builder.
     pub fn new() -> Self {
-        Circuit {
-            interface: CircuitInterface::<T>::new(),
-            gates: Vec::new(),
-            _phantom: PhantomData,
-        }
+        Self { gates: Vec::new() }
     }
 
-    /// Adds a gate to the circuit.
-    pub fn add_gate(&mut self, gate: U) {
+    /// Adds a gate to the builder.
+    pub fn add_gate(&mut self, gate: T) -> &mut Self {
         self.gates.push(gate);
+        self
     }
 
-    /// Adds an input to the circuit.
-    pub fn add_input(&mut self, input: T) {
-        self.interface.inputs.push(input);
-    }
-
-    /// Adds an output to the circuit.
-    pub fn add_output(&mut self, output: usize) {
-        self.interface.outputs.push(output);
-    }
-
-    /// Runs the circuit and returns the output values.
-    pub fn run(&mut self) -> Result<Vec<T>, CircuitError> {
-        // Initialize node values.
-        let mut nodes: Vec<Option<V>> = Vec::new();
-        for input in &self.interface.inputs {
-            nodes.push(Some(input.to_value()?));
-        }
-
-        // Evaluate gates
-        for gate in &self.gates {
-            gate.evaluate(&mut nodes)?;
-        }
-
-        // Collect and convert the outputs
-        let mut outputs: Vec<T> = Vec::new();
-        for &output_index in &self.interface.outputs {
-            if let Some(node_value) = nodes.get(output_index).and_then(|v| v.as_ref()) {
-                match T::from_value(node_value) {
-                    Ok(repr) => outputs.push(repr),
-                    Err(e) => return Err(e),
-                }
-            } else {
-                return Err(CircuitError::MissingNodeValue(output_index));
-            }
-        }
-
-        Ok(outputs)
+    /// Builds a circuit.
+    /// This method verifies that the circuit is directed and acyclic.
+    /// Sorts the gates topologically.
+    pub fn build(self) -> Result<Circuit<T>, CircuitError> {
+        Ok(Circuit::new(self.gates))
     }
 }
 
-/// A trait that circuit gates should implement to perform an evaluation.
-pub trait Evaluate<T> {
-    /// Performs an evaluation. Receives a mutable vector of optional values that represent the circuit nodes.
-    fn evaluate(&self, nodes: &mut Vec<Option<T>>) -> Result<(), CircuitError>;
-}
-
-/// Represented value trait.
+/// Represents a circuit modeled as a directed acyclic graph (DAG).
 ///
-/// This trait has to be implemented on the interface value type to allow its conversion to the gate value type.
-pub trait RepresentedValue<T> {
-    /// Converts a gate value back to the represented interface value type.
-    fn from_value(value: &T) -> Result<Self, CircuitError>
-    where
-        Self: Sized;
+/// - Each node in the circuit is an indexed point within an external array.
+/// - Each gate acts as a unit of logic that connects these nodes.
+///
+/// Use the `CircuitBuilder` struct to ensure the circuit is directed and acyclic.
+#[derive(Debug)]
+pub struct Circuit<T> {
+    gates: Vec<T>,
+}
 
-    /// Converts the interface value to the gate value.
-    fn to_value(&self) -> Result<T, CircuitError>;
+impl<T> Circuit<T> {
+    /// Creates a new circuit.
+    fn new(gates: Vec<T>) -> Self {
+        Self { gates }
+    }
+
+    /// Returns the gates.
+    pub fn gates(&self) -> &[T] {
+        &self.gates
+    }
+}
+
+impl<T, U> Executable<T> for Circuit<U>
+where
+    U: Executable<T>,
+{
+    type Error = CircuitError;
+}
+
+pub struct SequentialExecutor;
+
+impl<T, U> Executor<T, Circuit<U>> for SequentialExecutor
+where
+    U: Component + Executable<T> + Executor<T, U>,
+    Circuit<U>: Executable<T, Error = CircuitError>,
+{
+    fn custom_execution(
+        &self,
+        executable: &Circuit<U>,
+        memory: &mut [T],
+    ) -> Result<(), <Circuit<U> as Executable<T>>::Error> {
+        for gate in executable.gates() {
+            gate.custom_execution(gate, memory)
+                .map_err(|_| CircuitError::CircuitExecutionError)?;
+        }
+
+        Ok(())
+    }
 }
 
 /// Circuit errors.
 #[derive(Debug, Error)]
 pub enum CircuitError {
-    #[error("Invalid number of circuit inputs: expected {0}, got {1}")]
-    InvalidInputCount(usize, usize),
-    #[error("Invalid number of gate inputs: expected {0}, got {1}")]
-    InvalidGateInputCount(usize, usize),
-    #[error("Failed to convert external representation to internal gate value")]
-    ConversionError,
-    #[error("Output index out of range: {0}")]
-    OutputIndexOutOfRange(usize),
-    #[error("Missing node value at index {0}")]
-    MissingNodeValue(usize),
-    #[error("Gate evaluation failed: {0}")]
-    GateEvaluationError(String),
+    #[error("Cycle detected involving gate {0}")]
+    CycleDetected(usize),
+    #[error("Gate execution failed: {0}")]
+    GateExecutionError(String),
     #[error("Generic circuit error: {0}")]
     GenericCircuitError(String),
+    #[error("Missing node value at index {0}")]
+    MissingNodeValue(usize),
+    #[error("Output index out of range: {0}")]
+    OutputIndexOutOfRange(usize),
+    #[error("Topological sort failed")]
+    TopologicalSortFailed,
+    #[error("Circuit execution error")]
+    CircuitExecutionError,
 }
