@@ -1,79 +1,45 @@
-//! Ideal functionality for OLE.
+//! Ideal functionality for Oblivious Linear Function Evaluation (OLE).
 
 use mpz_fields::Field;
 use rand::{rngs::ThreadRng, thread_rng};
 
 /// The OLE functionality
-pub struct OLEFunctionality<F> {
-    rng: ThreadRng,
-    ak: Vec<F>,
-    bk: Vec<F>,
-    xk: Vec<F>,
-    yk: Vec<F>,
-}
+pub struct OLEFunctionality(ThreadRng);
 
-impl<F: Field> OLEFunctionality<F> {
-    /// Creates a new [`OLEFunctionality`].
+impl OLEFunctionality {
+    /// Creates a new functionality.
     pub fn new() -> Self {
-        Self {
-            rng: thread_rng(),
-            ak: vec![],
-            bk: vec![],
-            xk: vec![],
-            yk: vec![],
-        }
+        Self(thread_rng())
     }
 
-    /// Sets the OLE sender's input `ak`.
-    pub fn sender_input(&mut self, ak: Vec<F>) {
-        self.ak = ak;
-    }
-
-    /// Sets the OLE receiver's input `bk`.
-    pub fn receiver_input(&mut self, bk: Vec<F>) {
-        self.bk = bk;
-    }
-
-    /// Generates the OLE sender's output `xk`.
-    pub fn send(&mut self) -> Vec<F> {
-        if self.xk.is_empty() && !self.ak.is_empty() && !self.bk.is_empty() {
-            self.set_xk_yk();
-        }
-
-        std::mem::take(&mut self.xk)
-    }
-
-    /// Generates the OLE receiver's output `yk`.
-    pub fn receive(&mut self) -> Vec<F> {
-        if self.yk.is_empty() && !self.ak.is_empty() && !self.bk.is_empty() {
-            self.set_xk_yk();
-        }
-
-        std::mem::take(&mut self.yk)
-    }
-
-    fn set_xk_yk(&mut self) {
+    /// Generates OLEs.
+    pub fn generate<F: Field>(
+        &mut self,
+        sender_input: &[F],
+        receiver_input: &[F],
+    ) -> (Vec<F>, Vec<F>) {
         assert_eq!(
-            self.ak.len(),
-            self.bk.len(),
-            "Vectors of field elements have unequal length."
+            sender_input.len(),
+            receiver_input.len(),
+            "Vectors of field elements should have equal length."
         );
 
-        let xk: Vec<F> = (0..self.ak.len()).map(|_| F::rand(&mut self.rng)).collect();
-        self.xk = xk;
-
-        let yk: Vec<F> = self
-            .xk
-            .iter()
-            .zip(self.ak.iter())
-            .zip(self.bk.iter())
-            .map(|((&x, &a), &b)| a * b + x)
+        let sender_output: Vec<F> = (0..sender_input.len())
+            .map(|_| F::rand(&mut self.0))
             .collect();
-        self.yk = yk;
+
+        let reciever_output: Vec<F> = sender_input
+            .iter()
+            .zip(receiver_input)
+            .zip(sender_output.iter().copied())
+            .map(|((&a, &b), x)| a * b + x)
+            .collect();
+
+        (sender_output, reciever_output)
     }
 }
 
-impl<F: Field> Default for OLEFunctionality<F> {
+impl Default for OLEFunctionality {
     fn default() -> Self {
         Self::new()
     }
@@ -89,22 +55,18 @@ mod tests {
     #[test]
     fn test_ole_functionality() {
         let count = 12;
-        let mut ole: OLEFunctionality<P256> = OLEFunctionality::default();
+        let mut ole = OLEFunctionality::default();
         let mut rng = Prg::from_seed(Block::ZERO);
 
         let ak: Vec<P256> = (0..count).map(|_| P256::rand(&mut rng)).collect();
         let bk: Vec<P256> = (0..count).map(|_| P256::rand(&mut rng)).collect();
 
-        ole.sender_input(ak.clone());
-        ole.receiver_input(bk.clone());
-
-        let xk = ole.send();
-        let yk = ole.receive();
+        let (xk, yk) = ole.generate(&ak, &bk);
 
         yk.iter()
-            .zip(xk.iter())
-            .zip(ak.iter())
-            .zip(bk.iter())
-            .for_each(|(((&y, &x), &a), &b)| assert_eq!(y, a * b + x));
+            .zip(xk)
+            .zip(ak)
+            .zip(bk)
+            .for_each(|(((&y, x), a), b)| assert_eq!(y, a * b + x));
     }
 }
