@@ -47,7 +47,7 @@ pub struct ShareAdjust<F>(F);
 #[cfg(test)]
 mod tests {
     use super::*;
-    use itybity::{FromBitIterator, ToBits};
+    use itybity::ToBits;
     use mpz_core::{prg::Prg, Block};
     use mpz_fields::{p256::P256, Field, UniformRand};
     use mpz_ot_core::ideal::rot::IdealROT;
@@ -60,37 +60,8 @@ mod tests {
         let sender_input = P256::rand(&mut rng);
         let receiver_input = P256::rand(&mut rng);
 
-        let mut rot = IdealROT::default();
-        let (rot_sender, rot_receiver) = rot
-            .random_with_choices::<{ P256::BIT_SIZE as usize / 8 }>(
-                receiver_input.iter_lsb0().collect(),
-            );
-
-        let ot_messages: Vec<[P256; 2]> = rot_sender
-            .msgs
-            .iter()
-            .map(|[a, b]| {
-                [
-                    P256::from_lsb0_iter(a.iter_lsb0()),
-                    P256::from_lsb0_iter(b.iter_lsb0()),
-                ]
-            })
-            .collect();
-        let ot_messages: [[P256; 2]; P256::BIT_SIZE as usize] = ot_messages.try_into().unwrap();
-
-        let ot_choice = rot_receiver.choices;
-        let ot_choice = P256::from_lsb0_iter(ot_choice.iter_lsb0());
-
-        let ot_choice_messages: Vec<P256> = rot_receiver
-            .msgs
-            .iter()
-            .map(|f| P256::from_lsb0_iter(f.iter_lsb0()))
-            .collect();
-        let ot_choice_messages: [P256; P256::BIT_SIZE as usize] =
-            ot_choice_messages.try_into().unwrap();
-
-        let (sender_share, correlation) = SenderShare::new(sender_input, ot_messages);
-        let receiver_share = ReceiverShare::new(ot_choice, ot_choice_messages, correlation);
+        let (sender_share, receiver_share) =
+            create_ole::<256, 32, P256>(sender_input, receiver_input);
 
         let a = sender_input;
         let b = receiver_input;
@@ -98,5 +69,71 @@ mod tests {
         let y = receiver_share.inner();
 
         assert_eq!(y, a * b + x);
+    }
+
+    #[test]
+    fn test_ole_adjust() {
+        let mut rng = Prg::from_seed(Block::ZERO);
+
+        let sender_input = P256::rand(&mut rng);
+        let receiver_input = P256::rand(&mut rng);
+
+        let sender_target = P256::rand(&mut rng);
+        let receiver_target = P256::rand(&mut rng);
+
+        let (sender_share, receiver_share) =
+            create_ole::<256, 32, P256>(sender_input, receiver_input);
+
+        let (sender_adjust, s_to_r_adjust) = sender_share.adjust(sender_target);
+        let (receiver_adjust, r_to_s_adjust) = receiver_share.adjust(receiver_target);
+
+        let sender_share_adjusted = sender_adjust.finish(r_to_s_adjust);
+        let receiver_share_adjusted = receiver_adjust.finish(s_to_r_adjust);
+
+        let a = sender_target;
+        let b = receiver_target;
+        let x = sender_share_adjusted.inner();
+        let y = receiver_share_adjusted.inner();
+
+        assert_eq!(y, a * b + x);
+    }
+
+    // Unergonomic API because of lack of proper const generic support
+    // N determines BIT_SIZE of F
+    // K determines BYTE_SIZE of F
+    fn create_ole<const N: usize, const K: usize, F: Field>(
+        sender_input: F,
+        receiver_input: F,
+    ) -> (SenderShare<F>, ReceiverShare<F>) {
+        let mut rot = IdealROT::default();
+        let (rot_sender, rot_receiver) =
+            rot.random_with_choices::<K>(receiver_input.iter_lsb0().collect());
+
+        let ot_messages: Vec<[F; 2]> = rot_sender
+            .msgs
+            .iter()
+            .map(|[a, b]| {
+                [
+                    F::from_lsb0_iter(a.iter_lsb0()),
+                    F::from_lsb0_iter(b.iter_lsb0()),
+                ]
+            })
+            .collect();
+        let ot_messages: [[F; 2]; N] = ot_messages.try_into().unwrap();
+
+        let ot_choice = rot_receiver.choices;
+        let ot_choice = F::from_lsb0_iter(ot_choice.iter_lsb0());
+
+        let ot_choice_messages: Vec<F> = rot_receiver
+            .msgs
+            .iter()
+            .map(|f| F::from_lsb0_iter(f.iter_lsb0()))
+            .collect();
+        let ot_choice_messages: [F; N] = ot_choice_messages.try_into().unwrap();
+
+        let (sender_share, correlation) = SenderShare::new(sender_input, ot_messages);
+        let receiver_share = ReceiverShare::new(ot_choice, ot_choice_messages, correlation);
+
+        (sender_share, receiver_share)
     }
 }
