@@ -28,7 +28,10 @@ impl<F: Field> SenderShare<F> {
 
         let output = ot_messages
             .iter()
-            .fold(F::zero(), |acc, &[zero, _]| acc + zero);
+            .enumerate()
+            .fold(F::zero(), |acc, (i, &[zero, _])| {
+                acc + F::two_pow(i as u32) * zero
+            });
         let share = Self { input, output };
 
         let mut ui = [F::zero(); N];
@@ -51,20 +54,20 @@ impl<F: Field> SenderShare<F> {
     ///
     /// # Arguments
     ///
-    ///  * `target` - The new target input and output of the OLE.
+    ///  * `target` - The new target input for the OLE.
     ///
     /// # Returns
     ///
     /// * The intermediate sender share, which needs the receiver's adjustment.
     /// * The sender adjustment which needs to be sent to the receiver.
-    pub fn adjust(self, target: SenderShare<F>) -> (SenderAdjust<F>, ShareAdjust<F>) {
+    pub fn adjust(self, target: F) -> (SenderAdjust<F>, ShareAdjust<F>) {
         (
             SenderAdjust {
                 old_input: self.input,
                 old_output: self.output,
-                new_input: target.input,
+                new_input: target,
             },
-            ShareAdjust(self.input + target.input),
+            ShareAdjust(self.input + target),
         )
     }
 }

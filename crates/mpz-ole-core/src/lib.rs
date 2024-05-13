@@ -29,7 +29,7 @@ struct Check<const N: usize, F: Field>(std::marker::PhantomData<F>);
 
 impl<const N: usize, F: Field> Check<N, F> {
     const IS_BITSIZE_CORRECT: () = assert!(
-        N as u32 == F::BIT_SIZE / 8,
+        N as u32 == F::BIT_SIZE,
         "Wrong bit size used for field. You need to use `F::BIT_SIZE` for N."
     );
 }
@@ -61,9 +61,10 @@ mod tests {
         let receiver_input = P256::rand(&mut rng);
 
         let mut rot = IdealROT::default();
-        let (rot_sender, rot_receiver) = rot.random_with_choices::<{ P256::BIT_SIZE as usize }>(
-            receiver_input.iter_lsb0().collect(),
-        );
+        let (rot_sender, rot_receiver) = rot
+            .random_with_choices::<{ P256::BIT_SIZE as usize / 8 }>(
+                receiver_input.iter_lsb0().collect(),
+            );
 
         let ot_messages: Vec<[P256; 2]> = rot_sender
             .msgs

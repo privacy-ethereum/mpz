@@ -57,19 +57,19 @@ impl<F: Field> ReceiverShare<F> {
     ///
     /// # Arguments
     ///
-    ///  * `target` - The new target input and output of the OLE.
+    ///  * `target` - The new target input of the OLE.
     ///
     /// # Returns
     ///
     /// * The intermediate receiver share, which needs the sender's adjustment.
     /// * The receiver adjustment which needs to be sent to the sender.
-    pub fn adjust(self, target: ReceiverShare<F>) -> (ReceiverAdjust<F>, ShareAdjust<F>) {
+    pub fn adjust(self, target: F) -> (ReceiverAdjust<F>, ShareAdjust<F>) {
         (
             ReceiverAdjust {
                 old_output: self.output,
-                new_input: target.input,
+                new_input: target,
             },
-            ShareAdjust(self.input + target.input),
+            ShareAdjust(self.input + target),
         )
     }
 }
