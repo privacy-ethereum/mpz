@@ -39,6 +39,7 @@ cfg-if.workspace = true
 
 [dev-dependencies]
 mpz-common = { workspace = true, features = ["test-utils", "ideal"] }
+mpz-ot-core = { workspace = true, features = ["test-utils"] }
 rstest = { workspace = true }
 criterion = { workspace = true, features = ["async_tokio"] }
 tokio = { workspace = true, features = [

@@ -19,7 +19,7 @@ use mpz_common::Context;
 
 pub use mpz_ot_core::{
     COTReceiverOutput, COTSenderOutput, OTReceiverOutput, OTSenderOutput, RCOTReceiverOutput,
-    ROTReceiverOutput, ROTSenderOutput, TransferId,
+    RCOTSenderOutput, ROTReceiverOutput, ROTSenderOutput, TransferId,
 };
 
 /// An oblivious transfer error.
@@ -94,6 +94,24 @@ pub trait RandomOTSender<Ctx, T> {
         ctx: &mut Ctx,
         count: usize,
     ) -> Result<ROTSenderOutput<T>, OTError>;
+}
+
+/// A random correlated oblivious transfer sender.
+#[async_trait]
+pub trait RandomCOTSender<Ctx, T> {
+    /// Obliviously transfers the correlated messages to the receiver.
+    ///
+    /// Returns the `0`-bit messages that were obliviously transferred.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - The thread context.
+    /// * `count` - The number of correlated messages to obliviously transfer.
+    async fn send_random_correlated(
+        &mut self,
+        ctx: &mut Ctx,
+        count: usize,
+    ) -> Result<RCOTSenderOutput<T>, OTError>;
 }
 
 /// An oblivious transfer receiver.

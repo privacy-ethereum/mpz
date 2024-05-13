@@ -11,7 +11,7 @@ use mpz_ot_core::{
     ideal::cot::IdealCOT, COTReceiverOutput, COTSenderOutput, RCOTReceiverOutput, RCOTSenderOutput,
 };
 
-use crate::{COTReceiver, COTSender, OTError, OTSetup, RandomCOTReceiver};
+use crate::{COTReceiver, COTSender, OTError, OTSetup, RandomCOTReceiver, RandomCOTSender};
 
 fn cot(
     f: &mut IdealCOT,
@@ -70,6 +70,17 @@ impl<Ctx: Context> COTSender<Ctx, Block> for IdealCOTSender {
     }
 }
 
+#[async_trait]
+impl<Ctx: Context> RandomCOTSender<Ctx, Block> for IdealCOTSender {
+    async fn send_random_correlated(
+        &mut self,
+        ctx: &mut Ctx,
+        count: usize,
+    ) -> Result<RCOTSenderOutput<Block>, OTError> {
+        Ok(self.0.call(ctx, count, rcot).await)
+    }
+}
+
 /// Ideal OT receiver.
 #[derive(Debug, Clone)]
 pub struct IdealCOTReceiver(Bob<IdealCOT>);
@@ -103,5 +114,78 @@ impl<Ctx: Context> RandomCOTReceiver<Ctx, bool, Block> for IdealCOTReceiver {
         count: usize,
     ) -> Result<RCOTReceiverOutput<bool, Block>, OTError> {
         Ok(self.0.call(ctx, count, rcot).await)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use mpz_common::executor::test_st_executor;
+    use mpz_ot_core::test::assert_cot;
+    use rand::{Rng, SeedableRng};
+    use rand_chacha::ChaCha12Rng;
+
+    #[tokio::test]
+    async fn test_ideal_cot() {
+        let mut rng = ChaCha12Rng::seed_from_u64(0);
+        let (mut ctx_a, mut ctx_b) = test_st_executor(8);
+        let (mut alice, mut bob) = ideal_cot();
+
+        let delta = alice.0.get_mut().delta();
+
+        let count = 10;
+        let choices = (0..count).map(|_| rng.gen()).collect::<Vec<bool>>();
+
+        let (
+            COTSenderOutput {
+                id: id_a,
+                msgs: sender_msgs,
+            },
+            COTReceiverOutput {
+                id: id_b,
+                msgs: receiver_msgs,
+            },
+        ) = tokio::try_join!(
+            alice.send_correlated(&mut ctx_a, count),
+            bob.receive_correlated(&mut ctx_b, &choices)
+        )
+        .unwrap();
+
+        assert_eq!(id_a, id_b);
+        assert_eq!(count, sender_msgs.len());
+        assert_eq!(count, receiver_msgs.len());
+        assert_cot(delta, &choices, &sender_msgs, &receiver_msgs);
+    }
+
+    #[tokio::test]
+    async fn test_ideal_rcot() {
+        let (mut ctx_a, mut ctx_b) = test_st_executor(8);
+        let (mut alice, mut bob) = ideal_rcot();
+
+        let delta = alice.0.get_mut().delta();
+
+        let count = 10;
+
+        let (
+            RCOTSenderOutput {
+                id: id_a,
+                msgs: sender_msgs,
+            },
+            RCOTReceiverOutput {
+                id: id_b,
+                choices,
+                msgs: receiver_msgs,
+            },
+        ) = tokio::try_join!(
+            alice.send_random_correlated(&mut ctx_a, count),
+            bob.receive_random_correlated(&mut ctx_b, count)
+        )
+        .unwrap();
+
+        assert_eq!(id_a, id_b);
+        assert_eq!(count, sender_msgs.len());
+        assert_eq!(count, receiver_msgs.len());
+        assert_eq!(count, choices.len());
+        assert_cot(delta, &choices, &sender_msgs, &receiver_msgs);
     }
 }

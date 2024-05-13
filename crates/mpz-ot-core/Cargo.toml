@@ -10,8 +10,9 @@ workspace = true
 name = "mpz_ot_core"
 
 [features]
-default = ["rayon"]
+default = ["rayon", "test-utils"]
 rayon = ["dep:rayon", "itybity/rayon", "blake3/rayon"]
+test-utils = []
 
 [dependencies]
 mpz-core.workspace = true
