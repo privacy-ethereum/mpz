@@ -23,7 +23,7 @@ pub mod ideal;
 pub mod sync;
 
 pub use context::Context;
-pub use id::ThreadId;
+pub use id::{Counter, ThreadId};
 
 // Re-export scoped-futures for use with the callback-like API in `Context`.
 pub use scoped_futures;
