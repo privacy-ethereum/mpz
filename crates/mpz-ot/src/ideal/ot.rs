@@ -1,4 +1,4 @@
-//! Ideal functionality for correlated oblivious transfer.
+//! Ideal functionality for chosen-message oblivious transfer.
 
 use std::marker::PhantomData;
 
