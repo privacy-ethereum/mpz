@@ -5,7 +5,7 @@ use mpz_fields::Field;
 
 /// Sender share for OLE.
 #[derive(Debug)]
-pub(crate) struct SenderShare<F> {
+pub struct SenderShare<F> {
     input: F,
     output: F,
 }
@@ -47,7 +47,7 @@ impl<F: Field> SenderShare<F> {
     }
 
     /// Returns the sender's output share.
-    pub(crate) fn inner(self) -> F {
+    pub fn inner(self) -> F {
         self.output
     }
 
@@ -77,7 +77,7 @@ impl<F: Field> SenderShare<F> {
 
 /// Intermediate type for share adjustment of the sender.
 #[derive(Debug)]
-pub(crate) struct SenderAdjust<F> {
+pub struct SenderAdjust<F> {
     old_input: F,
     old_output: F,
     new_input: F,

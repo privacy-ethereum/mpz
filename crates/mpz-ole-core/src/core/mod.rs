@@ -30,12 +30,12 @@ impl<const N: usize, F: Field> Check<N, F> {
 /// The masked input of the sender.
 ///
 /// This is the correlation which is sent to the receiver and hides the sender's input.
-pub(crate) struct MaskedInput<const N: usize, F>([F; N]);
+pub struct MaskedInput<const N: usize, F>([F; N]);
 
 /// The exchange field element for share adjustment.
 ///
 /// This needs to be sent to each other in order to complete the share adjustment.
-pub(crate) struct ShareAdjust<F>(F);
+pub struct ShareAdjust<F>(F);
 
 #[cfg(test)]
 mod tests {
@@ -47,7 +47,7 @@ mod tests {
     use rand::SeedableRng;
 
     #[test]
-    fn test_ole() {
+    fn test_ole_core() {
         let mut rng = Prg::from_seed(Block::ZERO);
 
         let sender_input = P256::rand(&mut rng);
