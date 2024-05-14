@@ -42,7 +42,7 @@ mod tests {
     use super::*;
     use crate::tests::create_rot;
     use mpz_core::{prg::Prg, Block};
-    use mpz_fields::{p256::P256, Field, UniformRand};
+    use mpz_fields::{p256::P256, UniformRand};
     use rand::SeedableRng;
 
     #[test]
@@ -52,8 +52,7 @@ mod tests {
         let sender_input = P256::rand(&mut rng);
         let receiver_input = P256::rand(&mut rng);
 
-        let (sender_share, receiver_share) =
-            create_ole::<256, 32, P256>(sender_input, receiver_input);
+        let (sender_share, receiver_share) = create_ole(sender_input, receiver_input);
 
         let a = sender_input;
         let b = receiver_input;
@@ -73,8 +72,7 @@ mod tests {
         let sender_target = P256::rand(&mut rng);
         let receiver_target = P256::rand(&mut rng);
 
-        let (sender_share, receiver_share) =
-            create_ole::<256, 32, P256>(sender_input, receiver_input);
+        let (sender_share, receiver_share) = create_ole(sender_input, receiver_input);
 
         let (sender_adjust, s_to_r_adjust) = sender_share.adjust(sender_target);
         let (receiver_adjust, r_to_s_adjust) = receiver_share.adjust(receiver_target);
@@ -90,19 +88,17 @@ mod tests {
         assert_eq!(y, a * b + x);
     }
 
-    // Unergonomic API because of lack of proper const generic support
     // N should be BIT_SIZE of F
-    // K should be BYTE_SIZE of F
-    fn create_ole<const N: usize, const K: usize, F: Field>(
-        sender_input: F,
-        receiver_input: F,
-    ) -> (SenderShare<F>, ReceiverShare<F>) {
+    fn create_ole(
+        sender_input: P256,
+        receiver_input: P256,
+    ) -> (SenderShare<P256>, ReceiverShare<P256>) {
         let receiver_input_vec = vec![receiver_input];
 
-        let (ot_messages, ot_message_choices) = create_rot::<K, F>(receiver_input_vec);
+        let (ot_messages, ot_message_choices) = create_rot(receiver_input_vec);
 
-        let ot_messages: [[F; 2]; N] = ot_messages.try_into().unwrap();
-        let ot_message_choices: [F; N] = ot_message_choices.try_into().unwrap();
+        let ot_messages: [[P256; 2]; 256] = ot_messages.try_into().unwrap();
+        let ot_message_choices: [P256; 256] = ot_message_choices.try_into().unwrap();
         let ot_choice = receiver_input;
 
         let (sender_share, correlation) = SenderShare::new(sender_input, ot_messages);

@@ -34,7 +34,7 @@ mod tests {
     use crate::{OLEReceiver, OLESender};
     use itybity::ToBits;
     use mpz_core::{prg::Prg, Block};
-    use mpz_fields::{p256::P256, Field, UniformRand};
+    use mpz_fields::{p256::P256, UniformRand};
     use mpz_ot_core::ideal::rot::IdealROT;
     use rand::SeedableRng;
 
@@ -52,7 +52,7 @@ mod tests {
         let sender_input: Vec<P256> = (0..count).map(|_| P256::rand(&mut rng)).collect();
         let receiver_input: Vec<P256> = (0..count).map(|_| P256::rand(&mut rng)).collect();
 
-        let (ot_messages, ot_message_choices) = create_rot::<32, P256>(receiver_input.clone());
+        let (ot_messages, ot_message_choices) = create_rot(receiver_input.clone());
 
         let (sender_shares, masked) = sender.generate(sender_input.clone(), ot_messages).unwrap();
         let receiver_shares = receiver
@@ -81,7 +81,7 @@ mod tests {
         let sender_input: Vec<P256> = (0..count).map(|_| P256::rand(&mut rng)).collect();
         let receiver_input: Vec<P256> = (0..count).map(|_| P256::rand(&mut rng)).collect();
 
-        let (ot_messages, ot_message_choices) = create_rot::<32, P256>(receiver_input.clone());
+        let (ot_messages, ot_message_choices) = create_rot(receiver_input.clone());
 
         let masked = sender
             .preprocess(sender_input.clone(), ot_messages)
@@ -115,7 +115,7 @@ mod tests {
         let sender_input: Vec<P256> = (0..count).map(|_| P256::rand(&mut rng)).collect();
         let receiver_input: Vec<P256> = (0..count).map(|_| P256::rand(&mut rng)).collect();
 
-        let (ot_messages, ot_message_choices) = create_rot::<32, P256>(receiver_input.clone());
+        let (ot_messages, ot_message_choices) = create_rot(receiver_input.clone());
 
         let masked = sender
             .preprocess(sender_input.clone(), ot_messages)
@@ -143,36 +143,13 @@ mod tests {
             .for_each(|(((&a, b), x), y)| assert_eq!(y.inner(), a * b + x.inner()));
     }
 
-    // K should be BYTE_SIZE of F
-    pub(crate) fn create_rot<const K: usize, F: Field>(
-        receiver_choices: Vec<F>,
-    ) -> (Vec<[F; 2]>, Vec<F>) {
-        assert_eq!(
-            K,
-            F::BIT_SIZE as usize / 8,
-            "K has to be equal to the byte size of the field"
-        );
-
+    pub(crate) fn create_rot(receiver_choices: Vec<P256>) -> (Vec<[P256; 2]>, Vec<P256>) {
         let mut rot = IdealROT::default();
         let receiver_choices: Vec<bool> = receiver_choices.iter_lsb0().collect();
-        let (rot_sender, rot_receiver) = rot.random_with_choices::<K>(receiver_choices);
+        let (rot_sender, rot_receiver) = rot.random_with_choices::<P256>(receiver_choices);
 
-        let ot_messages: Vec<[F; 2]> = rot_sender
-            .msgs
-            .iter()
-            .map(|[a, b]| {
-                [
-                    F::from_lsb0_iter(a.iter_lsb0()),
-                    F::from_lsb0_iter(b.iter_lsb0()),
-                ]
-            })
-            .collect();
-
-        let ot_message_choices: Vec<F> = rot_receiver
-            .msgs
-            .iter()
-            .map(|bytes| F::from_lsb0_iter(bytes.iter_lsb0()))
-            .collect();
+        let ot_messages: Vec<[P256; 2]> = rot_sender.msgs;
+        let ot_message_choices: Vec<P256> = rot_receiver.msgs;
 
         (ot_messages, ot_message_choices)
     }

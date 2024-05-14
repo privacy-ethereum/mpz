@@ -1,7 +1,10 @@
 //! Ideal Random Oblivious Transfer functionality.
 
 use mpz_core::{prg::Prg, Block};
-use rand::{Rng, SeedableRng};
+use rand::{
+    distributions::{Distribution, Standard},
+    Rng, SeedableRng,
+};
 use rand_chacha::ChaCha8Rng;
 
 use crate::{ROTReceiverOutput, ROTSenderOutput, TransferId};
@@ -43,24 +46,19 @@ impl IdealROT {
     /// # Arguments
     ///
     /// * `count` - The number of OTs to execute.
-    pub fn random<const N: usize>(
+    pub fn random<T: Copy>(
         &mut self,
         count: usize,
-    ) -> (
-        ROTSenderOutput<[[u8; N]; 2]>,
-        ROTReceiverOutput<bool, [u8; N]>,
-    ) {
+    ) -> (ROTSenderOutput<[T; 2]>, ROTReceiverOutput<bool, T>)
+    where
+        Standard: Distribution<T>,
+    {
         let mut choices = vec![false; count];
 
         self.prg.random_bools(&mut choices);
 
-        let msgs: Vec<[[u8; N]; 2]> = (0..count)
-            .map(|_| {
-                let mut msg = [[0; N], [0; N]];
-                self.prg.random_bytes(&mut msg[0]);
-                self.prg.random_bytes(&mut msg[1]);
-                msg
-            })
+        let msgs: Vec<[T; 2]> = (0..count)
+            .map(|_| [self.prg.sample(Standard), self.prg.sample(Standard)])
             .collect();
 
         let chosen = choices
@@ -87,20 +85,15 @@ impl IdealROT {
     /// # Arguments
     ///
     /// * `choices` - The choices made by the receiver.
-    pub fn random_with_choices<const N: usize>(
+    pub fn random_with_choices<T: Copy>(
         &mut self,
         choices: Vec<bool>,
-    ) -> (
-        ROTSenderOutput<[[u8; N]; 2]>,
-        ROTReceiverOutput<bool, [u8; N]>,
-    ) {
-        let msgs: Vec<[[u8; N]; 2]> = (0..choices.len())
-            .map(|_| {
-                let mut msg = [[0; N], [0; N]];
-                self.prg.random_bytes(&mut msg[0]);
-                self.prg.random_bytes(&mut msg[1]);
-                msg
-            })
+    ) -> (ROTSenderOutput<[T; 2]>, ROTReceiverOutput<bool, T>)
+    where
+        Standard: Distribution<T>,
+    {
+        let msgs: Vec<[T; 2]> = (0..choices.len())
+            .map(|_| [self.prg.sample(Standard), self.prg.sample(Standard)])
             .collect();
 
         let chosen = choices
@@ -145,7 +138,7 @@ mod tests {
                 msgs: received,
                 ..
             },
-        ) = IdealROT::default().random::<16>(100);
+        ) = IdealROT::default().random::<Block>(100);
 
         assert_rot(&choices, &msgs, &received)
     }
@@ -163,7 +156,7 @@ mod tests {
                 msgs: received,
                 ..
             },
-        ) = IdealROT::default().random_with_choices::<16>(choices);
+        ) = IdealROT::default().random_with_choices::<Block>(choices);
 
         assert_rot(&choices, &msgs, &received)
     }
