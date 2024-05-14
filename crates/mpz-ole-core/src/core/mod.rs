@@ -88,7 +88,6 @@ mod tests {
         assert_eq!(y, a * b + x);
     }
 
-    // N should be BIT_SIZE of F
     fn create_ole(
         sender_input: P256,
         receiver_input: P256,
