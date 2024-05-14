@@ -9,67 +9,76 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  CARGO_REGISTRIES_CRATES_IO_PROTOCOL: sparse
 
 jobs:
+
   build_and_test:
-    if: ( ! github.event.pull_request.draft )
+    name: "Build and Test"
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
-      - name: Stable
+      - name: Install Rust Stable
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
 
-      - uses: Swatinem/rust-cache@v2.5.0
+      - uses: Swatinem/rust-cache@v2.7.7
 
       - name: "Build"
         run: cargo build
 
       - name: "Test"
-        run: cargo test --lib --bins --tests --examples --workspace
+        # Run all tests (bins, examples, lib, integration and docs)
+        # https://doc.rust-lang.org/cargo/commands/cargo-test.html#target-selection
+        run: cargo test
 
       - name: "Check documentation"
         # env:
         #   RUSTDOCFLAGS: -D warnings
         run: cargo doc --no-deps --workspace --lib --document-private-items --examples
 
-  miri:
-    if: ( ! github.event.pull_request.draft )
-    name: "Miri"
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-
-      - name: Install Miri
-        run: |
-          rustup toolchain install nightly --component miri
-          rustup override set nightly
-          cargo miri setup
-      
-      - name: Test with Miri on x86_64
-        run: cargo miri test -p clmul -p matrix-transpose --target x86_64-unknown-linux-gnu
-      
-      - name: Test with Miri on aarch64
-        run: cargo miri test -p clmul -p matrix-transpose --target aarch64-unknown-linux-gnu
-
   rustfmt_and_clippy:
     name: Rustfmt and Clippy
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
 
-      - name: Nightly with rustfmt and clipy
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust Nightly with rustfmt and clippy
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: nightly
           components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2.7.7
 
       - name: "Check formatting"
         run: cargo +nightly fmt --check --all
 
       - name: Run Clippy
         run: cargo +nightly clippy --all-targets --all-features
+
+  miri:
+    if: ( ! github.event.pull_request.draft )
+    name: "Test with Miri"
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target: [x86_64-unknown-linux-gnu, aarch64-unknown-linux-gnu]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust nightly with Miri
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: nightly
+          components: miri
+
+      - uses: Swatinem/rust-cache@v2.7.7
+
+      - name: Test with Miri on ${{ matrix.target }}
+        run: |
+          cargo version --verbose
+          cargo miri test -p clmul -p matrix-transpose --target ${{ matrix.target }}
