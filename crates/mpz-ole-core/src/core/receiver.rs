@@ -6,7 +6,7 @@ use mpz_fields::Field;
 
 /// Receiver share for OLE.
 #[derive(Debug)]
-pub(crate) struct ReceiverShare<F> {
+pub struct ReceiverShare<F> {
     input: F,
     output: F,
 }
@@ -47,7 +47,7 @@ impl<F: Field> ReceiverShare<F> {
     }
 
     /// Returns the receiver's output share.
-    pub(crate) fn inner(self) -> F {
+    pub fn inner(self) -> F {
         self.output
     }
 
@@ -76,7 +76,7 @@ impl<F: Field> ReceiverShare<F> {
 
 /// Intermediate type for share adjustment of the receiver.
 #[derive(Debug)]
-pub(crate) struct ReceiverAdjust<F> {
+pub struct ReceiverAdjust<F> {
     old_output: F,
     new_input: F,
 }

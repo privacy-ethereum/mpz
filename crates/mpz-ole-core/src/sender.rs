@@ -8,9 +8,15 @@ use crate::{
 };
 
 /// A sender for batched OLE.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct OLESender<const N: usize, F> {
     cache: Vec<SenderShare<F>>,
+}
+
+impl<const N: usize, F: Field> Default for OLESender<N, F> {
+    fn default() -> Self {
+        OLESender { cache: vec![] }
+    }
 }
 
 impl<const N: usize, F: Field> OLESender<N, F> {
@@ -25,17 +31,17 @@ impl<const N: usize, F: Field> OLESender<N, F> {
     ///
     /// # Returns
     ///
-    /// * A vector of [`SenderShare`] containing the OLE outputs for the sender.
-    /// * A vector of [`MaskedInput`], which is to be sent to the receiver.
+    /// * A vector of [`SenderShare`]s containing the OLE outputs for the sender.
+    /// * A vector of [`MaskedInput`]s, which is to be sent to the receiver.
     pub fn generate(
         &self,
         input: Vec<F>,
         ot_messages: Vec<[F; 2]>,
     ) -> Result<(Vec<SenderShare<F>>, Vec<MaskedInput<N, F>>), OLEError> {
-        if input.len() != ot_messages.len() * F::BIT_SIZE as usize {
+        if input.len() * F::BIT_SIZE as usize != ot_messages.len() {
             return Err(OLEError::ExpectedMultipleOf(
-                F::BIT_SIZE as usize,
-                input.len(),
+                input.len() * F::BIT_SIZE as usize,
+                ot_messages.len(),
             ));
         }
 
@@ -67,7 +73,7 @@ impl<const N: usize, F: Field> OLESender<N, F> {
     ///
     /// # Returns
     ///
-    /// * A vector of [`MaskedInput`], which is to be sent to the [`super::OLEReceiver`].
+    /// * A vector of [`MaskedInput`]s, which is to be sent to the [`super::OLEReceiver`].
     pub fn preprocess(
         &mut self,
         input: Vec<F>,
@@ -85,11 +91,11 @@ impl<const N: usize, F: Field> OLESender<N, F> {
     ///
     /// # Arguments
     ///
-    /// * `count` - The number of [`SenderShare`]s to return.
+    /// * `count` - The number of shares to return.
     ///
     /// # Returns
     ///
-    /// * A vector of [`SenderShare`] containing the OLE output for the sender.
+    /// * A vector of [`SenderShare`]s containing the OLE output for the sender.
     pub fn consume(&mut self, count: usize) -> Result<Vec<SenderShare<F>>, OLEError> {
         if count > self.cache.len() {
             return Err(OLEError::InsufficientOLEs(count, self.cache.len()));
@@ -107,8 +113,8 @@ impl<const N: usize, F: Field> OLESender<N, F> {
     ///
     /// # Returns
     ///
-    /// * A vector of [`SenderAdjust`] which needs to converted by [`OLESender::finish_adjust`].
-    /// * A vector of [`ShareAdjust`] which needs to be sent to the [`super::OLEReceiver`].
+    /// * A vector of [`SenderAdjust`]s which needs to be converted by [`OLESender::finish_adjust`].
+    /// * A vector of [`ShareAdjust`]s which needs to be sent to the [`super::OLEReceiver`].
     pub fn adjust(
         &mut self,
         targets: Vec<F>,
@@ -132,7 +138,7 @@ impl<const N: usize, F: Field> OLESender<N, F> {
     ///
     /// # Returns
     ///
-    /// * A vector of [`SenderShare`] containing the new OLE outputs for the sender.
+    /// * A vector of [`SenderShare`]s containing the new OLE outputs for the sender.
     pub fn finish_adjust(
         &self,
         sender_adjust: Vec<SenderAdjust<F>>,

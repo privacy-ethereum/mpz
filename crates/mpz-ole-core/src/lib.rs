@@ -15,12 +15,165 @@ mod sender;
 pub use receiver::OLEReceiver;
 pub use sender::OLESender;
 
+/// An error for OLE
+#[allow(missing_docs)]
 #[derive(Debug, thiserror::Error)]
 pub enum OLEError {
-    #[error("The number of field elements is incorrect. Expected a multiple of {0}, but got {1}")]
+    #[error("The number of OTs is incorrect. Got {0}, expected {1}")]
     ExpectedMultipleOf(usize, usize),
     #[error("Not enough prepared OLEs available. Requested {0}, but only {1} are available")]
     InsufficientOLEs(usize, usize),
     #[error("Number of adjustments has to be equal. Got {0} and {1}")]
     UnequalAdjustments(usize, usize),
+    #[error("Provided number of masks is incorrect. Got {0}, expected {1}")]
+    WrongNumerOfMasks(usize, usize),
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{OLEReceiver, OLESender};
+    use itybity::ToBits;
+    use mpz_core::{prg::Prg, Block};
+    use mpz_fields::{p256::P256, Field, UniformRand};
+    use mpz_ot_core::ideal::rot::IdealROT;
+    use rand::SeedableRng;
+
+    #[test]
+    fn test_ole_sender_receiver_generate() {
+        let count = 12;
+        let from_seed = Prg::from_seed(Block::ZERO);
+        let mut rng = from_seed;
+
+        let (sender, receiver) = (
+            OLESender::<256, P256>::default(),
+            OLEReceiver::<256, P256>::default(),
+        );
+
+        let sender_input: Vec<P256> = (0..count).map(|_| P256::rand(&mut rng)).collect();
+        let receiver_input: Vec<P256> = (0..count).map(|_| P256::rand(&mut rng)).collect();
+
+        let (ot_messages, ot_message_choices) = create_rot::<32, P256>(receiver_input.clone());
+
+        let (sender_shares, masked) = sender.generate(sender_input.clone(), ot_messages).unwrap();
+        let receiver_shares = receiver
+            .generate(receiver_input.clone(), ot_message_choices, masked)
+            .unwrap();
+
+        sender_input
+            .iter()
+            .zip(receiver_input)
+            .zip(sender_shares)
+            .zip(receiver_shares)
+            .for_each(|(((&a, b), x), y)| assert_eq!(y.inner(), a * b + x.inner()));
+    }
+
+    #[test]
+    fn test_ole_sender_receiver_preprocess() {
+        let count = 12;
+        let from_seed = Prg::from_seed(Block::ZERO);
+        let mut rng = from_seed;
+
+        let (mut sender, mut receiver) = (
+            OLESender::<256, P256>::default(),
+            OLEReceiver::<256, P256>::default(),
+        );
+
+        let sender_input: Vec<P256> = (0..count).map(|_| P256::rand(&mut rng)).collect();
+        let receiver_input: Vec<P256> = (0..count).map(|_| P256::rand(&mut rng)).collect();
+
+        let (ot_messages, ot_message_choices) = create_rot::<32, P256>(receiver_input.clone());
+
+        let masked = sender
+            .preprocess(sender_input.clone(), ot_messages)
+            .unwrap();
+        receiver
+            .preprocess(receiver_input.clone(), ot_message_choices, masked)
+            .unwrap();
+
+        let sender_shares = sender.consume(count).unwrap();
+        let receiver_shares = receiver.consume(count).unwrap();
+
+        sender_input
+            .iter()
+            .zip(receiver_input)
+            .zip(sender_shares)
+            .zip(receiver_shares)
+            .for_each(|(((&a, b), x), y)| assert_eq!(y.inner(), a * b + x.inner()));
+    }
+
+    #[test]
+    fn test_ole_sender_receiver_adjust() {
+        let count = 12;
+        let from_seed = Prg::from_seed(Block::ZERO);
+        let mut rng = from_seed;
+
+        let (mut sender, mut receiver) = (
+            OLESender::<256, P256>::default(),
+            OLEReceiver::<256, P256>::default(),
+        );
+
+        let sender_input: Vec<P256> = (0..count).map(|_| P256::rand(&mut rng)).collect();
+        let receiver_input: Vec<P256> = (0..count).map(|_| P256::rand(&mut rng)).collect();
+
+        let (ot_messages, ot_message_choices) = create_rot::<32, P256>(receiver_input.clone());
+
+        let masked = sender
+            .preprocess(sender_input.clone(), ot_messages)
+            .unwrap();
+        receiver
+            .preprocess(receiver_input.clone(), ot_message_choices, masked)
+            .unwrap();
+
+        let sender_targets: Vec<P256> = (0..count).map(|_| P256::rand(&mut rng)).collect();
+        let receiver_targets: Vec<P256> = (0..count).map(|_| P256::rand(&mut rng)).collect();
+
+        let (sender_adjust, s_to_r_adjust) = sender.adjust(sender_targets.clone()).unwrap();
+        let (receiver_adjust, r_to_s_adjust) = receiver.adjust(receiver_targets.clone()).unwrap();
+
+        let sender_shares_adjusted = sender.finish_adjust(sender_adjust, r_to_s_adjust).unwrap();
+        let receiver_shares_adjusted = receiver
+            .finish_adjust(receiver_adjust, s_to_r_adjust)
+            .unwrap();
+
+        sender_targets
+            .iter()
+            .zip(receiver_targets)
+            .zip(sender_shares_adjusted)
+            .zip(receiver_shares_adjusted)
+            .for_each(|(((&a, b), x), y)| assert_eq!(y.inner(), a * b + x.inner()));
+    }
+
+    // K should be BYTE_SIZE of F
+    pub(crate) fn create_rot<const K: usize, F: Field>(
+        receiver_choices: Vec<F>,
+    ) -> (Vec<[F; 2]>, Vec<F>) {
+        assert_eq!(
+            K,
+            F::BIT_SIZE as usize / 8,
+            "K has to be equal to the byte size of the field"
+        );
+
+        let mut rot = IdealROT::default();
+        let receiver_choices: Vec<bool> = receiver_choices.iter_lsb0().collect();
+        let (rot_sender, rot_receiver) = rot.random_with_choices::<K>(receiver_choices);
+
+        let ot_messages: Vec<[F; 2]> = rot_sender
+            .msgs
+            .iter()
+            .map(|[a, b]| {
+                [
+                    F::from_lsb0_iter(a.iter_lsb0()),
+                    F::from_lsb0_iter(b.iter_lsb0()),
+                ]
+            })
+            .collect();
+
+        let ot_message_choices: Vec<F> = rot_receiver
+            .msgs
+            .iter()
+            .map(|bytes| F::from_lsb0_iter(bytes.iter_lsb0()))
+            .collect();
+
+        (ot_messages, ot_message_choices)
+    }
 }
