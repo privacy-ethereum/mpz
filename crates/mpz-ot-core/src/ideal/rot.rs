@@ -43,18 +43,22 @@ impl IdealROT {
     /// # Arguments
     ///
     /// * `count` - The number of OTs to execute.
-    pub fn random(
+    pub fn random<const N: usize>(
         &mut self,
         count: usize,
-    ) -> (ROTSenderOutput<[Block; 2]>, ROTReceiverOutput<bool, Block>) {
+    ) -> (
+        ROTSenderOutput<[[u8; N]; 2]>,
+        ROTReceiverOutput<bool, [u8; N]>,
+    ) {
         let mut choices = vec![false; count];
 
         self.prg.random_bools(&mut choices);
 
-        let msgs: Vec<[Block; 2]> = (0..count)
+        let msgs: Vec<[[u8; N]; 2]> = (0..count)
             .map(|_| {
-                let mut msg = [Block::ZERO, Block::ZERO];
-                self.prg.random_blocks(&mut msg);
+                let mut msg = [[0; N], [0; N]];
+                self.prg.random_bytes(&mut msg[0]);
+                self.prg.random_bytes(&mut msg[1]);
                 msg
             })
             .collect();
@@ -83,14 +87,18 @@ impl IdealROT {
     /// # Arguments
     ///
     /// * `choices` - The choices made by the receiver.
-    pub fn random_with_choices(
+    pub fn random_with_choices<const N: usize>(
         &mut self,
         choices: Vec<bool>,
-    ) -> (ROTSenderOutput<[Block; 2]>, ROTReceiverOutput<bool, Block>) {
-        let msgs: Vec<[Block; 2]> = (0..choices.len())
+    ) -> (
+        ROTSenderOutput<[[u8; N]; 2]>,
+        ROTReceiverOutput<bool, [u8; N]>,
+    ) {
+        let msgs: Vec<[[u8; N]; 2]> = (0..choices.len())
             .map(|_| {
-                let mut msg = [Block::ZERO, Block::ZERO];
-                self.prg.random_blocks(&mut msg);
+                let mut msg = [[0; N], [0; N]];
+                self.prg.random_bytes(&mut msg[0]);
+                self.prg.random_bytes(&mut msg[1]);
                 msg
             })
             .collect();
@@ -137,7 +145,7 @@ mod tests {
                 msgs: received,
                 ..
             },
-        ) = IdealROT::default().random(100);
+        ) = IdealROT::default().random::<16>(100);
 
         assert_rot(&choices, &msgs, &received)
     }
@@ -155,7 +163,7 @@ mod tests {
                 msgs: received,
                 ..
             },
-        ) = IdealROT::default().random_with_choices(choices);
+        ) = IdealROT::default().random_with_choices::<16>(choices);
 
         assert_rot(&choices, &msgs, &received)
     }
