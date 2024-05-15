@@ -1,3 +1,4 @@
+use core::fmt;
 use std::sync::Arc;
 
 /// A logical thread identifier.
@@ -48,5 +49,29 @@ impl AsRef<[u8]> for ThreadId {
     #[inline]
     fn as_ref(&self) -> &[u8] {
         self.as_bytes()
+    }
+}
+
+/// A simple counter.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Counter(u32);
+
+impl Counter {
+    /// Increments the counter in place, returning the previous value.
+    pub fn next(&mut self) -> Self {
+        let prev = self.0;
+        self.0 += 1;
+        Self(prev)
+    }
+
+    /// Returns the next value without incrementing the counter.
+    pub fn peek(&self) -> Self {
+        Self(self.0 + 1)
+    }
+}
+
+impl fmt::Display for Counter {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
     }
 }
