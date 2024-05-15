@@ -53,13 +53,13 @@ impl<const N: usize, F: Field> OLESender<N, F> {
     /// # Returns
     ///
     /// * A vector of [`SenderShare`]s containing the OLE output for the sender.
-    pub fn consume(&mut self, count: usize) -> Result<Vec<SenderShare<F>>, OLEError> {
+    pub fn consume(&mut self, count: usize) -> Option<Vec<SenderShare<F>>> {
         if count > self.cache.len() {
-            return Err(OLEError::InsufficientOLEs(count, self.cache.len()));
+            return None;
         }
 
         let shares = self.cache.drain(..count).collect();
-        Ok(shares)
+        Some(shares)
     }
 
     /// Adjusts OLEs in the internal cache.
@@ -72,10 +72,7 @@ impl<const N: usize, F: Field> OLESender<N, F> {
     ///
     /// * A vector of [`SenderAdjust`]s which needs to be converted by [`OLESender::finish_adjust`].
     /// * [`BatchAdjust`] which needs to be sent to the [`crate::OLEReceiver`].
-    pub fn adjust(
-        &mut self,
-        targets: Vec<F>,
-    ) -> Result<(Vec<SenderAdjust<F>>, BatchAdjust<F>), OLEError> {
+    pub fn adjust(&mut self, targets: Vec<F>) -> Option<(Vec<SenderAdjust<F>>, BatchAdjust<F>)> {
         let shares = self.consume(targets.len())?;
         let (sender_adjusted, adjustments) = shares
             .into_iter()
@@ -88,7 +85,7 @@ impl<const N: usize, F: Field> OLESender<N, F> {
 
         let adjustments = BatchAdjust { adjustments };
 
-        Ok((sender_adjusted, adjustments))
+        Some((sender_adjusted, adjustments))
     }
 
     /// Completes the adjustment and returns the new shares.
