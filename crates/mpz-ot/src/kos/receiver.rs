@@ -1,7 +1,8 @@
 use async_trait::async_trait;
+use futures::TryFutureExt as _;
 use itybity::{FromBitIterator, IntoBitIterator};
 use mpz_cointoss as cointoss;
-use mpz_common::{scoped_futures::ScopedFutureExt, Context};
+use mpz_common::{try_join, Context};
 use mpz_core::{prg::Prg, Block};
 use mpz_ot_core::{
     kos::{
@@ -183,25 +184,13 @@ where
         // If the sender is committed, we run a coin toss
         if ext_receiver.config().sender_commit() {
             let cointoss_seed = thread_rng().gen();
-            let base = &mut self.base;
-
-            let (cointoss_receiver, _) = ctx
-                .try_join(
-                    |ctx| {
-                        async move {
-                            cointoss::Receiver::new(vec![cointoss_seed])
-                                .receive(ctx)
-                                .await
-                                .map_err(ReceiverError::from)
-                        }
-                        .scope_boxed()
-                    },
-                    |ctx| {
-                        async move { base.setup(ctx).await.map_err(ReceiverError::from) }
-                            .scope_boxed()
-                    },
-                )
-                .await?;
+            let (cointoss_receiver, _) = try_join!(
+                ctx,
+                cointoss::Receiver::new(vec![cointoss_seed])
+                    .receive(ctx)
+                    .map_err(ReceiverError::from),
+                self.base.setup(ctx).map_err(ReceiverError::from)
+            )?;
 
             self.cointoss_receiver = Some(cointoss_receiver);
         } else {

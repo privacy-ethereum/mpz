@@ -1,7 +1,9 @@
+//! OT test utilities.
+
 use mpz_core::Block;
 
 /// Asserts the correctness of correlated oblivious transfer.
-pub(crate) fn assert_cot(delta: Block, choices: &[bool], msgs: &[Block], received: &[Block]) {
+pub fn assert_cot(delta: Block, choices: &[bool], msgs: &[Block], received: &[Block]) {
     assert!(choices.into_iter().zip(msgs.into_iter().zip(received)).all(
         |(&choice, (&msg, &received))| {
             if choice {
@@ -14,7 +16,7 @@ pub(crate) fn assert_cot(delta: Block, choices: &[bool], msgs: &[Block], receive
 }
 
 /// Asserts the correctness of random oblivious transfer.
-pub(crate) fn assert_rot<T: Copy + PartialEq>(choices: &[bool], msgs: &[[T; 2]], received: &[T]) {
+pub fn assert_rot<T: Copy + PartialEq>(choices: &[bool], msgs: &[[T; 2]], received: &[T]) {
     assert!(choices.into_iter().zip(msgs.into_iter().zip(received)).all(
         |(&choice, (&msg, &received))| {
             if choice {
