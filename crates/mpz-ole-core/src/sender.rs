@@ -3,7 +3,8 @@
 use mpz_fields::Field;
 
 use crate::{
-    core::{MaskedInput, SenderAdjust, SenderShare, ShareAdjust},
+    core::{SenderAdjust, SenderShare},
+    msg::{BatchAdjust, MaskedInputs},
     OLEError,
 };
 
@@ -20,69 +21,25 @@ impl<const N: usize, F: Field> Default for OLESender<N, F> {
 }
 
 impl<const N: usize, F: Field> OLESender<N, F> {
-    /// Generates new OLEs.
-    ///
-    /// OLEs are not stored and directly returned.
-    ///
-    /// # Arguments
-    ///
-    /// * `input` - The sender's OLE input factors.
-    /// * `ot_messages` - The OT messages used for generating correlations.
-    ///
-    /// # Returns
-    ///
-    /// * A vector of [`SenderShare`]s containing the OLE outputs for the sender.
-    /// * A vector of [`MaskedInput`]s, which is to be sent to the receiver.
-    pub fn generate(
-        &self,
-        input: Vec<F>,
-        ot_messages: Vec<[F; 2]>,
-    ) -> Result<(Vec<SenderShare<F>>, Vec<MaskedInput<N, F>>), OLEError> {
-        if input.len() * F::BIT_SIZE as usize != ot_messages.len() {
-            return Err(OLEError::ExpectedMultipleOf(
-                input.len() * F::BIT_SIZE as usize,
-                ot_messages.len(),
-            ));
-        }
-
-        let (shares, masked): (Vec<SenderShare<F>>, Vec<MaskedInput<N, F>>) = input
-            .iter()
-            .zip(ot_messages.chunks_exact(F::BIT_SIZE as usize))
-            .map(|(&f, chunk)| {
-                SenderShare::new::<N>(
-                    f,
-                    chunk
-                        .try_into()
-                        .expect("Slice should have length of bit size of field element"),
-                )
-            })
-            .unzip();
-
-        Ok((shares, masked))
-    }
-
     /// Generates new OLEs and stores them internally.
     ///
-    /// This method is similar to [`OLESender::generate`], except that [`SenderShare`]s are stored
-    /// for later adjustment.
-    ///
     /// # Arguments
     ///
     /// * `input` - The sender's OLE input factors.
-    /// * `ot_messages` - The OT messages used for generating correlations.
+    /// * `random` - Uniformly random field elements for the correlation.
     ///
     /// # Returns
     ///
-    /// * A vector of [`MaskedInput`]s, which is to be sent to the [`super::OLEReceiver`].
+    /// * A vector of [`MaskedInput`]s, which is to be sent to the [`crate::OLEReceiver`].
     pub fn preprocess(
         &mut self,
         input: Vec<F>,
-        ot_messages: Vec<[F; 2]>,
-    ) -> Result<Vec<MaskedInput<N, F>>, OLEError> {
-        let (shares, masked) = self.generate(input, ot_messages)?;
+        random: Vec<[F; 2]>,
+    ) -> Result<MaskedInputs<F>, OLEError> {
+        let (shares, masked) = SenderShare::new_vec::<N>(input, random)?;
         self.cache.extend(shares);
 
-        Ok(masked)
+        Ok(masked.into())
     }
 
     /// Returns OLEs from internal cache.
@@ -114,17 +71,19 @@ impl<const N: usize, F: Field> OLESender<N, F> {
     /// # Returns
     ///
     /// * A vector of [`SenderAdjust`]s which needs to be converted by [`OLESender::finish_adjust`].
-    /// * A vector of [`ShareAdjust`]s which needs to be sent to the [`super::OLEReceiver`].
+    /// * [`BatchAdjust`] which needs to be sent to the [`crate::OLEReceiver`].
     pub fn adjust(
         &mut self,
         targets: Vec<F>,
-    ) -> Result<(Vec<SenderAdjust<F>>, Vec<ShareAdjust<F>>), OLEError> {
+    ) -> Result<(Vec<SenderAdjust<F>>, BatchAdjust<F>), OLEError> {
         let shares = self.consume(targets.len())?;
         let (sender_adjusted, adjustments) = shares
             .into_iter()
             .zip(targets)
             .map(|(s, t)| s.adjust(t))
             .unzip();
+
+        let adjustments = BatchAdjust { adjustments };
 
         Ok((sender_adjusted, adjustments))
     }
@@ -134,7 +93,7 @@ impl<const N: usize, F: Field> OLESender<N, F> {
     /// # Arguments
     ///
     /// * `sender_adjust` - The sender's intermediate shares from [`OLESender::adjust`].
-    /// * `adjustments` - The receiver's adjustments.
+    /// * `batch_adjust` - The receiver's adjustments.
     ///
     /// # Returns
     ///
@@ -142,8 +101,10 @@ impl<const N: usize, F: Field> OLESender<N, F> {
     pub fn finish_adjust(
         &self,
         sender_adjust: Vec<SenderAdjust<F>>,
-        adjustments: Vec<ShareAdjust<F>>,
+        batch_adjust: BatchAdjust<F>,
     ) -> Result<Vec<SenderShare<F>>, OLEError> {
+        let adjustments = batch_adjust.adjustments;
+
         if sender_adjust.len() != adjustments.len() {
             return Err(OLEError::UnequalAdjustments(
                 sender_adjust.len(),
