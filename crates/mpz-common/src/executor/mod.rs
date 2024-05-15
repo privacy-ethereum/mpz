@@ -1,7 +1,9 @@
 //! Executors.
 
+mod dummy;
 mod st;
 
+pub use dummy::{DummyExecutor, DummyIo};
 pub use st::STExecutor;
 
 #[cfg(any(test, feature = "test-utils"))]
