@@ -75,7 +75,7 @@ pub struct COTReceiverOutput<T> {
 pub struct RCOTSenderOutput<T> {
     /// The transfer id.
     pub id: TransferId,
-    /// The msgs.
+    /// The `0-bit` messages.
     pub msgs: Vec<T>,
 }
 
@@ -126,7 +126,7 @@ pub struct OTReceiverOutput<T> {
     pub msgs: Vec<T>,
 }
 
-/// The output that sender receivers from the SPCOT functionality.
+/// The output that sender receives from the SPCOT functionality.
 #[derive(Debug)]
 pub struct SPCOTSenderOutput<T> {
     /// The transfer id.
