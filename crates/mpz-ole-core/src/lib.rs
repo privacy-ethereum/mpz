@@ -23,8 +23,6 @@ pub enum OLEError {
     #[error("The number of provided elements do not match. Got {0}, expected {1}")]
     ExpectedMultipleOf(usize, usize),
     #[error("Not enough prepared OLEs available. Requested {0}, but only {1} are available")]
-    InsufficientOLEs(usize, usize),
-    #[error("Number of adjustments has to be equal. Got {0} and {1}")]
     UnequalAdjustments(usize, usize),
     #[error("Provided number of masks is incorrect. Got {0}, expected {1}")]
     WrongNumberOfMasks(usize, usize),
