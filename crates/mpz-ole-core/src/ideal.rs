@@ -28,14 +28,14 @@ impl IdealOLE {
             .map(|_| F::rand(&mut self.0))
             .collect();
 
-        let reciever_output: Vec<F> = sender_input
+        let receiver_output: Vec<F> = sender_input
             .iter()
             .zip(receiver_input)
             .zip(sender_output.iter().copied())
             .map(|((&a, &b), x)| a * b + x)
             .collect();
 
-        (sender_output, reciever_output)
+        (sender_output, receiver_output)
     }
 }
 
@@ -47,7 +47,7 @@ impl Default for IdealOLE {
 
 #[cfg(test)]
 mod tests {
-    use super::IdealOLE;
+    use crate::ideal::IdealOLE;
     use mpz_core::{prg::Prg, Block};
     use mpz_fields::{p256::P256, UniformRand};
     use rand::SeedableRng;

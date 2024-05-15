@@ -4,13 +4,12 @@
 //! vector OLE (VOLE), which means that we do not use PRGs, i.e. Extend can only be called once.                                                  
 //!                                                                                       
 //! Note that this is an OLE with errors implementation. The sender can introduce additive errors.
-//! Input privacy is guaranteed, but output privacy is not, when `0` is chosen as an input value.
 
 mod receiver;
 mod sender;
 
-pub(crate) use receiver::{ReceiverAdjust, ReceiverShare};
-pub(crate) use sender::{SenderAdjust, SenderShare};
+pub use receiver::{ReceiverAdjust, ReceiverShare};
+pub use sender::{SenderAdjust, SenderShare};
 
 use mpz_fields::Field;
 
@@ -30,7 +29,7 @@ impl<const N: usize, F: Field> Check<N, F> {
 /// The masked input of the sender.
 ///
 /// This is the correlation which is sent to the receiver and hides the sender's input.
-pub struct MaskedInput<const N: usize, F>([F; N]);
+pub struct MaskedInput<const N: usize, F>(pub(crate) [F; N]);
 
 /// The exchange field element for share adjustment.
 ///
@@ -39,7 +38,7 @@ pub struct ShareAdjust<F>(F);
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::core::{ReceiverShare, SenderShare};
     use crate::tests::create_rot;
     use mpz_core::{prg::Prg, Block};
     use mpz_fields::{p256::P256, UniformRand};
@@ -60,6 +59,30 @@ mod tests {
         let y = receiver_share.inner();
 
         assert_eq!(y, a * b + x);
+    }
+
+    #[test]
+    fn test_ole_core_vec() {
+        let count = 12;
+        let from_seed = Prg::from_seed(Block::ZERO);
+        let mut rng = from_seed;
+
+        let sender_input: Vec<P256> = (0..count).map(|_| P256::rand(&mut rng)).collect();
+        let receiver_input: Vec<P256> = (0..count).map(|_| P256::rand(&mut rng)).collect();
+
+        let (ot_messages, ot_message_choices) = create_rot(receiver_input.clone());
+
+        let (sender_shares, masked) =
+            SenderShare::new_vec::<256>(sender_input.clone(), ot_messages).unwrap();
+        let receiver_shares =
+            ReceiverShare::new_vec(receiver_input.clone(), ot_message_choices, masked).unwrap();
+
+        sender_input
+            .iter()
+            .zip(receiver_input)
+            .zip(sender_shares)
+            .zip(receiver_shares)
+            .for_each(|(((&a, b), x), y)| assert_eq!(y.inner(), a * b + x.inner()));
     }
 
     #[test]

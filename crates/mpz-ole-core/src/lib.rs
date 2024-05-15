@@ -8,7 +8,8 @@
 
 pub mod ideal;
 
-mod core;
+pub mod core;
+pub mod msg;
 mod receiver;
 mod sender;
 
@@ -19,14 +20,16 @@ pub use sender::OLESender;
 #[allow(missing_docs)]
 #[derive(Debug, thiserror::Error)]
 pub enum OLEError {
-    #[error("The number of OTs is incorrect. Got {0}, expected {1}")]
+    #[error("The number of provided elements do not match. Got {0}, expected {1}")]
     ExpectedMultipleOf(usize, usize),
     #[error("Not enough prepared OLEs available. Requested {0}, but only {1} are available")]
     InsufficientOLEs(usize, usize),
     #[error("Number of adjustments has to be equal. Got {0} and {1}")]
     UnequalAdjustments(usize, usize),
     #[error("Provided number of masks is incorrect. Got {0}, expected {1}")]
-    WrongNumerOfMasks(usize, usize),
+    WrongNumberOfMasks(usize, usize),
+    #[error("Got {0}, but expected a multiple of {1}")]
+    MultipleOf(usize, usize),
 }
 
 #[cfg(test)]
@@ -37,35 +40,6 @@ mod tests {
     use mpz_fields::{p256::P256, UniformRand};
     use mpz_ot_core::ideal::rot::IdealROT;
     use rand::SeedableRng;
-
-    #[test]
-    fn test_ole_sender_receiver_generate() {
-        let count = 12;
-        let from_seed = Prg::from_seed(Block::ZERO);
-        let mut rng = from_seed;
-
-        let (sender, receiver) = (
-            OLESender::<256, P256>::default(),
-            OLEReceiver::<256, P256>::default(),
-        );
-
-        let sender_input: Vec<P256> = (0..count).map(|_| P256::rand(&mut rng)).collect();
-        let receiver_input: Vec<P256> = (0..count).map(|_| P256::rand(&mut rng)).collect();
-
-        let (ot_messages, ot_message_choices) = create_rot(receiver_input.clone());
-
-        let (sender_shares, masked) = sender.generate(sender_input.clone(), ot_messages).unwrap();
-        let receiver_shares = receiver
-            .generate(receiver_input.clone(), ot_message_choices, masked)
-            .unwrap();
-
-        sender_input
-            .iter()
-            .zip(receiver_input)
-            .zip(sender_shares)
-            .zip(receiver_shares)
-            .for_each(|(((&a, b), x), y)| assert_eq!(y.inner(), a * b + x.inner()));
-    }
 
     #[test]
     fn test_ole_sender_receiver_preprocess() {
