@@ -3,7 +3,7 @@
 use mpz_fields::Field;
 
 use crate::{
-    core::{ReceiverAdjust, ReceiverShare},
+    core::{ReceiverAdjust, ReceiverShare, ShareAdjust},
     msg::{BatchAdjust, MaskedInputs},
     OLEError,
 };
@@ -79,7 +79,10 @@ impl<const N: usize, F: Field> OLEReceiver<N, F> {
         let (sender_adjusted, adjustments) = shares
             .into_iter()
             .zip(targets)
-            .map(|(s, t)| s.adjust(t))
+            .map(|(s, t)| {
+                let (share, adjust) = s.adjust(t);
+                (share, adjust.0)
+            })
             .unzip();
 
         let adjustments = BatchAdjust { adjustments };
@@ -113,7 +116,7 @@ impl<const N: usize, F: Field> OLEReceiver<N, F> {
         let shares = receiver_adjust
             .into_iter()
             .zip(adjustments.into_iter())
-            .map(|(s, a)| s.finish(a))
+            .map(|(s, a)| s.finish(ShareAdjust(a)))
             .collect();
 
         Ok(shares)

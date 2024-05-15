@@ -1,14 +1,12 @@
 //! Message types for OLE.
 
+use crate::{core::MaskedInput, OLEError};
 use mpz_fields::Field;
-
-use crate::{
-    core::{MaskedInput, ShareAdjust},
-    OLEError,
-};
+use serde::{Deserialize, Serialize};
 
 /// Message type for sending a vector [`MaskedInput`]s to the receiver.
 #[allow(missing_docs)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct MaskedInputs<F> {
     pub masks: Vec<F>,
 }
@@ -38,8 +36,9 @@ impl<const N: usize, F: Field> TryFrom<MaskedInputs<F>> for Vec<MaskedInput<N, F
     }
 }
 
-/// Message type for sending a vector of [`ShareAdjust`] to the other party.
+/// Message type for sending a vector of [`crate::core::ShareAdjust`] to the other party.
 #[allow(missing_docs)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct BatchAdjust<F> {
-    pub adjustments: Vec<ShareAdjust<F>>,
+    pub adjustments: Vec<F>,
 }

@@ -34,7 +34,8 @@ pub struct MaskedInput<const N: usize, F>(pub(crate) [F; N]);
 /// The exchange field element for share adjustment.
 ///
 /// This needs to be sent to each other in order to complete the share adjustment.
-pub struct ShareAdjust<F>(F);
+#[derive(Debug)]
+pub struct ShareAdjust<F>(pub(crate) F);
 
 #[cfg(test)]
 mod tests {

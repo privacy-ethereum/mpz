@@ -10,6 +10,7 @@ name = "mpz_ole_core"
 rand.workspace = true
 itybity.workspace = true
 thiserror.workspace = true
+serde = { workspace = true, features = ["derive"] }
 
 mpz-fields.workspace = true
 mpz-core.workspace = true
