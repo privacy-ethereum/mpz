@@ -53,7 +53,7 @@ impl AsRef<[u8]> for ThreadId {
 }
 
 /// A simple counter.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Counter(u32);
 
 impl Counter {
