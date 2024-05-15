@@ -37,6 +37,7 @@ pub trait Field:
     + GetBit<Lsb0>
     + GetBit<Msb0>
     + BitLength
+    + ByteRepr
     + Unpin
 {
     /// The number of bits of a field element.
