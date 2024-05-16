@@ -61,7 +61,7 @@ impl<const N: usize, F: Field> OLEReceiver<N, F> {
             return None;
         }
 
-        let shares = self.cache.drain(..count).collect();
+        let shares = self.cache.split_off(count);
         Some(shares)
     }
 
