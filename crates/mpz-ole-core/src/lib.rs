@@ -14,7 +14,7 @@ mod receiver;
 mod sender;
 
 pub use receiver::OLEReceiver;
-pub use sender::OLESender;
+pub use sender::{BatchSenderAdjust, OLESender};
 use serde::{Deserialize, Serialize};
 
 /// An OLE transfer identifier.
@@ -46,12 +46,14 @@ impl TransferId {
 pub enum OLEError {
     #[error("The number of provided elements do not match. Got {0}, expected {1}")]
     ExpectedMultipleOf(usize, usize),
-    #[error("Not enough prepared OLEs available. Requested {0}, but only {1} are available")]
+    #[error("Wrong number of adjustments. Got {0}, expected {1}")]
     UnequalAdjustments(usize, usize),
     #[error("Provided number of masks is incorrect. Got {0}, expected {1}")]
     WrongNumberOfMasks(usize, usize),
     #[error("Got {0}, but expected a multiple of {1}")]
     MultipleOf(usize, usize),
+    #[error("Wrong transfer id. Got {0}, expected {1}")]
+    WrongId(TransferId, TransferId),
 }
 
 #[cfg(test)]
@@ -126,10 +128,8 @@ mod tests {
         let (sender_adjust, s_to_r_adjust) = sender.adjust(sender_targets.clone()).unwrap();
         let (receiver_adjust, r_to_s_adjust) = receiver.adjust(receiver_targets.clone()).unwrap();
 
-        let sender_shares_adjusted = sender.finish_adjust(sender_adjust, r_to_s_adjust).unwrap();
-        let receiver_shares_adjusted = receiver
-            .finish_adjust(receiver_adjust, s_to_r_adjust)
-            .unwrap();
+        let sender_shares_adjusted = sender_adjust.finish_adjust(r_to_s_adjust).unwrap();
+        let receiver_shares_adjusted = receiver_adjust.finish_adjust(s_to_r_adjust).unwrap();
 
         sender_targets
             .iter()

@@ -5,18 +5,22 @@ use mpz_fields::Field;
 use crate::{
     core::{ReceiverAdjust, ReceiverShare, ShareAdjust},
     msg::{BatchAdjust, MaskedInputs},
-    OLEError,
+    OLEError, TransferId,
 };
 
 /// A receiver for batched OLE.
 #[derive(Debug)]
 pub struct OLEReceiver<const N: usize, F> {
+    id: TransferId,
     cache: Vec<ReceiverShare<F>>,
 }
 
 impl<const N: usize, F: Field> Default for OLEReceiver<N, F> {
     fn default() -> Self {
-        OLEReceiver { cache: vec![] }
+        OLEReceiver {
+            id: TransferId::default(),
+            cache: Vec::default(),
+        }
     }
 }
 
@@ -69,11 +73,11 @@ impl<const N: usize, F: Field> OLEReceiver<N, F> {
     ///
     /// # Returns
     ///
-    /// * A vector of [`ReceiverAdjust`] which needs to be converted by [`OLEReceiver::finish_adjust`].
+    /// * [`BatchReceiverAdjust`] which needs to be converted by [`BatchReceiverAdjust::finish_adjust`].
     /// * [`BatchAdjust`] which needs to be sent to the [`crate::OLESender`].
-    pub fn adjust(&mut self, targets: Vec<F>) -> Option<(Vec<ReceiverAdjust<F>>, BatchAdjust<F>)> {
+    pub fn adjust(&mut self, targets: Vec<F>) -> Option<(BatchReceiverAdjust<F>, BatchAdjust<F>)> {
         let shares = self.consume(targets.len())?;
-        let (sender_adjusted, adjustments) = shares
+        let (receiver_adjust, adjustments) = shares
             .into_iter()
             .zip(targets)
             .map(|(s, t)| {
@@ -82,34 +86,52 @@ impl<const N: usize, F: Field> OLEReceiver<N, F> {
             })
             .unzip();
 
-        let adjustments = BatchAdjust { adjustments };
+        let id = self.id.next();
 
-        Some((sender_adjusted, adjustments))
+        let receiver_adjust = BatchReceiverAdjust {
+            id,
+            adjust: receiver_adjust,
+        };
+        let adjustments = BatchAdjust { id, adjustments };
+
+        Some((receiver_adjust, adjustments))
     }
+}
 
+/// Receiver adjustments waiting for [`BatchAdjust`] from the sender.
+pub struct BatchReceiverAdjust<F> {
+    id: TransferId,
+    adjust: Vec<ReceiverAdjust<F>>,
+}
+
+impl<F: Field> BatchReceiverAdjust<F> {
     /// Completes the adjustment and returns the new shares.
     ///
     /// # Arguments
     ///
-    /// * `receiver_adjust` - The receiver's intermediate shares from [`OLEReceiver::adjust`].
     /// * `batch_adjust` - The sender's adjustments.
     ///
     /// # Returns
     ///
     /// * A vector of [`ReceiverShare`]s containing the new OLE outputs for the receiver.
     pub fn finish_adjust(
-        &self,
-        receiver_adjust: Vec<ReceiverAdjust<F>>,
+        self,
         batch_adjust: BatchAdjust<F>,
     ) -> Result<Vec<ReceiverShare<F>>, OLEError> {
+        if self.id != batch_adjust.id {
+            return Err(OLEError::WrongId(batch_adjust.id, self.id));
+        }
+
+        let receiver_adjust = self.adjust;
         let adjustments = batch_adjust.adjustments;
 
         if receiver_adjust.len() != adjustments.len() {
             return Err(OLEError::UnequalAdjustments(
-                receiver_adjust.len(),
                 adjustments.len(),
+                receiver_adjust.len(),
             ));
         }
+
         let shares = receiver_adjust
             .into_iter()
             .zip(adjustments.into_iter())

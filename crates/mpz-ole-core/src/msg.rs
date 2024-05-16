@@ -1,6 +1,6 @@
 //! Message types for OLE.
 
-use crate::{core::MaskedInput, OLEError};
+use crate::{core::MaskedInput, OLEError, TransferId};
 use mpz_fields::Field;
 use serde::{Deserialize, Serialize};
 
@@ -40,5 +40,6 @@ impl<const N: usize, F: Field> TryFrom<MaskedInputs<F>> for Vec<MaskedInput<N, F
 #[allow(missing_docs)]
 #[derive(Debug, Serialize, Deserialize)]
 pub struct BatchAdjust<F> {
+    pub id: TransferId,
     pub adjustments: Vec<F>,
 }

@@ -5,18 +5,22 @@ use mpz_fields::Field;
 use crate::{
     core::{SenderAdjust, SenderShare, ShareAdjust},
     msg::{BatchAdjust, MaskedInputs},
-    OLEError,
+    OLEError, TransferId,
 };
 
 /// A sender for batched OLE.
 #[derive(Debug)]
 pub struct OLESender<const N: usize, F> {
+    id: TransferId,
     cache: Vec<SenderShare<F>>,
 }
 
 impl<const N: usize, F: Field> Default for OLESender<N, F> {
     fn default() -> Self {
-        OLESender { cache: vec![] }
+        OLESender {
+            id: TransferId::default(),
+            cache: Vec::default(),
+        }
     }
 }
 
@@ -30,7 +34,7 @@ impl<const N: usize, F: Field> OLESender<N, F> {
     ///
     /// # Returns
     ///
-    /// * A vector of [`MaskedInput`]s, which is to be sent to the [`crate::OLEReceiver`].
+    /// * [`MaskedInputs`], which are to be sent to the [`crate::OLEReceiver`].
     pub fn preprocess(
         &mut self,
         input: Vec<F>,
@@ -70,11 +74,11 @@ impl<const N: usize, F: Field> OLESender<N, F> {
     ///
     /// # Returns
     ///
-    /// * A vector of [`SenderAdjust`]s which needs to be converted by [`OLESender::finish_adjust`].
+    /// * [`BatchSenderAdjust`] which needs to be converted by [`BatchSenderAdjust::finish_adjust`].
     /// * [`BatchAdjust`] which needs to be sent to the [`crate::OLEReceiver`].
-    pub fn adjust(&mut self, targets: Vec<F>) -> Option<(Vec<SenderAdjust<F>>, BatchAdjust<F>)> {
+    pub fn adjust(&mut self, targets: Vec<F>) -> Option<(BatchSenderAdjust<F>, BatchAdjust<F>)> {
         let shares = self.consume(targets.len())?;
-        let (sender_adjusted, adjustments) = shares
+        let (sender_adjust, adjustments) = shares
             .into_iter()
             .zip(targets)
             .map(|(s, t)| {
@@ -83,34 +87,52 @@ impl<const N: usize, F: Field> OLESender<N, F> {
             })
             .unzip();
 
-        let adjustments = BatchAdjust { adjustments };
+        let id = self.id.next();
 
-        Some((sender_adjusted, adjustments))
+        let sender_adjust = BatchSenderAdjust {
+            id,
+            adjust: sender_adjust,
+        };
+        let adjustments = BatchAdjust { id, adjustments };
+
+        Some((sender_adjust, adjustments))
     }
+}
 
+/// Sender adjustments waiting for [`BatchAdjust`] from the receiver.
+pub struct BatchSenderAdjust<F> {
+    id: TransferId,
+    adjust: Vec<SenderAdjust<F>>,
+}
+
+impl<F: Field> BatchSenderAdjust<F> {
     /// Completes the adjustment and returns the new shares.
     ///
     /// # Arguments
     ///
-    /// * `sender_adjust` - The sender's intermediate shares from [`OLESender::adjust`].
     /// * `batch_adjust` - The receiver's adjustments.
     ///
     /// # Returns
     ///
     /// * A vector of [`SenderShare`]s containing the new OLE outputs for the sender.
     pub fn finish_adjust(
-        &self,
-        sender_adjust: Vec<SenderAdjust<F>>,
+        self,
         batch_adjust: BatchAdjust<F>,
     ) -> Result<Vec<SenderShare<F>>, OLEError> {
+        if self.id != batch_adjust.id {
+            return Err(OLEError::WrongId(batch_adjust.id, self.id));
+        }
+
+        let sender_adjust = self.adjust;
         let adjustments = batch_adjust.adjustments;
 
         if sender_adjust.len() != adjustments.len() {
             return Err(OLEError::UnequalAdjustments(
-                sender_adjust.len(),
                 adjustments.len(),
+                sender_adjust.len(),
             ));
         }
+
         let shares = sender_adjust
             .into_iter()
             .zip(adjustments.into_iter())
