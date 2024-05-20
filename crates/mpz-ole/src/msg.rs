@@ -1,4 +1,4 @@
-//! Message types for different OLE protocols.
+//! Message types for OLE.
 
 use enum_try_as_inner::EnumTryAsInner;
 use mpz_fields::Field;
