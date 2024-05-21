@@ -1,25 +1,25 @@
 //! Receiver implementation.
 
-use mpz_fields::Field;
-
 use crate::{
     core::{ReceiverAdjust, ReceiverShare, ShareAdjust},
     msg::{BatchAdjust, MaskedInputs},
     OLEError, TransferId,
 };
+use mpz_fields::Field;
+use std::collections::VecDeque;
 
 /// A receiver for batched OLE.
 #[derive(Debug)]
 pub struct OLEReceiver<const N: usize, F> {
     id: TransferId,
-    cache: Vec<ReceiverShare<F>>,
+    cache: VecDeque<ReceiverShare<F>>,
 }
 
 impl<const N: usize, F: Field> Default for OLEReceiver<N, F> {
     fn default() -> Self {
         OLEReceiver {
             id: TransferId::default(),
-            cache: Vec::default(),
+            cache: VecDeque::default(),
         }
     }
 }
@@ -61,7 +61,7 @@ impl<const N: usize, F: Field> OLEReceiver<N, F> {
             return None;
         }
 
-        let shares = self.cache.split_off(self.cache.len() - count);
+        let shares = self.cache.drain(..count).collect();
         Some(shares)
     }
 
@@ -134,7 +134,7 @@ impl<F: Field> BatchReceiverAdjust<F> {
 
         let shares = receiver_adjust
             .into_iter()
-            .zip(adjustments.into_iter())
+            .zip(adjustments)
             .map(|(s, a)| s.finish(ShareAdjust(a)))
             .collect();
 

@@ -57,6 +57,7 @@ impl<F: Field> SenderShare<F> {
     ///
     /// * A vector of sender shares.
     /// * A vector of correlations, which are to be sent to the receiver.
+    #[allow(clippy::type_complexity)]
     pub fn new_vec<const N: usize>(
         input: Vec<F>,
         random: Vec<[F; 2]>,
