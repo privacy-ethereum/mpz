@@ -39,6 +39,7 @@ pub trait Field:
     + BitLength
     + ByteRepr
     + Unpin
+    + ByteRepr
 {
     /// The number of bits of a field element.
     const BIT_SIZE: usize = <Self::BitSize as Unsigned>::USIZE;

@@ -9,18 +9,15 @@ use mpz_ot::RandomOTReceiver;
 use serio::stream::IoStreamExt;
 use serio::SinkExt;
 use serio::{Deserialize, Serialize};
-use std::marker::PhantomData;
 
 /// OLE receiver.
-pub struct OLEReceiver<const M: usize, const N: usize, T, F, C> {
+pub struct OLEReceiver<const N: usize, T, F> {
     rot_receiver: T,
     core: OLECoreReceiver<N, F>,
-    context: PhantomData<C>,
 }
 
-impl<const M: usize, const N: usize, T, F, C: Context> OLEReceiver<M, N, T, F, C>
+impl<const N: usize, T, F> OLEReceiver<N, T, F>
 where
-    T: RandomOTReceiver<C, bool, [u8; M]> + Send,
     F: Field + Serialize + Deserialize,
 {
     /// Creates a new receiver.
@@ -28,16 +25,27 @@ where
         Self {
             rot_receiver,
             core: OLECoreReceiver::default(),
-            context: PhantomData,
         }
     }
+}
 
+impl<const N: usize, T, F> OLEReceiver<N, T, F>
+where
+    F: Field + Serialize + Deserialize,
+{
     /// Preprocesses OLEs.
     ///
     /// # Arguments
     ///
     /// * `count` - The number of OLEs to preprocess.
-    pub async fn preprocess(&mut self, ctx: &mut C, count: usize) -> Result<(), OLEError> {
+    pub async fn preprocess<Ctx: Context>(
+        &mut self,
+        ctx: &mut Ctx,
+        count: usize,
+    ) -> Result<(), OLEError>
+    where
+        T: RandomOTReceiver<Ctx, bool, F::Serialized> + Send,
+    {
         let random_ot = self
             .rot_receiver
             .receive_random(ctx, count * F::BIT_SIZE as usize)
@@ -46,7 +54,7 @@ where
         let rot_msg: Vec<F> = random_ot
             .msgs
             .iter()
-            .map(|f| F::from_lsb0_iter(f.iter_lsb0()))
+            .map(|f| F::from_lsb0_iter(f.as_ref().iter_lsb0()))
             .collect();
 
         let rot_choices: Vec<F> = random_ot
@@ -64,13 +72,12 @@ where
 }
 
 #[async_trait]
-impl<const M: usize, const N: usize, T, F, C: Context> OLEReceive<C, F>
-    for OLEReceiver<M, N, T, F, C>
+impl<const N: usize, T, F, Ctx: Context> OLEReceive<Ctx, F> for OLEReceiver<N, T, F>
 where
-    T: RandomOTReceiver<C, bool, [u8; M]> + Send,
+    T: RandomOTReceiver<Ctx, bool, F::Serialized> + Send,
     F: Field + Serialize + Deserialize,
 {
-    async fn receive(&mut self, ctx: &mut C, b_k: Vec<F>) -> Result<Vec<F>, OLEError> {
+    async fn receive(&mut self, ctx: &mut Ctx, b_k: Vec<F>) -> Result<Vec<F>, OLEError> {
         let (receiver_adjust, adjust) = self.core.adjust(b_k).ok_or(OLEError::InsufficientOLEs)?;
 
         let channel = ctx.io_mut();
