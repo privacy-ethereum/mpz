@@ -1,13 +1,14 @@
-use crate::{msg::OLEMessage, OLEError, OLEReceiver as OLEReceive};
+use crate::{OLEError, OLEReceiver as OLEReceive};
 use async_trait::async_trait;
 use itybity::ToBits;
-use mpz_common::{try_join, Context};
+use mpz_common::Context;
 use mpz_fields::Field;
+use mpz_ole_core::msg::{BatchAdjust, MaskedInputs};
 use mpz_ole_core::OLEReceiver as OLECoreReceiver;
 use mpz_ot::RandomOTReceiver;
-use serde::{Deserialize, Serialize};
 use serio::stream::IoStreamExt;
 use serio::SinkExt;
+use serio::{Deserialize, Serialize};
 use std::marker::PhantomData;
 
 /// OLE receiver.
@@ -20,8 +21,7 @@ pub struct OLEReceiver<const M: usize, const N: usize, T, F, C> {
 impl<const M: usize, const N: usize, T, F, C: Context> OLEReceiver<M, N, T, F, C>
 where
     T: RandomOTReceiver<C, bool, [u8; M]> + Send,
-    F: Field + Serialize + Deserialize<'static>,
-    for<'a> OLEMessage<F>: Deserialize<'a>,
+    F: Field + Serialize + Deserialize,
 {
     /// Creates a new receiver.
     pub fn new(rot_receiver: T) -> Self {
@@ -56,10 +56,7 @@ where
             .collect();
 
         let channel = ctx.io_mut();
-        let masks = channel
-            .expect_next::<OLEMessage<F>>()
-            .await?
-            .try_into_masked()?;
+        let masks = channel.expect_next::<MaskedInputs<F>>().await?;
 
         self.core.preprocess(rot_choices, rot_msg, masks)?;
         Ok(())
@@ -71,18 +68,14 @@ impl<const M: usize, const N: usize, T, F, C: Context> OLEReceive<C, F>
     for OLEReceiver<M, N, T, F, C>
 where
     T: RandomOTReceiver<C, bool, [u8; M]> + Send,
-    F: Field + Serialize + Deserialize<'static>,
-    for<'a> OLEMessage<F>: Deserialize<'a>,
+    F: Field + Serialize + Deserialize,
 {
     async fn receive(&mut self, ctx: &mut C, b_k: Vec<F>) -> Result<Vec<F>, OLEError> {
         let (receiver_adjust, adjust) = self.core.adjust(b_k).ok_or(OLEError::InsufficientOLEs)?;
 
-        let (_, adjust) = try_join!(
-            ctx,
-            ctx.io_mut().send(OLEMessage::Adjust(adjust)),
-            ctx.io_mut().expect_next::<OLEMessage<F>>()
-        )?;
-        let adjust = adjust.try_into_adjust()?;
+        let channel = ctx.io_mut();
+        channel.send(adjust).await?;
+        let adjust = channel.expect_next::<BatchAdjust<F>>().await?;
 
         let shares = receiver_adjust.finish_adjust(adjust)?;
         let y_k = shares.into_iter().map(|s| s.inner()).collect();

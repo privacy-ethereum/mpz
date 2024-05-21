@@ -9,11 +9,9 @@ use mpz_common::Context;
 use mpz_fields::Field;
 use mpz_ole_core::OLEError as OLECoreError;
 use mpz_ot::OTError;
-use msg::OLEMessageError;
 use std::{error::Error, fmt::Debug};
 
 pub mod ideal;
-pub mod msg;
 pub mod rot;
 
 /// Batch OLE Sender.
@@ -70,10 +68,4 @@ pub enum OLEError {
     InsufficientOLEs,
     #[error(transparent)]
     Message(Box<dyn Error + Send + 'static>),
-}
-
-impl<F: Field> From<OLEMessageError<F>> for OLEError {
-    fn from(value: OLEMessageError<F>) -> Self {
-        OLEError::Message(Box::new(value) as Box<dyn Error + Send + 'static>)
-    }
 }
