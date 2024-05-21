@@ -1,4 +1,4 @@
-use crate::{OLEError, OLEReceiver as OLEReceive};
+use crate::{OLEError, OLEErrorKind, OLEReceiver as OLEReceive};
 use async_trait::async_trait;
 use itybity::ToBits;
 use mpz_common::Context;
@@ -78,7 +78,10 @@ where
     F: Field + Serialize + Deserialize,
 {
     async fn receive(&mut self, ctx: &mut Ctx, b_k: Vec<F>) -> Result<Vec<F>, OLEError> {
-        let (receiver_adjust, adjust) = self.core.adjust(b_k).ok_or(OLEError::InsufficientOLEs)?;
+        let (receiver_adjust, adjust) = self.core.adjust(b_k).ok_or(OLEError::new(
+            OLEErrorKind::InsufficientOLEs,
+            "Not enough OLEs available".into(),
+        ))?;
 
         let channel = ctx.io_mut();
         channel.send(adjust).await?;
