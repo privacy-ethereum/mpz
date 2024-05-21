@@ -10,18 +10,15 @@ use rand::thread_rng;
 use serio::stream::IoStreamExt;
 use serio::SinkExt;
 use serio::{Deserialize, Serialize};
-use std::marker::PhantomData;
 
 /// OLE sender.
-pub struct OLESender<const M: usize, const N: usize, T, F, C> {
+pub struct OLESender<const N: usize, T, F> {
     rot_sender: T,
     core: OLECoreSender<N, F>,
-    context: PhantomData<C>,
 }
 
-impl<const M: usize, const N: usize, T, F, C: Context> OLESender<M, N, T, F, C>
+impl<const N: usize, T, F> OLESender<N, T, F>
 where
-    T: RandomOTSender<C, [[u8; M]; 2]> + Send,
     F: Field + Serialize + Deserialize,
 {
     /// Creates a new sender.
@@ -29,16 +26,27 @@ where
         Self {
             rot_sender,
             core: OLECoreSender::default(),
-            context: PhantomData,
         }
     }
+}
 
+impl<const N: usize, T, F> OLESender<N, T, F>
+where
+    F: Field + Serialize + Deserialize,
+{
     /// Preprocesses OLEs.
     ///
     /// # Arguments
     ///
     /// * `count` - The number of OLEs to preprocess.
-    pub async fn preprocess(&mut self, ctx: &mut C, count: usize) -> Result<(), OLEError> {
+    pub async fn preprocess<Ctx: Context>(
+        &mut self,
+        ctx: &mut Ctx,
+        count: usize,
+    ) -> Result<(), OLEError>
+    where
+        T: RandomOTSender<Ctx, [F::Serialized; 2]> + Send,
+    {
         let random = {
             let mut rng = thread_rng();
             (0..count).map(|_| F::rand(&mut rng)).collect()
@@ -52,8 +60,8 @@ where
             .iter()
             .map(|[a, b]| {
                 [
-                    F::from_lsb0_iter(a.into_iter_lsb0()),
-                    F::from_lsb0_iter(b.into_iter_lsb0()),
+                    F::from_lsb0_iter(a.as_ref().into_iter_lsb0()),
+                    F::from_lsb0_iter(b.as_ref().into_iter_lsb0()),
                 ]
             })
             .collect();
@@ -68,12 +76,12 @@ where
 }
 
 #[async_trait]
-impl<const M: usize, const N: usize, T, F, C: Context> OLESend<C, F> for OLESender<M, N, T, F, C>
+impl<const N: usize, T, F, Ctx: Context> OLESend<Ctx, F> for OLESender<N, T, F>
 where
-    T: RandomOTSender<C, [[u8; M]; 2]> + Send,
+    T: RandomOTSender<Ctx, [F::Serialized; 2]> + Send,
     F: Field + Serialize + Deserialize,
 {
-    async fn send(&mut self, ctx: &mut C, a_k: Vec<F>) -> Result<Vec<F>, OLEError> {
+    async fn send(&mut self, ctx: &mut Ctx, a_k: Vec<F>) -> Result<Vec<F>, OLEError> {
         let (sender_adjust, adjust) = self.core.adjust(a_k).ok_or(OLEError::InsufficientOLEs)?;
 
         let channel = ctx.io_mut();

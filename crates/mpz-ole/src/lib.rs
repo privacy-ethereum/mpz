@@ -20,7 +20,7 @@ pub mod rot;
 /// `y_k = a_k * b_k + x_k` holds, where `b_k` and `y_k` are the [`OLEReceiver`]'s inputs and outputs
 /// respectively.
 #[async_trait]
-pub trait OLESender<C: Context, F: Field> {
+pub trait OLESender<Ctx: Context, F: Field> {
     /// Sends his masked inputs to the [`OLEReceiver`].
     ///
     /// # Arguments
@@ -31,7 +31,7 @@ pub trait OLESender<C: Context, F: Field> {
     /// # Returns
     ///
     /// * The sender's OLE outputs `x_k`.
-    async fn send(&mut self, ctx: &mut C, a_k: Vec<F>) -> Result<Vec<F>, OLEError>;
+    async fn send(&mut self, ctx: &mut Ctx, a_k: Vec<F>) -> Result<Vec<F>, OLEError>;
 }
 
 /// Batch OLE Receiver.
@@ -40,7 +40,7 @@ pub trait OLESender<C: Context, F: Field> {
 /// `y_k = a_k * b_k + x_k` holds, where `a_k` and `x_k` are the [`OLESender`]'s inputs and outputs
 /// respectively.
 #[async_trait]
-pub trait OLEReceiver<C: Context, F: Field> {
+pub trait OLEReceiver<Ctx: Context, F: Field> {
     /// Receives the masked inputs of the [`OLESender`].
     ///
     /// # Arguments
@@ -51,7 +51,7 @@ pub trait OLEReceiver<C: Context, F: Field> {
     /// # Returns
     ///
     /// * The receiver's OLE outputs `y_k`.
-    async fn receive(&mut self, ctx: &mut C, inputs: Vec<F>) -> Result<Vec<F>, OLEError>;
+    async fn receive(&mut self, ctx: &mut Ctx, inputs: Vec<F>) -> Result<Vec<F>, OLEError>;
 }
 
 /// An OLE error.

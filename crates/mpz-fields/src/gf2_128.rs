@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 
 use mpz_core::Block;
 
-use super::Field;
+use crate::{ByteRepr, Field};
 
 /// A type for holding field elements of Gf(2^128).
 #[derive(Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Serialize, Deserialize)]
@@ -95,6 +95,10 @@ impl Neg for Gf2_128 {
     fn neg(self) -> Self::Output {
         self
     }
+}
+
+impl ByteRepr for Gf2_128 {
+    type Serialized = [u8; 16];
 }
 
 impl Field for Gf2_128 {

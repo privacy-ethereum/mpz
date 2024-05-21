@@ -36,6 +36,7 @@ pub trait Field:
     + GetBit<Msb0>
     + BitLength
     + Unpin
+    + ByteRepr
 {
     /// The number of bits of a field element.
     const BIT_SIZE: u32;
@@ -66,6 +67,14 @@ pub trait Field:
 pub trait UniformRand: Sized {
     /// Return a random field element.
     fn rand<R: Rng + ?Sized>(rng: &mut R) -> Self;
+}
+
+/// The byte representation of the field.
+///
+/// This trait introduces an associated type for field elements to simplify usage.
+pub trait ByteRepr {
+    /// The underlying representation of the field element
+    type Serialized: AsRef<[u8]> + Send + Sync + Unpin + 'static;
 }
 
 impl<T> UniformRand for T

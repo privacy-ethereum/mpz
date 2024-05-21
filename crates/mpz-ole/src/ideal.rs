@@ -29,8 +29,8 @@ pub struct IdealOLEReceiver<F: Field> {
 }
 
 #[async_trait]
-impl<F: Field, C: Context> OLESender<C, F> for IdealOLESender<F> {
-    async fn send(&mut self, _ctx: &mut C, a_k: Vec<F>) -> Result<Vec<F>, OLEError> {
+impl<F: Field, Ctx: Context> OLESender<Ctx, F> for IdealOLESender<F> {
+    async fn send(&mut self, _ctx: &mut Ctx, a_k: Vec<F>) -> Result<Vec<F>, OLEError> {
         let mut rng = thread_rng();
         let x_k: Vec<F> = (0..a_k.len()).map(|_| F::rand(&mut rng)).collect();
 
@@ -43,8 +43,8 @@ impl<F: Field, C: Context> OLESender<C, F> for IdealOLESender<F> {
 }
 
 #[async_trait]
-impl<F: Field, C: Context> OLEReceiver<C, F> for IdealOLEReceiver<F> {
-    async fn receive(&mut self, _ctx: &mut C, b_k: Vec<F>) -> Result<Vec<F>, OLEError> {
+impl<F: Field, Ctx: Context> OLEReceiver<Ctx, F> for IdealOLEReceiver<F> {
+    async fn receive(&mut self, _ctx: &mut Ctx, b_k: Vec<F>) -> Result<Vec<F>, OLEError> {
         let (a_k, x_k) = self
             .channel
             .next()
