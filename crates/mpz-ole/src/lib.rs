@@ -9,7 +9,7 @@ use mpz_common::Context;
 use mpz_fields::Field;
 use mpz_ole_core::OLEError as OLECoreError;
 use mpz_ot::OTError;
-use std::{error::Error, fmt::Debug};
+use std::{error::Error, fmt::Debug, io::Error as IOError};
 
 pub mod ideal;
 pub mod rot;
@@ -56,16 +56,53 @@ pub trait OLEReceiver<Ctx: Context, F: Field> {
 
 /// An OLE error.
 #[derive(Debug, thiserror::Error)]
-#[allow(missing_docs)]
-pub enum OLEError {
-    #[error(transparent)]
-    OT(#[from] OTError),
-    #[error(transparent)]
-    Io(#[from] std::io::Error),
-    #[error(transparent)]
-    OLECoreError(#[from] OLECoreError),
-    #[error("Not enough OLEs available")]
+#[error("OLE error: {kind:?}")]
+pub struct OLEError {
+    kind: OLEErrorKind,
+    #[source]
+    source: Option<Box<dyn Error + Send + Sync>>,
+}
+
+impl OLEError {
+    fn new(kind: OLEErrorKind, source: Box<dyn Error + Send + Sync + 'static>) -> Self {
+        Self {
+            kind,
+            source: Some(source),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub(crate) enum OLEErrorKind {
+    OT,
+    IO,
+    Core,
     InsufficientOLEs,
-    #[error(transparent)]
-    Message(Box<dyn Error + Send + 'static>),
+}
+
+impl From<OTError> for OLEError {
+    fn from(value: OTError) -> Self {
+        Self {
+            kind: OLEErrorKind::OT,
+            source: Some(Box::new(value) as Box<dyn Error + Send + Sync>),
+        }
+    }
+}
+
+impl From<IOError> for OLEError {
+    fn from(value: IOError) -> Self {
+        Self {
+            kind: OLEErrorKind::IO,
+            source: Some(Box::new(value) as Box<dyn Error + Send + Sync>),
+        }
+    }
+}
+
+impl From<OLECoreError> for OLEError {
+    fn from(value: OLECoreError) -> Self {
+        Self {
+            kind: OLEErrorKind::Core,
+            source: Some(Box::new(value) as Box<dyn Error + Send + Sync>),
+        }
+    }
 }
