@@ -9,7 +9,11 @@ use mpz_common::Context;
 use mpz_fields::Field;
 use mpz_ole_core::OLEError as OLECoreError;
 use mpz_ot::OTError;
-use std::{error::Error, fmt::Debug, io::Error as IOError};
+use std::{
+    error::Error,
+    fmt::{Debug, Display},
+    io::Error as IOError,
+};
 
 pub mod ideal;
 pub mod rot;
@@ -56,7 +60,7 @@ pub trait OLEReceiver<Ctx: Context, F: Field> {
 
 /// An OLE error.
 #[derive(Debug, thiserror::Error)]
-#[error("OLE error: {kind:?}")]
+#[error("OLE error: {kind}")]
 pub struct OLEError {
     kind: OLEErrorKind,
     #[source]
@@ -78,6 +82,17 @@ pub(crate) enum OLEErrorKind {
     IO,
     Core,
     InsufficientOLEs,
+}
+
+impl Display for OLEErrorKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            OLEErrorKind::OT => write!(f, "OT Error"),
+            OLEErrorKind::IO => write!(f, "IO Error"),
+            OLEErrorKind::Core => write!(f, "OLE Core Error"),
+            OLEErrorKind::InsufficientOLEs => write!(f, "Insufficient OLEs"),
+        }
+    }
 }
 
 impl From<OTError> for OLEError {
