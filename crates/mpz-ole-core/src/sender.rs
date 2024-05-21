@@ -1,25 +1,25 @@
 //! Sender implementation.
 
-use mpz_fields::Field;
-
 use crate::{
     core::{SenderAdjust, SenderShare, ShareAdjust},
     msg::{BatchAdjust, MaskedInputs},
     OLEError, TransferId,
 };
+use mpz_fields::Field;
+use std::collections::VecDeque;
 
 /// A sender for batched OLE.
 #[derive(Debug)]
 pub struct OLESender<const N: usize, F> {
     id: TransferId,
-    cache: Vec<SenderShare<F>>,
+    cache: VecDeque<SenderShare<F>>,
 }
 
 impl<const N: usize, F: Field> Default for OLESender<N, F> {
     fn default() -> Self {
         OLESender {
             id: TransferId::default(),
-            cache: Vec::default(),
+            cache: VecDeque::default(),
         }
     }
 }
@@ -62,7 +62,7 @@ impl<const N: usize, F: Field> OLESender<N, F> {
             return None;
         }
 
-        let shares = self.cache.split_off(self.cache.len() - count);
+        let shares = self.cache.drain(..count).collect();
         Some(shares)
     }
 
@@ -135,7 +135,7 @@ impl<F: Field> BatchSenderAdjust<F> {
 
         let shares = sender_adjust
             .into_iter()
-            .zip(adjustments.into_iter())
+            .zip(adjustments)
             .map(|(s, a)| s.finish(ShareAdjust(a)))
             .collect();
 
