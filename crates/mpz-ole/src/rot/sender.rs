@@ -1,14 +1,15 @@
-use crate::{msg::OLEMessage, OLEError, OLESender as OLESend};
+use crate::{OLEError, OLESender as OLESend};
 use async_trait::async_trait;
 use itybity::IntoBitIterator;
-use mpz_common::{try_join, Context};
+use mpz_common::Context;
 use mpz_fields::Field;
+use mpz_ole_core::msg::BatchAdjust;
 use mpz_ole_core::OLESender as OLECoreSender;
 use mpz_ot::RandomOTSender;
 use rand::thread_rng;
-use serde::{Deserialize, Serialize};
 use serio::stream::IoStreamExt;
 use serio::SinkExt;
+use serio::{Deserialize, Serialize};
 use std::marker::PhantomData;
 
 /// OLE sender.
@@ -21,8 +22,7 @@ pub struct OLESender<const M: usize, const N: usize, T, F, C> {
 impl<const M: usize, const N: usize, T, F, C: Context> OLESender<M, N, T, F, C>
 where
     T: RandomOTSender<C, [[u8; M]; 2]> + Send,
-    F: Field + Serialize + Deserialize<'static>,
-    for<'a> OLEMessage<F>: Deserialize<'a>,
+    F: Field + Serialize + Deserialize,
 {
     /// Creates a new sender.
     pub fn new(rot_sender: T) -> Self {
@@ -61,7 +61,7 @@ where
         let channel = ctx.io_mut();
 
         let masks = self.core.preprocess(random, random_ot)?;
-        channel.send(OLEMessage::Masked(masks)).await?;
+        channel.send(masks).await?;
 
         Ok(())
     }
@@ -71,18 +71,14 @@ where
 impl<const M: usize, const N: usize, T, F, C: Context> OLESend<C, F> for OLESender<M, N, T, F, C>
 where
     T: RandomOTSender<C, [[u8; M]; 2]> + Send,
-    F: Field + Serialize + Deserialize<'static>,
-    for<'a> OLEMessage<F>: Deserialize<'a>,
+    F: Field + Serialize + Deserialize,
 {
     async fn send(&mut self, ctx: &mut C, a_k: Vec<F>) -> Result<Vec<F>, OLEError> {
         let (sender_adjust, adjust) = self.core.adjust(a_k).ok_or(OLEError::InsufficientOLEs)?;
 
-        let (_, adjust) = try_join!(
-            ctx,
-            ctx.io_mut().send(OLEMessage::Adjust(adjust)),
-            ctx.io_mut().expect_next::<OLEMessage<F>>()
-        )?;
-        let adjust = adjust.try_into_adjust()?;
+        let channel = ctx.io_mut();
+        channel.send(adjust).await?;
+        let adjust = channel.expect_next::<BatchAdjust<F>>().await?;
 
         let shares = sender_adjust.finish_adjust(adjust)?;
         let x_k = shares.into_iter().map(|s| s.inner()).collect();
