@@ -1,5 +1,6 @@
 use crate::{OLEError, OLEErrorKind, OLESender as OLESend};
 use async_trait::async_trait;
+use hybrid_array::ArraySize;
 use itybity::IntoBitIterator;
 use mpz_common::Context;
 use mpz_fields::Field;
@@ -12,12 +13,12 @@ use serio::SinkExt;
 use serio::{Deserialize, Serialize};
 
 /// OLE sender.
-pub struct OLESender<const N: usize, T, F> {
+pub struct OLESender<T, F> {
     rot_sender: T,
-    core: OLECoreSender<N, F>,
+    core: OLECoreSender<F>,
 }
 
-impl<const N: usize, T, F> OLESender<N, T, F>
+impl<T, F> OLESender<T, F>
 where
     F: Field + Serialize + Deserialize,
 {
@@ -30,9 +31,10 @@ where
     }
 }
 
-impl<const N: usize, T, F> OLESender<N, T, F>
+impl<T, F> OLESender<T, F>
 where
     F: Field + Serialize + Deserialize,
+    <F as Field>::BitSizeType: ArraySize,
 {
     /// Preprocesses OLEs.
     ///
@@ -76,10 +78,11 @@ where
 }
 
 #[async_trait]
-impl<const N: usize, T, F, Ctx: Context> OLESend<Ctx, F> for OLESender<N, T, F>
+impl<T, F, Ctx: Context> OLESend<Ctx, F> for OLESender<T, F>
 where
     T: RandomOTSender<Ctx, [F::Serialized; 2]> + Send,
     F: Field + Serialize + Deserialize,
+    <F as Field>::BitSizeType: ArraySize,
 {
     async fn send(&mut self, ctx: &mut Ctx, a_k: Vec<F>) -> Result<Vec<F>, OLEError> {
         let (sender_adjust, adjust) = self.core.adjust(a_k).ok_or_else(|| {

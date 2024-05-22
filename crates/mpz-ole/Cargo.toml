@@ -24,6 +24,7 @@ enum-try-as-inner.workspace = true
 futures.workspace = true
 rand.workspace = true
 itybity.workspace = true
+hybrid-array.workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true, features = [
