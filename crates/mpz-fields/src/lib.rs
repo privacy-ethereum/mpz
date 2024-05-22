@@ -41,6 +41,9 @@ pub trait Field:
     /// The number of bits of a field element.
     const BIT_SIZE: u32;
 
+    /// The number of bits of a field element as a type number.
+    type BitSizeType;
+
     /// Return the additive identity element.
     fn zero() -> Self;
 

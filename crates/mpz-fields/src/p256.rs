@@ -9,6 +9,7 @@ use itybity::{BitLength, FromBitIterator, GetBit, Lsb0, Msb0};
 use num_bigint::ToBigUint;
 use rand::{distributions::Standard, prelude::Distribution};
 use serde::{Deserialize, Serialize};
+use typenum::U256;
 
 use crate::{ByteRepr, Field};
 
@@ -85,6 +86,7 @@ impl ByteRepr for P256 {
 
 impl Field for P256 {
     const BIT_SIZE: u32 = 256;
+    type BitSizeType = U256;
 
     fn zero() -> Self {
         P256(<Fq as Zero>::zero())

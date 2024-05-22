@@ -1,9 +1,10 @@
 //! Sender shares for Oblivious Linear Function Evaluation (OLE).
 
 use crate::{
-    core::{Check, MaskedInput, ShareAdjust},
+    core::{MaskedInput, ShareAdjust},
     OLEError,
 };
+use hybrid_array::{Array, ArraySize};
 use mpz_fields::Field;
 
 /// Sender share for OLE.
@@ -13,7 +14,10 @@ pub struct SenderShare<F> {
     output: F,
 }
 
-impl<F: Field> SenderShare<F> {
+impl<F: Field> SenderShare<F>
+where
+    <F as Field>::BitSizeType: ArraySize,
+{
     /// Creates a new [`SenderShare`].
     ///
     /// # Arguments
@@ -25,11 +29,14 @@ impl<F: Field> SenderShare<F> {
     ///
     /// * The sender's share.
     /// * The correlation which will be sent to the receiver.
-    pub(crate) fn new<const N: usize>(input: F, random: [[F; 2]; N]) -> (Self, MaskedInput<N, F>) {
-        // Check that the right N is used depending on the needed bit size of the field.
-        let _: () = Check::<N, F>::IS_BITSIZE_CORRECT;
+    pub(crate) fn new(
+        input: F,
+        random: impl Into<Array<[F; 2], F::BitSizeType>>,
+    ) -> (Self, MaskedInput<F>) {
+        let random = random.into();
 
         let output = random
+            .as_slice()
             .iter()
             .enumerate()
             .fold(F::zero(), |acc, (i, &[zero, _])| {
@@ -37,8 +44,9 @@ impl<F: Field> SenderShare<F> {
             });
         let share = Self { input, output };
 
-        let mut ui = [F::zero(); N];
-        ui.iter_mut()
+        let mut ui: Array<F, F::BitSizeType> = Array::from_fn(|_| F::zero());
+        ui.as_mut_slice()
+            .iter_mut()
             .zip(random)
             .for_each(|(u, [zero, one])| *u = zero + -one + input);
         let masked = MaskedInput(ui);
@@ -58,10 +66,10 @@ impl<F: Field> SenderShare<F> {
     /// * A vector of sender shares.
     /// * A vector of correlations, which are to be sent to the receiver.
     #[allow(clippy::type_complexity)]
-    pub fn new_vec<const N: usize>(
+    pub fn new_vec(
         input: Vec<F>,
         random: Vec<[F; 2]>,
-    ) -> Result<(Vec<SenderShare<F>>, Vec<MaskedInput<N, F>>), OLEError> {
+    ) -> Result<(Vec<SenderShare<F>>, Vec<MaskedInput<F>>), OLEError> {
         if input.len() * F::BIT_SIZE as usize != random.len() {
             return Err(OLEError::ExpectedMultipleOf(
                 input.len() * F::BIT_SIZE as usize,
@@ -69,14 +77,13 @@ impl<F: Field> SenderShare<F> {
             ));
         }
 
-        let (shares, masked): (Vec<SenderShare<F>>, Vec<MaskedInput<N, F>>) = input
+        let (shares, masked): (Vec<SenderShare<F>>, Vec<MaskedInput<F>>) = input
             .iter()
             .zip(random.chunks_exact(F::BIT_SIZE as usize))
             .map(|(&f, chunk)| {
-                SenderShare::new::<N>(
+                SenderShare::new(
                     f,
-                    chunk
-                        .try_into()
+                    Array::<[F; 2], F::BitSizeType>::try_from(chunk)
                         .expect("Slice should have length of bit size of field element"),
                 )
             })

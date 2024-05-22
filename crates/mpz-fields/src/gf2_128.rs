@@ -7,6 +7,7 @@ use rand::{distributions::Standard, prelude::Distribution};
 use serde::{Deserialize, Serialize};
 
 use mpz_core::Block;
+use typenum::U128;
 
 use crate::{ByteRepr, Field};
 
@@ -103,6 +104,7 @@ impl ByteRepr for Gf2_128 {
 
 impl Field for Gf2_128 {
     const BIT_SIZE: u32 = 128;
+    type BitSizeType = U128;
 
     fn zero() -> Self {
         Self::new(0)

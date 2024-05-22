@@ -1,9 +1,10 @@
 //! Receiver shares for Oblivious Linear Function Evaluation (OLE).
 
 use crate::{
-    core::{Check, MaskedInput, ShareAdjust},
+    core::{MaskedInput, ShareAdjust},
     OLEError,
 };
+use hybrid_array::{Array, ArraySize};
 use itybity::ToBits;
 use mpz_fields::Field;
 
@@ -14,7 +15,10 @@ pub struct ReceiverShare<F> {
     output: F,
 }
 
-impl<F: Field> ReceiverShare<F> {
+impl<F: Field> ReceiverShare<F>
+where
+    <F as Field>::BitSizeType: ArraySize,
+{
     /// Creates a new [`ReceiverShare`].
     ///
     /// # Arguments
@@ -26,9 +30,12 @@ impl<F: Field> ReceiverShare<F> {
     /// # Returns
     ///
     /// * The receiver's share.
-    pub(crate) fn new<const N: usize>(input: F, random: [F; N], masked: MaskedInput<N, F>) -> Self {
-        // Check that the right N is used depending on the needed bit size of the field.
-        let _: () = Check::<N, F>::IS_BITSIZE_CORRECT;
+    pub(crate) fn new(
+        input: F,
+        random: impl Into<Array<F, F::BitSizeType>>,
+        masked: MaskedInput<F>,
+    ) -> Self {
+        let random = random.into();
 
         let delta_i = input.iter_lsb0();
         let ui = masked.0.iter();
@@ -56,10 +63,10 @@ impl<F: Field> ReceiverShare<F> {
     /// # Returns
     ///
     /// * A vector of [`ReceiverShare`]s containing the OLE outputs for the receiver.
-    pub fn new_vec<const N: usize>(
+    pub fn new_vec(
         input: Vec<F>,
         random: Vec<F>,
-        masked: Vec<MaskedInput<N, F>>,
+        masked: Vec<MaskedInput<F>>,
     ) -> Result<Vec<ReceiverShare<F>>, OLEError> {
         if input.len() * F::BIT_SIZE as usize != random.len() {
             return Err(OLEError::ExpectedMultipleOf(
@@ -77,10 +84,9 @@ impl<F: Field> ReceiverShare<F> {
             .zip(random.chunks_exact(F::BIT_SIZE as usize))
             .zip(masked)
             .map(|((&f, chunk), m)| {
-                ReceiverShare::new::<N>(
+                ReceiverShare::new(
                     f,
-                    chunk
-                        .try_into()
+                    Array::<F, F::BitSizeType>::try_from(chunk)
                         .expect("Slice should have length of bit size of field element"),
                     m,
                 )
