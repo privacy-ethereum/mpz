@@ -21,6 +21,7 @@ opaque-debug.workspace = true
 serde.workspace = true
 itybity.workspace = true
 typenum.workspace = true
+hybrid-array.workspace = true
 
 [dev-dependencies]
 ghash_rc.workspace = true

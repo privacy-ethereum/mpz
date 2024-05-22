@@ -4,7 +4,7 @@ use crate::{
     core::{MaskedInput, ShareAdjust},
     OLEError,
 };
-use hybrid_array::{Array, ArraySize};
+use hybrid_array::Array;
 use mpz_fields::Field;
 
 /// Sender share for OLE.
@@ -14,10 +14,7 @@ pub struct SenderShare<F> {
     output: F,
 }
 
-impl<F: Field> SenderShare<F>
-where
-    <F as Field>::BitSizeType: ArraySize,
-{
+impl<F: Field> SenderShare<F> {
     /// Creates a new [`SenderShare`].
     ///
     /// # Arguments

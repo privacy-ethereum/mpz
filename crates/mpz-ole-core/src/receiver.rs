@@ -5,7 +5,6 @@ use crate::{
     msg::{BatchAdjust, MaskedInputs},
     OLEError, TransferId,
 };
-use hybrid_array::ArraySize;
 use mpz_fields::Field;
 use std::collections::VecDeque;
 
@@ -25,10 +24,7 @@ impl<F: Field> Default for OLEReceiver<F> {
     }
 }
 
-impl<F: Field> OLEReceiver<F>
-where
-    <F as Field>::BitSizeType: ArraySize,
-{
+impl<F: Field> OLEReceiver<F> {
     /// Generates new OLEs and stores them internally.
     ///
     /// # Arguments

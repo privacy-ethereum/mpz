@@ -1,6 +1,5 @@
 use crate::{OLEError, OLEErrorKind, OLESender as OLESend};
 use async_trait::async_trait;
-use hybrid_array::ArraySize;
 use itybity::IntoBitIterator;
 use mpz_common::Context;
 use mpz_fields::Field;
@@ -34,7 +33,6 @@ where
 impl<T, F> OLESender<T, F>
 where
     F: Field + Serialize + Deserialize,
-    <F as Field>::BitSizeType: ArraySize,
 {
     /// Preprocesses OLEs.
     ///
@@ -82,7 +80,6 @@ impl<T, F, Ctx: Context> OLESend<Ctx, F> for OLESender<T, F>
 where
     T: RandomOTSender<Ctx, [F::Serialized; 2]> + Send,
     F: Field + Serialize + Deserialize,
-    <F as Field>::BitSizeType: ArraySize,
 {
     async fn send(&mut self, ctx: &mut Ctx, a_k: Vec<F>) -> Result<Vec<F>, OLEError> {
         let (sender_adjust, adjust) = self.core.adjust(a_k).ok_or_else(|| {

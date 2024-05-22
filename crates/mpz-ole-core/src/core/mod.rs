@@ -8,7 +8,7 @@
 mod receiver;
 mod sender;
 
-use hybrid_array::{Array, ArraySize};
+use hybrid_array::Array;
 pub use receiver::{ReceiverAdjust, ReceiverShare};
 pub use sender::{SenderAdjust, SenderShare};
 
@@ -17,9 +17,7 @@ use mpz_fields::Field;
 /// The masked input of the sender.
 ///
 /// This is the correlation which is sent to the receiver and hides the sender's input.
-pub struct MaskedInput<F: Field>(pub(crate) Array<F, F::BitSizeType>)
-where
-    <F as Field>::BitSizeType: ArraySize;
+pub struct MaskedInput<F: Field>(pub(crate) Array<F, F::BitSizeType>);
 
 /// The exchange field element for share adjustment.
 ///

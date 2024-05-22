@@ -4,7 +4,7 @@ use crate::{
     core::{MaskedInput, ShareAdjust},
     OLEError,
 };
-use hybrid_array::{Array, ArraySize};
+use hybrid_array::Array;
 use itybity::ToBits;
 use mpz_fields::Field;
 
@@ -15,10 +15,7 @@ pub struct ReceiverShare<F> {
     output: F,
 }
 
-impl<F: Field> ReceiverShare<F>
-where
-    <F as Field>::BitSizeType: ArraySize,
-{
+impl<F: Field> ReceiverShare<F> {
     /// Creates a new [`ReceiverShare`].
     ///
     /// # Arguments

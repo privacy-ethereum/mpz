@@ -12,6 +12,7 @@ use std::{
     ops::{Add, Mul, Neg},
 };
 
+use hybrid_array::ArraySize;
 use itybity::{BitLength, FromBitIterator, GetBit, Lsb0, Msb0};
 use rand::{distributions::Standard, prelude::Distribution, Rng};
 
@@ -42,7 +43,7 @@ pub trait Field:
     const BIT_SIZE: u32;
 
     /// The number of bits of a field element as a type number.
-    type BitSizeType;
+    type BitSizeType: ArraySize;
 
     /// Return the additive identity element.
     fn zero() -> Self;

@@ -1,6 +1,5 @@
 use crate::{OLEError, OLEErrorKind, OLEReceiver as OLEReceive};
 use async_trait::async_trait;
-use hybrid_array::ArraySize;
 use itybity::ToBits;
 use mpz_common::Context;
 use mpz_fields::Field;
@@ -33,7 +32,6 @@ where
 impl<T, F> OLEReceiver<T, F>
 where
     F: Field + Serialize + Deserialize,
-    <F as Field>::BitSizeType: ArraySize,
 {
     /// Preprocesses OLEs.
     ///
@@ -78,7 +76,6 @@ impl<T, F, Ctx: Context> OLEReceive<Ctx, F> for OLEReceiver<T, F>
 where
     T: RandomOTReceiver<Ctx, bool, F::Serialized> + Send,
     F: Field + Serialize + Deserialize,
-    <F as Field>::BitSizeType: ArraySize,
 {
     async fn receive(&mut self, ctx: &mut Ctx, b_k: Vec<F>) -> Result<Vec<F>, OLEError> {
         let (receiver_adjust, adjust) = self.core.adjust(b_k).ok_or_else(|| {
