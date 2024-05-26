@@ -8,6 +8,15 @@ use crate::{
     EqualityCheck,
 };
 
+/// A status sent from the generator to the evaluator to indicate whether the garbling is done.
+#[derive(Debug, Serialize, Deserialize)]
+pub enum Status<T> {
+    /// Garbling is still active.
+    Active(T),
+    /// Garbling is done.
+    Done,
+}
+
 /// Top-level message type encapsulating all messages used in garbled circuit protocols.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[non_exhaustive]

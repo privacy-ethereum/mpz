@@ -1,12 +1,16 @@
-use std::sync::Arc;
+use core::fmt;
 
 use blake3::Hasher;
 
 use crate::{
     circuit::EncryptedGate,
     encoding::{state, EncodedValue, Label},
+    EncryptedGateBatch, DEFAULT_BATCH_SIZE,
 };
-use mpz_circuits::{types::TypeError, Circuit, CircuitError, Gate};
+use mpz_circuits::{
+    types::{BinaryRepr, TypeError},
+    Circuit, CircuitError, Gate,
+};
 use mpz_core::{
     aes::{FixedKeyAes, FIXED_KEY_AES},
     hash::Hash,
@@ -54,57 +58,42 @@ pub(crate) fn and_gate(
     Label::new(w_g ^ w_e)
 }
 
-/// Core evaluator type for evaluating a garbled circuit.
+/// Output of the evaluator.
+#[derive(Debug)]
+pub struct EvaluatorOutput {
+    /// Encoded outputs of the circuit.
+    pub outputs: Vec<EncodedValue<state::Active>>,
+    /// Hash of the encrypted gates.
+    pub hash: Option<Hash>,
+}
+
+/// Garbled circuit evaluator.
+#[derive(Debug)]
 pub struct Evaluator {
-    /// Cipher to use to encrypt the gates
-    cipher: &'static FixedKeyAes,
-    /// Circuit to evaluate
-    circ: Arc<Circuit>,
-    /// Active label state
-    active_labels: Vec<Option<Label>>,
-    /// Current position in the circuit
-    pos: usize,
-    /// Current gate id
-    gid: usize,
-    /// Whether the evaluator is finished
-    complete: bool,
-    /// Hasher to use to hash the encrypted gates
-    hasher: Option<Hasher>,
+    /// Buffer for the active labels.
+    buffer: Vec<Label>,
+}
+
+impl Default for Evaluator {
+    fn default() -> Self {
+        Self {
+            buffer: Default::default(),
+        }
+    }
 }
 
 impl Evaluator {
-    /// Creates a new evaluator for the given circuit.
+    /// Returns a consumer over the encrypted gates of a circuit.
     ///
     /// # Arguments
     ///
     /// * `circ` - The circuit to evaluate.
-    /// * `inputs` - The inputs to the circuit.
-    pub fn new(
-        circ: Arc<Circuit>,
-        inputs: &[EncodedValue<state::Active>],
-    ) -> Result<Self, EvaluatorError> {
-        Self::new_with(circ, inputs, None)
-    }
-
-    /// Creates a new evaluator for the given circuit. Evaluator will compute
-    /// a hash of the encrypted gates while they are evaluated.
-    ///
-    /// # Arguments
-    ///
-    /// * `circ` - The circuit to evaluate.
-    /// * `inputs` - The inputs to the circuit.
-    pub fn new_with_hasher(
-        circ: Arc<Circuit>,
-        inputs: &[EncodedValue<state::Active>],
-    ) -> Result<Self, EvaluatorError> {
-        Self::new_with(circ, inputs, Some(Hasher::new()))
-    }
-
-    fn new_with(
-        circ: Arc<Circuit>,
-        inputs: &[EncodedValue<state::Active>],
-        hasher: Option<Hasher>,
-    ) -> Result<Self, EvaluatorError> {
+    /// * `inputs` - The input values to the circuit.
+    pub fn evaluate<'a>(
+        &'a mut self,
+        circ: &'a Circuit,
+        inputs: Vec<EncodedValue<state::Active>>,
+    ) -> Result<EncryptedGateConsumer<'_, std::slice::Iter<'_, Gate>>, EvaluatorError> {
         if inputs.len() != circ.inputs().len() {
             return Err(CircuitError::InvalidInputCount(
                 circ.inputs().len(),
@@ -112,8 +101,12 @@ impl Evaluator {
             ))?;
         }
 
-        let mut active_labels: Vec<Option<Label>> = vec![None; circ.feed_count()];
-        for (encoded, input) in inputs.iter().zip(circ.inputs()) {
+        // Expand the buffer to fit the circuit
+        if circ.feed_count() > self.buffer.len() {
+            self.buffer.resize(circ.feed_count(), Default::default());
+        }
+
+        for (encoded, input) in inputs.into_iter().zip(circ.inputs()) {
             if encoded.value_type() != input.value_type() {
                 return Err(TypeError::UnexpectedType {
                     expected: input.value_type(),
@@ -122,111 +115,204 @@ impl Evaluator {
             }
 
             for (label, node) in encoded.iter().zip(input.iter()) {
-                active_labels[node.id()] = Some(*label);
+                self.buffer[node.id()] = *label;
             }
         }
 
-        let mut ev = Self {
-            cipher: &(*FIXED_KEY_AES),
-            circ,
-            active_labels,
-            pos: 0,
-            gid: 1,
-            complete: false,
-            hasher,
-        };
-
-        // If circuit has no AND gates we can evaluate it immediately for cheap
-        if ev.circ.and_count() == 0 {
-            ev.evaluate(std::iter::empty());
-        }
-
-        Ok(ev)
+        Ok(EncryptedGateConsumer::new(
+            circ.gates().iter(),
+            circ.outputs(),
+            &mut self.buffer,
+            circ.and_count(),
+        ))
     }
 
-    /// Evaluates the next batch of encrypted gates.
-    #[inline]
-    pub fn evaluate<'a>(&mut self, mut encrypted_gates: impl Iterator<Item = &'a EncryptedGate>) {
-        let labels = &mut self.active_labels;
+    /// Returns a consumer over batched encrypted gates of a circuit.
+    ///
+    /// # Arguments
+    ///
+    /// * `circ` - The circuit to evaluate.
+    /// * `inputs` - The input values to the circuit.
+    pub fn evaluate_batched<'a>(
+        &'a mut self,
+        circ: &'a Circuit,
+        inputs: Vec<EncodedValue<state::Active>>,
+    ) -> Result<EncryptedGateBatchConsumer<'_, std::slice::Iter<'_, Gate>>, EvaluatorError> {
+        self.evaluate(circ, inputs).map(EncryptedGateBatchConsumer)
+    }
+}
 
-        // Process gates until we run out of encrypted gates
-        while self.pos < self.circ.gates().len() {
-            match &self.circ.gates()[self.pos] {
-                Gate::Inv {
-                    x: node_x,
-                    z: node_z,
-                } => {
-                    let x = labels[node_x.id()].expect("feed should be initialized");
-                    labels[node_z.id()] = Some(x);
-                }
+/// Consumer over the encrypted gates of a circuit.
+pub struct EncryptedGateConsumer<'a, I: Iterator> {
+    /// Cipher to use to encrypt the gates
+    cipher: &'static FixedKeyAes,
+    /// Buffer for the active labels.
+    labels: &'a mut [Label],
+    /// Iterator over the gates.
+    gates: I,
+    /// Circuit outputs.
+    outputs: &'a [BinaryRepr],
+    /// Current gate id.
+    gid: usize,
+    /// Hasher to use to hash the encrypted gates
+    hasher: Option<Hasher>,
+    /// Number of AND gates evaluated.
+    counter: usize,
+    /// Total number of AND gates in the circuit.
+    and_count: usize,
+    /// Whether the entire circuit has been garbled.
+    complete: bool,
+}
+
+impl<'a, I: Iterator> fmt::Debug for EncryptedGateConsumer<'a, I> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "EncryptedGateConsumer {{ .. }}")
+    }
+}
+
+impl<'a, I> EncryptedGateConsumer<'a, I>
+where
+    I: Iterator<Item = &'a Gate>,
+{
+    fn new(gates: I, outputs: &'a [BinaryRepr], labels: &'a mut [Label], and_count: usize) -> Self {
+        Self {
+            cipher: &(*FIXED_KEY_AES),
+            gates,
+            outputs,
+            labels,
+            gid: 1,
+            hasher: None,
+            counter: 0,
+            and_count,
+            complete: false,
+        }
+    }
+
+    /// Enables hashing of the encrypted gates.
+    pub fn enable_hasher(&mut self) {
+        self.hasher = Some(Hasher::new());
+    }
+
+    /// Returns `true` if the evaluator wants more encrypted gates.
+    #[inline]
+    pub fn wants_gates(&self) -> bool {
+        self.counter != self.and_count
+    }
+
+    /// Evaluates the next gate in the circuit.
+    #[inline]
+    pub fn next(&mut self, encrypted_gate: EncryptedGate) {
+        while let Some(gate) = self.gates.next() {
+            match gate {
                 Gate::Xor {
                     x: node_x,
                     y: node_y,
                     z: node_z,
                 } => {
-                    let x = labels[node_x.id()].expect("feed should be initialized");
-                    let y = labels[node_y.id()].expect("feed should be initialized");
-                    labels[node_z.id()] = Some(x ^ y);
+                    let x = self.labels[node_x.id()];
+                    let y = self.labels[node_y.id()];
+                    self.labels[node_z.id()] = x ^ y;
                 }
                 Gate::And {
                     x: node_x,
                     y: node_y,
                     z: node_z,
                 } => {
-                    if let Some(encrypted_gate) = encrypted_gates.next() {
-                        if let Some(hasher) = &mut self.hasher {
-                            hasher.update(&encrypted_gate.to_bytes());
-                        }
+                    let x = self.labels[node_x.id()];
+                    let y = self.labels[node_y.id()];
+                    let z = and_gate(self.cipher, &x, &y, &encrypted_gate, self.gid);
+                    self.labels[node_z.id()] = z;
 
-                        let x = labels[node_x.id()].expect("feed should be initialized");
-                        let y = labels[node_y.id()].expect("feed should be initialized");
-                        let z = and_gate(self.cipher, &x, &y, encrypted_gate, self.gid);
-                        labels[node_z.id()] = Some(z);
-                        self.gid += 2;
-                    } else {
-                        // We ran out of encrypted gates, so we return until we get more
+                    self.gid += 2;
+                    self.counter += 1;
+
+                    if let Some(hasher) = &mut self.hasher {
+                        hasher.update(&encrypted_gate.to_bytes());
+                    }
+
+                    // If we have more AND gates to evaluate, return.
+                    if self.wants_gates() {
                         return;
                     }
                 }
+                Gate::Inv {
+                    x: node_x,
+                    z: node_z,
+                } => {
+                    let x = self.labels[node_x.id()];
+                    self.labels[node_z.id()] = x;
+                }
             }
-            self.pos += 1;
         }
 
         self.complete = true;
     }
 
-    /// Returns whether the evaluator has finished evaluating the circuit.
-    pub fn is_complete(&self) -> bool {
-        self.complete
-    }
-
-    /// Returns the active encoded outputs of the circuit.
-    pub fn outputs(&self) -> Result<Vec<EncodedValue<state::Active>>, EvaluatorError> {
-        if !self.is_complete() {
+    /// Returns the encoded outputs of the circuit.
+    pub fn finish(mut self) -> Result<EvaluatorOutput, EvaluatorError> {
+        if self.wants_gates() {
             return Err(EvaluatorError::NotFinished);
         }
 
-        Ok(self
-            .circ
-            .outputs()
+        // Evaluate the remaining "free" gates.
+        if !self.complete {
+            self.next(Default::default());
+        }
+
+        let outputs = self
+            .outputs
             .iter()
             .map(|output| {
-                let labels: Vec<Label> = output
-                    .iter()
-                    .map(|node| self.active_labels[node.id()].expect("feed should be initialized"))
-                    .collect();
+                let labels: Vec<Label> = output.iter().map(|node| self.labels[node.id()]).collect();
 
                 EncodedValue::<state::Active>::from_labels(output.value_type(), &labels)
                     .expect("encoding should be correct")
             })
-            .collect())
+            .collect();
+
+        Ok(EvaluatorOutput {
+            outputs,
+            hash: self.hasher.as_ref().map(|hasher| {
+                let hash: [u8; 32] = hasher.finalize().into();
+                Hash::from(hash)
+            }),
+        })
+    }
+}
+
+/// Consumer returned by [`Evaluator::evaluate_batched`].
+#[derive(Debug)]
+pub struct EncryptedGateBatchConsumer<'a, I: Iterator, const N: usize = DEFAULT_BATCH_SIZE>(
+    EncryptedGateConsumer<'a, I>,
+);
+
+impl<'a, I, const N: usize> EncryptedGateBatchConsumer<'a, I, N>
+where
+    I: Iterator<Item = &'a Gate>,
+{
+    /// Enables hashing of the encrypted gates.
+    pub fn enable_hasher(&mut self) {
+        self.0.enable_hasher()
     }
 
-    /// Returns the hash of the encrypted gates.
-    pub fn hash(&self) -> Option<Hash> {
-        self.hasher.as_ref().map(|hasher| {
-            let hash: [u8; 32] = hasher.finalize().into();
-            Hash::from(hash)
-        })
+    /// Returns `true` if the evaluator wants more encrypted gates.
+    pub fn wants_gates(&self) -> bool {
+        self.0.wants_gates()
+    }
+
+    /// Evaluates the next batch of gates in the circuit.
+    #[inline]
+    pub fn next(&mut self, batch: EncryptedGateBatch<N>) {
+        for encrypted_gate in batch.into_array() {
+            self.0.next(encrypted_gate);
+            if !self.0.wants_gates() {
+                return;
+            }
+        }
+    }
+
+    /// Returns the encoded outputs of the circuit, and the hash of the encrypted gates if present.
+    pub fn finish(self) -> Result<EvaluatorOutput, EvaluatorError> {
+        self.0.finish()
     }
 }
