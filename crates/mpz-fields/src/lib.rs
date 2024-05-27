@@ -12,6 +12,7 @@ use std::{
     ops::{Add, Mul, Neg},
 };
 
+use hybrid_array::ArraySize;
 use itybity::{BitLength, FromBitIterator, GetBit, Lsb0, Msb0};
 use rand::{distributions::Standard, prelude::Distribution, Rng};
 
@@ -35,9 +36,14 @@ pub trait Field:
     + GetBit<Lsb0>
     + GetBit<Msb0>
     + BitLength
+    + Unpin
+    + ByteRepr
 {
     /// The number of bits of a field element.
     const BIT_SIZE: u32;
+
+    /// The number of bits of a field element as a type number.
+    type BitSizeType: ArraySize;
 
     /// Return the additive identity element.
     fn zero() -> Self;
@@ -65,6 +71,14 @@ pub trait Field:
 pub trait UniformRand: Sized {
     /// Return a random field element.
     fn rand<R: Rng + ?Sized>(rng: &mut R) -> Self;
+}
+
+/// The byte representation of the field.
+///
+/// This trait introduces an associated type for field elements to simplify usage.
+pub trait ByteRepr {
+    /// The underlying representation of the field element
+    type Serialized: AsRef<[u8]> + Send + Sync + Unpin + 'static;
 }
 
 impl<T> UniformRand for T

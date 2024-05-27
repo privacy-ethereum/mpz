@@ -8,28 +8,16 @@
 mod receiver;
 mod sender;
 
+use hybrid_array::Array;
 pub use receiver::{ReceiverAdjust, ReceiverShare};
 pub use sender::{SenderAdjust, SenderShare};
 
 use mpz_fields::Field;
 
-/// Workaround because of feature `generic_const_exprs` not available in stable.
-///
-/// This is used to check at compile-time that the correct const-generic implementation is used for
-/// a specific field.
-struct Check<const N: usize, F: Field>(std::marker::PhantomData<F>);
-
-impl<const N: usize, F: Field> Check<N, F> {
-    const IS_BITSIZE_CORRECT: () = assert!(
-        N as u32 == F::BIT_SIZE,
-        "Wrong bit size used for field. You need to use `F::BIT_SIZE` for N."
-    );
-}
-
 /// The masked input of the sender.
 ///
 /// This is the correlation which is sent to the receiver and hides the sender's input.
-pub struct MaskedInput<const N: usize, F>(pub(crate) [F; N]);
+pub struct MaskedInput<F: Field>(pub(crate) Array<F, F::BitSizeType>);
 
 /// The exchange field element for share adjustment.
 ///
@@ -74,7 +62,7 @@ mod tests {
         let (ot_messages, ot_message_choices) = create_rot(receiver_input.clone());
 
         let (sender_shares, masked) =
-            SenderShare::new_vec::<256>(sender_input.clone(), ot_messages).unwrap();
+            SenderShare::new_vec(sender_input.clone(), ot_messages).unwrap();
         let receiver_shares =
             ReceiverShare::new_vec(receiver_input.clone(), ot_message_choices, masked).unwrap();
 

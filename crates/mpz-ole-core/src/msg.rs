@@ -11,25 +11,25 @@ pub struct MaskedInputs<F> {
     pub masks: Vec<F>,
 }
 
-impl<const N: usize, F: Field> From<Vec<MaskedInput<N, F>>> for MaskedInputs<F> {
-    fn from(value: Vec<MaskedInput<N, F>>) -> Self {
+impl<F: Field> From<Vec<MaskedInput<F>>> for MaskedInputs<F> {
+    fn from(value: Vec<MaskedInput<F>>) -> Self {
         let masks = value.into_iter().flat_map(|mask| mask.0).collect();
         Self { masks }
     }
 }
 
-impl<const N: usize, F: Field> TryFrom<MaskedInputs<F>> for Vec<MaskedInput<N, F>> {
+impl<F: Field> TryFrom<MaskedInputs<F>> for Vec<MaskedInput<F>> {
     type Error = OLEError;
 
     fn try_from(value: MaskedInputs<F>) -> Result<Self, Self::Error> {
         let masks = value
             .masks
-            .chunks(N)
+            .chunks(F::BIT_SIZE as usize)
             .map(|chunk| {
                 chunk
                     .try_into()
                     .map(MaskedInput)
-                    .map_err(|_| OLEError::MultipleOf(chunk.len(), N))
+                    .map_err(|_| OLEError::MultipleOf(chunk.len(), F::BIT_SIZE as usize))
             })
             .collect();
         masks

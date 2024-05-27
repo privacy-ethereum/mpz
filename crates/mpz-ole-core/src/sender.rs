@@ -10,12 +10,12 @@ use std::collections::VecDeque;
 
 /// A sender for batched OLE.
 #[derive(Debug)]
-pub struct OLESender<const N: usize, F> {
+pub struct OLESender<F> {
     id: TransferId,
     cache: VecDeque<SenderShare<F>>,
 }
 
-impl<const N: usize, F: Field> Default for OLESender<N, F> {
+impl<F: Field> Default for OLESender<F> {
     fn default() -> Self {
         OLESender {
             id: TransferId::default(),
@@ -24,7 +24,7 @@ impl<const N: usize, F: Field> Default for OLESender<N, F> {
     }
 }
 
-impl<const N: usize, F: Field> OLESender<N, F> {
+impl<F: Field> OLESender<F> {
     /// Generates new OLEs and stores them internally.
     ///
     /// # Arguments
@@ -40,7 +40,7 @@ impl<const N: usize, F: Field> OLESender<N, F> {
         input: Vec<F>,
         random: Vec<[F; 2]>,
     ) -> Result<MaskedInputs<F>, OLEError> {
-        let (shares, masked) = SenderShare::new_vec::<N>(input, random)?;
+        let (shares, masked) = SenderShare::new_vec(input, random)?;
         self.cache.extend(shares);
 
         Ok(masked.into())

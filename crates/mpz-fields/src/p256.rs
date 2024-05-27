@@ -9,8 +9,9 @@ use itybity::{BitLength, FromBitIterator, GetBit, Lsb0, Msb0};
 use num_bigint::ToBigUint;
 use rand::{distributions::Standard, prelude::Distribution};
 use serde::{Deserialize, Serialize};
+use typenum::U256;
 
-use super::Field;
+use crate::{ByteRepr, Field};
 
 /// A type for holding field elements of P256.
 #[derive(Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Serialize, Deserialize)]
@@ -79,8 +80,13 @@ impl Neg for P256 {
     }
 }
 
+impl ByteRepr for P256 {
+    type Serialized = [u8; 32];
+}
+
 impl Field for P256 {
     const BIT_SIZE: u32 = 256;
+    type BitSizeType = U256;
 
     fn zero() -> Self {
         P256(<Fq as Zero>::zero())

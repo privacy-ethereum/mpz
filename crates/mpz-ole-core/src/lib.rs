@@ -71,10 +71,8 @@ mod tests {
         let from_seed = Prg::from_seed(Block::ZERO);
         let mut rng = from_seed;
 
-        let (mut sender, mut receiver) = (
-            OLESender::<256, P256>::default(),
-            OLEReceiver::<256, P256>::default(),
-        );
+        let (mut sender, mut receiver) =
+            (OLESender::<P256>::default(), OLEReceiver::<P256>::default());
 
         let sender_input: Vec<P256> = (0..count).map(|_| P256::rand(&mut rng)).collect();
         let receiver_input: Vec<P256> = (0..count).map(|_| P256::rand(&mut rng)).collect();
@@ -105,10 +103,8 @@ mod tests {
         let from_seed = Prg::from_seed(Block::ZERO);
         let mut rng = from_seed;
 
-        let (mut sender, mut receiver) = (
-            OLESender::<256, P256>::default(),
-            OLEReceiver::<256, P256>::default(),
-        );
+        let (mut sender, mut receiver) =
+            (OLESender::<P256>::default(), OLEReceiver::<P256>::default());
 
         let sender_input: Vec<P256> = (0..count).map(|_| P256::rand(&mut rng)).collect();
         let receiver_input: Vec<P256> = (0..count).map(|_| P256::rand(&mut rng)).collect();
