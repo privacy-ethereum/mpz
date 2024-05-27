@@ -41,11 +41,10 @@ impl<F: Field> SenderShare<F> {
             });
         let share = Self { input, output };
 
-        let mut ui: Array<F, F::BitSizeType> = Array::from_fn(|_| F::zero());
-        ui.as_mut_slice()
-            .iter_mut()
-            .zip(random)
-            .for_each(|(u, [zero, one])| *u = zero + -one + input);
+        let ui: Array<F, F::BitSizeType> = Array::from_fn(|i| {
+            let [zero, one] = random[i];
+            zero + -one + input
+        });
         let masked = MaskedCorrelation(ui);
 
         (share, masked)
