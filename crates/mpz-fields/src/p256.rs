@@ -11,7 +11,7 @@ use rand::{distributions::Standard, prelude::Distribution};
 use serde::{Deserialize, Serialize};
 use typenum::U256;
 
-use crate::{ByteRepr, Field};
+use crate::Field;
 
 /// A type for holding field elements of P256.
 #[derive(Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Serialize, Deserialize)]
@@ -78,10 +78,6 @@ impl Neg for P256 {
     fn neg(self) -> Self::Output {
         Self(-self.0)
     }
-}
-
-impl ByteRepr for P256 {
-    type Serialized = [u8; 32];
 }
 
 impl Field for P256 {
