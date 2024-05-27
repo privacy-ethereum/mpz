@@ -144,7 +144,7 @@ impl Evaluator {
 
 /// Consumer over the encrypted gates of a circuit.
 pub struct EncryptedGateConsumer<'a, I: Iterator> {
-    /// Cipher to use to encrypt the gates
+    /// Cipher to use to encrypt the gates.
     cipher: &'static FixedKeyAes,
     /// Buffer for the active labels.
     labels: &'a mut [Label],
@@ -154,7 +154,7 @@ pub struct EncryptedGateConsumer<'a, I: Iterator> {
     outputs: &'a [BinaryRepr],
     /// Current gate id.
     gid: usize,
-    /// Hasher to use to hash the encrypted gates
+    /// Hasher to use to hash the encrypted gates.
     hasher: Option<Hasher>,
     /// Number of AND gates evaluated.
     counter: usize,

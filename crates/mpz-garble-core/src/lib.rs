@@ -68,10 +68,10 @@ pub use generator::{
 const KB: usize = 1024;
 const BYTES_PER_GATE: usize = 32;
 
-/// Maximum size of a batch.
+/// Maximum size of a batch in bytes.
 const MAX_BATCH_SIZE: usize = 4 * KB;
 
-/// Default batch size.
+/// Default amount of encrypted gates per batch.
 ///
 /// Batches are stack allocated, so we will limit the size to `MAX_BATCH_SIZE`.
 ///

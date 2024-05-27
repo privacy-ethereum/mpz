@@ -159,7 +159,7 @@ impl Generator {
 
 /// Iterator over encrypted gates of a garbled circuit.
 pub struct EncryptedGateIter<'a, I> {
-    /// Cipher to use to encrypt the gates
+    /// Cipher to use to encrypt the gates.
     cipher: &'static FixedKeyAes,
     /// Global offset.
     delta: Delta,
@@ -171,7 +171,7 @@ pub struct EncryptedGateIter<'a, I> {
     outputs: &'a [BinaryRepr],
     /// Current gate id.
     gid: usize,
-    /// Hasher to use to hash the encrypted gates
+    /// Hasher to use to hash the encrypted gates.
     hasher: Option<Hasher>,
     /// Number of AND gates generated.
     counter: usize,
@@ -217,7 +217,7 @@ where
         self.hasher = Some(Hasher::new());
     }
 
-    /// Returns `true` if the generator has encrypted gates to send.
+    /// Returns `true` if the generator has more encrypted gates to generate.
     #[inline]
     pub fn has_gates(&self) -> bool {
         self.counter != self.and_count
@@ -331,7 +331,7 @@ where
         self.0.enable_hasher()
     }
 
-    /// Returns `true` if the generator has encrypted gates to send.
+    /// Returns `true` if the generator has more encrypted gates to generate.
     pub fn has_gates(&self) -> bool {
         self.0.has_gates()
     }
