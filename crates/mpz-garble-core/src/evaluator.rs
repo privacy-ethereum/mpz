@@ -199,7 +199,7 @@ where
         self.counter != self.and_count
     }
 
-    /// Evaluates the next gate in the circuit.
+    /// Evaluates the next encrypted gate in the circuit.
     #[inline]
     pub fn next(&mut self, encrypted_gate: EncryptedGate) {
         while let Some(gate) = self.gates.next() {
