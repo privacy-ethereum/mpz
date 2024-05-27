@@ -1,7 +1,7 @@
 //! Receiver shares for Oblivious Linear Function Evaluation (OLE).
 
 use crate::{
-    core::{MaskedInput, ShareAdjust},
+    core::{MaskedCorrelation, ShareAdjust},
     OLEError,
 };
 use hybrid_array::Array;
@@ -22,7 +22,7 @@ impl<F: Field> ReceiverShare<F> {
     ///
     /// * `input` - The receiver's input share.
     /// * `random` - Uniformly random field elements.
-    /// * `masked` - The correlation masking the sender's input.
+    /// * `masked` - The correlation from the sender.
     ///
     /// # Returns
     ///
@@ -30,7 +30,7 @@ impl<F: Field> ReceiverShare<F> {
     pub(crate) fn new(
         input: F,
         random: impl Into<Array<F, F::BitSizeType>>,
-        masked: MaskedInput<F>,
+        masked: MaskedCorrelation<F>,
     ) -> Self {
         let random = random.into();
 
@@ -63,7 +63,7 @@ impl<F: Field> ReceiverShare<F> {
     pub fn new_vec(
         input: Vec<F>,
         random: Vec<F>,
-        masked: Vec<MaskedInput<F>>,
+        masked: Vec<MaskedCorrelation<F>>,
     ) -> Result<Vec<ReceiverShare<F>>, OLEError> {
         if input.len() * F::BIT_SIZE as usize != random.len() {
             return Err(OLEError::ExpectedMultipleOf(

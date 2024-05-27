@@ -17,10 +17,10 @@ pub use sender::{SenderAdjust, SenderShare};
 
 use mpz_fields::Field;
 
-/// The masked input of the sender.
+/// The masked correlation of the sender.
 ///
-/// This is the correlation which is sent to the receiver and hides the sender's input.
-pub struct MaskedInput<F: Field>(pub(crate) Array<F, F::BitSizeType>);
+/// This is the correlation which is sent to the receiver.
+pub struct MaskedCorrelation<F: Field>(pub(crate) Array<F, F::BitSizeType>);
 
 /// The exchange field element for share adjustment.
 ///

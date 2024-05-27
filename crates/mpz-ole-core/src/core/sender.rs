@@ -1,7 +1,7 @@
 //! Sender shares for Oblivious Linear Function Evaluation (OLE).
 
 use crate::{
-    core::{MaskedInput, ShareAdjust},
+    core::{MaskedCorrelation, ShareAdjust},
     OLEError,
 };
 use hybrid_array::Array;
@@ -29,7 +29,7 @@ impl<F: Field> SenderShare<F> {
     pub(crate) fn new(
         input: F,
         random: impl Into<Array<[F; 2], F::BitSizeType>>,
-    ) -> (Self, MaskedInput<F>) {
+    ) -> (Self, MaskedCorrelation<F>) {
         let random = random.into();
 
         let output = random
@@ -46,7 +46,7 @@ impl<F: Field> SenderShare<F> {
             .iter_mut()
             .zip(random)
             .for_each(|(u, [zero, one])| *u = zero + -one + input);
-        let masked = MaskedInput(ui);
+        let masked = MaskedCorrelation(ui);
 
         (share, masked)
     }
@@ -66,7 +66,7 @@ impl<F: Field> SenderShare<F> {
     pub fn new_vec(
         input: Vec<F>,
         random: Vec<[F; 2]>,
-    ) -> Result<(Vec<SenderShare<F>>, Vec<MaskedInput<F>>), OLEError> {
+    ) -> Result<(Vec<SenderShare<F>>, Vec<MaskedCorrelation<F>>), OLEError> {
         if input.len() * F::BIT_SIZE as usize != random.len() {
             return Err(OLEError::ExpectedMultipleOf(
                 input.len() * F::BIT_SIZE as usize,
@@ -74,7 +74,7 @@ impl<F: Field> SenderShare<F> {
             ));
         }
 
-        let (shares, masked): (Vec<SenderShare<F>>, Vec<MaskedInput<F>>) = input
+        let (shares, masked): (Vec<SenderShare<F>>, Vec<MaskedCorrelation<F>>) = input
             .iter()
             .zip(random.chunks_exact(F::BIT_SIZE as usize))
             .map(|(&f, chunk)| {

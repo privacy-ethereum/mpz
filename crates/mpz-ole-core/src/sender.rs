@@ -2,7 +2,7 @@
 
 use crate::{
     core::{SenderAdjust, SenderShare, ShareAdjust},
-    msg::{BatchAdjust, MaskedInputs},
+    msg::{BatchAdjust, MaskedCorrelations},
     OLEError, TransferId,
 };
 use mpz_fields::Field;
@@ -34,12 +34,12 @@ impl<F: Field> OLESender<F> {
     ///
     /// # Returns
     ///
-    /// * [`MaskedInputs`], which are to be sent to the receiver.
+    /// * [`MaskedCorrelations`], which are to be sent to the receiver.
     pub fn preprocess(
         &mut self,
         input: Vec<F>,
         random: Vec<[F; 2]>,
-    ) -> Result<MaskedInputs<F>, OLEError> {
+    ) -> Result<MaskedCorrelations<F>, OLEError> {
         let (shares, masked) = SenderShare::new_vec(input, random)?;
         self.cache.extend(shares);
 

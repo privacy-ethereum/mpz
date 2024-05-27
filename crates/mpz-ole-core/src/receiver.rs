@@ -2,7 +2,7 @@
 
 use crate::{
     core::{ReceiverAdjust, ReceiverShare, ShareAdjust},
-    msg::{BatchAdjust, MaskedInputs},
+    msg::{BatchAdjust, MaskedCorrelations},
     OLEError, TransferId,
 };
 use mpz_fields::Field;
@@ -36,7 +36,7 @@ impl<F: Field> OLEReceiver<F> {
         &mut self,
         input: Vec<F>,
         random: Vec<F>,
-        masked: MaskedInputs<F>,
+        masked: MaskedCorrelations<F>,
     ) -> Result<(), OLEError> {
         let masks = masked.try_into()?;
         let shares = ReceiverShare::new_vec(input, random, masks)?;
