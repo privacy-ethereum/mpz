@@ -51,7 +51,6 @@ pub(crate) mod circuit;
 pub mod encoding;
 mod evaluator;
 mod generator;
-pub mod msg;
 
 pub use circuit::{EncryptedGate, EncryptedGateBatch, GarbledCircuit};
 pub use encoding::{
