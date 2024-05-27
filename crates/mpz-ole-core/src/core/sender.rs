@@ -94,7 +94,7 @@ impl<F: Field> SenderShare<F> {
         self.output
     }
 
-    /// Adjust a preprocessed share.
+    /// Adjusts a preprocessed share.
     ///
     /// This is an implementation of <https://crypto.stackexchange.com/questions/100634/converting-a-random-ole-oblivious-linear-function-evaluation-to-an-ole>.
     ///

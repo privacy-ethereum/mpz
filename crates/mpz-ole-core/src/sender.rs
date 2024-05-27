@@ -29,12 +29,12 @@ impl<F: Field> OLESender<F> {
     ///
     /// # Arguments
     ///
-    /// * `input` - The sender's OLE input factors.
+    /// * `input` - The sender's OLE input shares.
     /// * `random` - Uniformly random field elements for the correlation.
     ///
     /// # Returns
     ///
-    /// * [`MaskedInputs`], which are to be sent to the [`crate::OLEReceiver`].
+    /// * [`MaskedInputs`], which are to be sent to the receiver.
     pub fn preprocess(
         &mut self,
         input: Vec<F>,
@@ -75,7 +75,7 @@ impl<F: Field> OLESender<F> {
     /// # Returns
     ///
     /// * [`BatchSenderAdjust`] which needs to be converted by [`BatchSenderAdjust::finish_adjust`].
-    /// * [`BatchAdjust`] which needs to be sent to the [`crate::OLEReceiver`].
+    /// * [`BatchAdjust`] which needs to be sent to the receiver.
     pub fn adjust(&mut self, targets: Vec<F>) -> Option<(BatchSenderAdjust<F>, BatchAdjust<F>)> {
         let shares = self.consume(targets.len())?;
         let (sender_adjust, adjustments) = shares

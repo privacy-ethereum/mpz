@@ -68,8 +68,7 @@ mod tests {
     #[test]
     fn test_ole_sender_receiver_preprocess() {
         let count = 12;
-        let from_seed = Prg::from_seed(Block::ZERO);
-        let mut rng = from_seed;
+        let mut rng = Prg::from_seed(Block::ZERO);
 
         let (mut sender, mut receiver) =
             (OLESender::<P256>::default(), OLEReceiver::<P256>::default());
@@ -100,8 +99,7 @@ mod tests {
     #[test]
     fn test_ole_sender_receiver_adjust() {
         let count = 12;
-        let from_seed = Prg::from_seed(Block::ZERO);
-        let mut rng = from_seed;
+        let mut rng = Prg::from_seed(Block::ZERO);
 
         let (mut sender, mut receiver) =
             (OLESender::<P256>::default(), OLEReceiver::<P256>::default());

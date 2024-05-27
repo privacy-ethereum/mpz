@@ -4,7 +4,7 @@ use crate::{core::MaskedInput, OLEError, TransferId};
 use mpz_fields::Field;
 use serde::{Deserialize, Serialize};
 
-/// Message type for sending a vector [`MaskedInput`]s to the receiver.
+/// Message type for sending a vector of [`MaskedInput`]s to the receiver.
 #[allow(missing_docs)]
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MaskedInputs<F> {

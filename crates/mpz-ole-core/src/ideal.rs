@@ -3,7 +3,7 @@
 use mpz_fields::Field;
 use rand::{rngs::ThreadRng, thread_rng};
 
-/// The OLE functionality
+/// The OLE functionality.
 pub struct IdealOLE(ThreadRng);
 
 impl IdealOLE {

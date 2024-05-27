@@ -1,9 +1,12 @@
-//! This implementation uses the COPEe protocol from <https://eprint.iacr.org/2016/505> page 10.
+//! This implementation is based on the COPEe protocol from <https://eprint.iacr.org/2016/505> page 10
+//! with the following modification:
 //!
-//! We use this construction to implement oblivious linear function evaluation (OLE) instead of
-//! vector OLE (VOLE), which means that we do not use PRGs, i.e. Extend can only be called once.                                                  
+//! - The `Initialize` stage is instantiated using random OT rather than chosen-input OT.
+//! - The `Extend` stage can only be called once, since our goal is to implement oblivious linear
+//!   function evaluation (OLE) rather than vector OLE (VOLE) (which means that we do not use PRGs).                                                  
 //!                                                                                       
-//! Note that this is an OLE with errors implementation. The sender can introduce additive errors.
+//! Note that this is an OLE with errors implementation. A malicious sender is allowed to set its own
+//! output and can introduce additive errors into the receiver's output.
 
 mod receiver;
 mod sender;
