@@ -81,8 +81,7 @@ impl Neg for P256 {
 }
 
 impl Field for P256 {
-    const BIT_SIZE: u32 = 256;
-    type BitSizeType = U256;
+    type BitSize = U256;
 
     fn zero() -> Self {
         P256(<Fq as Zero>::zero())

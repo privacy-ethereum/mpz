@@ -20,7 +20,7 @@ use mpz_fields::Field;
 /// The masked correlation of the sender.
 ///
 /// This is the correlation which is sent to the receiver.
-pub struct MaskedCorrelation<F: Field>(pub(crate) Array<F, F::BitSizeType>);
+pub struct MaskedCorrelation<F: Field>(pub(crate) Array<F, F::BitSize>);
 
 /// The exchange field element for share adjustment.
 ///

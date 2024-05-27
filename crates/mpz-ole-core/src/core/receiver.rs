@@ -29,7 +29,7 @@ impl<F: Field> ReceiverShare<F> {
     /// * The receiver's share.
     pub(crate) fn new(
         input: F,
-        random: impl Into<Array<F, F::BitSizeType>>,
+        random: impl Into<Array<F, F::BitSize>>,
         masked: MaskedCorrelation<F>,
     ) -> Self {
         let random = random.into();
@@ -65,9 +65,9 @@ impl<F: Field> ReceiverShare<F> {
         random: Vec<F>,
         masked: Vec<MaskedCorrelation<F>>,
     ) -> Result<Vec<ReceiverShare<F>>, OLEError> {
-        if input.len() * F::BIT_SIZE as usize != random.len() {
+        if input.len() * F::BIT_SIZE != random.len() {
             return Err(OLEError::ExpectedMultipleOf(
-                input.len() * F::BIT_SIZE as usize,
+                input.len() * F::BIT_SIZE,
                 random.len(),
             ));
         }
@@ -78,12 +78,12 @@ impl<F: Field> ReceiverShare<F> {
 
         let shares: Vec<ReceiverShare<F>> = input
             .iter()
-            .zip(random.chunks_exact(F::BIT_SIZE as usize))
+            .zip(random.chunks_exact(F::BIT_SIZE))
             .zip(masked)
             .map(|((&f, chunk), m)| {
                 ReceiverShare::new(
                     f,
-                    Array::<F, F::BitSizeType>::try_from(chunk)
+                    Array::<F, F::BitSize>::try_from(chunk)
                         .expect("Slice should have length of bit size of field element"),
                     m,
                 )

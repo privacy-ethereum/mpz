@@ -28,7 +28,7 @@ impl<F: Field> SenderShare<F> {
     /// * The correlation which will be sent to the receiver.
     pub(crate) fn new(
         input: F,
-        random: impl Into<Array<[F; 2], F::BitSizeType>>,
+        random: impl Into<Array<[F; 2], F::BitSize>>,
     ) -> (Self, MaskedCorrelation<F>) {
         let random = random.into();
 
@@ -41,7 +41,7 @@ impl<F: Field> SenderShare<F> {
             });
         let share = Self { input, output };
 
-        let ui: Array<F, F::BitSizeType> = Array::from_fn(|i| {
+        let ui: Array<F, F::BitSize> = Array::from_fn(|i| {
             let [zero, one] = random[i];
             zero + -one + input
         });
@@ -66,20 +66,20 @@ impl<F: Field> SenderShare<F> {
         input: Vec<F>,
         random: Vec<[F; 2]>,
     ) -> Result<(Vec<SenderShare<F>>, Vec<MaskedCorrelation<F>>), OLEError> {
-        if input.len() * F::BIT_SIZE as usize != random.len() {
+        if input.len() * F::BIT_SIZE != random.len() {
             return Err(OLEError::ExpectedMultipleOf(
-                input.len() * F::BIT_SIZE as usize,
+                input.len() * F::BIT_SIZE,
                 random.len(),
             ));
         }
 
         let (shares, masked): (Vec<SenderShare<F>>, Vec<MaskedCorrelation<F>>) = input
             .iter()
-            .zip(random.chunks_exact(F::BIT_SIZE as usize))
+            .zip(random.chunks_exact(F::BIT_SIZE))
             .map(|(&f, chunk)| {
                 SenderShare::new(
                     f,
-                    Array::<[F; 2], F::BitSizeType>::try_from(chunk)
+                    Array::<[F; 2], F::BitSize>::try_from(chunk)
                         .expect("Slice should have length of bit size of field element"),
                 )
             })

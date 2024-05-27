@@ -24,12 +24,12 @@ impl<F: Field> TryFrom<MaskedCorrelations<F>> for Vec<MaskedCorrelation<F>> {
     fn try_from(value: MaskedCorrelations<F>) -> Result<Self, Self::Error> {
         let masks = value
             .masks
-            .chunks(F::BIT_SIZE as usize)
+            .chunks(F::BIT_SIZE)
             .map(|chunk| {
                 chunk
                     .try_into()
                     .map(MaskedCorrelation)
-                    .map_err(|_| OLEError::MultipleOf(chunk.len(), F::BIT_SIZE as usize))
+                    .map_err(|_| OLEError::MultipleOf(chunk.len(), F::BIT_SIZE))
             })
             .collect();
         masks
