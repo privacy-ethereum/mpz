@@ -25,8 +25,8 @@ mod tests {
 
         let (rot_sender, rot_receiver) = ideal_rot();
 
-        let mut ole_sender = OLESender::<256, _, P256>::new(rot_sender);
-        let mut ole_receiver = OLEReceiver::<256, _, P256>::new(rot_receiver);
+        let mut ole_sender = OLESender::<_, P256>::new(rot_sender);
+        let mut ole_receiver = OLEReceiver::<_, P256>::new(rot_receiver);
 
         let a_k: Vec<P256> = (0..count).map(|_| P256::rand(&mut rng)).collect();
         let b_k: Vec<P256> = (0..count).map(|_| P256::rand(&mut rng)).collect();

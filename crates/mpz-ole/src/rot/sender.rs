@@ -12,12 +12,12 @@ use serio::SinkExt;
 use serio::{Deserialize, Serialize};
 
 /// OLE sender.
-pub struct OLESender<const N: usize, T, F> {
+pub struct OLESender<T, F> {
     rot_sender: T,
-    core: OLECoreSender<N, F>,
+    core: OLECoreSender<F>,
 }
 
-impl<const N: usize, T, F> OLESender<N, T, F>
+impl<T, F> OLESender<T, F>
 where
     F: Field + Serialize + Deserialize,
 {
@@ -30,7 +30,7 @@ where
     }
 }
 
-impl<const N: usize, T, F> OLESender<N, T, F>
+impl<T, F> OLESender<T, F>
 where
     F: Field + Serialize + Deserialize,
 {
@@ -76,7 +76,7 @@ where
 }
 
 #[async_trait]
-impl<const N: usize, T, F, Ctx: Context> OLESend<Ctx, F> for OLESender<N, T, F>
+impl<T, F, Ctx: Context> OLESend<Ctx, F> for OLESender<T, F>
 where
     T: RandomOTSender<Ctx, [F::Serialized; 2]> + Send,
     F: Field + Serialize + Deserialize,
