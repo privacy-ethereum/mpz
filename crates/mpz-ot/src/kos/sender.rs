@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use enum_try_as_inner::EnumTryAsInner;
 use futures::TryFutureExt;
+use hybrid_array::{Array, ArraySize};
 use itybity::IntoBits;
 use mpz_cointoss as cointoss;
 use mpz_common::{try_join, Context};
@@ -374,6 +375,44 @@ where
         let prng = |block| {
             let mut prg = Prg::from_seed(block);
             let mut out = [0_u8; N];
+            prg.fill_bytes(&mut out);
+            out
+        };
+
+        Ok(ROTSenderOutput {
+            id,
+            msgs: random_outputs
+                .take_keys()
+                .into_iter()
+                .map(|[a, b]| [prng(a), prng(b)])
+                .collect(),
+        })
+    }
+}
+
+#[async_trait]
+impl<Ctx, BaseOT, A> RandomOTSender<Ctx, [Array<u8, A>; 2]> for Sender<BaseOT>
+where
+    Ctx: Context,
+    BaseOT: Send,
+    A: ArraySize,
+{
+    async fn send_random(
+        &mut self,
+        _ctx: &mut Ctx,
+        count: usize,
+    ) -> Result<ROTSenderOutput<[Array<u8, A>; 2]>, OTError> {
+        let sender = self
+            .state
+            .try_as_extension_mut()
+            .map_err(SenderError::from)?;
+
+        let random_outputs = sender.keys(count).map_err(SenderError::from)?;
+        let id = random_outputs.id();
+
+        let prng = |block| {
+            let mut prg = Prg::from_seed(block);
+            let mut out = Array::<u8, A>::from_fn(|_| 0);
             prg.fill_bytes(&mut out);
             out
         };
