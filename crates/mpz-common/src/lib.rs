@@ -15,6 +15,7 @@
 )]
 
 mod context;
+pub mod cpu;
 pub mod executor;
 mod id;
 #[cfg(any(test, feature = "ideal"))]
