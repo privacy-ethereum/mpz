@@ -1,12 +1,16 @@
-use std::sync::Arc;
+use core::fmt;
 
 use blake3::Hasher;
 
 use crate::{
     circuit::EncryptedGate,
     encoding::{state, Delta, EncodedValue, Label},
+    EncryptedGateBatch, DEFAULT_BATCH_SIZE,
 };
-use mpz_circuits::{types::TypeError, Circuit, CircuitError, Gate};
+use mpz_circuits::{
+    types::{BinaryRepr, TypeError},
+    Circuit, CircuitError, Gate,
+};
 use mpz_core::{
     aes::{FixedKeyAes, FIXED_KEY_AES},
     hash::Hash,
@@ -63,66 +67,44 @@ pub(crate) fn and_gate(
     (z_0, EncryptedGate::new([t_g, t_e]))
 }
 
-/// Core generator type used to generate garbled circuits.
-///
-/// A generator is to be used as an iterator of encrypted gates. Each
-/// iteration will return the next encrypted gate in the circuit until the
-/// entire garbled circuit has been yielded.
+/// Output of the generator.
+#[derive(Debug)]
+pub struct GeneratorOutput {
+    /// Encoded outputs of the circuit.
+    pub outputs: Vec<EncodedValue<state::Full>>,
+    /// Hash of the encrypted gates.
+    pub hash: Option<Hash>,
+}
+
+/// Garbled circuit generator.
+#[derive(Debug)]
 pub struct Generator {
-    /// Cipher to use to encrypt the gates
-    cipher: &'static FixedKeyAes,
-    /// Circuit to generate a garbled circuit for
-    circ: Arc<Circuit>,
-    /// Delta value to use while generating the circuit
-    delta: Delta,
-    /// The 0 bit labels for the garbled circuit
-    low_labels: Vec<Option<Label>>,
-    /// Current position in the circuit
-    pos: usize,
-    /// Current gate id
-    gid: usize,
-    /// Hasher to use to hash the encrypted gates
-    hasher: Option<Hasher>,
+    /// Buffer for the 0-bit labels.
+    buffer: Vec<Label>,
+}
+
+impl Default for Generator {
+    fn default() -> Self {
+        Self {
+            buffer: Default::default(),
+        }
+    }
 }
 
 impl Generator {
-    /// Creates a new generator for the given circuit.
+    /// Returns an iterator over the encrypted gates of a circuit.
     ///
     /// # Arguments
     ///
-    /// * `circ` - The circuit to generate a garbled circuit for.
-    /// * `delta` - The delta value to use.
-    /// * `inputs` - The inputs to the circuit.
-    pub fn new(
-        circ: Arc<Circuit>,
+    /// * `circ` - The circuit to garble.
+    /// * `delta` - The delta value to use for garbling.
+    /// * `inputs` - The input values to the circuit.
+    pub fn generate<'a>(
+        &'a mut self,
+        circ: &'a Circuit,
         delta: Delta,
-        inputs: &[EncodedValue<state::Full>],
-    ) -> Result<Self, GeneratorError> {
-        Self::new_with(circ, delta, inputs, None)
-    }
-
-    /// Creates a new generator for the given circuit. Generator will compute a hash
-    /// of the encrypted gates while they are produced.
-    ///
-    /// # Arguments
-    ///
-    /// * `circ` - The circuit to generate a garbled circuit for.
-    /// * `delta` - The delta value to use.
-    /// * `inputs` - The inputs to the circuit.
-    pub fn new_with_hasher(
-        circ: Arc<Circuit>,
-        delta: Delta,
-        inputs: &[EncodedValue<state::Full>],
-    ) -> Result<Self, GeneratorError> {
-        Self::new_with(circ, delta, inputs, Some(Hasher::new()))
-    }
-
-    fn new_with(
-        circ: Arc<Circuit>,
-        delta: Delta,
-        inputs: &[EncodedValue<state::Full>],
-        hasher: Option<Hasher>,
-    ) -> Result<Self, GeneratorError> {
+        inputs: Vec<EncodedValue<state::Full>>,
+    ) -> Result<EncryptedGateIter<'_, std::slice::Iter<'_, Gate>>, GeneratorError> {
         if inputs.len() != circ.inputs().len() {
             return Err(CircuitError::InvalidInputCount(
                 circ.inputs().len(),
@@ -130,8 +112,12 @@ impl Generator {
             ))?;
         }
 
-        let mut low_labels: Vec<Option<Label>> = vec![None; circ.feed_count()];
-        for (encoded, input) in inputs.iter().zip(circ.inputs()) {
+        // Expand the buffer to fit the circuit
+        if circ.feed_count() > self.buffer.len() {
+            self.buffer.resize(circ.feed_count(), Default::default());
+        }
+
+        for (encoded, input) in inputs.into_iter().zip(circ.inputs()) {
             if encoded.value_type() != input.value_type() {
                 return Err(TypeError::UnexpectedType {
                     expected: input.value_type(),
@@ -140,99 +126,188 @@ impl Generator {
             }
 
             for (label, node) in encoded.iter().zip(input.iter()) {
-                low_labels[node.id()] = Some(*label);
+                self.buffer[node.id()] = *label;
             }
         }
 
-        Ok(Self {
-            cipher: &(*FIXED_KEY_AES),
-            circ,
+        Ok(EncryptedGateIter::new(
             delta,
-            low_labels,
-            pos: 0,
+            circ.gates().iter(),
+            circ.outputs(),
+            &mut self.buffer,
+            circ.and_count(),
+        ))
+    }
+
+    /// Returns an iterator over batched encrypted gates of a circuit.
+    ///
+    /// # Arguments
+    ///
+    /// * `circ` - The circuit to garble.
+    /// * `delta` - The delta value to use for garbling.
+    /// * `inputs` - The input values to the circuit.
+    pub fn generate_batched<'a>(
+        &'a mut self,
+        circ: &'a Circuit,
+        delta: Delta,
+        inputs: Vec<EncodedValue<state::Full>>,
+    ) -> Result<EncryptedGateBatchIter<'_, std::slice::Iter<'_, Gate>>, GeneratorError> {
+        self.generate(circ, delta, inputs)
+            .map(EncryptedGateBatchIter)
+    }
+}
+
+/// Iterator over encrypted gates of a garbled circuit.
+pub struct EncryptedGateIter<'a, I> {
+    /// Cipher to use to encrypt the gates.
+    cipher: &'static FixedKeyAes,
+    /// Global offset.
+    delta: Delta,
+    /// Buffer for the 0-bit labels.
+    labels: &'a mut [Label],
+    /// Iterator over the gates.
+    gates: I,
+    /// Circuit outputs.
+    outputs: &'a [BinaryRepr],
+    /// Current gate id.
+    gid: usize,
+    /// Hasher to use to hash the encrypted gates.
+    hasher: Option<Hasher>,
+    /// Number of AND gates generated.
+    counter: usize,
+    /// Number of AND gates in the circuit.
+    and_count: usize,
+    /// Whether the entire circuit has been garbled.
+    complete: bool,
+}
+
+impl<'a, I> fmt::Debug for EncryptedGateIter<'a, I> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "EncryptedGateIter {{ .. }}")
+    }
+}
+
+impl<'a, I> EncryptedGateIter<'a, I>
+where
+    I: Iterator<Item = &'a Gate>,
+{
+    fn new(
+        delta: Delta,
+        gates: I,
+        outputs: &'a [BinaryRepr],
+        labels: &'a mut [Label],
+        and_count: usize,
+    ) -> Self {
+        Self {
+            cipher: &(*FIXED_KEY_AES),
+            delta,
+            gates,
+            outputs,
+            labels,
             gid: 1,
-            hasher,
-        })
+            hasher: None,
+            counter: 0,
+            and_count,
+            complete: false,
+        }
     }
 
-    /// Returns whether the generator has finished generating the circuit.
-    pub fn is_complete(&self) -> bool {
-        self.pos >= self.circ.gates().len()
+    /// Enables hashing of the encrypted gates.
+    pub fn enable_hasher(&mut self) {
+        self.hasher = Some(Hasher::new());
     }
 
-    /// Returns the encoded outputs of the circuit.
-    pub fn outputs(&self) -> Result<Vec<EncodedValue<state::Full>>, GeneratorError> {
-        if !self.is_complete() {
+    /// Returns `true` if the generator has more encrypted gates to generate.
+    #[inline]
+    pub fn has_gates(&self) -> bool {
+        self.counter != self.and_count
+    }
+
+    /// Returns the encoded outputs of the circuit, and the hash of the encrypted gates if present.
+    pub fn finish(mut self) -> Result<GeneratorOutput, GeneratorError> {
+        if self.has_gates() {
             return Err(GeneratorError::NotFinished);
         }
 
-        Ok(self
-            .circ
-            .outputs()
+        // Finish computing any "free" gates.
+        if !self.complete {
+            assert_eq!(self.next(), None);
+        }
+
+        let outputs = self
+            .outputs
             .iter()
             .map(|output| {
-                let labels: Vec<Label> = output
-                    .iter()
-                    .map(|node| self.low_labels[node.id()].expect("feed should be initialized"))
-                    .collect();
+                let labels: Vec<Label> = output.iter().map(|node| self.labels[node.id()]).collect();
 
                 EncodedValue::<state::Full>::from_labels(output.value_type(), self.delta, &labels)
                     .expect("encoding should be correct")
             })
-            .collect())
-    }
+            .collect();
 
-    /// Returns the hash of the encrypted gates.
-    pub fn hash(&self) -> Option<Hash> {
-        self.hasher.as_ref().map(|hasher| {
-            let hash: [u8; 32] = hasher.finalize().into();
-            Hash::from(hash)
+        Ok(GeneratorOutput {
+            outputs,
+            hash: self.hasher.as_ref().map(|hasher| {
+                let hash: [u8; 32] = hasher.finalize().into();
+                Hash::from(hash)
+            }),
         })
     }
 }
 
-impl Iterator for Generator {
+impl<'a, I> Iterator for EncryptedGateIter<'a, I>
+where
+    I: Iterator<Item = &'a Gate>,
+{
     type Item = EncryptedGate;
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        let low_labels = &mut self.low_labels;
-        while let Some(gate) = self.circ.gates().get(self.pos) {
-            self.pos += 1;
+        while let Some(gate) = self.gates.next() {
             match gate {
-                Gate::Inv {
-                    x: node_x,
-                    z: node_z,
-                } => {
-                    let x_0 = low_labels[node_x.id()].expect("feed should be initialized");
-                    low_labels[node_z.id()] = Some(x_0 ^ self.delta);
-                }
                 Gate::Xor {
                     x: node_x,
                     y: node_y,
                     z: node_z,
                 } => {
-                    let x_0 = low_labels[node_x.id()].expect("feed should be initialized");
-                    let y_0 = low_labels[node_y.id()].expect("feed should be initialized");
-                    low_labels[node_z.id()] = Some(x_0 ^ y_0);
+                    let x_0 = self.labels[node_x.id()];
+                    let y_0 = self.labels[node_y.id()];
+                    self.labels[node_z.id()] = x_0 ^ y_0;
                 }
                 Gate::And {
                     x: node_x,
                     y: node_y,
                     z: node_z,
                 } => {
-                    let x_0 = low_labels[node_x.id()].expect("feed should be initialized");
-                    let y_0 = low_labels[node_y.id()].expect("feed should be initialized");
+                    let x_0 = self.labels[node_x.id()];
+                    let y_0 = self.labels[node_y.id()];
                     let (z_0, encrypted_gate) =
                         and_gate(self.cipher, &x_0, &y_0, &self.delta, self.gid);
-                    low_labels[node_z.id()] = Some(z_0);
+                    self.labels[node_z.id()] = z_0;
+
                     self.gid += 2;
+                    self.counter += 1;
 
                     if let Some(hasher) = &mut self.hasher {
                         hasher.update(&encrypted_gate.to_bytes());
                     }
 
+                    // If we have generated all AND gates, we can compute
+                    // the rest of the "free" gates.
+                    if !self.has_gates() {
+                        assert!(matches!(self.next(), None));
+
+                        self.complete = true;
+                    }
+
                     return Some(encrypted_gate);
+                }
+                Gate::Inv {
+                    x: node_x,
+                    z: node_z,
+                } => {
+                    let x_0 = self.labels[node_x.id()];
+                    self.labels[node_z.id()] = x_0 ^ self.delta;
                 }
             }
         }
@@ -241,10 +316,64 @@ impl Iterator for Generator {
     }
 }
 
+/// Iterator returned by [`Generator::generate_batched`].
+#[derive(Debug)]
+pub struct EncryptedGateBatchIter<'a, I: Iterator, const N: usize = DEFAULT_BATCH_SIZE>(
+    EncryptedGateIter<'a, I>,
+);
+
+impl<'a, I, const N: usize> EncryptedGateBatchIter<'a, I, N>
+where
+    I: Iterator<Item = &'a Gate>,
+{
+    /// Enables hashing of the encrypted gates.
+    pub fn enable_hasher(&mut self) {
+        self.0.enable_hasher()
+    }
+
+    /// Returns `true` if the generator has more encrypted gates to generate.
+    pub fn has_gates(&self) -> bool {
+        self.0.has_gates()
+    }
+
+    /// Returns the encoded outputs of the circuit, and the hash of the encrypted gates if present.
+    pub fn finish(self) -> Result<GeneratorOutput, GeneratorError> {
+        self.0.finish()
+    }
+}
+
+impl<'a, I, const N: usize> Iterator for EncryptedGateBatchIter<'a, I, N>
+where
+    I: Iterator<Item = &'a Gate>,
+{
+    type Item = EncryptedGateBatch<N>;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        if !self.has_gates() {
+            return None;
+        }
+
+        let mut batch = [EncryptedGate::default(); N];
+        let mut i = 0;
+        while let Some(gate) = self.0.next() {
+            batch[i] = gate;
+            i += 1;
+
+            if i == N {
+                break;
+            }
+        }
+
+        Some(EncryptedGateBatch::new(batch))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::{ChaChaEncoder, Encoder};
-    use mpz_circuits::circuits::AES128;
+    use mpz_circuits::{circuits::AES128, CircuitBuilder};
+    use pretty_assertions::assert_eq;
 
     use super::*;
 
@@ -257,14 +386,43 @@ mod tests {
             .map(|input| encoder.encode_by_type(0, &input.value_type()))
             .collect();
 
-        let mut gen = Generator::new_with_hasher(AES128.clone(), encoder.delta(), &inputs).unwrap();
+        let mut gen = Generator::default();
+        let mut gate_iter = gen.generate(&AES128, encoder.delta(), inputs).unwrap();
 
-        let enc_gates: Vec<EncryptedGate> = gen.by_ref().collect();
+        let enc_gates: Vec<EncryptedGate> = gate_iter.by_ref().collect();
 
-        assert!(gen.is_complete());
+        assert!(!gate_iter.has_gates());
         assert_eq!(enc_gates.len(), AES128.and_count());
 
-        let _ = gen.outputs().unwrap();
-        let _ = gen.hash().unwrap();
+        _ = gate_iter.finish().unwrap();
+    }
+
+    #[test]
+    fn test_generator_no_and() {
+        let encoder = ChaChaEncoder::new([0; 32]);
+
+        let builder = CircuitBuilder::new();
+        let a = builder.add_input::<u8>();
+        let b = builder.add_input::<u8>();
+
+        let c = a ^ b;
+        builder.add_output(c);
+
+        let circ = builder.build().unwrap();
+
+        let inputs: Vec<_> = circ
+            .inputs()
+            .iter()
+            .map(|input| encoder.encode_by_type(0, &input.value_type()))
+            .collect();
+
+        let mut gen = Generator::default();
+        let mut gate_iter = gen
+            .generate_batched(&circ, encoder.delta(), inputs)
+            .unwrap();
+
+        let enc_gates: Vec<_> = gate_iter.by_ref().collect();
+
+        assert!(enc_gates.is_empty());
     }
 }

@@ -272,7 +272,7 @@ impl<const N: usize, S: LabelState> Index<usize> for Labels<N, S> {
 }
 
 /// Encoded bit label.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Label(Block);
 
 impl Label {
@@ -346,6 +346,15 @@ impl BitXor<Delta> for &Label {
 
     #[inline]
     fn bitxor(self, rhs: Delta) -> Self::Output {
+        Label(self.0 ^ rhs.0)
+    }
+}
+
+impl BitXor<&Delta> for Label {
+    type Output = Label;
+
+    #[inline]
+    fn bitxor(self, rhs: &Delta) -> Self::Output {
         Label(self.0 ^ rhs.0)
     }
 }

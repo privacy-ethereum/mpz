@@ -6,7 +6,9 @@
 //!
 //! ```
 //! use mpz_circuits::circuits::AES128;
-//! use mpz_garble_core::{Generator, Evaluator, ChaChaEncoder, Encoder};
+//! use mpz_garble_core::{
+//!     Generator, Evaluator, ChaChaEncoder, Encoder, GeneratorOutput, EvaluatorOutput
+//! };
 //!
 //!
 //! let encoder = ChaChaEncoder::new([0u8; 32]);
@@ -19,30 +21,22 @@
 //! let active_key = encoded_key.select(*key).unwrap();
 //! let active_plaintext = encoded_plaintext.select(*plaintext).unwrap();
 //!
-//! let mut gen =
-//!     Generator::new(
-//!         AES128.clone(),
-//!         encoder.delta(),
-//!         &[encoded_key, encoded_plaintext]
-//!     ).unwrap();
+//! let mut gen = Generator::default();
+//! let mut ev = Evaluator::default();
 //!
-//! let mut ev =
-//!     Evaluator::new(
-//!         AES128.clone(),
-//!         &[active_key, active_plaintext]
-//!     ).unwrap();
+//! let mut gen_iter = gen
+//!    .generate_batched(&AES128, encoder.delta(), vec![encoded_key, encoded_plaintext]).unwrap();
+//! let mut ev_consumer = ev.evaluate_batched(&AES128, vec![active_key, active_plaintext]).unwrap();
 //!
-//! const BATCH_SIZE: usize = 1000;
-//! while !(gen.is_complete() && ev.is_complete()) {
-//!     let batch: Vec<_> = gen.by_ref().take(BATCH_SIZE).collect();
-//!     ev.evaluate(batch.iter());
+//! for batch in gen_iter.by_ref() {
+//!    ev_consumer.next(batch);
 //! }
 //!
-//! let encoded_outputs = gen.outputs().unwrap();
+//! let GeneratorOutput { outputs: encoded_outputs, .. } = gen_iter.finish().unwrap();
 //! let encoded_ciphertext = encoded_outputs[0].clone();
 //! let ciphertext_decoding = encoded_ciphertext.decoding();
 //!
-//! let active_outputs = ev.outputs().unwrap();
+//! let EvaluatorOutput { outputs: active_outputs, .. } = ev_consumer.finish().unwrap();
 //! let active_ciphertext = active_outputs[0].clone();
 //! let ciphertext: [u8; 16] =
 //!     active_ciphertext.decode(&ciphertext_decoding).unwrap().try_into().unwrap();
@@ -57,15 +51,33 @@ pub(crate) mod circuit;
 pub mod encoding;
 mod evaluator;
 mod generator;
-pub mod msg;
 
-pub use circuit::{EncryptedGate, GarbledCircuit};
+pub use circuit::{EncryptedGate, EncryptedGateBatch, GarbledCircuit};
 pub use encoding::{
     state as encoding_state, ChaChaEncoder, Decoding, Delta, Encode, EncodedValue, Encoder,
     EncodingCommitment, EqualityCheck, Label, ValueError,
 };
-pub use evaluator::{Evaluator, EvaluatorError};
-pub use generator::{Generator, GeneratorError};
+pub use evaluator::{
+    EncryptedGateBatchConsumer, EncryptedGateConsumer, Evaluator, EvaluatorError, EvaluatorOutput,
+};
+pub use generator::{
+    EncryptedGateBatchIter, EncryptedGateIter, Generator, GeneratorError, GeneratorOutput,
+};
+
+const KB: usize = 1024;
+const BYTES_PER_GATE: usize = 32;
+
+/// Maximum size of a batch in bytes.
+const MAX_BATCH_SIZE: usize = 4 * KB;
+
+/// Default amount of encrypted gates per batch.
+///
+/// Batches are stack allocated, so we will limit the size to `MAX_BATCH_SIZE`.
+///
+/// Additionally, because the size of each batch is static, if a circuit is smaller than a batch
+/// we will be wasting some bandwidth sending empty bytes. This puts an upper limit on that
+/// waste.
+pub(crate) const DEFAULT_BATCH_SIZE: usize = MAX_BATCH_SIZE / BYTES_PER_GATE;
 
 #[cfg(test)]
 mod tests {
@@ -73,7 +85,7 @@ mod tests {
         cipher::{BlockEncrypt, KeyInit},
         Aes128,
     };
-    use mpz_circuits::{circuits::AES128, types::Value};
+    use mpz_circuits::{circuits::AES128, types::Value, CircuitBuilder};
     use mpz_core::aes::FIXED_KEY_AES;
     use rand::SeedableRng;
     use rand_chacha::ChaCha12Rng;
@@ -109,7 +121,6 @@ mod tests {
 
         let key = [69u8; 16];
         let msg = [42u8; 16];
-        const BATCH_SIZE: usize = 1000;
 
         let expected: [u8; 16] = {
             let cipher = Aes128::new_from_slice(&key).unwrap();
@@ -129,33 +140,35 @@ mod tests {
             full_inputs[1].clone().select(msg).unwrap(),
         ];
 
-        let mut gen =
-            Generator::new_with_hasher(AES128.clone(), encoder.delta(), &full_inputs).unwrap();
-        let mut ev = Evaluator::new_with_hasher(AES128.clone(), &active_inputs).unwrap();
+        let mut gen = Generator::default();
+        let mut ev = Evaluator::default();
 
-        while !(gen.is_complete() && ev.is_complete()) {
-            let mut batch = Vec::with_capacity(BATCH_SIZE);
-            for enc_gate in gen.by_ref() {
-                batch.push(enc_gate);
-                if batch.len() == BATCH_SIZE {
-                    break;
-                }
-            }
-            ev.evaluate(batch.iter());
+        let mut gen_iter = gen
+            .generate_batched(&AES128, encoder.delta(), full_inputs)
+            .unwrap();
+        let mut ev_consumer = ev.evaluate_batched(&AES128, active_inputs).unwrap();
+
+        gen_iter.enable_hasher();
+        ev_consumer.enable_hasher();
+
+        for batch in gen_iter.by_ref() {
+            ev_consumer.next(batch);
         }
 
-        let full_outputs = gen.outputs().unwrap();
-        let active_outputs = ev.outputs().unwrap();
-
-        let gen_digest = gen.hash().unwrap();
-        let ev_digest = ev.hash().unwrap();
-
-        assert_eq!(gen_digest, ev_digest);
+        let GeneratorOutput {
+            outputs: full_outputs,
+            hash: gen_hash,
+        } = gen_iter.finish().unwrap();
+        let EvaluatorOutput {
+            outputs: active_outputs,
+            hash: ev_hash,
+        } = ev_consumer.finish().unwrap();
 
         let outputs: Vec<Value> = active_outputs
             .iter()
             .zip(full_outputs)
             .map(|(active_output, full_output)| {
+                full_output.commit().verify(&active_output).unwrap();
                 active_output.decode(&full_output.decoding()).unwrap()
             })
             .collect();
@@ -163,5 +176,72 @@ mod tests {
         let actual: [u8; 16] = outputs[0].clone().try_into().unwrap();
 
         assert_eq!(actual, expected);
+        assert_eq!(gen_hash, ev_hash);
+    }
+
+    // Tests garbling a circuit with no AND gates
+    #[test]
+    fn test_garble_no_and() {
+        let encoder = ChaChaEncoder::new([0; 32]);
+
+        let builder = CircuitBuilder::new();
+        let a = builder.add_input::<u8>();
+        let b = builder.add_input::<u8>();
+        let c = a ^ b;
+        builder.add_output(c);
+        let circ = builder.build().unwrap();
+        assert_eq!(circ.and_count(), 0);
+
+        let mut gen = Generator::default();
+        let mut ev = Evaluator::default();
+
+        let a = 1u8;
+        let b = 2u8;
+
+        let full_inputs: Vec<EncodedValue<encoding_state::Full>> = circ
+            .inputs()
+            .iter()
+            .map(|input| encoder.encode_by_type(0, &input.value_type()))
+            .collect();
+
+        let active_inputs: Vec<EncodedValue<encoding_state::Active>> = vec![
+            full_inputs[0].clone().select(a).unwrap(),
+            full_inputs[1].clone().select(b).unwrap(),
+        ];
+
+        let mut gen_iter = gen
+            .generate_batched(&circ, encoder.delta(), full_inputs)
+            .unwrap();
+        let mut ev_consumer = ev.evaluate_batched(&circ, active_inputs).unwrap();
+
+        gen_iter.enable_hasher();
+        ev_consumer.enable_hasher();
+
+        for batch in gen_iter.by_ref() {
+            ev_consumer.next(batch);
+        }
+
+        let GeneratorOutput {
+            outputs: full_outputs,
+            hash: gen_hash,
+        } = gen_iter.finish().unwrap();
+        let EvaluatorOutput {
+            outputs: active_outputs,
+            hash: ev_hash,
+        } = ev_consumer.finish().unwrap();
+
+        let outputs: Vec<Value> = active_outputs
+            .iter()
+            .zip(full_outputs)
+            .map(|(active_output, full_output)| {
+                full_output.commit().verify(&active_output).unwrap();
+                active_output.decode(&full_output.decoding()).unwrap()
+            })
+            .collect();
+
+        let actual: u8 = outputs[0].clone().try_into().unwrap();
+
+        assert_eq!(actual, a ^ b);
+        assert_eq!(gen_hash, ev_hash);
     }
 }
