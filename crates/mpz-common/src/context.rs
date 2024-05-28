@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use scoped_futures::ScopedBoxFuture;
 use serio::{IoSink, IoStream};
 
-use crate::{queue::Queue, ThreadId};
+use crate::ThreadId;
 
 /// An error for types that implement [`Context`].
 #[derive(Debug, thiserror::Error)]
@@ -48,11 +48,6 @@ impl fmt::Display for ErrorKind {
 pub trait Context: Send + Sync {
     /// I/O channel used by the thread.
     type Io: IoSink + IoStream + Send + Unpin + 'static;
-    /// Queue type.
-    type Queue<'a, R>: Queue<Self, R> + 'a
-    where
-        R: Send + 'static,
-        Self: Sized + 'a;
 
     /// Returns the thread ID.
     fn id(&self) -> &ThreadId;
@@ -62,18 +57,6 @@ pub trait Context: Send + Sync {
 
     /// Returns a mutable reference to the thread's I/O channel.
     fn io_mut(&mut self) -> &mut Self::Io;
-
-    /// Returns a new task queue.
-    ///
-    /// Implementations may not be able to fork, in which case the tasks may be executed
-    /// sequentially.
-    ///
-    /// [`max_concurrency`](Context::max_concurrency) can help determine how to best divide work
-    /// between tasks.
-    async fn queue<'a, R>(&'a mut self) -> Result<Self::Queue<'a, R>, ContextError>
-    where
-        R: Send + 'static,
-        Self: Sized;
 
     /// Forks the thread and executes the provided closures concurrently.
     ///

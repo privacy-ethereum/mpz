@@ -6,7 +6,6 @@ use uid_mux::FramedUidMux;
 
 use crate::{
     context::{ContextError, ErrorKind},
-    queue::RRQueue,
     Context, ThreadId,
 };
 
@@ -91,10 +90,6 @@ where
     Io: IoDuplex + Send + Sync + Unpin + 'static,
 {
     type Io = Io;
-    type Queue<'a, R> = RRQueue<'a, Self, R>
-    where
-        R: Send + 'static,
-        Self: Sized + 'a;
 
     fn id(&self) -> &ThreadId {
         &self.id
@@ -111,23 +106,6 @@ where
         &mut self.io
     }
 
-    async fn queue<R>(&mut self) -> Result<Self::Queue<'_, R>, ContextError>
-    where
-        R: Send + 'static,
-        Self: Sized,
-    {
-        let children = self
-            .children
-            .as_mut()
-            .expect("children were not left uninitialized");
-
-        children
-            .alloc(&self.mux, children.max_concurrency())
-            .await?;
-
-        Ok(RRQueue::new(children.as_slice_mut()))
-    }
-
     async fn join<'a, A, B, RA, RB>(&'a mut self, a: A, b: B) -> Result<(RA, RB), ContextError>
     where
         A: for<'b> FnOnce(&'b mut Self) -> ScopedBoxFuture<'a, 'b, RA> + Send + 'a,
@@ -141,11 +119,16 @@ where
             .take()
             .expect("children were not left uninitialized");
 
-        if children.len() < 1 {
-            children.alloc(&self.mux, 1).await?;
+        if children.len() < 2 {
+            if let Err(e) = children.alloc(&self.mux, 2).await {
+                self.children = Some(children);
+                return Err(e);
+            }
         }
 
-        let output = futures::join!(a(self), b(children.first_mut()));
+        let [child_a, child_b] = children.first_n_mut();
+
+        let output = futures::join!(a(child_a), b(child_b));
 
         self.children = Some(children);
 
@@ -170,11 +153,16 @@ where
             .take()
             .expect("children were not left uninitialized");
 
-        if children.len() < 1 {
-            children.alloc(&self.mux, 1).await?;
+        if children.len() < 2 {
+            if let Err(e) = children.alloc(&self.mux, 2).await {
+                self.children = Some(children);
+                return Err(e);
+            }
         }
 
-        let output = futures::try_join!(a(self), b(children.first_mut()));
+        let [child_a, child_b] = children.first_n_mut();
+
+        let output = futures::try_join!(a(child_a), b(child_b));
 
         self.children = Some(children);
 
@@ -249,14 +237,10 @@ where
         Ok(())
     }
 
-    fn first_mut(&mut self) -> &mut MTContext<M, Io> {
+    fn first_n_mut<const N: usize>(&mut self) -> &mut [MTContext<M, Io>; N] {
         self.slots
-            .first_mut()
+            .first_chunk_mut()
             .expect("number of threads were checked")
-    }
-
-    fn as_slice_mut(&mut self) -> &mut [MTContext<M, Io>] {
-        &mut self.slots
     }
 }
 
@@ -264,8 +248,8 @@ where
 mod tests {
     use std::future::IntoFuture;
 
-    use crate::{join, queue::Queue};
-    use serio::{codec::Bincode, stream::IoStreamExt, SinkExt};
+    use crate::join;
+    use serio::codec::Bincode;
     use uid_mux::test_utils::test_yamux_pair_framed;
 
     use super::*;
@@ -318,41 +302,5 @@ mod tests {
         let mut test_b = LifetimeTest::default();
 
         futures::join!(test_a.foo(&mut ctx_a), test_b.foo(&mut ctx_b));
-    }
-
-    #[tokio::test]
-    async fn test_mt_executor_queue() {
-        let ((mux_a, fut_a), (mux_b, fut_b)) = test_yamux_pair_framed(1024, Bincode);
-
-        tokio::spawn(async move {
-            futures::try_join!(fut_a.into_future(), fut_b.into_future()).unwrap();
-        });
-
-        let mut exec_a = MTExecutor::new(mux_a, 8);
-        let mut exec_b = MTExecutor::new(mux_b, 8);
-
-        let (mut ctx_a, mut ctx_b) =
-            futures::try_join!(exec_a.new_thread(), exec_b.new_thread()).unwrap();
-
-        let mut queue_a = ctx_a.queue().await.unwrap();
-        let mut queue_b = ctx_b.queue().await.unwrap();
-
-        queue_a.push(|ctx| {
-            Box::pin(async {
-                ctx.io_mut().send(0u8).await.unwrap();
-            })
-        });
-        queue_b.push(|ctx| Box::pin(async { ctx.io_mut().expect_next::<u8>().await.unwrap() }));
-
-        queue_a.push(|ctx| {
-            Box::pin(async {
-                ctx.io_mut().send(1u8).await.unwrap();
-            })
-        });
-        queue_b.push(|ctx| Box::pin(async { ctx.io_mut().expect_next::<u8>().await.unwrap() }));
-
-        let (_, results_b) = futures::try_join!(queue_a.wait(), queue_b.wait()).unwrap();
-
-        assert_eq!(results_b, vec![0, 1]);
     }
 }

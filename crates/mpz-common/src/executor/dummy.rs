@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use scoped_futures::ScopedBoxFuture;
 use serio::{Sink, Stream};
 
-use crate::{context::Context, queue::SimpleQueue, ContextError, ThreadId};
+use crate::{context::Context, ContextError, ThreadId};
 
 /// A dummy executor.
 #[derive(Debug, Default)]
@@ -61,10 +61,6 @@ impl Stream for DummyIo {
 #[async_trait]
 impl Context for DummyExecutor {
     type Io = DummyIo;
-    type Queue<'a, R> = SimpleQueue<'a, Self, R>
-    where
-        R: Send + 'static,
-        Self: Sized + 'a;
 
     fn id(&self) -> &ThreadId {
         &self.id
@@ -76,14 +72,6 @@ impl Context for DummyExecutor {
 
     fn io_mut(&mut self) -> &mut Self::Io {
         &mut self.io
-    }
-
-    async fn queue<R>(&mut self) -> Result<Self::Queue<'_, R>, ContextError>
-    where
-        R: Send + 'static,
-        Self: Sized,
-    {
-        Ok(SimpleQueue::new(self))
     }
 
     async fn join<'a, A, B, RA, RB>(&'a mut self, a: A, b: B) -> Result<(RA, RB), ContextError>
