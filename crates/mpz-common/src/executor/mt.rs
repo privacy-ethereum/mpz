@@ -246,11 +246,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::future::IntoFuture;
-
-    use crate::join;
-    use serio::codec::Bincode;
-    use uid_mux::test_utils::test_yamux_pair_framed;
+    use crate::{executor::test_mt_executor, join};
 
     use super::*;
 
@@ -286,14 +282,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_mt_executor_join() {
-        let ((mux_a, fut_a), (mux_b, fut_b)) = test_yamux_pair_framed(1024, Bincode);
-
-        tokio::spawn(async move {
-            futures::try_join!(fut_a.into_future(), fut_b.into_future()).unwrap();
-        });
-
-        let mut exec_a = MTExecutor::new(mux_a, 8);
-        let mut exec_b = MTExecutor::new(mux_b, 8);
+        let (mut exec_a, mut exec_b) = test_mt_executor(8);
 
         let (mut ctx_a, mut ctx_b) =
             futures::try_join!(exec_a.new_thread(), exec_b.new_thread()).unwrap();
