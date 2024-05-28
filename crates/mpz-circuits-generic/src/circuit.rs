@@ -2,15 +2,15 @@
 //!
 //! Main circuit module.
 
-use crate::model::{Component, Executable, Executor};
+use crate::model::Component;
 use thiserror::Error;
 
-/// A `CircuitBuilder` struct that represents a builder for a circuit.
+/// The Circuit Builder assembles a collection of gates into a circuit.
 ///
-/// This struct is responsible for assembling a collection of gates into a circuit.
+/// The built output is ensured to be a directed acyclic graph (DAG).
 ///
-/// The built output is ensured to be a directed acyclic graph (DAG), and the gates
-/// topologically sorted in the order they should be executed.
+/// The gates are topologically sorted.
+#[derive(Debug)]
 pub struct CircuitBuilder<T>
 where
     T: Component,
@@ -33,20 +33,17 @@ where
         self
     }
 
-    /// Builds a circuit.
-    /// This method verifies that the circuit is directed and acyclic.
-    /// Sorts the gates topologically.
+    /// Topologically sort the gates and generates a circuit.
+    /// This method will fail if the circuit is not a DAG.
     pub fn build(self) -> Result<Circuit<T>, CircuitError> {
         Ok(Circuit::new(self.gates))
     }
 }
 
-/// Represents a circuit modeled as a directed acyclic graph (DAG).
+/// A circuit constructed from a collection of gates.
 ///
 /// - Each node in the circuit is an indexed point within an external array.
 /// - Each gate acts as a unit of logic that connects these nodes.
-///
-/// Use the `CircuitBuilder` struct to ensure the circuit is directed and acyclic.
 #[derive(Debug)]
 pub struct Circuit<T> {
     gates: Vec<T>,
@@ -64,49 +61,13 @@ impl<T> Circuit<T> {
     }
 }
 
-impl<T, U> Executable<T> for Circuit<U>
-where
-    U: Executable<T>,
-{
-    type Error = CircuitError;
-}
-
-pub struct SequentialExecutor;
-
-impl<T, U> Executor<T, Circuit<U>> for SequentialExecutor
-where
-    U: Component + Executable<T> + Executor<T, U>,
-    Circuit<U>: Executable<T, Error = CircuitError>,
-{
-    fn custom_execution(
-        &self,
-        executable: &Circuit<U>,
-        memory: &mut [T],
-    ) -> Result<(), <Circuit<U> as Executable<T>>::Error> {
-        for gate in executable.gates() {
-            gate.custom_execution(gate, memory)
-                .map_err(|_| CircuitError::CircuitExecutionError)?;
-        }
-
-        Ok(())
-    }
-}
-
 /// Circuit errors.
 #[derive(Debug, Error)]
 pub enum CircuitError {
-    #[error("Circuit execution error")]
-    CircuitExecutionError,
     #[error("Cycle detected involving gate {0}")]
     CycleDetected(usize),
-    #[error("Gate execution failed: {0}")]
-    GateExecutionError(String),
-    #[error("Generic circuit error: {0}")]
-    GenericCircuitError(String),
     #[error("Invalid gate input count")]
     InvalidGateInputCount,
-    #[error("Missing node value at index {0}")]
-    MissingNodeValue(usize),
     #[error("Output index out of range: {0}")]
     OutputIndexOutOfRange(usize),
     #[error("Topological sort failed")]
