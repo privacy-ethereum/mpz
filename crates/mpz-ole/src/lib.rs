@@ -29,13 +29,13 @@ pub trait OLESender<Ctx: Context, F: Field> {
     ///
     /// # Arguments
     ///
-    /// * `ctx` - The context, which provides IO channels.
-    /// * `a_k` - The sender's OLE inputs.
+    /// * `ctx` - The context.
+    /// * `inputs` - The sender's OLE inputs.
     ///
     /// # Returns
     ///
     /// * The sender's OLE outputs `x_k`.
-    async fn send(&mut self, ctx: &mut Ctx, a_k: Vec<F>) -> Result<Vec<F>, OLEError>;
+    async fn send(&mut self, ctx: &mut Ctx, inputs: Vec<F>) -> Result<Vec<F>, OLEError>;
 }
 
 /// Batch OLE Receiver.
@@ -49,8 +49,8 @@ pub trait OLEReceiver<Ctx: Context, F: Field> {
     ///
     /// # Arguments
     ///
-    /// * `ctx` - The context, which provides IO channels.
-    /// * `b_k` - The receiver's OLE inputs.
+    /// * `ctx` - The context.
+    /// * `inputs` - The receiver's OLE inputs.
     ///
     /// # Returns
     ///
@@ -60,7 +60,6 @@ pub trait OLEReceiver<Ctx: Context, F: Field> {
 
 /// An OLE error.
 #[derive(Debug, thiserror::Error)]
-#[error("OLE error: {kind}")]
 pub struct OLEError {
     kind: OLEErrorKind,
     #[source]
@@ -68,11 +67,32 @@ pub struct OLEError {
 }
 
 impl OLEError {
-    fn new(kind: OLEErrorKind, source: Box<dyn Error + Send + Sync + 'static>) -> Self {
+    fn new<E>(kind: OLEErrorKind, source: E) -> Self
+    where
+        E: Into<Box<dyn Error + Send + Sync>>,
+    {
         Self {
             kind,
-            source: Some(source),
+            source: Some(source.into()),
         }
+    }
+}
+
+impl Display for OLEError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.kind {
+            OLEErrorKind::OT => write!(f, "OT Error"),
+            OLEErrorKind::IO => write!(f, "IO Error"),
+            OLEErrorKind::Core => write!(f, "OLE Core Error"),
+            OLEErrorKind::Field => write!(f, "FieldError"),
+            OLEErrorKind::InsufficientOLEs => write!(f, "Insufficient OLEs"),
+        }?;
+
+        if let Some(source) = self.source.as_ref() {
+            write!(f, " caused by: {source}")?;
+        }
+
+        Ok(())
     }
 }
 
@@ -83,18 +103,6 @@ pub(crate) enum OLEErrorKind {
     Core,
     Field,
     InsufficientOLEs,
-}
-
-impl Display for OLEErrorKind {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            OLEErrorKind::OT => write!(f, "OT Error"),
-            OLEErrorKind::IO => write!(f, "IO Error"),
-            OLEErrorKind::Core => write!(f, "OLE Core Error"),
-            OLEErrorKind::Field => write!(f, "FieldError"),
-            OLEErrorKind::InsufficientOLEs => write!(f, "Insufficient OLEs"),
-        }
-    }
 }
 
 impl From<OTError> for OLEError {

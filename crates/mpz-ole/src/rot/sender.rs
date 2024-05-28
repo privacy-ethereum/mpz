@@ -81,13 +81,14 @@ where
     F: Field + Serialize + Deserialize,
 {
     async fn send(&mut self, ctx: &mut Ctx, a_k: Vec<F>) -> Result<Vec<F>, OLEError> {
+        let len_requested = a_k.len();
+
         let (sender_adjust, adjust) = self.core.adjust(a_k).ok_or_else(|| {
             OLEError::new(
                 OLEErrorKind::InsufficientOLEs,
-                "Not enough OLEs available".into(),
+                format!("{} < {}", self.core.cache_size(), len_requested),
             )
         })?;
-
         let channel = ctx.io_mut();
         channel.send(adjust).await?;
         let adjust = channel.expect_next::<BatchAdjust<F>>().await?;

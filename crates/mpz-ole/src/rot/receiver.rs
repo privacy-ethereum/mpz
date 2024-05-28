@@ -78,10 +78,12 @@ where
     F: Field + Serialize + Deserialize,
 {
     async fn receive(&mut self, ctx: &mut Ctx, b_k: Vec<F>) -> Result<Vec<F>, OLEError> {
+        let len_requested = b_k.len();
+
         let (receiver_adjust, adjust) = self.core.adjust(b_k).ok_or_else(|| {
             OLEError::new(
                 OLEErrorKind::InsufficientOLEs,
-                "Not enough OLEs available".into(),
+                format!("{} < {}", self.core.cache_size(), len_requested),
             )
         })?;
 
