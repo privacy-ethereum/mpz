@@ -39,14 +39,13 @@ where
     /// # Arguments
     ///
     /// * `count` - The number of OLEs to preprocess.
-    pub async fn preprocess<Ctx: Context, U>(
+    pub async fn preprocess<Ctx: Context>(
         &mut self,
         ctx: &mut Ctx,
         count: usize,
     ) -> Result<(), OLEError>
     where
-        T: RandomOTSender<Ctx, [U; 2]> + Send,
-        U: Into<Array<u8, F::ByteSize>>,
+        T: RandomOTSender<Ctx, [Array<u8, F::ByteSize>; 2]> + Send,
     {
         let random = {
             let mut rng = thread_rng();
@@ -60,8 +59,8 @@ where
             .msgs
             .into_iter()
             .map(|[a, b]| {
-                let a = F::try_from(a.into())?;
-                let b = F::try_from(b.into())?;
+                let a = F::try_from(a)?;
+                let b = F::try_from(b)?;
 
                 Ok::<[F; 2], OLEError>([a, b])
             })

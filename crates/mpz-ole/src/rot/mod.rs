@@ -34,8 +34,8 @@ mod tests {
         let (mut ctx_sender, mut ctx_receiver) = test_st_executor(10);
 
         tokio::try_join!(
-            ole_sender.preprocess::<_, [u8; 32]>(&mut ctx_sender, count),
-            ole_receiver.preprocess::<_, [u8; 32]>(&mut ctx_receiver, count)
+            ole_sender.preprocess(&mut ctx_sender, count),
+            ole_receiver.preprocess(&mut ctx_receiver, count)
         )
         .unwrap();
 

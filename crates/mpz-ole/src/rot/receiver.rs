@@ -39,14 +39,13 @@ where
     /// # Arguments
     ///
     /// * `count` - The number of OLEs to preprocess.
-    pub async fn preprocess<Ctx: Context, U>(
+    pub async fn preprocess<Ctx: Context>(
         &mut self,
         ctx: &mut Ctx,
         count: usize,
     ) -> Result<(), OLEError>
     where
-        T: RandomOTReceiver<Ctx, bool, U> + Send,
-        U: Into<Array<u8, F::ByteSize>> + Send + Sync,
+        T: RandomOTReceiver<Ctx, bool, Array<u8, F::ByteSize>> + Send,
     {
         let random_ot = self
             .rot_receiver
@@ -56,7 +55,7 @@ where
         let rot_msg: Vec<F> = random_ot
             .msgs
             .into_iter()
-            .map(|f| F::try_from(f.into()))
+            .map(|f| F::try_from(f))
             .collect::<Result<Vec<F>, _>>()?;
 
         let rot_choices: Vec<F> = random_ot
