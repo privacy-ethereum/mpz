@@ -254,7 +254,7 @@ where
             return Err(EvaluatorError::NotFinished);
         }
 
-        // Evaluate the remaining "free" gates.
+        // If there were 0 AND gates in the circuit, we need to evaluate the "free" gates now.
         if !self.complete {
             self.next(Default::default());
         }
@@ -306,6 +306,7 @@ where
         for encrypted_gate in batch.into_array() {
             self.0.next(encrypted_gate);
             if !self.0.wants_gates() {
+                // Skipping any remaining gates which may have been used to pad the last batch.
                 return;
             }
         }
