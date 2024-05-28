@@ -6,7 +6,7 @@
 
 use async_trait::async_trait;
 use mpz_common::Context;
-use mpz_fields::Field;
+use mpz_fields::{Field, FieldError};
 use mpz_ole_core::OLEError as OLECoreError;
 use mpz_ot::OTError;
 use std::{
@@ -81,6 +81,7 @@ pub(crate) enum OLEErrorKind {
     OT,
     IO,
     Core,
+    Field,
     InsufficientOLEs,
 }
 
@@ -90,6 +91,7 @@ impl Display for OLEErrorKind {
             OLEErrorKind::OT => write!(f, "OT Error"),
             OLEErrorKind::IO => write!(f, "IO Error"),
             OLEErrorKind::Core => write!(f, "OLE Core Error"),
+            OLEErrorKind::Field => write!(f, "FieldError"),
             OLEErrorKind::InsufficientOLEs => write!(f, "Insufficient OLEs"),
         }
     }
@@ -117,6 +119,15 @@ impl From<OLECoreError> for OLEError {
     fn from(value: OLECoreError) -> Self {
         Self {
             kind: OLEErrorKind::Core,
+            source: Some(Box::new(value) as Box<dyn Error + Send + Sync>),
+        }
+    }
+}
+
+impl From<FieldError> for OLEError {
+    fn from(value: FieldError) -> Self {
+        Self {
+            kind: OLEErrorKind::Field,
             source: Some(Box::new(value) as Box<dyn Error + Send + Sync>),
         }
     }

@@ -1,6 +1,6 @@
 use crate::{OLEError, OLEErrorKind, OLESender as OLESend};
 use async_trait::async_trait;
-use itybity::IntoBitIterator;
+use hybrid_array::Array;
 use mpz_common::Context;
 use mpz_fields::Field;
 use mpz_ole_core::msg::BatchAdjust;
@@ -39,32 +39,33 @@ where
     /// # Arguments
     ///
     /// * `count` - The number of OLEs to preprocess.
-    pub async fn preprocess<Ctx: Context>(
+    pub async fn preprocess<Ctx: Context, U>(
         &mut self,
         ctx: &mut Ctx,
         count: usize,
     ) -> Result<(), OLEError>
     where
-        T: RandomOTSender<Ctx, [F::Serialized; 2]> + Send,
+        T: RandomOTSender<Ctx, [U; 2]> + Send,
+        U: Into<Array<u8, F::ByteSize>>,
     {
         let random = {
             let mut rng = thread_rng();
             (0..count).map(|_| F::rand(&mut rng)).collect()
         };
 
-        let random_ot = self
+        let random_ot: Vec<[F; 2]> = self
             .rot_sender
-            .send_random(ctx, count * F::BIT_SIZE as usize)
+            .send_random(ctx, count * F::BIT_SIZE)
             .await?
             .msgs
-            .iter()
+            .into_iter()
             .map(|[a, b]| {
-                [
-                    F::from_lsb0_iter(a.as_ref().into_iter_lsb0()),
-                    F::from_lsb0_iter(b.as_ref().into_iter_lsb0()),
-                ]
+                let a = F::try_from(a.into())?;
+                let b = F::try_from(b.into())?;
+
+                Ok::<[F; 2], OLEError>([a, b])
             })
-            .collect();
+            .collect::<Result<Vec<[F; 2]>, _>>()?;
 
         let channel = ctx.io_mut();
 
@@ -76,9 +77,8 @@ where
 }
 
 #[async_trait]
-impl<T, F, Ctx: Context> OLESend<Ctx, F> for OLESender<T, F>
+impl<T: Send, F, Ctx: Context> OLESend<Ctx, F> for OLESender<T, F>
 where
-    T: RandomOTSender<Ctx, [F::Serialized; 2]> + Send,
     F: Field + Serialize + Deserialize,
 {
     async fn send(&mut self, ctx: &mut Ctx, a_k: Vec<F>) -> Result<Vec<F>, OLEError> {

@@ -1,9 +1,10 @@
 use crate::{OLEError, OLEErrorKind, OLEReceiver as OLEReceive};
 use async_trait::async_trait;
+use hybrid_array::Array;
 use itybity::ToBits;
 use mpz_common::Context;
 use mpz_fields::Field;
-use mpz_ole_core::msg::{BatchAdjust, MaskedInputs};
+use mpz_ole_core::msg::{BatchAdjust, MaskedCorrelations};
 use mpz_ole_core::OLEReceiver as OLECoreReceiver;
 use mpz_ot::RandomOTReceiver;
 use serio::stream::IoStreamExt;
@@ -38,33 +39,34 @@ where
     /// # Arguments
     ///
     /// * `count` - The number of OLEs to preprocess.
-    pub async fn preprocess<Ctx: Context>(
+    pub async fn preprocess<Ctx: Context, U>(
         &mut self,
         ctx: &mut Ctx,
         count: usize,
     ) -> Result<(), OLEError>
     where
-        T: RandomOTReceiver<Ctx, bool, F::Serialized> + Send,
+        T: RandomOTReceiver<Ctx, bool, U> + Send,
+        U: Into<Array<u8, F::ByteSize>> + Send + Sync,
     {
         let random_ot = self
             .rot_receiver
-            .receive_random(ctx, count * F::BIT_SIZE as usize)
+            .receive_random(ctx, count * F::BIT_SIZE)
             .await?;
 
         let rot_msg: Vec<F> = random_ot
             .msgs
-            .iter()
-            .map(|f| F::from_lsb0_iter(f.as_ref().iter_lsb0()))
-            .collect();
+            .into_iter()
+            .map(|f| F::try_from(f.into()))
+            .collect::<Result<Vec<F>, _>>()?;
 
         let rot_choices: Vec<F> = random_ot
             .choices
-            .chunks(F::BIT_SIZE as usize)
+            .chunks(F::BIT_SIZE)
             .map(|choice| F::from_lsb0_iter(choice.iter_lsb0()))
             .collect();
 
         let channel = ctx.io_mut();
-        let masks = channel.expect_next::<MaskedInputs<F>>().await?;
+        let masks = channel.expect_next::<MaskedCorrelations<F>>().await?;
 
         self.core.preprocess(rot_choices, rot_msg, masks)?;
         Ok(())
@@ -72,9 +74,8 @@ where
 }
 
 #[async_trait]
-impl<T, F, Ctx: Context> OLEReceive<Ctx, F> for OLEReceiver<T, F>
+impl<T: Send, F, Ctx: Context> OLEReceive<Ctx, F> for OLEReceiver<T, F>
 where
-    T: RandomOTReceiver<Ctx, bool, F::Serialized> + Send,
     F: Field + Serialize + Deserialize,
 {
     async fn receive(&mut self, ctx: &mut Ctx, b_k: Vec<F>) -> Result<Vec<F>, OLEError> {
