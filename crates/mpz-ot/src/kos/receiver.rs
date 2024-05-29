@@ -1,6 +1,5 @@
 use async_trait::async_trait;
 use futures::TryFutureExt as _;
-use hybrid_array::{Array, ArraySize};
 use itybity::{FromBitIterator, IntoBitIterator};
 use mpz_cointoss as cointoss;
 use mpz_common::{try_join, Context};
@@ -342,41 +341,6 @@ where
             .map(|block| {
                 let mut prg = Prg::from_seed(block);
                 let mut out = [0_u8; N];
-                prg.fill_bytes(&mut out);
-                out
-            })
-            .collect();
-
-        Ok(ROTReceiverOutput { id, choices, msgs })
-    }
-}
-
-#[async_trait]
-impl<Ctx, BaseOT, A> RandomOTReceiver<Ctx, bool, Array<u8, A>> for Receiver<BaseOT>
-where
-    Ctx: Context,
-    BaseOT: Send,
-    A: ArraySize,
-{
-    async fn receive_random(
-        &mut self,
-        _ctx: &mut Ctx,
-        count: usize,
-    ) -> Result<ROTReceiverOutput<bool, Array<u8, A>>, OTError> {
-        let receiver = self
-            .state
-            .try_as_extension_mut()
-            .map_err(ReceiverError::from)?;
-
-        let keys = receiver.keys(count).map_err(ReceiverError::from)?;
-        let id = keys.id();
-
-        let (choices, random_outputs) = keys.take_choices_and_keys();
-        let msgs = random_outputs
-            .into_iter()
-            .map(|block| {
-                let mut prg = Prg::from_seed(block);
-                let mut out = Array::<u8, A>::from_fn(|_| 0);
                 prg.fill_bytes(&mut out);
                 out
             })

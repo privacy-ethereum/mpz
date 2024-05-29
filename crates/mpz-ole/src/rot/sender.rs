@@ -1,6 +1,5 @@
 use crate::{OLEError, OLEErrorKind, OLESender as OLESend};
 use async_trait::async_trait;
-use hybrid_array::Array;
 use mpz_common::Context;
 use mpz_fields::Field;
 use mpz_ole_core::msg::BatchAdjust;
@@ -45,7 +44,7 @@ where
         count: usize,
     ) -> Result<(), OLEError>
     where
-        T: RandomOTSender<Ctx, [Array<u8, F::ByteSize>; 2]> + Send,
+        T: RandomOTSender<Ctx, [F; 2]> + Send,
     {
         let random = {
             let mut rng = thread_rng();
@@ -56,15 +55,7 @@ where
             .rot_sender
             .send_random(ctx, count * F::BIT_SIZE)
             .await?
-            .msgs
-            .into_iter()
-            .map(|[a, b]| {
-                let a = F::try_from(a)?;
-                let b = F::try_from(b)?;
-
-                Ok::<[F; 2], OLEError>([a, b])
-            })
-            .collect::<Result<Vec<[F; 2]>, _>>()?;
+            .msgs;
 
         let channel = ctx.io_mut();
 

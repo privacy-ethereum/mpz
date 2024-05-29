@@ -1,6 +1,5 @@
 use crate::{OLEError, OLEErrorKind, OLEReceiver as OLEReceive};
 use async_trait::async_trait;
-use hybrid_array::Array;
 use itybity::ToBits;
 use mpz_common::Context;
 use mpz_fields::Field;
@@ -45,18 +44,14 @@ where
         count: usize,
     ) -> Result<(), OLEError>
     where
-        T: RandomOTReceiver<Ctx, bool, Array<u8, F::ByteSize>> + Send,
+        T: RandomOTReceiver<Ctx, bool, F> + Send,
     {
         let random_ot = self
             .rot_receiver
             .receive_random(ctx, count * F::BIT_SIZE)
             .await?;
 
-        let rot_msg: Vec<F> = random_ot
-            .msgs
-            .into_iter()
-            .map(|f| F::try_from(f))
-            .collect::<Result<Vec<F>, _>>()?;
+        let rot_msg: Vec<F> = random_ot.msgs;
 
         let rot_choices: Vec<F> = random_ot
             .choices
