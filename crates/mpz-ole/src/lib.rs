@@ -15,6 +15,7 @@ use std::{
     io::Error as IOError,
 };
 
+#[cfg(feature = "ideal")]
 pub mod ideal;
 pub mod rot;
 

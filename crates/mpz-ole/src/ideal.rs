@@ -2,63 +2,43 @@
 
 use crate::{OLEError, OLEReceiver, OLESender};
 use async_trait::async_trait;
-use futures::{channel::mpsc, StreamExt};
-use mpz_common::Context;
+use mpz_common::{
+    ideal::{ideal_f2p, Alice, Bob},
+    Context,
+};
 use mpz_fields::Field;
 use rand::thread_rng;
 
 /// Returns an OLE sender and receiver pair.
-pub fn ideal_ole<F: Field>() -> (IdealOLESender<F>, IdealOLEReceiver<F>) {
-    let (sender, receiver) = mpsc::channel(10);
-
-    let ole_sender = IdealOLESender { channel: sender };
-
-    let ole_receiver = IdealOLEReceiver { channel: receiver };
-
-    (ole_sender, ole_receiver)
+pub fn ideal_ole() -> (Alice<()>, Bob<()>) {
+    ideal_f2p(())
 }
 
-/// An ideal OLE Sender.
-pub struct IdealOLESender<F: Field> {
-    channel: mpsc::Sender<(Vec<F>, Vec<F>)>,
-}
+fn ole<F: Field>(_: &mut (), alice_input: Vec<F>, bob_input: Vec<F>) -> (Vec<F>, Vec<F>) {
+    let mut rng = thread_rng();
+    let alice_output: Vec<F> = (0..alice_input.len()).map(|_| F::rand(&mut rng)).collect();
 
-/// An ideal OLE Receiver.
-pub struct IdealOLEReceiver<F: Field> {
-    channel: mpsc::Receiver<(Vec<F>, Vec<F>)>,
+    let bob_output: Vec<F> = alice_input
+        .iter()
+        .zip(bob_input.iter())
+        .zip(alice_output.iter().copied())
+        .map(|((&a, &b), x)| a * b + x)
+        .collect();
+
+    (alice_output, bob_output)
 }
 
 #[async_trait]
-impl<F: Field, Ctx: Context> OLESender<Ctx, F> for IdealOLESender<F> {
-    async fn send(&mut self, _ctx: &mut Ctx, a_k: Vec<F>) -> Result<Vec<F>, OLEError> {
-        let mut rng = thread_rng();
-        let x_k: Vec<F> = (0..a_k.len()).map(|_| F::rand(&mut rng)).collect();
-
-        self.channel
-            .try_send((a_k, x_k.clone()))
-            .expect("DummySender should be able to send");
-
-        Ok(x_k)
+impl<F: Field, Ctx: Context> OLESender<Ctx, F> for Alice<()> {
+    async fn send(&mut self, ctx: &mut Ctx, a_k: Vec<F>) -> Result<Vec<F>, OLEError> {
+        Ok(self.call(ctx, a_k, ole).await)
     }
 }
 
 #[async_trait]
-impl<F: Field, Ctx: Context> OLEReceiver<Ctx, F> for IdealOLEReceiver<F> {
-    async fn receive(&mut self, _ctx: &mut Ctx, b_k: Vec<F>) -> Result<Vec<F>, OLEError> {
-        let (a_k, x_k) = self
-            .channel
-            .next()
-            .await
-            .expect("DummySender should send a value");
-
-        let y_k: Vec<F> = a_k
-            .iter()
-            .zip(b_k.iter())
-            .zip(x_k)
-            .map(|((&a, &b), x)| a * b + x)
-            .collect();
-
-        Ok(y_k)
+impl<F: Field, Ctx: Context> OLEReceiver<Ctx, F> for Bob<()> {
+    async fn receive(&mut self, ctx: &mut Ctx, b_k: Vec<F>) -> Result<Vec<F>, OLEError> {
+        Ok(self.call(ctx, b_k, ole).await)
     }
 }
 
@@ -80,12 +60,13 @@ mod tests {
 
         let (mut ctx_sender, mut ctx_receiver) = test_st_executor(10);
 
-        let (mut sender, mut receiver) = ideal_ole::<P256>();
-        let x_k = sender.send(&mut ctx_sender, a_k.clone()).await.unwrap();
-        let y_k = receiver
-            .receive(&mut ctx_receiver, b_k.clone())
-            .await
-            .unwrap();
+        let (mut alice, mut bob) = ideal_ole();
+
+        let (x_k, y_k) = tokio::try_join!(
+            alice.send(&mut ctx_sender, a_k.clone()),
+            bob.receive(&mut ctx_receiver, b_k.clone())
+        )
+        .unwrap();
 
         assert_eq!(x_k.len(), count);
         assert_eq!(y_k.len(), count);
