@@ -298,10 +298,9 @@ where
 
 #[cfg(test)]
 mod tests {
-    use scoped_futures::ScopedFutureExt;
     use serio::{stream::IoStreamExt, SinkExt};
 
-    use crate::{executor::test_mt_executor, join};
+    use crate::{executor::test_mt_executor, scoped};
 
     use super::*;
 
@@ -318,15 +317,11 @@ mod tests {
             let a = &mut self.a;
             let b = &mut self.b;
 
-            join! {
-                ctx,
-                async {
-                    *a = ctx.id().clone();
-                },
-                async {
-                    *b = ctx.id().clone();
-                }
-            }
+            ctx.join(
+                scoped!(|ctx| *a = ctx.id().clone()),
+                scoped!(|ctx| *b = ctx.id().clone()),
+            )
+            .await
             .unwrap();
 
             // Make sure we can mutate the fields after borrowing them in the async closures.
@@ -355,22 +350,13 @@ mod tests {
         let (mut ctx_a, mut ctx_b) =
             futures::try_join!(exec_a.new_thread(), exec_b.new_thread()).unwrap();
 
-        let (_, received) = futures::join!(
-            async {
-                ctx_a
-                    .blocking(|ctx| async { ctx.io_mut().send(1u8).await.unwrap() }.scope_boxed())
-                    .await
-                    .unwrap()
-            },
-            async {
-                ctx_b
-                    .blocking(|ctx| {
-                        async { ctx.io_mut().expect_next::<u8>().await.unwrap() }.scope_boxed()
-                    })
-                    .await
-                    .unwrap()
-            }
-        );
+        let (_, received) = futures::try_join!(
+            ctx_a.blocking(scoped!(|ctx| ctx.io_mut().send(1u8).await.unwrap())),
+            ctx_b.blocking(scoped!(|ctx| async move {
+                ctx.io_mut().expect_next::<u8>().await.unwrap()
+            }))
+        )
+        .unwrap();
 
         assert_eq!(received, 1u8);
         assert!(ctx_a.inner.is_some());

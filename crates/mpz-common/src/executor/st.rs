@@ -125,8 +125,9 @@ where
 #[cfg(test)]
 mod tests {
     use futures::executor::block_on;
-    use scoped_futures::ScopedFutureExt;
     use serio::channel::duplex;
+
+    use crate::scoped;
 
     use super::*;
 
@@ -143,18 +144,8 @@ mod tests {
             let a = &mut self.a;
             let b = &mut self.b;
             ctx.join(
-                |ctx| {
-                    async move {
-                        *a = ctx.id().clone();
-                    }
-                    .scope_boxed()
-                },
-                |ctx| {
-                    async move {
-                        *b = ctx.id().clone();
-                    }
-                    .scope_boxed()
-                },
+                scoped!(|ctx| *a = ctx.id().clone()),
+                scoped!(|ctx| *b = ctx.id().clone()),
             )
             .await
             .unwrap();
@@ -180,10 +171,7 @@ mod tests {
         let mut ctx = STExecutor::new(io);
 
         block_on(async {
-            let id = ctx
-                .blocking(|ctx| async move { ctx.id().clone() }.scope_boxed())
-                .await
-                .unwrap();
+            let id = ctx.blocking(scoped!(|ctx| ctx.id().clone())).await.unwrap();
 
             assert_eq!(&id, ctx.id());
             assert!(ctx.inner.is_some());
