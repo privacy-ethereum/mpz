@@ -15,6 +15,7 @@ members = [
     "mpz-share-conversion-core",
     "matrix-transpose",
     "clmul",
+    "mpz-ole-core",
 ]
 resolver = "2"
 
@@ -38,6 +39,7 @@ mpz-garble = { path = "mpz-garble" }
 mpz-garble-core = { path = "mpz-garble-core" }
 mpz-share-conversion = { path = "mpz-share-conversion" }
 mpz-share-conversion-core = { path = "mpz-share-conversion-core" }
+mpz-ole-core = { path = "mpz-ole-core" }
 clmul = { path = "clmul" }
 matrix-transpose = { path = "matrix-transpose" }
 
@@ -110,6 +112,8 @@ hex = "0.4"
 lazy_static = "1"
 derive_builder = "0.11"
 once_cell = "1"
+hybrid-array = "0.2.0-rc.8"
+typenum = "1"
 # DO NOT BUMP, SEE https://github.com/privacy-scaling-explorations/mpz/issues/61
 generic-array = "0.14"
 itybity = "0.2"

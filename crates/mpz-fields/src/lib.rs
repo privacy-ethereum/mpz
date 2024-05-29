@@ -12,8 +12,10 @@ use std::{
     ops::{Add, Mul, Neg},
 };
 
+use hybrid_array::ArraySize;
 use itybity::{BitLength, FromBitIterator, GetBit, Lsb0, Msb0};
 use rand::{distributions::Standard, prelude::Distribution, Rng};
+use typenum::Unsigned;
 
 /// A trait for finite fields.
 pub trait Field:
@@ -35,9 +37,13 @@ pub trait Field:
     + GetBit<Lsb0>
     + GetBit<Msb0>
     + BitLength
+    + Unpin
 {
     /// The number of bits of a field element.
-    const BIT_SIZE: u32;
+    const BIT_SIZE: usize = <Self::BitSize as Unsigned>::USIZE;
+
+    /// The number of bits of a field element as a type number.
+    type BitSize: ArraySize;
 
     /// Return the additive identity element.
     fn zero() -> Self;
@@ -131,11 +137,11 @@ mod tests {
     }
 
     pub(crate) fn test_field_bit_ops<T: Field>() {
-        let mut a = vec![false; T::BIT_SIZE as usize];
-        let mut b = vec![false; T::BIT_SIZE as usize];
+        let mut a = vec![false; T::BIT_SIZE];
+        let mut b = vec![false; T::BIT_SIZE];
 
         a[0] = true;
-        b[T::BIT_SIZE as usize - 1] = true;
+        b[T::BIT_SIZE - 1] = true;
 
         let a = T::from_lsb0_iter(a);
         let b = T::from_lsb0_iter(b);
@@ -143,7 +149,7 @@ mod tests {
         assert_eq!(a, T::one());
         assert!(GetBit::<Lsb0>::get_bit(&a, 0));
 
-        assert_eq!(b, T::two_pow(T::BIT_SIZE - 1));
+        assert_eq!(b, T::two_pow(T::BIT_SIZE as u32 - 1));
         assert!(GetBit::<Lsb0>::get_bit(&b, (T::BIT_SIZE - 1) as usize));
     }
 }
