@@ -52,11 +52,7 @@ impl Syncer {
     ///
     /// * `io` - The I/O channel of the logical thread.
     /// * `f` - The function to execute.
-    pub async fn sync<Io: IoDuplex<Ticket> + Unpin, F, R>(
-        &self,
-        io: &mut Io,
-        f: F,
-    ) -> Result<R, SyncError>
+    pub async fn sync<Io: IoDuplex + Unpin, F, R>(&self, io: &mut Io, f: F) -> Result<R, SyncError>
     where
         F: FnOnce() -> R + Unpin,
         R: Unpin,
@@ -80,11 +76,7 @@ struct Leader {
 }
 
 impl Leader {
-    async fn sync<Io: IoDuplex<Ticket> + Unpin, F, R>(
-        &self,
-        io: &mut Io,
-        f: F,
-    ) -> Result<R, SyncError>
+    async fn sync<Io: IoDuplex + Unpin, F, R>(&self, io: &mut Io, f: F) -> Result<R, SyncError>
     where
         F: FnOnce() -> R + Unpin,
         R: Unpin,
@@ -108,11 +100,7 @@ struct Follower {
 }
 
 impl Follower {
-    async fn sync<Io: IoDuplex<Ticket> + Unpin, F, R>(
-        &self,
-        io: &mut Io,
-        f: F,
-    ) -> Result<R, SyncError>
+    async fn sync<Io: IoDuplex + Unpin, F, R>(&self, io: &mut Io, f: F) -> Result<R, SyncError>
     where
         F: FnOnce() -> R + Unpin,
         R: Unpin,

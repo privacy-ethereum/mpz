@@ -6,7 +6,7 @@ edition = "2021"
 [features]
 default = ["sync"]
 sync = []
-test-utils = []
+test-utils = ["uid-mux/test-utils"]
 ideal = []
 
 [dependencies]
@@ -17,4 +17,15 @@ async-trait.workspace = true
 scoped-futures.workspace = true
 thiserror.workspace = true
 serio.workspace = true
+uid-mux.workspace = true
 serde = { workspace = true, features = ["derive"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = [
+    "io-util",
+    "macros",
+    "rt-multi-thread",
+] }
+tokio-util = { workspace = true, features = ["compat"] }
+uid-mux = { workspace = true, features = ["test-utils"] }
+tracing-subscriber = { workspace = true, features = ["fmt"] }

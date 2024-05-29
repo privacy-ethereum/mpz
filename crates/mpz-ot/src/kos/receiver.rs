@@ -190,7 +190,7 @@ where
                     .receive(ctx)
                     .map_err(ReceiverError::from),
                 self.base.setup(ctx).map_err(ReceiverError::from)
-            )?;
+            )??;
 
             self.cointoss_receiver = Some(cointoss_receiver);
         } else {

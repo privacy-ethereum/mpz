@@ -1,11 +1,10 @@
 use core::fmt;
-use std::sync::Arc;
 
 /// A logical thread identifier.
 ///
 /// Every thread is assigned a unique identifier, which can be forked to create a child thread.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct ThreadId(Arc<[u8]>);
+pub struct ThreadId(Box<[u8]>);
 
 impl Default for ThreadId {
     fn default() -> Self {
@@ -29,10 +28,23 @@ impl ThreadId {
     /// Increments the thread ID, returning `None` if the ID overflows.
     #[inline]
     pub fn increment(&self) -> Option<Self> {
-        let mut id = self.0.to_vec();
-        id.last_mut().expect("id is not empty").checked_add(1)?;
+        let mut next = self.clone();
 
-        Some(Self(id.into()))
+        let id = next.0.last_mut()?;
+        *id = id.checked_add(1)?;
+
+        Some(next)
+    }
+
+    /// Increments the thread ID in place, returning the original ID if it doesn't overflow.
+    #[inline]
+    pub fn increment_in_place(&mut self) -> Option<Self> {
+        let prev = self.clone();
+
+        let id = self.0.last_mut()?;
+        *id = id.checked_add(1)?;
+
+        Some(prev)
     }
 
     /// Forks the thread ID.
@@ -73,5 +85,21 @@ impl Counter {
 impl fmt::Display for Counter {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_thread_id() {
+        let mut id = ThreadId::new(0);
+
+        assert_eq!(id.as_bytes(), &[0]);
+        assert_eq!(id.increment_in_place().unwrap().as_bytes(), &[0]);
+        assert_eq!(id.as_bytes(), &[1]);
+        assert_eq!(id.increment().unwrap().as_bytes(), &[2]);
+        assert_eq!(id.fork().as_bytes(), &[1, 0]);
     }
 }

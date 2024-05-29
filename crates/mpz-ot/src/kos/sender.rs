@@ -237,7 +237,7 @@ where
                         .map_err(SenderError::from)
                 },
                 self.base.setup(ctx).map_err(SenderError::from)
-            )?;
+            )??;
 
             // Store the sender to finalize the cointoss protocol later.
             self.cointoss_sender = Some(cointoss_sender);

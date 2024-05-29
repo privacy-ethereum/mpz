@@ -22,7 +22,7 @@ pub mod ideal;
 #[cfg(feature = "sync")]
 pub mod sync;
 
-pub use context::Context;
+pub use context::{Context, ContextError};
 pub use id::{Counter, ThreadId};
 
 // Re-export scoped-futures for use with the callback-like API in `Context`.

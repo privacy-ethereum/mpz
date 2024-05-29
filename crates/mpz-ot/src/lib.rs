@@ -28,6 +28,8 @@ pub use mpz_ot_core::{
 pub enum OTError {
     #[error(transparent)]
     IOError(#[from] std::io::Error),
+    #[error("context error: {0}")]
+    Context(#[from] mpz_common::ContextError),
     #[error("mutex error: {0}")]
     Mutex(#[from] mpz_common::sync::MutexError),
     #[error("sender error: {0}")]

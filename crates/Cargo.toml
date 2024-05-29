@@ -43,8 +43,8 @@ mpz-ole-core = { path = "mpz-ole-core" }
 clmul = { path = "clmul" }
 matrix-transpose = { path = "matrix-transpose" }
 
-tlsn-utils = { git = "https://github.com/tlsnotary/tlsn-utils", rev = "8f2fc9e" }
-tlsn-utils-aio = { git = "https://github.com/tlsnotary/tlsn-utils", rev = "8f2fc9e" }
+tlsn-utils = { git = "https://github.com/tlsnotary/tlsn-utils", rev = "6e0be94" }
+tlsn-utils-aio = { git = "https://github.com/tlsnotary/tlsn-utils", rev = "6e0be94" }
 
 # rand
 rand_chacha = "0.3"
@@ -85,7 +85,10 @@ prost-build = "0.9"
 bytes = "1"
 yamux = "0.10"
 bytemuck = { version = "1.13", features = ["derive"] }
-serio = { git = "https://github.com/tlsnotary/tlsn-utils", rev = "8f2fc9e" }
+serio = { git = "https://github.com/tlsnotary/tlsn-utils", rev = "6e0be94" }
+
+# io
+uid-mux = { git = "https://github.com/tlsnotary/tlsn-utils", rev = "6e0be94" }
 
 # testing
 prost = "0.9"
