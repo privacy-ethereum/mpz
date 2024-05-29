@@ -4,6 +4,7 @@
 //! - The `Initialize` stage is instantiated using random OT rather than chosen-input OT.
 //! - The `Extend` stage can only be called once, since our goal is to implement oblivious linear
 //!   function evaluation (OLE) rather than vector OLE (VOLE) (which means that we do not use PRGs).                                                  
+//! - The evaluated function is f(b)=a*b+x rather than f(b)=a*b-x.                                                  
 //!                                                                                       
 //! Note that this is an OLE with errors implementation. A malicious sender is allowed to set its own
 //! output and can introduce additive errors into the receiver's output.
