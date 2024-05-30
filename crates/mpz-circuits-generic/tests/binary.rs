@@ -4,8 +4,8 @@
 
 use mpz_circuit_generic::model::Component;
 
-#[derive(Debug, Copy, Clone, PartialEq)]
 /// Binary gate value.
+#[derive(Debug, Clone)]
 pub enum BinaryValue {
     /// Binary zero.
     Zero,
@@ -13,6 +13,7 @@ pub enum BinaryValue {
     One,
 }
 
+#[derive(Debug, Clone, PartialEq)]
 /// Binary gates.
 pub enum BinaryOperation {
     /// AND Operation.
@@ -34,6 +35,7 @@ impl BinaryOperation {
 }
 
 /// Binary gate.
+#[derive(Debug, Clone)]
 pub struct BinaryGate {
     /// Gate inputs. Each input is a usize that represents the index of the input nodes.
     inputs: Vec<usize>,
@@ -56,33 +58,111 @@ impl Component for BinaryGate {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mpz_circuit_generic::circuit::CircuitBuilder;
+    use mpz_circuit_generic::circuit::{CircuitBuilder, CircuitError};
 
     #[test]
-    fn test_circuit() {
-        // Build memory
-        let mut memory: Vec<BinaryValue> = Vec::with_capacity(3);
-
-        // Add inputs to memory
-        let input_a = BinaryValue::One;
-        let input_b = BinaryValue::One;
-
-        memory.push(input_a);
-        memory.push(input_b);
-        memory.push(BinaryValue::Zero); // Output
-
+    fn test_simple_acyclic_circuit() {
         // Setup circuit builder
         let mut circuit_builder = CircuitBuilder::<BinaryGate>::new();
 
-        // Add gate
-        let gate = BinaryGate {
+        // Add gates
+        let gate1 = BinaryGate {
             inputs: vec![0, 1],
             output: 2,
             _op: BinaryOperation::AND,
         };
-        circuit_builder.add_gate(gate);
+        let gate2 = BinaryGate {
+            inputs: vec![2],
+            output: 3,
+            _op: BinaryOperation::NOT,
+        };
+
+        circuit_builder.add_gate(gate2).add_gate(gate1);
 
         // Build circuit
-        assert!(circuit_builder.build().is_ok());
+        let circuit = circuit_builder.build();
+        assert!(circuit.is_ok(), "Failed to build circuit: {:?}", circuit.err());
+        let circuit = circuit.unwrap();
+        let gates = circuit.gates();
+
+        // Verify topological order
+        assert_eq!(gates[0].get_outputs(), vec![2], "First gate outputs mismatch");
+        assert_eq!(gates[1].get_outputs(), vec![3], "Second gate outputs mismatch");
+    }
+
+    #[test]
+    fn test_complex_acyclic_circuit() {
+        // Setup circuit builder
+        let mut circuit_builder = CircuitBuilder::<BinaryGate>::new();
+
+        // Add gates
+        let gate1 = BinaryGate {
+            inputs: vec![0],
+            output: 2,
+            _op: BinaryOperation::NOT,
+        };
+        let gate2 = BinaryGate {
+            inputs: vec![1, 2],
+            output: 3,
+            _op: BinaryOperation::XOR,
+        };
+        let gate3 = BinaryGate {
+            inputs: vec![2],
+            output: 4,
+            _op: BinaryOperation::NOT,
+        };
+        let gate4 = BinaryGate {
+            inputs: vec![3, 4],
+            output: 5,
+            _op: BinaryOperation::AND,
+        };
+
+        circuit_builder
+            .add_gate(gate1)
+            .add_gate(gate3)
+            .add_gate(gate2)
+            .add_gate(gate4);
+
+        // Build circuit
+        let circuit = circuit_builder.build();
+        assert!(circuit.is_ok(), "Failed to build circuit: {:?}", circuit.err());
+        let circuit = circuit.unwrap();
+        let gates = circuit.gates();
+
+        // Verify topological order
+        assert_eq!(gates[0].get_outputs(), vec![2], "First gate outputs mismatch");
+        assert_eq!(gates[1].get_outputs(), vec![4], "Second gate outputs mismatch");
+        assert_eq!(gates[2].get_outputs(), vec![3], "Third gate outputs mismatch");
+        assert_eq!(gates[3].get_outputs(), vec![5], "Fourth gate outputs mismatch");
+    }
+
+    #[test]
+    fn test_cycle_detection() {
+        // Setup circuit builder
+        let mut circuit_builder = CircuitBuilder::<BinaryGate>::new();
+
+        // Add gates
+        let gate1 = BinaryGate {
+            inputs: vec![0],
+            output: 1,
+            _op: BinaryOperation::NOT,
+        };
+        let gate2 = BinaryGate {
+            inputs: vec![1],
+            output: 2,
+            _op: BinaryOperation::NOT,
+        };
+        let gate3 = BinaryGate {
+            inputs: vec![2],
+            output: 0, // This creates a cycle
+            _op: BinaryOperation::NOT,
+        };
+
+        circuit_builder.add_gate(gate1).add_gate(gate2).add_gate(gate3);
+
+        // Build circuit should fail due to cycle
+        let circuit = circuit_builder.build();
+        assert!(circuit.is_err(), "Expected cycle detection error");
+        assert_eq!(circuit.unwrap_err(), CircuitError::CycleDetected, "Unexpected error type");
     }
 }
