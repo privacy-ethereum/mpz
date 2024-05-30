@@ -9,22 +9,24 @@ mod vm;
 
 use std::{
     collections::HashMap,
+    mem,
     ops::DerefMut,
     sync::{Arc, Mutex},
 };
 
-use futures::{Sink, SinkExt, Stream, StreamExt, TryFutureExt};
+use futures::TryFutureExt;
 use mpz_circuits::{
     types::{Value, ValueType},
     Circuit,
 };
+use mpz_common::{try_join, Context, Counter, ThreadId};
 use mpz_core::{
     commit::{Decommitment, HashCommit},
     hash::{Hash, SecureHash},
 };
-use mpz_garble_core::{msg::GarbleMessage, EqualityCheck};
+use mpz_garble_core::EqualityCheck;
 use rand::thread_rng;
-use utils_aio::expect_msg_or_err;
+use serio::{stream::IoStreamExt, SinkExt};
 
 use crate::{
     config::{Role, Visibility},
@@ -37,7 +39,7 @@ use crate::{
 };
 
 pub use error::{DEAPError, PeerEncodingsError};
-pub use vm::{DEAPThread, DEAPVm, PeerEncodings};
+pub use vm::{DEAPThread, PeerEncodings};
 
 use self::error::FinalizationError;
 
@@ -54,38 +56,49 @@ pub struct DEAP {
 #[derive(Debug, Default)]
 struct State {
     memory: ValueMemory,
+    logs: HashMap<ThreadId, ThreadLog>,
+}
 
+#[derive(Debug, Default)]
+struct ThreadLog {
+    /// A counter for the number of operations performed by the thread.
+    operation_counter: Counter,
     /// Equality check decommitments withheld by the leader
     /// prior to finalization
-    ///
-    /// Operation ID => Equality check decommitment
-    eq_decommitments: HashMap<String, Decommitment<EqualityCheck>>,
+    eq_decommitments: Vec<Decommitment<EqualityCheck>>,
     /// Equality check commitments from the leader
     ///
-    /// Operation ID => (Expected eq. check value, hash commitment from leader)
-    eq_commitments: HashMap<String, (EqualityCheck, Hash)>,
+    /// (Expected eq. check value, hash commitment from leader)
+    eq_commitments: Vec<(EqualityCheck, Hash)>,
     /// Proof decommitments withheld by the leader
     /// prior to finalization
     ///
-    /// Operation ID => GC output hash decommitment
-    proof_decommitments: HashMap<String, Decommitment<Hash>>,
+    /// GC output hash decommitment
+    proof_decommitments: Vec<Decommitment<Hash>>,
     /// Proof commitments from the leader
     ///
-    /// Operation ID => (Expected GC output hash, hash commitment from leader)
-    proof_commitments: HashMap<String, (Hash, Hash)>,
+    /// (Expected GC output hash, hash commitment from leader)
+    proof_commitments: Vec<(Hash, Hash)>,
 }
 
+#[derive(Default)]
 struct FinalizedState {
     /// Equality check decommitments withheld by the leader
     /// prior to finalization
-    eq_decommitments: Vec<(String, Decommitment<EqualityCheck>)>,
+    eq_decommitments: Vec<Decommitment<EqualityCheck>>,
     /// Equality check commitments from the leader
-    eq_commitments: Vec<(String, (EqualityCheck, Hash))>,
+    ///
+    /// (Expected eq. check value, hash commitment from leader)
+    eq_commitments: Vec<(EqualityCheck, Hash)>,
     /// Proof decommitments withheld by the leader
     /// prior to finalization
-    proof_decommitments: Vec<(String, Decommitment<Hash>)>,
+    ///
+    /// GC output hash decommitment
+    proof_decommitments: Vec<Decommitment<Hash>>,
     /// Proof commitments from the leader
-    proof_commitments: Vec<(String, (Hash, Hash))>,
+    ///
+    /// (Expected GC output hash, hash commitment from leader)
+    proof_commitments: Vec<(Hash, Hash)>,
 }
 
 impl DEAP {
@@ -135,28 +148,40 @@ impl DEAP {
     /// * `outputs` - The outputs of the circuit.
     /// * `sink` - The sink to send messages to.
     /// * `stream` - The stream to receive messages from.
-    pub async fn load<T, U>(
+    #[tracing::instrument(fields(role = %self.role, thread = %ctx.id()), skip_all)]
+    pub async fn load<Ctx: Context>(
         &self,
+        ctx: &mut Ctx,
         circ: Arc<Circuit>,
         inputs: &[ValueRef],
         outputs: &[ValueRef],
-        sink: &mut T,
-        stream: &mut U,
-    ) -> Result<(), DEAPError>
-    where
-        T: Sink<GarbleMessage, Error = std::io::Error> + Unpin,
-        U: Stream<Item = Result<GarbleMessage, std::io::Error>> + Unpin,
-    {
+    ) -> Result<(), DEAPError> {
         // Generate and receive concurrently.
         // Drop the encoded outputs, we don't need them here
-        _ = futures::try_join!(
-            self.gen
-                .generate(circ.clone(), inputs, outputs, sink, false)
-                .map_err(DEAPError::from),
-            self.ev
-                .receive_garbled_circuit(circ.clone(), inputs, outputs, stream)
-                .map_err(DEAPError::from)
-        )?;
+        match self.role {
+            Role::Leader => {
+                try_join!(
+                    ctx,
+                    self.gen
+                        .generate(ctx, circ.clone(), inputs, outputs, false)
+                        .map_err(DEAPError::from),
+                    self.ev
+                        .receive_garbled_circuit(ctx, circ.clone(), inputs, outputs)
+                        .map_err(DEAPError::from)
+                )??;
+            }
+            Role::Follower => {
+                try_join!(
+                    ctx,
+                    self.ev
+                        .receive_garbled_circuit(ctx, circ.clone(), inputs, outputs)
+                        .map_err(DEAPError::from),
+                    self.gen
+                        .generate(ctx, circ.clone(), inputs, outputs, false)
+                        .map_err(DEAPError::from)
+                )??;
+            }
+        }
 
         Ok(())
     }
@@ -174,53 +199,75 @@ impl DEAP {
     /// * `ot_send` - The OT sender.
     /// * `ot_recv` - The OT receiver.
     #[allow(clippy::too_many_arguments)]
-    pub async fn execute<T, U, OTS, OTR>(
+    #[tracing::instrument(fields(role = %self.role, thread = %ctx.id()), skip_all)]
+    pub async fn execute<Ctx, OTS, OTR>(
         &self,
-        id: &str,
+        ctx: &mut Ctx,
         circ: Arc<Circuit>,
         inputs: &[ValueRef],
         outputs: &[ValueRef],
-        sink: &mut T,
-        stream: &mut U,
-        ot_send: &OTS,
-        ot_recv: &OTR,
+        ot_send: &mut OTS,
+        ot_recv: &mut OTR,
     ) -> Result<(), DEAPError>
     where
-        T: Sink<GarbleMessage, Error = std::io::Error> + Unpin,
-        U: Stream<Item = Result<GarbleMessage, std::io::Error>> + Unpin,
-        OTS: OTSendEncoding,
-        OTR: OTReceiveEncoding,
+        Ctx: Context,
+        OTS: OTSendEncoding<Ctx> + Send,
+        OTR: OTReceiveEncoding<Ctx> + Send,
     {
         let assigned_values = self.state().memory.drain_assigned(inputs);
 
-        let id_0 = format!("{}/0", id);
-        let id_1 = format!("{}/1", id);
+        match self.role {
+            Role::Leader => {
+                try_join! {
+                    ctx,
+                    async {
+                        self.gen
+                            .setup_assigned_values(ctx, &assigned_values, ot_send)
+                            .await?;
 
-        let (gen_id, ev_id) = match self.role {
-            Role::Leader => (id_0, id_1),
-            Role::Follower => (id_1, id_0),
+                        self.gen
+                            .generate(ctx, circ.clone(), inputs, outputs, false)
+                            .await
+                            .map_err(DEAPError::from)
+                    },
+                    async {
+                        self.ev
+                            .setup_assigned_values(ctx, &assigned_values, ot_recv)
+                            .await?;
+
+                        self.ev
+                            .evaluate(ctx, circ.clone(), inputs, outputs)
+                            .await
+                            .map_err(DEAPError::from)
+                    }
+                }??;
+            }
+            Role::Follower => {
+                try_join! {
+                    ctx,
+                    async {
+                        self.ev
+                            .setup_assigned_values(ctx, &assigned_values, ot_recv)
+                            .await?;
+
+                        self.ev
+                            .evaluate(ctx, circ.clone(), inputs, outputs)
+                            .await
+                            .map_err(DEAPError::from)
+                    },
+                    async {
+                        self.gen
+                            .setup_assigned_values(ctx, &assigned_values, ot_send)
+                            .await?;
+
+                        self.gen
+                            .generate(ctx, circ.clone(), inputs, outputs, false)
+                            .await
+                            .map_err(DEAPError::from)
+                    }
+                }??;
+            }
         };
-
-        // Setup inputs concurrently.
-        futures::try_join!(
-            self.gen
-                .setup_assigned_values(&gen_id, &assigned_values, sink, ot_send)
-                .map_err(DEAPError::from),
-            self.ev
-                .setup_assigned_values(&ev_id, &assigned_values, stream, ot_recv)
-                .map_err(DEAPError::from)
-        )?;
-
-        // Generate and evaluate concurrently.
-        // Drop the encoded outputs, we don't need them here
-        _ = futures::try_join!(
-            self.gen
-                .generate(circ.clone(), inputs, outputs, sink, false)
-                .map_err(DEAPError::from),
-            self.ev
-                .evaluate(circ.clone(), inputs, outputs, stream)
-                .map_err(DEAPError::from)
-        )?;
 
         Ok(())
     }
@@ -245,18 +292,18 @@ impl DEAP {
     /// * `stream` - The stream to receive messages from.
     /// * `ot_recv` - The OT receiver.
     #[allow(clippy::too_many_arguments)]
-    pub async fn execute_prove<S, OTR>(
+    #[tracing::instrument(fields(role = %self.role, thread = %ctx.id()), skip_all)]
+    pub async fn execute_prove<Ctx, OTR>(
         &self,
-        id: &str,
+        ctx: &mut Ctx,
         circ: Arc<Circuit>,
         inputs: &[ValueRef],
         outputs: &[ValueRef],
-        stream: &mut S,
-        ot_recv: &OTR,
+        ot_recv: &mut OTR,
     ) -> Result<(), DEAPError>
     where
-        S: Stream<Item = Result<GarbleMessage, std::io::Error>> + Unpin,
-        OTR: OTReceiveEncoding,
+        Ctx: Context,
+        OTR: OTReceiveEncoding<Ctx> + Send,
     {
         if matches!(self.role, Role::Follower) {
             return Err(DEAPError::RoleError(
@@ -269,12 +316,12 @@ impl DEAP {
         // The prover only acts as the evaluator for ZKPs instead of
         // dual-execution.
         self.ev
-            .setup_assigned_values(id, &assigned_values, stream, ot_recv)
+            .setup_assigned_values(ctx, &assigned_values, ot_recv)
             .map_err(DEAPError::from)
             .await?;
 
         self.ev
-            .evaluate(circ, inputs, outputs, stream)
+            .evaluate(ctx, circ, inputs, outputs)
             .map_err(DEAPError::from)
             .await?;
 
@@ -296,18 +343,18 @@ impl DEAP {
     /// * `sink` - The sink to send messages to.
     /// * `ot_send` - The OT sender.
     #[allow(clippy::too_many_arguments)]
-    pub async fn execute_verify<T, OTS>(
+    #[tracing::instrument(fields(role = %self.role, thread = %ctx.id()), skip_all)]
+    pub async fn execute_verify<Ctx, OTS>(
         &self,
-        id: &str,
+        ctx: &mut Ctx,
         circ: Arc<Circuit>,
         inputs: &[ValueRef],
         outputs: &[ValueRef],
-        sink: &mut T,
-        ot_send: &OTS,
+        ot_send: &mut OTS,
     ) -> Result<(), DEAPError>
     where
-        T: Sink<GarbleMessage, Error = std::io::Error> + Unpin,
-        OTS: OTSendEncoding,
+        Ctx: Context,
+        OTS: OTSendEncoding<Ctx> + Send,
     {
         if matches!(self.role, Role::Leader) {
             return Err(DEAPError::RoleError(
@@ -320,12 +367,12 @@ impl DEAP {
         // The verifier only acts as the generator for ZKPs instead of
         // dual-execution.
         self.gen
-            .setup_assigned_values(id, &assigned_values, sink, ot_send)
+            .setup_assigned_values(ctx, &assigned_values, ot_send)
             .map_err(DEAPError::from)
             .await?;
 
         self.gen
-            .generate(circ.clone(), inputs, outputs, sink, false)
+            .generate(ctx, circ.clone(), inputs, outputs, false)
             .map_err(DEAPError::from)
             .await?;
 
@@ -333,12 +380,15 @@ impl DEAP {
     }
 
     /// Sends a commitment to the provided values, proving them to the follower upon finalization.
-    pub async fn defer_prove<S: Sink<GarbleMessage, Error = std::io::Error> + Unpin>(
+    #[tracing::instrument(fields(role = %self.role, thread = %ctx.id()), skip_all)]
+    pub async fn defer_prove<Ctx>(
         &self,
-        id: &str,
+        ctx: &mut Ctx,
         values: &[ValueRef],
-        sink: &mut S,
-    ) -> Result<(), DEAPError> {
+    ) -> Result<(), DEAPError>
+    where
+        Ctx: Context,
+    {
         let encoded_values = self.ev.get_encodings(values)?;
 
         let encoding_digest = encoded_values.hash();
@@ -346,10 +396,11 @@ impl DEAP {
 
         // Store output proof decommitment until finalization
         self.state()
+            .log(ctx.id())
             .proof_decommitments
-            .insert(id.to_string(), decommitment);
+            .push(decommitment);
 
-        sink.send(GarbleMessage::HashCommitment(commitment)).await?;
+        ctx.io_mut().send(commitment).await?;
 
         Ok(())
     }
@@ -366,13 +417,16 @@ impl DEAP {
     /// * `values` - The values to receive a commitment to
     /// * `expected_values` - The expected values which will be verified against the commitment
     /// * `stream` - The stream to receive messages from
-    pub async fn defer_verify<S: Stream<Item = Result<GarbleMessage, std::io::Error>> + Unpin>(
+    #[tracing::instrument(fields(role = %self.role, thread = %ctx.id()), skip_all)]
+    pub async fn defer_verify<Ctx>(
         &self,
-        id: &str,
+        ctx: &mut Ctx,
         values: &[ValueRef],
         expected_values: &[Value],
-        stream: &mut S,
-    ) -> Result<(), DEAPError> {
+    ) -> Result<(), DEAPError>
+    where
+        Ctx: Context,
+    {
         let encoded_values = self.gen.get_encodings(values)?;
 
         let expected_values = expected_values
@@ -383,12 +437,13 @@ impl DEAP {
 
         let expected_digest = expected_values.hash();
 
-        let commitment = expect_msg_or_err!(stream, GarbleMessage::HashCommitment)?;
+        let commitment: Hash = ctx.io_mut().expect_next().await?;
 
         // Store commitment to proof until finalization
         self.state()
+            .log(ctx.id())
             .proof_commitments
-            .insert(id.to_string(), (expected_digest, commitment));
+            .push((expected_digest, commitment));
 
         Ok(())
     }
@@ -409,16 +464,14 @@ impl DEAP {
     /// * `values` - The values to decode
     /// * `sink` - The sink to send messages to.
     /// * `stream` - The stream to receive messages from.
-    pub async fn decode<T, U>(
+    #[tracing::instrument(fields(role = %self.role, thread = %ctx.id()), skip_all)]
+    pub async fn decode<Ctx>(
         &self,
-        id: &str,
+        ctx: &mut Ctx,
         values: &[ValueRef],
-        sink: &mut T,
-        stream: &mut U,
     ) -> Result<Vec<Value>, DEAPError>
     where
-        T: Sink<GarbleMessage, Error = std::io::Error> + Unpin,
-        U: Stream<Item = Result<GarbleMessage, std::io::Error>> + Unpin,
+        Ctx: Context,
     {
         let full = values
             .iter()
@@ -439,10 +492,24 @@ impl DEAP {
             .collect::<Result<Vec<_>, _>>()?;
 
         // Decode concurrently.
-        let (_, purported_values) = futures::try_join!(
-            self.gen.decode(values, sink).map_err(DEAPError::from),
-            self.ev.decode(values, stream).map_err(DEAPError::from),
-        )?;
+        let purported_values = match self.role {
+            Role::Leader => {
+                let (_, purported_values) = try_join!(
+                    ctx,
+                    self.gen.decode(ctx, values).map_err(DEAPError::from),
+                    self.ev.decode(ctx, values).map_err(DEAPError::from)
+                )??;
+                purported_values
+            }
+            Role::Follower => {
+                let (purported_values, _) = try_join!(
+                    ctx,
+                    self.ev.decode(ctx, values).map_err(DEAPError::from),
+                    self.gen.decode(ctx, values).map_err(DEAPError::from)
+                )??;
+                purported_values
+            }
+        };
 
         let eq_check = EqualityCheck::new(
             &full,
@@ -460,14 +527,15 @@ impl DEAP {
 
                 // Store equality check decommitment until finalization
                 self.state()
+                    .log(ctx.id())
                     .eq_decommitments
-                    .insert(id.to_string(), decommitment);
+                    .push(decommitment);
 
                 // Send commitment to equality check to follower
-                sink.send(GarbleMessage::HashCommitment(commit)).await?;
+                ctx.io_mut().send(commit).await?;
 
                 // Receive the active encoded outputs from the follower
-                let active = expect_msg_or_err!(stream, GarbleMessage::ActiveValues)?;
+                let active: Vec<_> = ctx.io_mut().expect_next().await?;
 
                 // Authenticate and decode values
                 active
@@ -478,15 +546,16 @@ impl DEAP {
             }
             Role::Follower => {
                 // Receive equality check commitment from leader
-                let commit = expect_msg_or_err!(stream, GarbleMessage::HashCommitment)?;
+                let commit: Hash = ctx.io_mut().expect_next().await?;
 
                 // Store equality check commitment until finalization
                 self.state()
+                    .log(ctx.id())
                     .eq_commitments
-                    .insert(id.to_string(), (eq_check, commit));
+                    .push((eq_check, commit));
 
                 // Send active encoded values to leader
-                sink.send(GarbleMessage::ActiveValues(active)).await?;
+                ctx.io_mut().send(active).await?;
 
                 // Assume purported values are correct until finalization
                 purported_values
@@ -496,21 +565,20 @@ impl DEAP {
         Ok(output)
     }
 
-    pub(crate) async fn decode_private<T, U, OTS, OTR>(
+    #[tracing::instrument(fields(role = %self.role, thread = %ctx.id()), skip_all)]
+    pub(crate) async fn decode_private<Ctx, OTS, OTR>(
         &self,
-        id: &str,
+        ctx: &mut Ctx,
         values: &[ValueRef],
-        sink: &mut T,
-        stream: &mut U,
-        ot_send: &OTS,
-        ot_recv: &OTR,
+        ot_send: &mut OTS,
+        ot_recv: &mut OTR,
     ) -> Result<Vec<Value>, DEAPError>
     where
-        T: Sink<GarbleMessage, Error = std::io::Error> + Unpin,
-        U: Stream<Item = Result<GarbleMessage, std::io::Error>> + Unpin,
-        OTS: OTSendEncoding,
-        OTR: OTReceiveEncoding,
+        Ctx: Context,
+        OTS: OTSendEncoding<Ctx> + Send,
+        OTR: OTReceiveEncoding<Ctx> + Send,
     {
+        let id = self.state().log(ctx.id()).operation_counter.next();
         let (((otp_refs, otp_typs), otp_values), mask_refs): (((Vec<_>, Vec<_>), Vec<_>), Vec<_>) = {
             let mut state = self.state();
 
@@ -538,13 +606,11 @@ impl DEAP {
             .cloned()
             .collect::<Vec<_>>();
 
-        self.execute(
-            id, circ, &inputs, &mask_refs, sink, stream, ot_send, ot_recv,
-        )
-        .await?;
+        self.execute(ctx, circ, &inputs, &mask_refs, ot_send, ot_recv)
+            .await?;
 
         // Decode masked values
-        let masked_values = self.decode(id, &mask_refs, sink, stream).await?;
+        let masked_values = self.decode(ctx, &mask_refs).await?;
 
         // Remove OTPs, returning plaintext values
         Ok(masked_values
@@ -554,21 +620,20 @@ impl DEAP {
             .collect())
     }
 
-    pub(crate) async fn decode_blind<T, U, OTS, OTR>(
+    #[tracing::instrument(fields(role = %self.role, thread = %ctx.id()), skip_all)]
+    pub(crate) async fn decode_blind<Ctx, OTS, OTR>(
         &self,
-        id: &str,
+        ctx: &mut Ctx,
         values: &[ValueRef],
-        sink: &mut T,
-        stream: &mut U,
-        ot_send: &OTS,
-        ot_recv: &OTR,
+        ot_send: &mut OTS,
+        ot_recv: &mut OTR,
     ) -> Result<(), DEAPError>
     where
-        T: Sink<GarbleMessage, Error = std::io::Error> + Unpin,
-        U: Stream<Item = Result<GarbleMessage, std::io::Error>> + Unpin,
-        OTS: OTSendEncoding,
-        OTR: OTReceiveEncoding,
+        Ctx: Context,
+        OTS: OTSendEncoding<Ctx> + Send,
+        OTR: OTReceiveEncoding<Ctx> + Send,
     {
+        let id = self.state().log(ctx.id()).operation_counter.next();
         let ((otp_refs, otp_typs), mask_refs): ((Vec<_>, Vec<_>), Vec<_>) = {
             let mut state = self.state();
 
@@ -594,32 +659,29 @@ impl DEAP {
             .cloned()
             .collect::<Vec<_>>();
 
-        self.execute(
-            id, circ, &inputs, &mask_refs, sink, stream, ot_send, ot_recv,
-        )
-        .await?;
+        self.execute(ctx, circ, &inputs, &mask_refs, ot_send, ot_recv)
+            .await?;
 
         // Discard masked values
-        _ = self.decode(id, &mask_refs, sink, stream).await?;
+        _ = self.decode(ctx, &mask_refs).await?;
 
         Ok(())
     }
 
-    pub(crate) async fn decode_shared<T, U, OTS, OTR>(
+    #[tracing::instrument(fields(role = %self.role, thread = %ctx.id()), skip_all)]
+    pub(crate) async fn decode_shared<Ctx, OTS, OTR>(
         &self,
-        id: &str,
+        ctx: &mut Ctx,
         values: &[ValueRef],
-        sink: &mut T,
-        stream: &mut U,
-        ot_send: &OTS,
-        ot_recv: &OTR,
+        ot_send: &mut OTS,
+        ot_recv: &mut OTR,
     ) -> Result<Vec<Value>, DEAPError>
     where
-        T: Sink<GarbleMessage, Error = std::io::Error> + Unpin,
-        U: Stream<Item = Result<GarbleMessage, std::io::Error>> + Unpin,
-        OTS: OTSendEncoding,
-        OTR: OTReceiveEncoding,
+        Ctx: Context,
+        OTS: OTSendEncoding<Ctx> + Send,
+        OTR: OTReceiveEncoding<Ctx> + Send,
     {
+        let id = self.state().log(ctx.id()).operation_counter.next();
         #[allow(clippy::type_complexity)]
         let ((((otp_0_refs, otp_1_refs), otp_typs), otp_values), mask_refs): (
             (((Vec<_>, Vec<_>), Vec<_>), Vec<_>),
@@ -666,13 +728,11 @@ impl DEAP {
             .cloned()
             .collect::<Vec<_>>();
 
-        self.execute(
-            id, circ, &inputs, &mask_refs, sink, stream, ot_send, ot_recv,
-        )
-        .await?;
+        self.execute(ctx, circ, &inputs, &mask_refs, ot_send, ot_recv)
+            .await?;
 
         // Decode masked values
-        let masked_values = self.decode(id, &mask_refs, sink, stream).await?;
+        let masked_values = self.decode(ctx, &mask_refs).await?;
 
         match self.role {
             Role::Leader => {
@@ -711,16 +771,16 @@ impl DEAP {
     ///
     /// - `channel` - The channel to communicate with the other party
     /// - `ot` - The OT verifier to use
-    pub async fn finalize<
-        T: Sink<GarbleMessage, Error = std::io::Error> + Unpin,
-        U: Stream<Item = Result<GarbleMessage, std::io::Error>> + Unpin,
-        OT: OTVerifyEncoding,
-    >(
+    #[tracing::instrument(fields(role = %self.role, thread = %ctx.id()), skip_all)]
+    pub async fn finalize<Ctx, OT>(
         &mut self,
-        sink: &mut T,
-        stream: &mut U,
-        ot: &OT,
-    ) -> Result<Option<[u8; 32]>, DEAPError> {
+        ctx: &mut Ctx,
+        ot: &mut OT,
+    ) -> Result<Option<[u8; 32]>, DEAPError>
+    where
+        Ctx: Context,
+        OT: OTVerifyEncoding<Ctx>,
+    {
         if self.finalized {
             return Err(FinalizationError::AlreadyFinalized)?;
         } else {
@@ -737,52 +797,35 @@ impl DEAP {
         match self.role {
             Role::Leader => {
                 // Receive the encoder seed from the follower.
-                let encoder_seed = expect_msg_or_err!(stream, GarbleMessage::EncoderSeed)?;
-
-                let encoder_seed: [u8; 32] = encoder_seed
-                    .try_into()
-                    .map_err(|_| FinalizationError::InvalidEncoderSeed)?;
+                let encoder_seed: [u8; 32] = ctx.io_mut().expect_next().await?;
 
                 // Verify all oblivious transfers, garbled circuits and decodings
                 // sent by the follower.
-                self.ev.verify(encoder_seed, ot).await?;
+                self.ev.verify(ctx, encoder_seed, ot).await?;
 
-                // Reveal the equality check decommitments to the follower.
-                sink.send(GarbleMessage::EqualityCheckDecommitments(
-                    eq_decommitments
-                        .into_iter()
-                        .map(|(_, decommitment)| decommitment)
-                        .collect(),
-                ))
-                .await?;
-
-                // Reveal the proof decommitments to the follower.
-                sink.send(GarbleMessage::ProofDecommitments(
-                    proof_decommitments
-                        .into_iter()
-                        .map(|(_, decommitment)| decommitment)
-                        .collect(),
-                ))
-                .await?;
+                // Reveal the equality checks and proofs to the follower.
+                ctx.io_mut().feed(eq_decommitments).await?;
+                ctx.io_mut().send(proof_decommitments).await?;
 
                 Ok(Some(encoder_seed))
             }
             Role::Follower => {
-                let encoder_seed = self.gen.seed();
+                let encoder_seed: [u8; 32] = self
+                    .gen
+                    .seed()
+                    .try_into()
+                    .expect("encoder seed is 32 bytes");
 
-                sink.send(GarbleMessage::EncoderSeed(encoder_seed.to_vec()))
-                    .await?;
+                ctx.io_mut().send(encoder_seed).await?;
 
-                // Receive the equality check decommitments from the leader.
-                let eq_decommitments =
-                    expect_msg_or_err!(stream, GarbleMessage::EqualityCheckDecommitments)?;
-
-                // Receive the proof decommitments from the leader.
-                let proof_decommitments =
-                    expect_msg_or_err!(stream, GarbleMessage::ProofDecommitments)?;
+                // Receive the equality checks and proofs from the leader.
+                let eq_decommitments: Vec<Decommitment<EqualityCheck>> =
+                    ctx.io_mut().expect_next().await?;
+                let proof_decommitments: Vec<Decommitment<Hash>> =
+                    ctx.io_mut().expect_next().await?;
 
                 // Verify all equality checks.
-                for (decommitment, (_, (expected_check, commitment))) in
+                for (decommitment, (expected_check, commitment)) in
                     eq_decommitments.iter().zip(eq_commitments.iter())
                 {
                     decommitment
@@ -795,7 +838,7 @@ impl DEAP {
                 }
 
                 // Verify all proofs.
-                for (decommitment, (_, (expected_digest, commitment))) in
+                for (decommitment, (expected_digest, commitment)) in
                     proof_decommitments.iter().zip(proof_commitments.iter())
                 {
                     decommitment
@@ -819,6 +862,10 @@ impl DEAP {
 }
 
 impl State {
+    fn log(&mut self, id: &ThreadId) -> &mut ThreadLog {
+        self.logs.entry(id.clone()).or_default()
+    }
+
     pub(crate) fn new_private_otp(&mut self, id: &str, value_ref: &ValueRef) -> (ValueRef, Value) {
         let typ = self.memory.get_value_type(value_ref);
         let value = Value::random(&mut thread_rng(), &typ);
@@ -857,40 +904,35 @@ impl State {
 
     /// Drain the states to be finalized.
     fn finalize_state(&mut self) -> FinalizedState {
-        let (
-            mut eq_decommitments,
-            mut eq_commitments,
-            mut proof_decommitments,
-            mut proof_commitments,
-        ) = {
-            (
-                self.eq_decommitments.drain().collect::<Vec<_>>(),
-                self.eq_commitments.drain().collect::<Vec<_>>(),
-                self.proof_decommitments.drain().collect::<Vec<_>>(),
-                self.proof_commitments.drain().collect::<Vec<_>>(),
-            )
-        };
+        let mut logs = mem::take(&mut self.logs).into_iter().collect::<Vec<_>>();
+        logs.sort_by_cached_key(|(id, _)| id.clone());
 
-        // Sort the decommitments and commitments by id
-        eq_decommitments.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
-        eq_commitments.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
-        proof_decommitments.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
-        proof_commitments.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+        logs.into_iter()
+            .fold(FinalizedState::default(), |mut state, (_, log)| {
+                let ThreadLog {
+                    eq_commitments,
+                    eq_decommitments,
+                    proof_commitments,
+                    proof_decommitments,
+                    ..
+                } = log;
 
-        FinalizedState {
-            eq_decommitments,
-            eq_commitments,
-            proof_decommitments,
-            proof_commitments,
-        }
+                state.eq_commitments.extend(eq_commitments);
+                state.eq_decommitments.extend(eq_decommitments);
+                state.proof_commitments.extend(proof_commitments);
+                state.proof_decommitments.extend(proof_decommitments);
+
+                state
+            })
     }
 }
 
 #[cfg(test)]
 mod tests {
     use mpz_circuits::{circuits::AES128, ops::WrappingAdd, CircuitBuilder};
-    use mpz_ot::ideal::ideal_ot_shared_pair;
-    use utils_aio::duplex::MemoryDuplex;
+    use mpz_common::executor::test_st_executor;
+    use mpz_core::Block;
+    use mpz_ot::ideal::ot::ideal_ot;
 
     use crate::Memory;
 
@@ -911,9 +953,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_deap() {
-        let (leader_channel, follower_channel) = MemoryDuplex::<GarbleMessage>::new();
-        let (leader_ot_send, follower_ot_recv) = ideal_ot_shared_pair();
-        let (follower_ot_send, leader_ot_recv) = ideal_ot_shared_pair();
+        let (mut ctx_a, mut ctx_b) = test_st_executor(8);
+        let (mut leader_ot_send, mut follower_ot_recv) = ideal_ot();
+        let (mut follower_ot_send, mut leader_ot_recv) = ideal_ot();
 
         let mut leader = DEAP::new(Role::Leader, [42u8; 32]);
         let mut follower = DEAP::new(Role::Follower, [69u8; 32]);
@@ -922,8 +964,6 @@ mod tests {
         let msg = [69u8; 16];
 
         let leader_fut = {
-            let (mut sink, mut stream) = leader_channel.split();
-
             let key_ref = leader.new_private_input::<[u8; 16]>("key").unwrap();
             let msg_ref = leader.new_blind_input::<[u8; 16]>("msg").unwrap();
             let ciphertext_ref = leader.new_output::<[u8; 16]>("ciphertext").unwrap();
@@ -933,25 +973,20 @@ mod tests {
             async move {
                 leader
                     .execute(
-                        "test",
+                        &mut ctx_a,
                         AES128.clone(),
                         &[key_ref, msg_ref],
                         &[ciphertext_ref.clone()],
-                        &mut sink,
-                        &mut stream,
-                        &leader_ot_send,
-                        &leader_ot_recv,
+                        &mut leader_ot_send,
+                        &mut leader_ot_recv,
                     )
                     .await
                     .unwrap();
 
-                let outputs = leader
-                    .decode("test", &[ciphertext_ref], &mut sink, &mut stream)
-                    .await
-                    .unwrap();
+                let outputs = leader.decode(&mut ctx_a, &[ciphertext_ref]).await.unwrap();
 
                 leader
-                    .finalize(&mut sink, &mut stream, &leader_ot_recv)
+                    .finalize(&mut ctx_a, &mut leader_ot_recv)
                     .await
                     .unwrap();
 
@@ -960,8 +995,6 @@ mod tests {
         };
 
         let follower_fut = {
-            let (mut sink, mut stream) = follower_channel.split();
-
             let key_ref = follower.new_blind_input::<[u8; 16]>("key").unwrap();
             let msg_ref = follower.new_private_input::<[u8; 16]>("msg").unwrap();
             let ciphertext_ref = follower.new_output::<[u8; 16]>("ciphertext").unwrap();
@@ -971,25 +1004,23 @@ mod tests {
             async move {
                 follower
                     .execute(
-                        "test",
+                        &mut ctx_b,
                         AES128.clone(),
                         &[key_ref, msg_ref],
                         &[ciphertext_ref.clone()],
-                        &mut sink,
-                        &mut stream,
-                        &follower_ot_send,
-                        &follower_ot_recv,
+                        &mut follower_ot_send,
+                        &mut follower_ot_recv,
                     )
                     .await
                     .unwrap();
 
                 let outputs = follower
-                    .decode("test", &[ciphertext_ref], &mut sink, &mut stream)
+                    .decode(&mut ctx_b, &[ciphertext_ref])
                     .await
                     .unwrap();
 
                 follower
-                    .finalize(&mut sink, &mut stream, &follower_ot_recv)
+                    .finalize(&mut ctx_b, &mut follower_ot_recv)
                     .await
                     .unwrap();
 
@@ -1004,9 +1035,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_deap_load() {
-        let (leader_channel, follower_channel) = MemoryDuplex::<GarbleMessage>::new();
-        let (leader_ot_send, follower_ot_recv) = ideal_ot_shared_pair();
-        let (follower_ot_send, leader_ot_recv) = ideal_ot_shared_pair();
+        let (mut ctx_a, mut ctx_b) = test_st_executor(8);
+        let (mut leader_ot_send, mut follower_ot_recv) = ideal_ot();
+        let (mut follower_ot_send, mut leader_ot_recv) = ideal_ot();
 
         let mut leader = DEAP::new(Role::Leader, [42u8; 32]);
         let mut follower = DEAP::new(Role::Follower, [69u8; 32]);
@@ -1015,8 +1046,6 @@ mod tests {
         let msg = [69u8; 16];
 
         let leader_fut = {
-            let (mut sink, mut stream) = leader_channel.split();
-
             let key_ref = leader.new_private_input::<[u8; 16]>("key").unwrap();
             let msg_ref = leader.new_blind_input::<[u8; 16]>("msg").unwrap();
             let ciphertext_ref = leader.new_output::<[u8; 16]>("ciphertext").unwrap();
@@ -1024,11 +1053,10 @@ mod tests {
             async move {
                 leader
                     .load(
+                        &mut ctx_a,
                         AES128.clone(),
                         &[key_ref.clone(), msg_ref.clone()],
                         &[ciphertext_ref.clone()],
-                        &mut sink,
-                        &mut stream,
                     )
                     .await
                     .unwrap();
@@ -1037,25 +1065,20 @@ mod tests {
 
                 leader
                     .execute(
-                        "test",
+                        &mut ctx_a,
                         AES128.clone(),
                         &[key_ref, msg_ref],
                         &[ciphertext_ref.clone()],
-                        &mut sink,
-                        &mut stream,
-                        &leader_ot_send,
-                        &leader_ot_recv,
+                        &mut leader_ot_send,
+                        &mut leader_ot_recv,
                     )
                     .await
                     .unwrap();
 
-                let outputs = leader
-                    .decode("test", &[ciphertext_ref], &mut sink, &mut stream)
-                    .await
-                    .unwrap();
+                let outputs = leader.decode(&mut ctx_a, &[ciphertext_ref]).await.unwrap();
 
                 leader
-                    .finalize(&mut sink, &mut stream, &leader_ot_recv)
+                    .finalize(&mut ctx_a, &mut leader_ot_recv)
                     .await
                     .unwrap();
 
@@ -1064,8 +1087,6 @@ mod tests {
         };
 
         let follower_fut = {
-            let (mut sink, mut stream) = follower_channel.split();
-
             let key_ref = follower.new_blind_input::<[u8; 16]>("key").unwrap();
             let msg_ref = follower.new_private_input::<[u8; 16]>("msg").unwrap();
             let ciphertext_ref = follower.new_output::<[u8; 16]>("ciphertext").unwrap();
@@ -1073,11 +1094,10 @@ mod tests {
             async move {
                 follower
                     .load(
+                        &mut ctx_b,
                         AES128.clone(),
                         &[key_ref.clone(), msg_ref.clone()],
                         &[ciphertext_ref.clone()],
-                        &mut sink,
-                        &mut stream,
                     )
                     .await
                     .unwrap();
@@ -1086,25 +1106,23 @@ mod tests {
 
                 follower
                     .execute(
-                        "test",
+                        &mut ctx_b,
                         AES128.clone(),
                         &[key_ref, msg_ref],
                         &[ciphertext_ref.clone()],
-                        &mut sink,
-                        &mut stream,
-                        &follower_ot_send,
-                        &follower_ot_recv,
+                        &mut follower_ot_send,
+                        &mut follower_ot_recv,
                     )
                     .await
                     .unwrap();
 
                 let outputs = follower
-                    .decode("test", &[ciphertext_ref], &mut sink, &mut stream)
+                    .decode(&mut ctx_b, &[ciphertext_ref])
                     .await
                     .unwrap();
 
                 follower
-                    .finalize(&mut sink, &mut stream, &follower_ot_recv)
+                    .finalize(&mut ctx_b, &mut follower_ot_recv)
                     .await
                     .unwrap();
 
@@ -1119,9 +1137,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_deap_decode_private() {
-        let (leader_channel, follower_channel) = MemoryDuplex::<GarbleMessage>::new();
-        let (leader_ot_send, follower_ot_recv) = ideal_ot_shared_pair();
-        let (follower_ot_send, leader_ot_recv) = ideal_ot_shared_pair();
+        tracing_subscriber::fmt::init();
+        let (mut ctx_a, mut ctx_b) = test_st_executor(8);
+        let (mut leader_ot_send, mut follower_ot_recv) = ideal_ot();
+        let (mut follower_ot_send, mut leader_ot_recv) = ideal_ot();
 
         let mut leader = DEAP::new(Role::Leader, [42u8; 32]);
         let mut follower = DEAP::new(Role::Follower, [69u8; 32]);
@@ -1133,7 +1152,6 @@ mod tests {
         let c: Value = (a + b).into();
 
         let leader_fut = {
-            let (mut sink, mut stream) = leader_channel.split();
             let circ = circ.clone();
             let a_ref = leader.new_private_input::<u8>("a").unwrap();
             let b_ref = leader.new_blind_input::<u8>("b").unwrap();
@@ -1144,32 +1162,28 @@ mod tests {
             async move {
                 leader
                     .execute(
-                        "test",
+                        &mut ctx_a,
                         circ,
                         &[a_ref, b_ref],
                         &[c_ref.clone()],
-                        &mut sink,
-                        &mut stream,
-                        &leader_ot_send,
-                        &leader_ot_recv,
+                        &mut leader_ot_send,
+                        &mut leader_ot_recv,
                     )
                     .await
                     .unwrap();
 
                 let outputs = leader
                     .decode_private(
-                        "test",
+                        &mut ctx_a,
                         &[c_ref],
-                        &mut sink,
-                        &mut stream,
-                        &leader_ot_send,
-                        &leader_ot_recv,
+                        &mut leader_ot_send,
+                        &mut leader_ot_recv,
                     )
                     .await
                     .unwrap();
 
                 leader
-                    .finalize(&mut sink, &mut stream, &leader_ot_recv)
+                    .finalize(&mut ctx_a, &mut leader_ot_recv)
                     .await
                     .unwrap();
 
@@ -1178,8 +1192,6 @@ mod tests {
         };
 
         let follower_fut = {
-            let (mut sink, mut stream) = follower_channel.split();
-
             let a_ref = follower.new_blind_input::<u8>("a").unwrap();
             let b_ref = follower.new_private_input::<u8>("b").unwrap();
             let c_ref = follower.new_output::<u8>("c").unwrap();
@@ -1189,34 +1201,27 @@ mod tests {
             async move {
                 follower
                     .execute(
-                        "test",
+                        &mut ctx_b,
                         circ.clone(),
                         &[a_ref, b_ref],
                         &[c_ref.clone()],
-                        &mut sink,
-                        &mut stream,
-                        &follower_ot_send,
-                        &follower_ot_recv,
+                        &mut follower_ot_send,
+                        &mut follower_ot_recv,
                     )
-                    .await
-                    .unwrap();
+                    .await?;
 
                 follower
                     .decode_blind(
-                        "test",
+                        &mut ctx_b,
                         &[c_ref],
-                        &mut sink,
-                        &mut stream,
-                        &follower_ot_send,
-                        &follower_ot_recv,
+                        &mut follower_ot_send,
+                        &mut follower_ot_recv,
                     )
-                    .await
-                    .unwrap();
+                    .await?;
 
-                follower
-                    .finalize(&mut sink, &mut stream, &follower_ot_recv)
-                    .await
-                    .unwrap();
+                follower.finalize(&mut ctx_b, &mut follower_ot_recv).await?;
+
+                Ok::<_, DEAPError>(())
             }
         };
 
@@ -1227,9 +1232,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_deap_decode_shared() {
-        let (leader_channel, follower_channel) = MemoryDuplex::<GarbleMessage>::new();
-        let (leader_ot_send, follower_ot_recv) = ideal_ot_shared_pair();
-        let (follower_ot_send, leader_ot_recv) = ideal_ot_shared_pair();
+        let (mut ctx_a, mut ctx_b) = test_st_executor(8);
+        let (mut leader_ot_send, mut follower_ot_recv) = ideal_ot();
+        let (mut follower_ot_send, mut leader_ot_recv) = ideal_ot();
 
         let mut leader = DEAP::new(Role::Leader, [42u8; 32]);
         let mut follower = DEAP::new(Role::Follower, [69u8; 32]);
@@ -1241,7 +1246,6 @@ mod tests {
         let c = a + b;
 
         let leader_fut = {
-            let (mut sink, mut stream) = leader_channel.split();
             let circ = circ.clone();
             let a_ref = leader.new_private_input::<u8>("a").unwrap();
             let b_ref = leader.new_blind_input::<u8>("b").unwrap();
@@ -1252,32 +1256,28 @@ mod tests {
             async move {
                 leader
                     .execute(
-                        "test",
+                        &mut ctx_a,
                         circ,
                         &[a_ref, b_ref],
                         &[c_ref.clone()],
-                        &mut sink,
-                        &mut stream,
-                        &leader_ot_send,
-                        &leader_ot_recv,
+                        &mut leader_ot_send,
+                        &mut leader_ot_recv,
                     )
                     .await
                     .unwrap();
 
                 let outputs = leader
                     .decode_shared(
-                        "test",
+                        &mut ctx_a,
                         &[c_ref],
-                        &mut sink,
-                        &mut stream,
-                        &leader_ot_send,
-                        &leader_ot_recv,
+                        &mut leader_ot_send,
+                        &mut leader_ot_recv,
                     )
                     .await
                     .unwrap();
 
                 leader
-                    .finalize(&mut sink, &mut stream, &leader_ot_recv)
+                    .finalize(&mut ctx_a, &mut leader_ot_recv)
                     .await
                     .unwrap();
 
@@ -1286,8 +1286,6 @@ mod tests {
         };
 
         let follower_fut = {
-            let (mut sink, mut stream) = follower_channel.split();
-
             let a_ref = follower.new_blind_input::<u8>("a").unwrap();
             let b_ref = follower.new_private_input::<u8>("b").unwrap();
             let c_ref = follower.new_output::<u8>("c").unwrap();
@@ -1297,32 +1295,28 @@ mod tests {
             async move {
                 follower
                     .execute(
-                        "test",
+                        &mut ctx_b,
                         circ.clone(),
                         &[a_ref, b_ref],
                         &[c_ref.clone()],
-                        &mut sink,
-                        &mut stream,
-                        &follower_ot_send,
-                        &follower_ot_recv,
+                        &mut follower_ot_send,
+                        &mut follower_ot_recv,
                     )
                     .await
                     .unwrap();
 
                 let outputs = follower
                     .decode_shared(
-                        "test",
+                        &mut ctx_b,
                         &[c_ref],
-                        &mut sink,
-                        &mut stream,
-                        &follower_ot_send,
-                        &follower_ot_recv,
+                        &mut follower_ot_send,
+                        &mut follower_ot_recv,
                     )
                     .await
                     .unwrap();
 
                 follower
-                    .finalize(&mut sink, &mut stream, &follower_ot_recv)
+                    .finalize(&mut ctx_b, &mut follower_ot_recv)
                     .await
                     .unwrap();
 
@@ -1365,15 +1359,14 @@ mod tests {
     }
 
     async fn run_zk(key: [u8; 16], msg: [u8; 16], expected_ciphertext: [u8; 16]) {
-        let (leader_channel, follower_channel) = MemoryDuplex::<GarbleMessage>::new();
-        let (_, follower_ot_recv) = ideal_ot_shared_pair();
-        let (follower_ot_send, leader_ot_recv) = ideal_ot_shared_pair();
+        let (mut ctx_a, mut ctx_b) = test_st_executor(8);
+        let (_, mut follower_ot_recv) = ideal_ot::<[Block; 2], _>();
+        let (mut follower_ot_send, mut leader_ot_recv) = ideal_ot();
 
         let mut leader = DEAP::new(Role::Leader, [42u8; 32]);
         let mut follower = DEAP::new(Role::Follower, [69u8; 32]);
 
         let leader_fut = {
-            let (mut sink, mut stream) = leader_channel.split();
             let key_ref = leader.new_private_input::<[u8; 16]>("key").unwrap();
             let msg_ref = leader.new_blind_input::<[u8; 16]>("msg").unwrap();
             let ciphertext_ref = leader.new_output::<[u8; 16]>("ciphertext").unwrap();
@@ -1383,30 +1376,28 @@ mod tests {
             async move {
                 leader
                     .execute_prove(
-                        "test0",
+                        &mut ctx_a,
                         AES128.clone(),
                         &[key_ref, msg_ref],
                         &[ciphertext_ref.clone()],
-                        &mut stream,
-                        &leader_ot_recv,
+                        &mut leader_ot_recv,
                     )
                     .await
                     .unwrap();
 
                 leader
-                    .defer_prove("test1", &[ciphertext_ref], &mut sink)
+                    .defer_prove(&mut ctx_a, &[ciphertext_ref])
                     .await
                     .unwrap();
 
                 leader
-                    .finalize(&mut sink, &mut stream, &leader_ot_recv)
+                    .finalize(&mut ctx_a, &mut leader_ot_recv)
                     .await
                     .unwrap();
             }
         };
 
         let follower_fut = {
-            let (mut sink, mut stream) = follower_channel.split();
             let key_ref = follower.new_blind_input::<[u8; 16]>("key").unwrap();
             let msg_ref = follower.new_private_input::<[u8; 16]>("msg").unwrap();
             let ciphertext_ref = follower.new_output::<[u8; 16]>("ciphertext").unwrap();
@@ -1416,28 +1407,22 @@ mod tests {
             async move {
                 follower
                     .execute_verify(
-                        "test0",
+                        &mut ctx_b,
                         AES128.clone(),
                         &[key_ref, msg_ref],
                         &[ciphertext_ref.clone()],
-                        &mut sink,
-                        &follower_ot_send,
+                        &mut follower_ot_send,
                     )
                     .await
                     .unwrap();
 
                 follower
-                    .defer_verify(
-                        "test1",
-                        &[ciphertext_ref],
-                        &[expected_ciphertext.into()],
-                        &mut stream,
-                    )
+                    .defer_verify(&mut ctx_b, &[ciphertext_ref], &[expected_ciphertext.into()])
                     .await
                     .unwrap();
 
                 follower
-                    .finalize(&mut sink, &mut stream, &follower_ot_recv)
+                    .finalize(&mut ctx_b, &mut follower_ot_recv)
                     .await
                     .unwrap();
             }

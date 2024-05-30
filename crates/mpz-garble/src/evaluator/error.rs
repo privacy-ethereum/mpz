@@ -8,6 +8,8 @@ pub enum EvaluatorError {
     CoreError(#[from] mpz_garble_core::EvaluatorError),
     #[error(transparent)]
     IOError(#[from] std::io::Error),
+    #[error("context error: {0}")]
+    ContextError(#[from] mpz_common::ContextError),
     // TODO: Fix the size of this error
     #[error(transparent)]
     OTError(Box<mpz_ot::OTError>),

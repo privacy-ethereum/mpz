@@ -1,4 +1,4 @@
-use mpz_garble_core::{msg::GarbleMessage, ValueError};
+use mpz_garble_core::ValueError;
 
 use crate::{value::ValueRef, DecodeError, ExecutionError, LoadError, ProveError, VerifyError};
 
@@ -8,10 +8,10 @@ use crate::{value::ValueRef, DecodeError, ExecutionError, LoadError, ProveError,
 pub enum DEAPError {
     #[error("role error: {0}")]
     RoleError(String),
-    #[error("unexpected message: {0:?}")]
-    UnexpectedMessage(GarbleMessage),
     #[error(transparent)]
     IOError(#[from] std::io::Error),
+    #[error("context error: {0}")]
+    ContextError(#[from] mpz_common::ContextError),
     #[error(transparent)]
     GeneratorError(#[from] crate::generator::GeneratorError),
     #[error(transparent)]
@@ -30,6 +30,8 @@ pub enum DEAPError {
 pub enum FinalizationError {
     #[error("DEAP instance already finalized")]
     AlreadyFinalized,
+    #[error("Only main thread can finalize DEAP instance")]
+    NotMainThread,
     #[error(transparent)]
     CommitmentError(#[from] mpz_core::commit::CommitmentError),
     #[error("invalid encoder seed")]

@@ -64,6 +64,19 @@ impl AsRef<[u8]> for ThreadId {
     }
 }
 
+impl fmt::Display for ThreadId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for (i, byte) in self.0.iter().enumerate() {
+            if i > 0 {
+                write!(f, "/")?;
+            }
+            write!(f, "{}", byte)?;
+        }
+
+        Ok(())
+    }
+}
+
 /// A simple counter.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Counter(u32);

@@ -13,6 +13,8 @@ pub enum GeneratorError {
     OTError(Box<mpz_ot::OTError>),
     #[error(transparent)]
     IOError(#[from] std::io::Error),
+    #[error("context error: {0}")]
+    ContextError(#[from] mpz_common::ContextError),
     #[error(transparent)]
     ValueError(#[from] ValueError),
     #[error("duplicate encoding for value: {0:?}")]

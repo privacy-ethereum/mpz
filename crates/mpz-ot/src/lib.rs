@@ -200,11 +200,7 @@ where
 /// An oblivious transfer sender that is committed to its messages and can reveal them
 /// to the receiver to verify them.
 #[async_trait]
-pub trait CommittedOTSender<Ctx, T>: OTSender<Ctx, T>
-where
-    Ctx: Context,
-    T: Send + Sync,
-{
+pub trait CommittedOTSender<Ctx, T>: OTSender<Ctx, T> {
     /// Reveals all messages sent to the receiver.
     ///
     /// # Warning
@@ -246,13 +242,7 @@ pub trait CommittedOTReceiver<Ctx, T, U>: OTReceiver<Ctx, T, U> {
 
 /// An oblivious transfer receiver that can verify the sender's messages.
 #[async_trait]
-pub trait VerifiableOTReceiver<Ctx, T, U, V>: OTReceiver<Ctx, T, U>
-where
-    Ctx: Context,
-    T: Send + Sync,
-    U: Send + Sync,
-    V: Send + Sync,
-{
+pub trait VerifiableOTReceiver<Ctx, T, U, V>: OTReceiver<Ctx, T, U> {
     /// Verifies purported messages sent by the sender.
     ///
     /// # Arguments

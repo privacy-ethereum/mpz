@@ -6,9 +6,6 @@ pub struct GeneratorConfig {
     /// Whether to send commitments to output encodings.
     #[builder(default = "false", setter(custom))]
     pub(crate) encoding_commitments: bool,
-    /// The batch size for encrypted gates sent to the evaluator.
-    #[builder(default = "1024")]
-    pub(crate) batch_size: usize,
 }
 
 impl GeneratorConfig {

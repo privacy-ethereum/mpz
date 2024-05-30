@@ -8,11 +8,11 @@ use mpz_common::{
     ideal::{ideal_f2p, Alice, Bob},
     Context,
 };
-use mpz_ot_core::ideal::ot::IdealOT;
+use mpz_ot_core::{ideal::ot::IdealOT, TransferId};
 
 use crate::{
-    CommittedOTReceiver, OTError, OTReceiver, OTReceiverOutput, OTSender, OTSenderOutput, OTSetup,
-    VerifiableOTSender,
+    CommittedOTReceiver, CommittedOTSender, OTError, OTReceiver, OTReceiverOutput, OTSender,
+    OTSenderOutput, OTSetup, VerifiableOTReceiver, VerifiableOTSender,
 };
 
 fn ot<T: Copy + Send + Sync + 'static>(
@@ -62,6 +62,15 @@ impl<Ctx: Context, T: Copy + Send + Sync + 'static> OTSender<Ctx, [T; 2]>
 }
 
 #[async_trait]
+impl<Ctx: Context, T: Copy + Send + Sync + 'static> CommittedOTSender<Ctx, [T; 2]>
+    for IdealOTSender<[T; 2]>
+{
+    async fn reveal(&mut self, _ctx: &mut Ctx) -> Result<(), OTError> {
+        Ok(())
+    }
+}
+
+#[async_trait]
 impl<Ctx: Context, T: Copy + Send + Sync + 'static> VerifiableOTSender<Ctx, bool, [T; 2]>
     for IdealOTSender<[T; 2]>
 {
@@ -103,5 +112,19 @@ impl<Ctx: Context, T: Copy + Send + Sync + 'static> CommittedOTReceiver<Ctx, boo
 {
     async fn reveal_choices(&mut self, ctx: &mut Ctx) -> Result<(), OTError> {
         Ok(self.0.call(ctx, (), verify).await)
+    }
+}
+
+#[async_trait]
+impl<Ctx: Context, U: Copy + Send + Sync + 'static, V> VerifiableOTReceiver<Ctx, bool, U, V>
+    for IdealOTReceiver<U>
+{
+    async fn verify(
+        &mut self,
+        _ctx: &mut Ctx,
+        _id: TransferId,
+        _msgs: &[V],
+    ) -> Result<(), OTError> {
+        Ok(())
     }
 }

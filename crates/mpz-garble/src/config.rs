@@ -1,11 +1,22 @@
 //! Various configuration used in the protocol
 
+use core::fmt;
+
 /// Role in 2PC.
 #[derive(Debug, Clone, Copy, PartialEq)]
 #[allow(missing_docs)]
 pub enum Role {
     Leader,
     Follower,
+}
+
+impl fmt::Display for Role {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Role::Leader => write!(f, "Leader"),
+            Role::Follower => write!(f, "Follower"),
+        }
+    }
 }
 
 /// Visibility of a value
