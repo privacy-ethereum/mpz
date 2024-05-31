@@ -1,21 +1,23 @@
-//! Message types used in share conversion protocols
+//! Message types used in share conversion.
 
-use crate::Share;
-use mpz_fields::Field;
-
+use crate::a2m::A2MMasks;
 use serde::{Deserialize, Serialize};
 
-/// The messages exchanged between sender and receiver
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Message type for sending [`A2MMasks`] to the receiver.
 #[allow(missing_docs)]
-pub enum ShareConversionMessage<T: Field> {
-    SenderRecordings(SenderRecordings<T>),
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Masks<F> {
+    pub masks: Vec<F>,
 }
 
-/// A message containing the sender's seed and the conversion inputs
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[allow(missing_docs)]
-pub struct SenderRecordings<T: Field> {
-    pub seed: Vec<u8>,
-    pub inputs: Vec<Share<T>>,
+impl<F> From<A2MMasks<F>> for Masks<F> {
+    fn from(value: A2MMasks<F>) -> Self {
+        Self { masks: value.0 }
+    }
+}
+
+impl<F> From<Masks<F>> for A2MMasks<F> {
+    fn from(value: Masks<F>) -> Self {
+        Self(value.masks)
+    }
 }
