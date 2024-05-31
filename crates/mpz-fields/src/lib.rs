@@ -8,13 +8,15 @@ pub mod gf2_128;
 pub mod p256;
 
 use std::{
+    error::Error,
     fmt::Debug,
     ops::{Add, Mul, Neg},
 };
 
-use hybrid_array::ArraySize;
+use hybrid_array::{Array, ArraySize};
 use itybity::{BitLength, FromBitIterator, GetBit, Lsb0, Msb0};
 use rand::{distributions::Standard, prelude::Distribution, Rng};
+use thiserror::Error;
 use typenum::Unsigned;
 
 /// A trait for finite fields.
@@ -38,12 +40,19 @@ pub trait Field:
     + GetBit<Msb0>
     + BitLength
     + Unpin
+    + TryFrom<Array<u8, Self::ByteSize>, Error = FieldError>
 {
     /// The number of bits of a field element.
     const BIT_SIZE: usize = <Self::BitSize as Unsigned>::USIZE;
 
+    /// The number of bytes of a field element.
+    const BYTE_SIZE: usize = <Self::ByteSize as Unsigned>::USIZE;
+
     /// The number of bits of a field element as a type number.
     type BitSize: ArraySize;
+
+    /// The number of bytes of a field element as a type number.
+    type ByteSize: ArraySize;
 
     /// Return the additive identity element.
     fn zero() -> Self;
@@ -63,6 +72,11 @@ pub trait Field:
     /// Return field element as big-endian bytes.
     fn to_be_bytes(&self) -> Vec<u8>;
 }
+
+/// Error type for finite fields.
+#[derive(Debug, Error)]
+#[error(transparent)]
+pub struct FieldError(Box<dyn Error + Send + Sync + 'static>);
 
 /// A trait for sampling random elements of the field.
 ///

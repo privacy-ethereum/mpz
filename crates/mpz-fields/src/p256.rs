@@ -4,14 +4,18 @@ use std::ops::{Add, Mul, Neg};
 
 use ark_ff::{BigInt, BigInteger, Field as ArkField, FpConfig, MontBackend, One, Zero};
 use ark_secp256r1::{fq::Fq, FqConfig};
-use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, Compress, Validate};
+use ark_serialize::{
+    CanonicalDeserialize, CanonicalSerialize, Compress, SerializationError, Validate,
+};
+use hybrid_array::Array;
 use itybity::{BitLength, FromBitIterator, GetBit, Lsb0, Msb0};
 use num_bigint::ToBigUint;
 use rand::{distributions::Standard, prelude::Distribution};
 use serde::{Deserialize, Serialize};
-use typenum::U256;
+use thiserror::Error;
+use typenum::{U256, U32};
 
-use crate::Field;
+use crate::{Field, FieldError};
 
 /// A type for holding field elements of P256.
 #[derive(Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Serialize, Deserialize)]
@@ -42,11 +46,23 @@ impl From<P256> for [u8; 32] {
 }
 
 impl TryFrom<[u8; 32]> for P256 {
-    type Error = ark_serialize::SerializationError;
+    type Error = FieldError;
 
     /// Converts little-endian bytes into a P256 field element.
     fn try_from(value: [u8; 32]) -> Result<Self, Self::Error> {
-        Fq::deserialize_with_mode(&value[..], Compress::No, Validate::Yes).map(P256)
+        Fq::deserialize_with_mode(&value[..], Compress::No, Validate::Yes)
+            .map(P256)
+            .map_err(|err| FieldError(Box::new(P256Error(err))))
+    }
+}
+
+impl TryFrom<Array<u8, U32>> for P256 {
+    type Error = FieldError;
+
+    fn try_from(value: Array<u8, U32>) -> Result<Self, Self::Error> {
+        let inner: [u8; 32] = value.into();
+
+        P256::try_from(inner)
     }
 }
 
@@ -82,6 +98,8 @@ impl Neg for P256 {
 
 impl Field for P256 {
     type BitSize = U256;
+
+    type ByteSize = U32;
 
     fn zero() -> Self {
         P256(<Fq as Zero>::zero())
@@ -138,6 +156,11 @@ impl FromBitIterator for P256 {
         P256(BigInt::from_bits_be(&iter.into_iter().collect::<Vec<bool>>()).into())
     }
 }
+
+/// Helper type because [`SerializationError`] does not implement std::error::Error.
+#[derive(Debug, Error)]
+#[error("{0}")]
+pub struct P256Error(SerializationError);
 
 #[cfg(test)]
 mod tests {

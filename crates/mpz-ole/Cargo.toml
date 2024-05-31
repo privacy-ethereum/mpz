@@ -1,0 +1,37 @@
+[package]
+name = "mpz-ole"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "mpz_ole"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[features]
+ideal = ["mpz-common/ideal"]
+
+[dependencies]
+mpz-fields.workspace = true
+mpz-ot.workspace = true
+mpz-core.workspace = true
+mpz-ole-core.workspace = true
+mpz-common.workspace = true
+
+serio.workspace = true
+
+thiserror.workspace = true
+async-trait.workspace = true
+futures.workspace = true
+rand.workspace = true
+itybity.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = [
+    "net",
+    "macros",
+    "rt",
+    "rt-multi-thread",
+] }
+mpz-common = { workspace = true, features = ["test-utils", "ideal"] }
+mpz-ot =  { workspace = true, features = ["ideal"] }

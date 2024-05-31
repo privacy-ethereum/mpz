@@ -96,6 +96,11 @@ impl<F: Field> OLEReceiver<F> {
 
         Some((receiver_adjust, adjustments))
     }
+
+    /// Returns the number of preprocessed OLEs that are available.
+    pub fn cache_size(&self) -> usize {
+        self.cache.len()
+    }
 }
 
 /// Receiver adjustments waiting for [`BatchAdjust`] from the sender.

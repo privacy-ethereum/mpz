@@ -1,15 +1,15 @@
 //! This module implements the extension field GF(2^128).
 
-use std::ops::{Add, Mul, Neg};
-
+use hybrid_array::Array;
 use itybity::{BitLength, FromBitIterator, GetBit, Lsb0, Msb0};
 use rand::{distributions::Standard, prelude::Distribution};
 use serde::{Deserialize, Serialize};
+use std::ops::{Add, Mul, Neg};
 
 use mpz_core::Block;
-use typenum::U128;
+use typenum::{U128, U16};
 
-use crate::Field;
+use crate::{Field, FieldError};
 
 /// A type for holding field elements of Gf(2^128).
 #[derive(Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Serialize, Deserialize)]
@@ -41,6 +41,16 @@ impl From<Gf2_128> for Block {
 impl From<Block> for Gf2_128 {
     fn from(block: Block) -> Self {
         Gf2_128(u128::from_be_bytes(block.to_bytes()))
+    }
+}
+
+impl TryFrom<Array<u8, U16>> for Gf2_128 {
+    type Error = FieldError;
+
+    fn try_from(value: Array<u8, U16>) -> Result<Self, Self::Error> {
+        let inner: [u8; 16] = value.into();
+
+        Ok(Gf2_128(u128::from_be_bytes(inner)))
     }
 }
 
@@ -100,6 +110,8 @@ impl Neg for Gf2_128 {
 
 impl Field for Gf2_128 {
     type BitSize = U128;
+
+    type ByteSize = U16;
 
     fn zero() -> Self {
         Self::new(0)
