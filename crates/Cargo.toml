@@ -11,7 +11,6 @@ members = [
     "mpz-ot-core",
     "mpz-garble",
     "mpz-garble-core",
-    "mpz-share-conversion",
     "mpz-share-conversion-core",
     "matrix-transpose",
     "clmul",
@@ -38,7 +37,6 @@ mpz-ot = { path = "mpz-ot" }
 mpz-ot-core = { path = "mpz-ot-core" }
 mpz-garble = { path = "mpz-garble" }
 mpz-garble-core = { path = "mpz-garble-core" }
-mpz-share-conversion = { path = "mpz-share-conversion" }
 mpz-share-conversion-core = { path = "mpz-share-conversion-core" }
 mpz-ole = { path = "mpz-ole" }
 mpz-ole-core = { path = "mpz-ole-core" }
