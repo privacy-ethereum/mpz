@@ -5,6 +5,7 @@
 #![deny(clippy::all)]
 #![deny(unsafe_code)]
 
+pub mod ideal;
 pub mod msgs;
 
 mod a2m;
