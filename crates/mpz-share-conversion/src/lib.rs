@@ -5,6 +5,8 @@
 #![deny(clippy::all)]
 
 mod error;
+#[cfg(feature = "ideal")]
+pub mod ideal;
 
 use async_trait::async_trait;
 
@@ -40,4 +42,15 @@ pub trait MultiplicativeToAdditive<Ctx, T> {
         ctx: &mut Ctx,
         inputs: Vec<T>,
     ) -> Result<Vec<T>, ShareConversionError>;
+}
+
+/// A trait for converting between additive and multiplicative shares.
+pub trait ShareConvert<Ctx, T>:
+    AdditiveToMultiplicative<Ctx, T> + MultiplicativeToAdditive<Ctx, T>
+{
+}
+
+impl<Ctx, T, U> ShareConvert<Ctx, T> for U where
+    U: AdditiveToMultiplicative<Ctx, T> + MultiplicativeToAdditive<Ctx, T>
+{
 }

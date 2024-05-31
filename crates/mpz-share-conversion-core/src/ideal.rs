@@ -1,17 +1,13 @@
 //! Ideal functionalities for share conversion.
 
 use mpz_fields::Field;
-use rand::{rngs::ThreadRng, thread_rng};
+use rand::thread_rng;
 
 /// The M2A functionality.
-pub struct IdealM2A(ThreadRng);
+#[derive(Debug, Default)]
+pub struct IdealM2A;
 
 impl IdealM2A {
-    /// Creates a new functionality.
-    pub fn new() -> Self {
-        Self(thread_rng())
-    }
-
     /// Generates additive shares from multiplicative shares.
     pub fn generate<F: Field>(
         &mut self,
@@ -24,9 +20,8 @@ impl IdealM2A {
             "Vectors of field elements should have equal length."
         );
 
-        let sender_output: Vec<F> = (0..sender_input.len())
-            .map(|_| F::rand(&mut self.0))
-            .collect();
+        let mut rng = thread_rng();
+        let sender_output: Vec<F> = (0..sender_input.len()).map(|_| F::rand(&mut rng)).collect();
 
         let receiver_output: Vec<F> = sender_input
             .iter()
@@ -39,21 +34,11 @@ impl IdealM2A {
     }
 }
 
-impl Default for IdealM2A {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 /// The A2M functionality.
-pub struct IdealA2M(ThreadRng);
+#[derive(Debug, Default)]
+pub struct IdealA2M;
 
 impl IdealA2M {
-    /// Creates a new functionality.
-    pub fn new() -> Self {
-        Self(thread_rng())
-    }
-
     /// Generates multiplicative shares from additive shares.
     pub fn generate<F: Field>(
         &mut self,
@@ -66,9 +51,8 @@ impl IdealA2M {
             "Vectors of field elements should have equal length."
         );
 
-        let sender_output: Vec<F> = (0..sender_input.len())
-            .map(|_| F::rand(&mut self.0))
-            .collect();
+        let mut rng = thread_rng();
+        let sender_output: Vec<F> = (0..sender_input.len()).map(|_| F::rand(&mut rng)).collect();
 
         let receiver_output: Vec<F> = sender_input
             .iter()
@@ -78,12 +62,6 @@ impl IdealA2M {
             .collect();
 
         (sender_output, receiver_output)
-    }
-}
-
-impl Default for IdealA2M {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
