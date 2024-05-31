@@ -27,7 +27,7 @@ mod test_utils {
     /// Test multi-threaded executor.
     pub type TestMTExecutor = MTExecutor<TestFramedMux>;
 
-    /// Creates a pair of multi-threaded executors with yamux I/O channels.
+    /// Creates a pair of multi-threaded executors with multiplexed I/O channels.
     ///
     /// # Arguments
     ///

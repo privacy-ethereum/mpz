@@ -298,7 +298,10 @@ where
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use serio::{stream::IoStreamExt, SinkExt};
+    use tokio::sync::Barrier;
 
     use crate::{executor::test_mt_executor, scoped};
 
@@ -361,5 +364,39 @@ mod tests {
         assert_eq!(received, 1u8);
         assert!(ctx_a.inner.is_some());
         assert!(ctx_b.inner.is_some());
+    }
+
+    #[tokio::test]
+    // Tests that the mt executor polls futures concurrently.
+    async fn test_mt_executor_concurrency() {
+        let (mut exec_a, _) = test_mt_executor(8);
+        let barrier = Arc::new(Barrier::new(2));
+
+        let mut ctx = exec_a.new_thread().await.unwrap();
+
+        let barrier_0 = barrier.clone();
+        let barrier_1 = barrier.clone();
+
+        ctx.join(
+            scoped!(|_ctx| async move {
+                barrier_0.wait().await;
+            }),
+            scoped!(|_ctx| async move {
+                barrier_1.wait().await;
+            }),
+        )
+        .await
+        .unwrap();
+
+        let barrier_0 = barrier.clone();
+        let barrier_1 = barrier.clone();
+
+        ctx.try_join(
+            scoped!(|_ctx| async move { Ok::<_, ()>(barrier_0.wait().await) }),
+            scoped!(|_ctx| async move { Ok::<_, ()>(barrier_1.wait().await) }),
+        )
+        .await
+        .unwrap()
+        .unwrap();
     }
 }
