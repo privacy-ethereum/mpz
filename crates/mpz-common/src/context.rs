@@ -58,6 +58,26 @@ pub trait Context: Send + Sync {
     /// Returns a mutable reference to the thread's I/O channel.
     fn io_mut(&mut self) -> &mut Self::Io;
 
+    /// Executes a task that may block the thread.
+    ///
+    /// If CPU multi-threading is available, the task is executed on a separate thread. Otherwise,
+    /// the task is executed on the current thread and can block the executor.
+    ///
+    /// # Deadlocks
+    ///
+    /// This method may cause deadlocks if the task blocks and the executor can not make progress.
+    /// Generally, one should *never* block across an await point. This method is intended for operations
+    /// that are CPU-bound but require access to a thread context.
+    ///
+    /// # Overhead
+    ///
+    /// This method has an inherent overhead and should only be used for tasks that are CPU-bound. Otherwise,
+    /// prefer using [`Context::queue`] or [`Context::join`] to execute tasks concurrently.
+    async fn blocking<F, R>(&mut self, f: F) -> Result<R, ContextError>
+    where
+        F: for<'a> FnOnce(&'a mut Self) -> ScopedBoxFuture<'static, 'a, R> + Send + 'static,
+        R: Send + 'static;
+
     /// Forks the thread and executes the provided closures concurrently.
     ///
     /// Implementations may not be able to fork, in which case the closures are executed
@@ -119,32 +139,34 @@ macro_rules! try_join {
 
 #[cfg(test)]
 mod tests {
-    use crate::executor::test_st_executor;
+    use crate::{executor::test_st_executor, Context};
+    use futures::executor::block_on;
 
     #[test]
     fn test_join_macro() {
         let (mut ctx, _) = test_st_executor(1);
 
-        futures::executor::block_on(async {
-            join!(ctx, async { println!("{:?}", ctx.id()) }, async {
-                println!("{:?}", ctx.id())
-            })
-            .unwrap()
+        let (id_0, id_1) = block_on(async {
+            join!(ctx, async { ctx.id().clone() }, async { ctx.id().clone() }).unwrap()
         });
+
+        assert_eq!(&id_0, ctx.id());
+        assert_eq!(&id_1, ctx.id());
     }
 
     #[test]
     fn test_try_join_macro() {
         let (mut ctx, _) = test_st_executor(1);
 
-        futures::executor::block_on(async {
-            try_join!(
-                ctx,
-                async { Ok::<_, ()>(println!("{:?}", ctx.id())) },
-                async { Ok::<_, ()>(println!("{:?}", ctx.id())) }
-            )
+        let (id_0, id_1) = block_on(async {
+            try_join!(ctx, async { Ok::<_, ()>(ctx.id().clone()) }, async {
+                Ok::<_, ()>(ctx.id().clone())
+            })
             .unwrap()
-            .unwrap();
+            .unwrap()
         });
+
+        assert_eq!(&id_0, ctx.id());
+        assert_eq!(&id_1, ctx.id());
     }
 }

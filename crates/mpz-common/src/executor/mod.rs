@@ -5,7 +5,7 @@ mod mt;
 mod st;
 
 pub use dummy::{DummyExecutor, DummyIo};
-pub use mt::MTExecutor;
+pub use mt::{MTContext, MTExecutor};
 pub use st::STExecutor;
 
 #[cfg(any(test, feature = "test-utils"))]

@@ -76,6 +76,7 @@ futures-util = "0.3"
 tokio = "1.23"
 tokio-util = "0.7"
 scoped-futures = "0.1.3"
+pollster = "0.3"
 
 # serialization
 ark-serialize = "0.4"

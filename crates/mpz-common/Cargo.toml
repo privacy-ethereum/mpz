@@ -8,6 +8,8 @@ default = ["sync"]
 sync = []
 test-utils = ["uid-mux/test-utils"]
 ideal = []
+rayon = ["dep:rayon"]
+force-st = []
 
 [dependencies]
 mpz-core.workspace = true
@@ -19,6 +21,9 @@ thiserror.workspace = true
 serio.workspace = true
 uid-mux.workspace = true
 serde = { workspace = true, features = ["derive"] }
+pollster.workspace = true
+rayon = { workspace = true, optional = true }
+cfg-if.workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true, features = [
@@ -29,3 +34,9 @@ tokio = { workspace = true, features = [
 tokio-util = { workspace = true, features = ["compat"] }
 uid-mux = { workspace = true, features = ["test-utils"] }
 tracing-subscriber = { workspace = true, features = ["fmt"] }
+criterion.workspace = true
+
+[[bench]]
+name = "context"
+harness = false
+required-features = ["test-utils", "rayon"]

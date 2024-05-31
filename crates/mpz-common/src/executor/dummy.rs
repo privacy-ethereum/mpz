@@ -1,8 +1,9 @@
 use async_trait::async_trait;
+
 use scoped_futures::ScopedBoxFuture;
 use serio::{Sink, Stream};
 
-use crate::{context::Context, ContextError, ThreadId};
+use crate::{context::Context, cpu::CpuBackend, ContextError, ThreadId};
 
 /// A dummy executor.
 #[derive(Debug, Default)]
@@ -72,6 +73,19 @@ impl Context for DummyExecutor {
 
     fn io_mut(&mut self) -> &mut Self::Io {
         &mut self.io
+    }
+
+    async fn blocking<F, R>(&mut self, f: F) -> Result<R, ContextError>
+    where
+        F: for<'a> FnOnce(&'a mut Self) -> ScopedBoxFuture<'static, 'a, R> + Send + 'static,
+        R: Send + 'static,
+    {
+        let mut ctx = Self {
+            id: self.id.clone(),
+            io: DummyIo,
+        };
+
+        Ok(CpuBackend::blocking_async(async move { f(&mut ctx).await }).await)
     }
 
     async fn join<'a, A, B, RA, RB>(&'a mut self, a: A, b: B) -> Result<(RA, RB), ContextError>
