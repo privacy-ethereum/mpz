@@ -14,8 +14,5 @@ mpz-fields.workspace = true
 
 rand.workspace = true
 serde.workspace = true
-itybity.workspace = true
+thiserror.workspace = true
 
-[dev-dependencies]
-rstest.workspace = true
-rand_chacha.workspace = true

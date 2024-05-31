@@ -1,18 +1,5 @@
 //! Secure two-party (2PC) multiplication-to-addition (M2A) and addition-to-multiplication (A2M)
 //! algorithms, both with semi-honest security.
-//!
-//! ### M2A
-//! Let `A` be an element of some finite field with `A = a * b`, where `a` is only known to Alice
-//! and `b` is only known to Bob. A is unknown to both parties and it is their goal that each of
-//! them ends up with an additive share of A. So both parties start with `a` and `b` and want to
-//! end up with `x` and `y`, where `A = a * b = x + y`.
-//!
-//! ### A2M
-//! This is the other way round.
-//! Let `A` be an element of some finite field with `A = x + y`, where `x` is only known to Alice
-//! and `y` is only known to Bob. A is unknown to both parties and it is their goal that each of
-//! them ends up with a multiplicative share of A. So both parties start with `x` and `y` and want to
-//! end up with `a` and `b`, where `A = x + y = a * b`.
 
 #![deny(missing_docs, unreachable_pub, unused_must_use)]
 #![deny(clippy::all)]
@@ -22,3 +9,47 @@ pub mod msgs;
 
 mod a2m;
 mod m2a;
+
+pub use a2m::{a2m_convert_receiver, a2m_convert_sender, A2MMasks};
+pub use m2a::m2a_convert;
+
+use std::{error::Error, fmt::Display};
+
+/// A share conversion error.
+#[derive(Debug, thiserror::Error)]
+pub struct ShareConversionError {
+    kind: ShareConversionErrorKind,
+    #[source]
+    source: Option<Box<dyn Error + Send + Sync>>,
+}
+
+impl ShareConversionError {
+    fn new<E>(kind: ShareConversionErrorKind, source: E) -> Self
+    where
+        E: Into<Box<dyn Error + Send + Sync>>,
+    {
+        Self {
+            kind,
+            source: Some(source.into()),
+        }
+    }
+}
+
+impl Display for ShareConversionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.kind {
+            ShareConversionErrorKind::UnequalLength => write!(f, "Unequal Length Error"),
+        }?;
+
+        if let Some(source) = self.source.as_ref() {
+            write!(f, " caused by: {source}")?;
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub(crate) enum ShareConversionErrorKind {
+    UnequalLength,
+}
