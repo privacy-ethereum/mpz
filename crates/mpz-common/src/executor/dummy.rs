@@ -125,7 +125,8 @@ impl Context for DummyExecutor {
 #[cfg(test)]
 mod tests {
     use futures::executor::block_on;
-    use scoped_futures::ScopedFutureExt;
+
+    use crate::scoped;
 
     use super::*;
 
@@ -142,18 +143,8 @@ mod tests {
             let a = &mut self.a;
             let b = &mut self.b;
             ctx.join(
-                |ctx| {
-                    async move {
-                        *a = ctx.id().clone();
-                    }
-                    .scope_boxed()
-                },
-                |ctx| {
-                    async move {
-                        *b = ctx.id().clone();
-                    }
-                    .scope_boxed()
-                },
+                scoped!(|ctx| *a = ctx.id().clone()),
+                scoped!(|ctx| *b = ctx.id().clone()),
             )
             .await
             .unwrap();
