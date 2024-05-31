@@ -108,36 +108,24 @@ pub(crate) enum OLEErrorKind {
 
 impl From<OTError> for OLEError {
     fn from(value: OTError) -> Self {
-        Self {
-            kind: OLEErrorKind::OT,
-            source: Some(Box::new(value) as Box<dyn Error + Send + Sync>),
-        }
+        Self::new(OLEErrorKind::OT, value)
     }
 }
 
 impl From<IOError> for OLEError {
     fn from(value: IOError) -> Self {
-        Self {
-            kind: OLEErrorKind::IO,
-            source: Some(Box::new(value) as Box<dyn Error + Send + Sync>),
-        }
+        Self::new(OLEErrorKind::IO, value)
     }
 }
 
 impl From<OLECoreError> for OLEError {
     fn from(value: OLECoreError) -> Self {
-        Self {
-            kind: OLEErrorKind::Core,
-            source: Some(Box::new(value) as Box<dyn Error + Send + Sync>),
-        }
+        Self::new(OLEErrorKind::Core, value)
     }
 }
 
 impl From<FieldError> for OLEError {
     fn from(value: FieldError) -> Self {
-        Self {
-            kind: OLEErrorKind::Field,
-            source: Some(Box::new(value) as Box<dyn Error + Send + Sync>),
-        }
+        Self::new(OLEErrorKind::Field, value)
     }
 }

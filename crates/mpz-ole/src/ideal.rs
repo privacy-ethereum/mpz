@@ -9,9 +9,17 @@ use mpz_common::{
 use mpz_fields::Field;
 use rand::thread_rng;
 
+/// Ideal OLESender.
+pub struct IdealOLESender(Alice<()>);
+
+/// Ideal OLEReceiver.
+pub struct IdealOLEReceiver(Bob<()>);
+
 /// Returns an OLE sender and receiver pair.
-pub fn ideal_ole() -> (Alice<()>, Bob<()>) {
-    ideal_f2p(())
+pub fn ideal_ole() -> (IdealOLESender, IdealOLEReceiver) {
+    let (alice, bob) = ideal_f2p(());
+
+    (IdealOLESender(alice), IdealOLEReceiver(bob))
 }
 
 fn ole<F: Field>(_: &mut (), alice_input: Vec<F>, bob_input: Vec<F>) -> (Vec<F>, Vec<F>) {
@@ -29,16 +37,16 @@ fn ole<F: Field>(_: &mut (), alice_input: Vec<F>, bob_input: Vec<F>) -> (Vec<F>,
 }
 
 #[async_trait]
-impl<F: Field, Ctx: Context> OLESender<Ctx, F> for Alice<()> {
+impl<F: Field, Ctx: Context> OLESender<Ctx, F> for IdealOLESender {
     async fn send(&mut self, ctx: &mut Ctx, a_k: Vec<F>) -> Result<Vec<F>, OLEError> {
-        Ok(self.call(ctx, a_k, ole).await)
+        Ok(self.0.call(ctx, a_k, ole).await)
     }
 }
 
 #[async_trait]
-impl<F: Field, Ctx: Context> OLEReceiver<Ctx, F> for Bob<()> {
+impl<F: Field, Ctx: Context> OLEReceiver<Ctx, F> for IdealOLEReceiver {
     async fn receive(&mut self, ctx: &mut Ctx, b_k: Vec<F>) -> Result<Vec<F>, OLEError> {
-        Ok(self.call(ctx, b_k, ole).await)
+        Ok(self.0.call(ctx, b_k, ole).await)
     }
 }
 
@@ -60,11 +68,11 @@ mod tests {
 
         let (mut ctx_sender, mut ctx_receiver) = test_st_executor(10);
 
-        let (mut alice, mut bob) = ideal_ole();
+        let (mut sender, mut receiver) = ideal_ole();
 
         let (x_k, y_k) = tokio::try_join!(
-            alice.send(&mut ctx_sender, a_k.clone()),
-            bob.receive(&mut ctx_receiver, b_k.clone())
+            sender.send(&mut ctx_sender, a_k.clone()),
+            receiver.receive(&mut ctx_receiver, b_k.clone())
         )
         .unwrap();
 
