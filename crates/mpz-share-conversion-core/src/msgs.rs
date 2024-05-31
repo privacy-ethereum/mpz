@@ -3,7 +3,7 @@
 use crate::a2m::A2MMasks;
 use serde::{Deserialize, Serialize};
 
-/// Message type for sending a [`A2MMasks`] to the receiver.
+/// Message type for sending [`A2MMasks`] to the receiver.
 #[allow(missing_docs)]
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Masks<F> {
