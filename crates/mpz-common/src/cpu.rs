@@ -21,7 +21,7 @@ mod st {
     pub struct SingleThreadedBackend;
 
     impl SingleThreadedBackend {
-        /// Execute a future on the CPU backend.
+        /// Executes a future on the CPU backend.
         #[inline]
         pub fn blocking_async<F>(fut: F) -> impl Future<Output = F::Output> + Send
         where
@@ -31,7 +31,7 @@ mod st {
             fut
         }
 
-        /// Execute a closure on the CPU backend.
+        /// Executes a closure on the CPU backend.
         #[inline]
         pub fn blocking<F, R>(f: F) -> impl Future<Output = R> + Send
         where
@@ -71,7 +71,7 @@ mod rayon_backend {
     pub struct RayonBackend;
 
     impl RayonBackend {
-        /// Execute a future on the CPU backend.
+        /// Executes a future on the CPU backend.
         pub fn blocking_async<F>(fut: F) -> impl Future<Output = F::Output> + Send
         where
             F: Future + Send + 'static,
@@ -87,7 +87,7 @@ mod rayon_backend {
             }
         }
 
-        /// Execute a closure on the CPU backend.
+        /// Executes a closure on the CPU backend.
         pub fn blocking<F, R>(f: F) -> impl Future<Output = R> + Send
         where
             F: FnOnce() -> R + Send + 'static,
