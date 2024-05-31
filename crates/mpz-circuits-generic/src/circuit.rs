@@ -2,8 +2,11 @@
 //!
 //! Main circuit module.
 
-use std::{collections::{HashMap, VecDeque}, mem::take};
 use crate::model::Component;
+use std::{
+    collections::{HashMap, VecDeque},
+    mem::take,
+};
 use thiserror::Error;
 
 /// The Circuit Builder assembles a collection of gates into a circuit.
@@ -28,7 +31,10 @@ where
 {
     /// Creates a new circuit builder.
     pub fn new() -> Self {
-        Self { gates: Vec::new(), input_map: HashMap::new()}
+        Self {
+            gates: Vec::new(),
+            input_map: HashMap::new(),
+        }
     }
 
     /// Adds a gate to the builder.
@@ -36,7 +42,7 @@ where
         for &input in gate.get_inputs().iter() {
             self.input_map.insert(input, self.gates.len());
         }
-        
+
         self.gates.push(gate);
         self
     }
@@ -44,19 +50,19 @@ where
     /// Builds the circuit.
     pub fn build(&mut self) -> Result<Circuit<T>, CircuitError> {
         self.sort_gates()?;
-    
+
         Ok(Circuit::new(take(&mut self.gates)))
     }
-    
+
     /// Performs a topological sort of the gates.
-    /// 
+    ///
     /// This ensures that the gates are linearly ordered such that the
     /// dependencies (input gates) of each gate are processed before the gate itself.
-    /// 
+    ///
     /// This requires that the gates form a directed acyclic graph (DAG).
-    /// 
+    ///
     /// The sorting is done using Kahn's Algorithm.
-    fn sort_gates(&mut self) -> Result<(), CircuitError> { 
+    fn sort_gates(&mut self) -> Result<(), CircuitError> {
         // In-degree: the number of gates that provide input to each gate
         // This represents how many other gates need to be processed before this gate
         let mut in_degree = vec![0; self.gates.len()];
@@ -68,7 +74,7 @@ where
         for (i, gate) in self.gates.iter().enumerate() {
             for &output in gate.get_outputs().iter() {
                 let output = self.input_map.get(&output);
-    
+
                 if let Some(&gate_index) = output {
                     adjacency_list[i].push(gate_index);
                     in_degree[gate_index] += 1;
@@ -77,7 +83,7 @@ where
         }
 
         let mut queue = VecDeque::new();
-        let mut sorted_indices = Vec::with_capacity(self.gates.len());     
+        let mut sorted_indices = Vec::with_capacity(self.gates.len());
 
         // Push ready-to-process nodes (no dependencies) to the queue
         for (i, &degree) in in_degree.iter().enumerate() {
@@ -117,7 +123,7 @@ where
                 sorted_gates.push(gate);
             }
         }
-        
+
         self.gates = sorted_gates;
         Ok(())
     }
