@@ -11,7 +11,7 @@
 use crate::{ShareConversionError, ShareConversionErrorKind};
 use mpz_fields::Field;
 
-/// Converts multiplicative sender shares into additive shares.
+/// Converts additive sender shares into multiplicative shares.
 ///
 /// # Arguments
 ///
@@ -21,7 +21,7 @@ use mpz_fields::Field;
 ///
 /// # Returns
 ///
-/// * The additive shares of the sender.
+/// * The multiplicative shares of the sender.
 /// * The masks which have to be sent to the receiver.
 pub fn a2m_convert_sender<F: Field>(
     input: Vec<F>,
@@ -52,7 +52,7 @@ pub fn a2m_convert_sender<F: Field>(
     Ok((ole_input, A2MMasks(masks)))
 }
 
-/// Converts the A2M sender's masks into additive receiver shares.
+/// Converts the A2M sender's masks into multiplicative receiver shares.
 ///
 /// # Arguments
 ///
@@ -61,7 +61,7 @@ pub fn a2m_convert_sender<F: Field>(
 ///
 /// # Returns
 ///
-/// * The additive shares of the receiver.
+/// * The multiplicative shares of the receiver.
 pub fn a2m_convert_receiver<F: Field>(
     masks: A2MMasks<F>,
     ole_output: Vec<F>,
@@ -83,7 +83,7 @@ pub fn a2m_convert_receiver<F: Field>(
     Ok(output)
 }
 
-/// The masks created by the sender and sent to the receiver.
+/// The masks created by the sender.
 pub struct A2MMasks<F>(pub(crate) Vec<F>);
 
 #[cfg(test)]
