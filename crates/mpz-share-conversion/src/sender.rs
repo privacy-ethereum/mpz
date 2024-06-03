@@ -55,7 +55,14 @@ where
     ) -> Result<Vec<F>, ShareConversionError> {
         let random: Vec<F> = {
             let mut rng = thread_rng();
-            (0..inputs.len()).map(|_| F::rand(&mut rng)).collect()
+            (0..inputs.len())
+                .map(|_| loop {
+                    let rand = F::rand(&mut rng);
+                    if rand != F::zero() {
+                        break rand;
+                    }
+                })
+                .collect()
         };
 
         let ole_output = self.ole_sender.send(ctx, random.clone()).await?;
