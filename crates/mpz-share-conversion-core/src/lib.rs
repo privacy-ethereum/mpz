@@ -51,6 +51,6 @@ impl Display for ShareConversionError {
 }
 
 #[derive(Debug)]
-pub(crate) enum ShareConversionErrorKind {
+pub(crate) enum ErrorKind {
     UnequalLength,
 }

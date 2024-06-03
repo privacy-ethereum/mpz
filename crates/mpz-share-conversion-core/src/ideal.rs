@@ -15,8 +15,8 @@ impl IdealM2A {
     /// Generates additive shares from multiplicative shares.
     pub fn generate<F: Field>(
         &mut self,
-        sender_input: &[F],
-        receiver_input: &[F],
+        sender_input: Vec<F>,
+        receiver_input: Vec<F>,
     ) -> (Vec<F>, Vec<F>) {
         assert_eq!(
             sender_input.len(),
@@ -57,8 +57,8 @@ impl IdealA2M {
     /// Generates multiplicative shares from additive shares.
     pub fn generate<F: Field>(
         &mut self,
-        sender_input: &[F],
-        receiver_input: &[F],
+        sender_input: Vec<F>,
+        receiver_input: Vec<F>,
     ) -> (Vec<F>, Vec<F>) {
         assert_eq!(
             sender_input.len(),
