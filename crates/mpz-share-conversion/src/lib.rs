@@ -7,10 +7,14 @@
 mod error;
 #[cfg(feature = "ideal")]
 pub mod ideal;
+mod receiver;
+mod sender;
 
 use async_trait::async_trait;
 
 pub use error::ShareConversionError;
+pub use receiver::ShareConversionReceiver;
+pub use sender::ShareConversionSender;
 
 /// A trait for converting additive shares into multiplicative shares.
 #[async_trait]
