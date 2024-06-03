@@ -8,7 +8,7 @@
 //! This module implements the A2M protocol from <https://eprint.iacr.org/2023/964>, page 40,
 //! figure 16, 4.
 
-use crate::{ShareConversionError, ShareConversionErrorKind};
+use crate::{ErrorKind, ShareConversionError};
 use mpz_fields::Field;
 
 /// Converts additive sender shares into multiplicative shares.
@@ -30,7 +30,7 @@ pub fn a2m_convert_sender<F: Field>(
 ) -> Result<(Vec<F>, A2MMasks<F>), ShareConversionError> {
     if input.len() != ole_output.len() || ole_input.len() != ole_output.len() {
         return Err(ShareConversionError::new(
-            ShareConversionErrorKind::UnequalLength,
+            ErrorKind::UnequalLength,
             format!(
                 "Vectors have unequal length: {}, {}, {}",
                 input.len(),
@@ -70,7 +70,7 @@ pub fn a2m_convert_receiver<F: Field>(
 
     if masks.len() != ole_output.len() {
         return Err(ShareConversionError::new(
-            ShareConversionErrorKind::UnequalLength,
+            ErrorKind::UnequalLength,
             format!(
                 "Vectors have unequal length: {} != {}",
                 masks.len(),

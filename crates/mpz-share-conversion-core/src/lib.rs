@@ -19,13 +19,13 @@ use std::{error::Error, fmt::Display};
 /// A share conversion error.
 #[derive(Debug, thiserror::Error)]
 pub struct ShareConversionError {
-    kind: ShareConversionErrorKind,
+    kind: ErrorKind,
     #[source]
     source: Option<Box<dyn Error + Send + Sync>>,
 }
 
 impl ShareConversionError {
-    fn new<E>(kind: ShareConversionErrorKind, source: E) -> Self
+    fn new<E>(kind: ErrorKind, source: E) -> Self
     where
         E: Into<Box<dyn Error + Send + Sync>>,
     {
@@ -39,7 +39,7 @@ impl ShareConversionError {
 impl Display for ShareConversionError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.kind {
-            ShareConversionErrorKind::UnequalLength => write!(f, "Unequal Length Error"),
+            ErrorKind::UnequalLength => write!(f, "Unequal Length Error"),
         }?;
 
         if let Some(source) = self.source.as_ref() {

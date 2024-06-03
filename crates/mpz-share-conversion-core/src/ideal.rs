@@ -1,17 +1,13 @@
 //! Ideal functionalities for share conversion.
 
 use mpz_fields::Field;
-use rand::{rngs::ThreadRng, thread_rng};
+use rand::thread_rng;
 
 /// The M2A functionality.
-pub struct IdealM2A(ThreadRng);
+#[derive(Debug, Default)]
+pub struct IdealM2A;
 
 impl IdealM2A {
-    /// Creates a new functionality.
-    pub fn new() -> Self {
-        Self(thread_rng())
-    }
-
     /// Generates additive shares from multiplicative shares.
     pub fn generate<F: Field>(
         &mut self,
@@ -24,36 +20,26 @@ impl IdealM2A {
             "Vectors of field elements should have equal length."
         );
 
-        let sender_output: Vec<F> = (0..sender_input.len())
-            .map(|_| F::rand(&mut self.0))
-            .collect();
+        let mut rng = thread_rng();
+
+        let sender_output: Vec<F> = (0..sender_input.len()).map(|_| F::rand(&mut rng)).collect();
 
         let receiver_output: Vec<F> = sender_input
             .iter()
             .zip(receiver_input)
             .zip(sender_output.iter().copied())
-            .map(|((&si, &ri), so)| si * ri + -so)
+            .map(|((&si, ri), so)| si * ri + -so)
             .collect();
 
         (sender_output, receiver_output)
     }
 }
 
-impl Default for IdealM2A {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 /// The A2M functionality.
-pub struct IdealA2M(ThreadRng);
+#[derive(Debug, Default)]
+pub struct IdealA2M;
 
 impl IdealA2M {
-    /// Creates a new functionality.
-    pub fn new() -> Self {
-        Self(thread_rng())
-    }
-
     /// Generates multiplicative shares from additive shares.
     pub fn generate<F: Field>(
         &mut self,
@@ -66,24 +52,18 @@ impl IdealA2M {
             "Vectors of field elements should have equal length."
         );
 
-        let sender_output: Vec<F> = (0..sender_input.len())
-            .map(|_| F::rand(&mut self.0))
-            .collect();
+        let mut rng = thread_rng();
+
+        let sender_output: Vec<F> = (0..sender_input.len()).map(|_| F::rand(&mut rng)).collect();
 
         let receiver_output: Vec<F> = sender_input
             .iter()
             .zip(receiver_input)
             .zip(sender_output.iter().copied())
-            .map(|((&si, &ri), so)| (si + ri) * so.inverse())
+            .map(|((&si, ri), so)| (si + ri) * so.inverse())
             .collect();
 
         (sender_output, receiver_output)
-    }
-}
-
-impl Default for IdealA2M {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -103,7 +83,8 @@ mod tests {
         let sender_input: Vec<P256> = (0..count).map(|_| P256::rand(&mut rng)).collect();
         let receiver_input: Vec<P256> = (0..count).map(|_| P256::rand(&mut rng)).collect();
 
-        let (sender_output, receiver_output) = m2a.generate(&sender_input, &receiver_input);
+        let (sender_output, receiver_output) =
+            m2a.generate(sender_input.clone(), receiver_input.clone());
 
         sender_input
             .iter()
@@ -122,7 +103,8 @@ mod tests {
         let sender_input: Vec<P256> = (0..count).map(|_| P256::rand(&mut rng)).collect();
         let receiver_input: Vec<P256> = (0..count).map(|_| P256::rand(&mut rng)).collect();
 
-        let (sender_output, receiver_output) = m2a.generate(&sender_input, &receiver_input);
+        let (sender_output, receiver_output) =
+            m2a.generate(sender_input.clone(), receiver_input.clone());
 
         sender_input
             .iter()
