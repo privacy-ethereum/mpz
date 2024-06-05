@@ -56,7 +56,7 @@ pub fn a2m_convert_sender<F: Field>(
 ///
 /// # Arguments
 ///
-/// * `masks` - The masks received by the sender.
+/// * `masks` - The masks received from the sender.
 /// * `ole_output` - The output from an OLE receiver.
 ///
 /// # Returns
