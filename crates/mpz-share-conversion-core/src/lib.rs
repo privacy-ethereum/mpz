@@ -1,77 +1,56 @@
-//! This crate implements secure two-party (2PC) multiplication-to-addition (M2A) and
-//! addition-to-multiplication (A2M) algorithms, both with semi-honest security.
-//!
-//! ### M2A algorithm (implementation of chapter 4.1 in <https://link.springer.com/content/pdf/10.1007/3-540-48405-1_8.pdf>)
-//! Let `A` be an element of some finite field with `A = a * b`, where `a` is only known to Alice
-//! and `b` is only known to Bob. A is unknown to both parties and it is their goal that each of
-//! them ends up with an additive share of A. So both parties start with `a` and `b` and want to
-//! end up with `x` and `y`, where `A = a * b = x + y`.
-//!
-//! ### A2M algorithm (adaptation of chapter 4 in <https://www.cs.umd.edu/~fenghao/paper/modexp.pdf>)
-//! This is the other way round.
-//! Let `A` be an element of some finite field with `A = x + y`, where `x` is only known to Alice
-//! and `y` is only known to Bob. A is unknown to both parties and it is their goal that each of
-//! them ends up with a multiplicative share of A. So both parties start with `x` and `y` and want to
-//! end up with `a` and `b`, where `A = x + y = a * b`.
+//! Secure two-party (2PC) multiplication-to-addition (M2A) and addition-to-multiplication (A2M)
+//! algorithms, both with semi-honest security.
 
 #![deny(missing_docs, unreachable_pub, unused_must_use)]
 #![deny(clippy::all)]
 #![deny(unsafe_code)]
 
+pub mod ideal;
 pub mod msgs;
-mod shares;
 
-pub use shares::{AddShare, MulShare, Share, ShareType};
+mod a2m;
+mod m2a;
 
-#[cfg(test)]
-mod tests {
-    use mpz_fields::{gf2_128::Gf2_128, p256::P256, Field};
+pub use a2m::{a2m_convert_receiver, a2m_convert_sender, A2MMasks};
+pub use m2a::m2a_convert;
 
-    use std::marker::PhantomData;
+use std::{error::Error, fmt::Display};
 
-    use super::*;
-    use rand::SeedableRng;
-    use rand_chacha::ChaCha12Rng;
-    use rstest::*;
+/// A share conversion error.
+#[derive(Debug, thiserror::Error)]
+pub struct ShareConversionError {
+    kind: ErrorKind,
+    #[source]
+    source: Option<Box<dyn Error + Send + Sync>>,
+}
 
-    #[rstest]
-    #[case::gf2_add(ShareType::Add, PhantomData::<Gf2_128>)]
-    #[case::gf2_mul(ShareType::Mul, PhantomData::<Gf2_128>)]
-    #[case::p256_add(ShareType::Add, PhantomData::<P256>)]
-    #[case::p256_mul(ShareType::Mul, PhantomData::<P256>)]
-    fn test_conversion<F: Field>(#[case] ty: ShareType, #[case] _pd: PhantomData<F>) {
-        let mut rng = ChaCha12Rng::from_seed([0; 32]);
-
-        let a = ty.new_share(F::rand(&mut rng));
-        let b = ty.new_share(F::rand(&mut rng));
-
-        let (x, summands) = a.convert(&mut rng);
-        let summands = mock_ot(&summands, b);
-
-        let y = ty.new_from_summands(&summands);
-
-        let (a, b, x, y) = (a.to_inner(), b.to_inner(), x.to_inner(), y.to_inner());
-
-        match ty {
-            ShareType::Add => assert_eq!(a + b, x * y),
-            ShareType::Mul => assert_eq!(a * b, x + y),
+impl ShareConversionError {
+    fn new<E>(kind: ErrorKind, source: E) -> Self
+    where
+        E: Into<Box<dyn Error + Send + Sync>>,
+    {
+        Self {
+            kind,
+            source: Some(source.into()),
         }
     }
+}
 
-    fn mock_ot<F: Field>(summands: &[[F; 2]], receiver_share: Share<F>) -> Vec<F> {
-        receiver_share
-            .binary_encoding()
-            .into_iter()
-            .zip(summands)
-            .map(
-                |(choice, summand)| {
-                    if choice {
-                        summand[1]
-                    } else {
-                        summand[0]
-                    }
-                },
-            )
-            .collect()
+impl Display for ShareConversionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.kind {
+            ErrorKind::UnequalLength => write!(f, "Unequal Length Error"),
+        }?;
+
+        if let Some(source) = self.source.as_ref() {
+            write!(f, " caused by: {source}")?;
+        }
+
+        Ok(())
     }
+}
+
+#[derive(Debug)]
+pub(crate) enum ErrorKind {
+    UnequalLength,
 }

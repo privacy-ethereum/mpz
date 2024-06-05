@@ -11,11 +11,11 @@ name = "mpz_share_conversion_core"
 
 [dependencies]
 mpz-fields.workspace = true
+mpz-core.workspace = true
 
 rand.workspace = true
 serde.workspace = true
-itybity.workspace = true
+thiserror.workspace = true
 
 [dev-dependencies]
-rstest.workspace = true
-rand_chacha.workspace = true
+mpz-ole-core.workspace = true
