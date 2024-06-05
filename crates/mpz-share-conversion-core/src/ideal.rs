@@ -1,8 +1,7 @@
 //! Ideal functionalities for share conversion.
 
-use mpz_core::{prg::Prg, Block};
 use mpz_fields::Field;
-use rand::SeedableRng;
+use rand::thread_rng;
 
 /// The M2A functionality.
 #[derive(Debug, Default)]
@@ -21,11 +20,7 @@ impl IdealM2A {
             "Vectors of field elements should have equal length."
         );
 
-        // Use current date to have a deterministic but unique seed.
-        let mut seed = [0_u8; 16];
-        seed[0..3].copy_from_slice(&[5, 6, 25]);
-        let mut rng = Prg::from_seed(Block::new(seed));
-
+        let mut rng = thread_rng();
         let sender_output: Vec<F> = (0..sender_input.len()).map(|_| F::rand(&mut rng)).collect();
 
         let receiver_output: Vec<F> = sender_input
@@ -56,11 +51,7 @@ impl IdealA2M {
             "Vectors of field elements should have equal length."
         );
 
-        // Use current date to have a deterministic but unique seed.
-        let mut seed = [0_u8; 16];
-        seed[0..4].copy_from_slice(&[5, 6, 25, 1]);
-        let mut rng = Prg::from_seed(Block::new(seed));
-
+        let mut rng = thread_rng();
         let sender_output: Vec<F> = (0..sender_input.len()).map(|_| F::rand(&mut rng)).collect();
 
         let receiver_output: Vec<F> = sender_input

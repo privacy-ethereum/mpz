@@ -12,10 +12,11 @@ members = [
     "mpz-garble",
     "mpz-garble-core",
     "mpz-share-conversion-core",
+    "mpz-share-conversion",
     "matrix-transpose",
     "clmul",
     "mpz-ole-core",
-    "mpz-ole"
+    "mpz-ole",
 ]
 resolver = "2"
 

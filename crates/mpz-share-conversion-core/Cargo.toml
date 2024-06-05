@@ -19,3 +19,4 @@ thiserror.workspace = true
 
 [dev-dependencies]
 mpz-ole-core.workspace = true
+mpz-core.workspace = true

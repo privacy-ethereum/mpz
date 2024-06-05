@@ -21,7 +21,7 @@ use mpz_fields::Field;
 ///
 /// # Returns
 ///
-/// * The multiplicative shares of the sender.
+/// * The additive shares of the sender.
 /// * The masks which have to be sent to the receiver.
 pub fn a2m_convert_sender<F: Field>(
     input: Vec<F>,
@@ -56,12 +56,12 @@ pub fn a2m_convert_sender<F: Field>(
 ///
 /// # Arguments
 ///
-/// * `masks` - The masks received from the sender.
+/// * `masks` - The masks received by the sender.
 /// * `ole_output` - The output from an OLE receiver.
 ///
 /// # Returns
 ///
-/// * The multiplicative shares of the receiver.
+/// * The additive shares of the receiver.
 pub fn a2m_convert_receiver<F: Field>(
     masks: A2MMasks<F>,
     ole_output: Vec<F>,
@@ -83,7 +83,7 @@ pub fn a2m_convert_receiver<F: Field>(
     Ok(output)
 }
 
-/// The masks created by the sender.
+/// The masks created by the sender and sent to the receiver.
 pub struct A2MMasks<F>(pub(crate) Vec<F>);
 
 #[cfg(test)]
