@@ -1,13 +1,20 @@
 //! Ideal functionalities for share conversion.
 
+use mpz_core::prg::Prg;
 use mpz_fields::Field;
-use rand::thread_rng;
+use rand::SeedableRng;
 
 /// The M2A functionality.
-#[derive(Debug, Default)]
-pub struct IdealM2A;
+#[derive(Debug)]
+pub struct IdealM2A(Prg);
 
 impl IdealM2A {
+    /// Creates a new instance of the M2A functionality using
+    /// the provided seed.
+    pub fn from_seed(seed: [u8; 16]) -> Self {
+        IdealM2A(Prg::from_seed(seed.into()))
+    }
+
     /// Generates additive shares from multiplicative shares.
     pub fn generate<F: Field>(
         &mut self,
@@ -20,8 +27,9 @@ impl IdealM2A {
             "Vectors of field elements should have equal length."
         );
 
-        let mut rng = thread_rng();
-        let sender_output: Vec<F> = (0..sender_input.len()).map(|_| F::rand(&mut rng)).collect();
+        let sender_output: Vec<F> = (0..sender_input.len())
+            .map(|_| F::rand(&mut self.0))
+            .collect();
 
         let receiver_output: Vec<F> = sender_input
             .iter()
@@ -34,11 +42,23 @@ impl IdealM2A {
     }
 }
 
+impl Default for IdealM2A {
+    fn default() -> Self {
+        IdealM2A::from_seed([0u8; 16])
+    }
+}
+
 /// The A2M functionality.
-#[derive(Debug, Default)]
-pub struct IdealA2M;
+#[derive(Debug)]
+pub struct IdealA2M(Prg);
 
 impl IdealA2M {
+    /// Creates a new instance of the A2M functionality using
+    /// the provided seed.
+    pub fn from_seed(seed: [u8; 16]) -> Self {
+        IdealA2M(Prg::from_seed(seed.into()))
+    }
+
     /// Generates multiplicative shares from additive shares.
     pub fn generate<F: Field>(
         &mut self,
@@ -51,8 +71,9 @@ impl IdealA2M {
             "Vectors of field elements should have equal length."
         );
 
-        let mut rng = thread_rng();
-        let sender_output: Vec<F> = (0..sender_input.len()).map(|_| F::rand(&mut rng)).collect();
+        let sender_output: Vec<F> = (0..sender_input.len())
+            .map(|_| F::rand(&mut self.0))
+            .collect();
 
         let receiver_output: Vec<F> = sender_input
             .iter()
@@ -62,6 +83,12 @@ impl IdealA2M {
             .collect();
 
         (sender_output, receiver_output)
+    }
+}
+
+impl Default for IdealA2M {
+    fn default() -> Self {
+        IdealA2M::from_seed([0u8; 16])
     }
 }
 
