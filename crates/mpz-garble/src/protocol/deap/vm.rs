@@ -97,7 +97,7 @@ where
 {
     /// Finalizes the DEAP instance.
     ///
-    /// If this instance is the leader this function returns the follower's
+    /// If this instance is the leader, this function returns the follower's
     /// encoder seed.
     pub async fn finalize(&mut self) -> Result<Option<[u8; 32]>, DEAPError> {
         match mem::replace(&mut self.state, State::Finalized) {
