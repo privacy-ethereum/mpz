@@ -5,29 +5,28 @@ mod error;
 
 use std::{
     collections::{HashMap, HashSet},
+    mem,
     ops::DerefMut,
     sync::{Arc, Mutex},
 };
 
-use futures::{stream::FuturesUnordered, SinkExt, Stream, StreamExt};
 use mpz_circuits::{
     types::{TypeError, Value, ValueType},
     Circuit,
 };
+use mpz_common::{cpu::CpuBackend, executor::DummyExecutor, scoped, Context};
 use mpz_core::hash::Hash;
 use mpz_garble_core::{
-    encoding_state, msg::GarbleMessage, Decoding, EncodedValue, Evaluator as EvaluatorCore,
-    GarbledCircuit,
+    encoding_state, Decoding, EncodedValue, EncodingCommitment, EncryptedGateBatch,
+    Evaluator as EvaluatorCore, EvaluatorOutput, GarbledCircuit,
 };
+use mpz_ot::TransferId;
+use serio::stream::IoStreamExt;
 use utils::iter::FilterDrain;
-use utils_aio::{
-    expect_msg_or_err,
-    non_blocking_backend::{Backend, NonBlockingBackend},
-};
 
 use crate::{
     memory::EncodingMemory,
-    ot::{OTReceiveEncoding, OTVerifyEncoding},
+    ot::{EncodingReceiverOutput, OTReceiveEncoding, OTVerifyEncoding},
     value::{CircuitRefs, ValueId, ValueRef},
     AssignedValues, Generator, GeneratorConfigBuilder,
 };
@@ -66,7 +65,7 @@ struct State {
     /// A map used to look up a garbled circuit by its unique (inputs, outputs) reference.
     garbled_circuits: HashMap<CircuitRefs, GarbledCircuit>,
     /// OT logs
-    ot_log: HashMap<String, Vec<ValueId>>,
+    ot_log: HashMap<TransferId, Vec<ValueId>>,
     /// Garbled circuit logs
     circuit_logs: Vec<EvaluatorLog>,
     /// Decodings of values received from the generator
@@ -142,15 +141,11 @@ impl Evaluator {
     /// - `values` - The assigned values
     /// - `stream` - The stream to receive the encodings from the generator
     /// - `ot` - The OT receiver
-    pub async fn setup_assigned_values<
-        S: Stream<Item = Result<GarbleMessage, std::io::Error>> + Unpin,
-        OT: OTReceiveEncoding,
-    >(
+    pub async fn setup_assigned_values<Ctx: Context, OT: OTReceiveEncoding<Ctx> + Send>(
         &self,
-        id: &str,
+        ctx: &mut Ctx,
         values: &AssignedValues,
-        stream: &mut S,
-        ot: &OT,
+        ot: &mut OT,
     ) -> Result<(), EvaluatorError> {
         // Filter out any values that are already active.
         let (mut ot_recv_values, mut direct_recv_values) = {
@@ -175,10 +170,17 @@ impl Evaluator {
         ot_recv_values.sort_by(|(id1, _), (id2, _)| id1.cmp(id2));
         direct_recv_values.sort_by(|(id1, _), (id2, _)| id1.cmp(id2));
 
-        futures::try_join!(
-            self.ot_receive_active_encodings(id, &ot_recv_values, ot),
-            self.direct_receive_active_encodings(&direct_recv_values, stream)
-        )?;
+        ctx.try_join(
+            scoped!(|ctx| async move {
+                self.direct_receive_active_encodings(ctx, &direct_recv_values)
+                    .await
+            }),
+            scoped!(|ctx| async move {
+                self.ot_receive_active_encodings(ctx, &ot_recv_values, ot)
+                    .await
+            }),
+        )
+        .await??;
 
         Ok(())
     }
@@ -189,11 +191,12 @@ impl Evaluator {
     /// - `id` - The id of this operation
     /// - `values` - The values to receive via oblivious transfer.
     /// - `ot` - The oblivious transfer receiver
-    pub async fn ot_receive_active_encodings<OT: OTReceiveEncoding>(
+    #[tracing::instrument(fields(thread = %ctx.id()), skip_all)]
+    pub async fn ot_receive_active_encodings<Ctx: Context, OT: OTReceiveEncoding<Ctx>>(
         &self,
-        id: &str,
+        ctx: &mut Ctx,
         values: &[(ValueId, Value)],
-        ot: &OT,
+        ot: &mut OT,
     ) -> Result<(), EvaluatorError> {
         if values.is_empty() {
             return Ok(());
@@ -202,7 +205,10 @@ impl Evaluator {
         let (ot_recv_ids, ot_recv_values): (Vec<ValueId>, Vec<Value>) =
             values.iter().cloned().unzip();
 
-        let active_encodings = ot.receive(id, ot_recv_values).await?;
+        let EncodingReceiverOutput {
+            id,
+            encodings: active_encodings,
+        } = ot.receive(ctx, ot_recv_values).await?;
 
         // Make sure the generator sent the expected number of values.
         // This should be handled by the ot receiver, but we double-check anyways :)
@@ -216,7 +222,7 @@ impl Evaluator {
         let mut state = self.state();
 
         // Add the OT log
-        state.ot_log.insert(id.to_string(), ot_recv_ids);
+        state.ot_log.insert(id, ot_recv_ids);
 
         for ((id, value), active_encoding) in values.iter().zip(active_encodings) {
             let expected_ty = value.value_type();
@@ -241,18 +247,18 @@ impl Evaluator {
     /// # Arguments
     /// - `values` - The values and types expected to be received
     /// - `stream` - The stream of messages from the generator
-    pub async fn direct_receive_active_encodings<
-        S: Stream<Item = Result<GarbleMessage, std::io::Error>> + Unpin,
-    >(
+    #[tracing::instrument(fields(thread = %ctx.id()), skip_all)]
+    pub async fn direct_receive_active_encodings<Ctx: Context>(
         &self,
+        ctx: &mut Ctx,
         values: &[(ValueId, ValueType)],
-        stream: &mut S,
     ) -> Result<(), EvaluatorError> {
         if values.is_empty() {
             return Ok(());
         }
 
-        let active_encodings = expect_msg_or_err!(stream, GarbleMessage::ActiveValues)?;
+        let active_encodings: Vec<EncodedValue<encoding_state::Active>> =
+            ctx.io_mut().expect_next().await?;
 
         // Make sure the generator sent the expected number of values.
         if active_encodings.len() != values.len() {
@@ -289,14 +295,13 @@ impl Evaluator {
     /// * `inputs` - The inputs to the circuit
     /// * `outputs` - The outputs from the circuit
     /// * `stream` - The stream from the generator
-    pub async fn receive_garbled_circuit<
-        S: Stream<Item = Result<GarbleMessage, std::io::Error>> + Unpin,
-    >(
+    #[tracing::instrument(fields(thread = %ctx.id()), skip_all)]
+    pub async fn receive_garbled_circuit<Ctx: Context>(
         &self,
+        ctx: &mut Ctx,
         circ: Arc<Circuit>,
         inputs: &[ValueRef],
         outputs: &[ValueRef],
-        stream: &mut S,
     ) -> Result<(), EvaluatorError> {
         let refs = CircuitRefs {
             inputs: inputs.to_vec(),
@@ -309,14 +314,18 @@ impl Evaluator {
 
         let gate_count = circ.and_count();
         let mut gates = Vec::with_capacity(gate_count);
+
         while gates.len() < gate_count {
-            let encrypted_gates = expect_msg_or_err!(stream, GarbleMessage::EncryptedGates)?;
-            gates.extend(encrypted_gates);
+            let batch: EncryptedGateBatch = ctx.io_mut().expect_next().await?;
+            gates.extend_from_slice(&batch.into_array());
         }
+
+        // Trim off any batch padding.
+        gates.truncate(gate_count);
 
         // If configured, expect the output encoding commitments
         let encoding_commitments = if self.config.encoding_commitments {
-            let commitments = expect_msg_or_err!(stream, GarbleMessage::EncodingCommitments)?;
+            let commitments: Vec<EncodingCommitment> = ctx.io_mut().expect_next().await?;
 
             // Make sure the generator sent the expected number of commitments.
             if commitments.len() != circ.outputs().len() {
@@ -352,12 +361,13 @@ impl Evaluator {
     /// * `inputs` - The inputs to the circuit.
     /// * `outputs` - The outputs from the circuit.
     /// * `stream` - The stream of encrypted gates
-    pub async fn evaluate<S: Stream<Item = Result<GarbleMessage, std::io::Error>> + Unpin>(
+    #[tracing::instrument(fields(thread = %ctx.id()), skip_all, err)]
+    pub async fn evaluate<Ctx: Context>(
         &self,
+        ctx: &mut Ctx,
         circ: Arc<Circuit>,
         inputs: &[ValueRef],
         outputs: &[ValueRef],
-        stream: &mut S,
     ) -> Result<Vec<EncodedValue<encoding_state::Active>>, EvaluatorError> {
         let refs = CircuitRefs {
             inputs: inputs.to_vec(),
@@ -377,28 +387,35 @@ impl Evaluator {
                 .collect::<Result<Vec<_>, _>>()?
         };
 
-        let mut ev = if self.config.log_circuits {
-            EvaluatorCore::new_with_hasher(circ.clone(), &encoded_inputs)?
-        } else {
-            EvaluatorCore::new(circ.clone(), &encoded_inputs)?
-        };
-
         let existing_garbled_circuit = self.state().garbled_circuits.remove(&refs);
 
         // If we've already received the garbled circuit, we evaluate it, otherwise we stream the encrypted gates
         // from the generator.
-        let encoded_outputs = if let Some(GarbledCircuit { gates, commitments }) =
-            existing_garbled_circuit
-        {
-            ev = Backend::spawn(move || {
-                ev.evaluate(gates.iter());
-                ev
-            })
-            .await;
+        let EvaluatorOutput {
+            outputs: encoded_outputs,
+            hash,
+        } = if let Some(GarbledCircuit { gates, commitments }) = existing_garbled_circuit {
+            let circ = circ.clone();
+            let hash = self.config.log_circuits;
+            let output = CpuBackend::blocking(move || {
+                let mut ev = EvaluatorCore::default();
+                let mut ev_consumer = ev.evaluate(&circ, encoded_inputs)?;
 
-            let encoded_outputs = ev.outputs()?;
+                if hash {
+                    ev_consumer.enable_hasher();
+                }
+
+                for gate in gates {
+                    ev_consumer.next(gate);
+                }
+
+                ev_consumer.finish().map_err(EvaluatorError::from)
+            })
+            .await?;
+
             if self.config.encoding_commitments {
-                for (output, commitment) in encoded_outputs
+                for (output, commitment) in output
+                    .outputs
                     .iter()
                     .zip(commitments.expect("commitments were checked to be present"))
                 {
@@ -406,35 +423,46 @@ impl Evaluator {
                 }
             }
 
-            encoded_outputs
+            output
         } else {
-            while !ev.is_complete() {
-                let gates = expect_msg_or_err!(stream, GarbleMessage::EncryptedGates)?;
-                ev = Backend::spawn(move || {
-                    ev.evaluate(gates.iter());
-                    ev
-                })
-                .await;
-            }
+            let circ = circ.clone();
+            let hash = self.config.log_circuits;
+            let output = ctx
+                .blocking(scoped!(move |ctx| async move {
+                    let mut ev = EvaluatorCore::default();
+                    let mut ev_consumer = ev.evaluate_batched(&circ, encoded_inputs)?;
+                    let io = ctx.io_mut();
 
-            let encoded_outputs = ev.outputs()?;
+                    if hash {
+                        ev_consumer.enable_hasher();
+                    }
+
+                    while ev_consumer.wants_gates() {
+                        let batch: EncryptedGateBatch = io.expect_next().await?;
+                        ev_consumer.next(batch);
+                    }
+
+                    ev_consumer.finish().map_err(EvaluatorError::from)
+                }))
+                .await??;
+
             if self.config.encoding_commitments {
-                let commitments = expect_msg_or_err!(stream, GarbleMessage::EncodingCommitments)?;
+                let commitments: Vec<EncodingCommitment> = ctx.io_mut().expect_next().await?;
 
                 // Make sure the generator sent the expected number of commitments.
-                if commitments.len() != encoded_outputs.len() {
+                if commitments.len() != output.outputs.len() {
                     return Err(EvaluatorError::IncorrectValueCount {
-                        expected: encoded_outputs.len(),
+                        expected: output.outputs.len(),
                         actual: commitments.len(),
                     });
                 }
 
-                for (output, commitment) in encoded_outputs.iter().zip(commitments) {
+                for (output, commitment) in output.outputs.iter().zip(commitments) {
                     commitment.verify(output)?;
                 }
             }
 
-            encoded_outputs
+            output
         };
 
         // Add the output encodings to the memory.
@@ -445,7 +473,7 @@ impl Evaluator {
 
         // If configured, log the circuit evaluation
         if self.config.log_circuits {
-            let hash = ev.hash().unwrap();
+            let hash = hash.unwrap();
             state.circuit_logs.push(EvaluatorLog::new(
                 inputs.to_vec(),
                 outputs.to_vec(),
@@ -464,12 +492,12 @@ impl Evaluator {
     ///
     /// * `values` - The values to decode
     /// * `stream` - The stream from the generator
-    pub async fn decode<S: Stream<Item = Result<GarbleMessage, std::io::Error>> + Unpin>(
+    pub async fn decode<Ctx: Context>(
         &self,
+        ctx: &mut Ctx,
         values: &[ValueRef],
-        stream: &mut S,
     ) -> Result<Vec<Value>, EvaluatorError> {
-        let decodings = expect_msg_or_err!(stream, GarbleMessage::ValueDecodings)?;
+        let decodings: Vec<Decoding> = ctx.io_mut().expect_next().await?;
 
         // Make sure the generator sent the expected number of decodings.
         if decodings.len() != values.len() {
@@ -509,10 +537,11 @@ impl Evaluator {
     ///
     /// * `encoder_seed` - The seed used by the generator to generate encodings for input values.
     /// * `ot` - The OT verifier.
-    pub async fn verify<T: OTVerifyEncoding>(
+    pub async fn verify<Ctx: Context, T: OTVerifyEncoding<Ctx>>(
         &mut self,
+        ctx: &mut Ctx,
         encoder_seed: [u8; 32],
-        ot: &T,
+        ot: &mut T,
     ) -> Result<(), EvaluatorError> {
         // This function requires an exclusive reference to self, and because this
         // object owns the Mutex, we are guaranteed that no other thread is accessing
@@ -528,32 +557,29 @@ impl Evaluator {
             self.state().received_values.drain().collect();
         gen.generate_input_encodings_by_id(&received_values);
 
-        // Verify all OTs in the log
-        let mut ot_futs: FuturesUnordered<_> = self
-            .state()
-            .ot_log
-            .iter()
-            .map(|(ot_id, value_ids)| {
-                let encoded_values = gen
-                    .get_encodings_by_id(value_ids)
-                    .expect("encodings should be present");
-                let ot_id = ot_id.to_string();
-                async move { ot.verify(&ot_id, encoded_values).await }
-            })
-            .collect();
+        let (ot_log, mut circuit_logs) = {
+            let mut state = self.state();
+            (
+                mem::take(&mut state.ot_log),
+                mem::take(&mut state.circuit_logs),
+            )
+        };
 
-        while let Some(result) = ot_futs.next().await {
-            result?;
+        // Verify all OTs in the log
+        for (ot_id, value_ids) in ot_log {
+            let encoded_values = gen
+                .get_encodings_by_id(&value_ids)
+                .expect("encodings should be present");
+            ot.verify(ctx, ot_id, encoded_values).await?
         }
 
         // Verify all garbled circuits in the log
-        while !self.state().circuit_logs.is_empty() {
+        let mut dummy_ctx = DummyExecutor::default();
+        while !circuit_logs.is_empty() {
             // drain_filter is not stabilized.. such is life.
             // here we drain out log batches for which we have all the input encodings
             // computed at this point.
-            let log_batch = self
-                .state()
-                .circuit_logs
+            let log_batch = circuit_logs
                 .filter_drain(|log| {
                     log.inputs
                         .iter()
@@ -561,33 +587,22 @@ impl Evaluator {
                 })
                 .collect::<Vec<_>>();
 
-            let mut batch_futs: FuturesUnordered<_> = log_batch
-                .iter()
-                .map(|log| async {
-                    // Compute the garbled circuit digest
-                    let (_, digest) = gen
-                        .generate(
-                            log.circ.clone(),
-                            &log.inputs,
-                            &log.outputs,
-                            &mut futures::sink::drain().sink_map_err(|_| {
-                                std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "")
-                            }),
-                            true,
-                        )
-                        .await
-                        .map_err(VerificationError::from)?;
+            for log in log_batch {
+                // Compute the garbled circuit digest
+                let (_, digest) = gen
+                    .generate(
+                        &mut dummy_ctx,
+                        log.circ.clone(),
+                        &log.inputs,
+                        &log.outputs,
+                        true,
+                    )
+                    .await
+                    .map_err(VerificationError::from)?;
 
-                    if digest.unwrap() != log.hash {
-                        return Err(VerificationError::InvalidGarbledCircuit);
-                    }
-
-                    Ok(())
-                })
-                .collect();
-
-            while let Some(result) = batch_futs.next().await {
-                result?;
+                if digest.unwrap() != log.hash {
+                    return Err(VerificationError::InvalidGarbledCircuit.into());
+                }
             }
         }
 

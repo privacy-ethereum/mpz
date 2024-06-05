@@ -1,14 +1,13 @@
 use mpz_circuits::{circuits::AES128, types::StaticValueType};
-use mpz_garble_core::msg::GarbleMessage;
-use mpz_ot::ideal::ideal_ot_shared_pair;
-use utils_aio::duplex::MemoryDuplex;
+use mpz_common::executor::test_st_executor;
+use mpz_ot::ideal::ot::ideal_ot;
 
 use mpz_garble::{config::Visibility, Evaluator, Generator, GeneratorConfigBuilder, ValueMemory};
 
 #[tokio::test]
 async fn test_semi_honest() {
-    let (mut gen_channel, mut ev_channel) = MemoryDuplex::<GarbleMessage>::new();
-    let (ot_send, ot_recv) = ideal_ot_shared_pair();
+    let (mut ctx_a, mut ctx_b) = test_st_executor(8);
+    let (mut ot_send, mut ot_recv) = ideal_ot();
 
     let gen = Generator::new(
         GeneratorConfigBuilder::default().build().unwrap(),
@@ -42,19 +41,18 @@ async fn test_semi_honest() {
         gen.generate_input_encoding(&msg_ref, &msg_typ);
 
         gen.setup_assigned_values(
-            "test",
+            &mut ctx_a,
             &memory.drain_assigned(&[key_ref.clone(), msg_ref.clone()]),
-            &mut gen_channel,
-            &ot_send,
+            &mut ot_send,
         )
         .await
         .unwrap();
 
         gen.generate(
+            &mut ctx_a,
             AES128.clone(),
             &[key_ref.clone(), msg_ref.clone()],
             &[ciphertext_ref.clone()],
-            &mut gen_channel,
             false,
         )
         .await
@@ -79,20 +77,19 @@ async fn test_semi_honest() {
         memory.assign(&msg_ref, msg.into()).unwrap();
 
         ev.setup_assigned_values(
-            "test",
+            &mut ctx_b,
             &memory.drain_assigned(&[key_ref.clone(), msg_ref.clone()]),
-            &mut ev_channel,
-            &ot_recv,
+            &mut ot_recv,
         )
         .await
         .unwrap();
 
         _ = ev
             .evaluate(
+                &mut ctx_b,
                 AES128.clone(),
                 &[key_ref.clone(), msg_ref.clone()],
                 &[ciphertext_ref.clone()],
-                &mut ev_channel,
             )
             .await
             .unwrap();

@@ -21,15 +21,12 @@ pub(crate) mod internal_circuits;
 pub(crate) mod memory;
 pub mod ot;
 pub mod protocol;
-mod threadpool;
 pub mod value;
 
 pub use evaluator::{Evaluator, EvaluatorConfig, EvaluatorConfigBuilder, EvaluatorError};
 pub use generator::{Generator, GeneratorConfig, GeneratorConfigBuilder, GeneratorError};
 pub use memory::{AssignedValues, ValueMemory};
-pub use threadpool::ThreadPool;
 
-use utils::id::NestedId;
 use value::{ArrayRef, ValueId, ValueRef};
 
 /// Errors that can occur when using an implementation of [`Vm`].
@@ -158,32 +155,6 @@ pub enum DecodeError {
 pub trait Vm {
     /// The type of thread.
     type Thread: Thread + Send + 'static;
-
-    /// Creates a new thread.
-    async fn new_thread(&mut self, id: &str) -> Result<Self::Thread, VmError>;
-
-    /// Creates a new thread pool.
-    ///
-    /// A thread pool must have at least one thread.
-    async fn new_thread_pool(
-        &mut self,
-        id: &str,
-        thread_count: usize,
-    ) -> Result<ThreadPool<Self::Thread>, VmError> {
-        if thread_count == 0 {
-            return Err(VmError::ThreadPoolEmpty);
-        }
-
-        let mut id = NestedId::new(id).append_counter();
-        let mut threads = Vec::with_capacity(thread_count);
-        for _ in 0..thread_count {
-            threads.push(
-                self.new_thread(&id.increment_in_place().to_string())
-                    .await?,
-            );
-        }
-        Ok(ThreadPool::new(threads))
-    }
 }
 
 /// This trait provides an abstraction of a thread in an MPC virtual machine.
