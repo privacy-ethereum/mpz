@@ -1,7 +1,11 @@
 //! Synchronization primitives.
 
+mod async_mutex;
+mod async_syncer;
 mod mutex;
 
+pub use async_mutex::AsyncMutex;
+pub use async_syncer::AsyncSyncer;
 pub use mutex::{Mutex, MutexError};
 
 use std::{
