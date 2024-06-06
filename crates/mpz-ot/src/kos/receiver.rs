@@ -65,6 +65,10 @@ where
         Ok(self.state.try_as_extension()?.remaining())
     }
 
+    pub(crate) fn state(&self) -> &State {
+        &self.state
+    }
+
     /// Returns the provided number of keys.
     pub(crate) fn take_keys(&mut self, count: usize) -> Result<ReceiverKeys, ReceiverError> {
         self.state
