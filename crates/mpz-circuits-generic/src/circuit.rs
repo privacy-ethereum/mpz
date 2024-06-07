@@ -43,6 +43,8 @@ where
             self.input_map.insert(input.id, self.gates.len());
         }
 
+        // Verify that gates provide at least one input and one output, otherwise it's disconnected.
+
         self.gates.push(gate);
         self
     }
@@ -50,6 +52,12 @@ where
     /// Builds the circuit.
     pub fn build(&mut self) -> Result<Circuit<T>, CircuitBuilderError> {
         self.sort_gates()?;
+
+        // Verify that the circuit has at least one gate.
+
+        // Get the total stack length.
+
+        // Verifying that no node is out of index.
 
         Ok(Circuit::new(take(&mut self.gates)))
     }
