@@ -7,16 +7,16 @@ use std::iter;
 
 #[derive(Debug)]
 pub struct Gate {
-    inputs: Vec<Node<u32>>,
-    output: Node<u32>,
+    inputs: Vec<Node>,
+    output: Node,
 }
 
 impl Component for Gate {
-    fn get_inputs(&self) -> impl Iterator<Item = &Node<u32>> {
+    fn get_inputs(&self) -> impl Iterator<Item = &Node> {
         self.inputs.iter()
     }
 
-    fn get_outputs(&self) -> impl Iterator<Item = &Node<u32>> {
+    fn get_outputs(&self) -> impl Iterator<Item = &Node> {
         iter::once(&self.output)
     }
 }
