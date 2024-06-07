@@ -15,10 +15,11 @@ mod test_utils {
 
     use super::*;
 
+    /// Test single-threaded executor.
+    pub type TestSTExecutor = STExecutor<MemoryDuplex>;
+
     /// Creates a pair of single-threaded executors with memory I/O channels.
-    pub fn test_st_executor(
-        io_buffer: usize,
-    ) -> (STExecutor<MemoryDuplex>, STExecutor<MemoryDuplex>) {
+    pub fn test_st_executor(io_buffer: usize) -> (TestSTExecutor, TestSTExecutor) {
         let (io_0, io_1) = duplex(io_buffer);
 
         (STExecutor::new(io_0), STExecutor::new(io_1))
