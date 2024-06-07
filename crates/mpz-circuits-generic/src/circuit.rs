@@ -14,7 +14,7 @@ use thiserror::Error;
 /// The built output is ensured to be a directed acyclic graph (DAG).
 ///
 /// The gates are topologically sorted.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct CircuitBuilder<T>
 where
     T: Component,
@@ -22,7 +22,7 @@ where
     /// Circuit gates
     gates: Vec<T>,
     /// For each input, map the gate index that provides it.
-    input_map: HashMap<usize, usize>,
+    input_map: HashMap<u32, usize>,
 }
 
 impl<T> CircuitBuilder<T>
@@ -39,8 +39,8 @@ where
 
     /// Adds a gate to the builder.
     pub fn add_gate(&mut self, gate: T) -> &mut Self {
-        for &input in gate.get_inputs().iter() {
-            self.input_map.insert(input, self.gates.len());
+        for input in gate.get_inputs() {
+            self.input_map.insert(input.id, self.gates.len());
         }
 
         self.gates.push(gate);
@@ -48,7 +48,7 @@ where
     }
 
     /// Builds the circuit.
-    pub fn build(&mut self) -> Result<Circuit<T>, CircuitError> {
+    pub fn build(&mut self) -> Result<Circuit<T>, CircuitBuilderError> {
         self.sort_gates()?;
 
         Ok(Circuit::new(take(&mut self.gates)))
@@ -62,7 +62,7 @@ where
     /// This requires that the gates form a directed acyclic graph (DAG).
     ///
     /// The sorting is done using Kahn's Algorithm.
-    fn sort_gates(&mut self) -> Result<(), CircuitError> {
+    fn sort_gates(&mut self) -> Result<(), CircuitBuilderError> {
         // In-degree: the number of gates that provide input to each gate
         // This represents how many other gates need to be processed before this gate
         let mut in_degree = vec![0; self.gates.len()];
@@ -72,8 +72,8 @@ where
 
         // Populate lists
         for (i, gate) in self.gates.iter().enumerate() {
-            for &output in gate.get_outputs().iter() {
-                let output = self.input_map.get(&output);
+            for output in gate.get_outputs() {
+                let output = self.input_map.get(&output.id);
 
                 if let Some(&gate_index) = output {
                     adjacency_list[i].push(gate_index);
@@ -109,7 +109,7 @@ where
 
         // If some node is left unprocessed, there is a cycle
         if sorted_indices.len() != self.gates.len() {
-            return Err(CircuitError::CycleDetected);
+            return Err(CircuitBuilderError::CycleDetected);
         }
 
         // Sort the gates
@@ -152,7 +152,7 @@ impl<T> Circuit<T> {
 
 /// Circuit errors.
 #[derive(Debug, Error, PartialEq, Eq)]
-pub enum CircuitError {
+pub enum CircuitBuilderError {
     #[error("Cycle detected")]
     CycleDetected,
 }

@@ -1,2 +1,5 @@
-pub mod circuit;
-pub mod model;
+mod circuit;
+mod model;
+
+pub use circuit::{Circuit, CircuitBuilder, CircuitBuilderError};
+pub use model::{Component, Node};
