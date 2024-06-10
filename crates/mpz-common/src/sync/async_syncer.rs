@@ -156,7 +156,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use futures::executor::block_on;
+    use futures::{executor::block_on, poll};
     use serio::channel::duplex;
 
     use super::*;
@@ -173,45 +173,52 @@ mod tests {
         let log_a = Arc::new(Mutex::new(Vec::new()));
         let log_b = Arc::new(Mutex::new(Vec::new()));
 
-        let a = async {
-            futures::try_join!(
-                syncer_a.sync(&mut io_0a, async {
-                    let mut log = log_a.lock().await;
-                    log.push(0);
-                }),
-                syncer_a.sync(&mut io_1a, async {
-                    let mut log = log_a.lock().await;
-                    log.push(1);
-                }),
-                syncer_a.sync(&mut io_2a, async {
-                    let mut log = log_a.lock().await;
-                    log.push(2);
-                }),
-            )
-            .unwrap();
-        };
-
-        // Order is out of sync.
-        let b = async {
-            futures::try_join!(
-                syncer_b.sync(&mut io_2b, async {
-                    let mut log = log_b.lock().await;
-                    log.push(2);
-                }),
-                syncer_b.sync(&mut io_0b, async {
-                    let mut log = log_b.lock().await;
-                    log.push(0);
-                }),
-                syncer_b.sync(&mut io_1b, async {
-                    let mut log = log_b.lock().await;
-                    log.push(1);
-                }),
-            )
-            .unwrap();
-        };
-
         block_on(async {
-            futures::join!(a, b);
+            syncer_a
+                .sync(&mut io_0a, async {
+                    let mut log = log_a.lock().await;
+                    log.push(0);
+                })
+                .await
+                .unwrap();
+            syncer_a
+                .sync(&mut io_1a, async {
+                    let mut log = log_a.lock().await;
+                    log.push(1);
+                })
+                .await
+                .unwrap();
+            syncer_a
+                .sync(&mut io_2a, async {
+                    let mut log = log_a.lock().await;
+                    log.push(2);
+                })
+                .await
+                .unwrap();
+        });
+
+        let mut fut_a = Box::pin(syncer_b.sync(&mut io_2b, async {
+            let mut log = log_b.lock().await;
+            log.push(2);
+        }));
+
+        let mut fut_b = Box::pin(syncer_b.sync(&mut io_0b, async {
+            let mut log = log_b.lock().await;
+            log.push(0);
+        }));
+
+        let mut fut_c = Box::pin(syncer_b.sync(&mut io_1b, async {
+            let mut log = log_b.lock().await;
+            log.push(1);
+        }));
+
+        block_on(async move {
+            // Poll out of order.
+            assert!(poll!(&mut fut_a).is_pending());
+            assert!(poll!(&mut fut_c).is_pending());
+            assert!(poll!(&mut fut_b).is_ready());
+            assert!(poll!(&mut fut_c).is_ready());
+            assert!(poll!(&mut fut_a).is_ready());
         });
 
         let log_a = Arc::into_inner(log_a).unwrap().into_inner();
