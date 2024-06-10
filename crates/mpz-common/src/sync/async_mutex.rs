@@ -1,5 +1,6 @@
 //! Synchronized async mutex.
 
+use pollster::FutureExt;
 use tokio::sync::{Mutex as TokioMutex, MutexGuard};
 
 use crate::{
@@ -58,6 +59,17 @@ impl<T> AsyncMutex<T> {
             .sync(ctx.io_mut(), self.inner.lock())
             .await
             .map_err(MutexError::from)
+    }
+
+    /// Returns an unsynchronized blocking lock on the mutex.
+    ///
+    /// # Warning
+    ///
+    /// Do not use this method unless you are certain that the way you're mutating the state does
+    /// not require synchronization. Also, don't hold this lock across await points it will cause
+    /// deadlocks.
+    pub fn blocking_lock_unsync(&self) -> MutexGuard<'_, T> {
+        self.inner.lock().block_on()
     }
 
     /// Returns the inner value, consuming the mutex.
