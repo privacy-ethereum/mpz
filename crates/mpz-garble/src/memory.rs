@@ -20,6 +20,13 @@ pub struct AssignedValues {
     pub blind: Vec<(ValueId, ValueType)>,
 }
 
+impl AssignedValues {
+    #[allow(clippy::len_without_is_empty)]
+    pub(crate) fn len(&self) -> usize {
+        self.public.len() + self.private.len() + self.blind.len()
+    }
+}
+
 enum AssignedValue {
     Public(Value),
     Private(Value),

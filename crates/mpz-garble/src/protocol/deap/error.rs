@@ -20,6 +20,8 @@ pub enum DEAPError {
     ValueError(#[from] ValueError),
     #[error("value does not exist: {0:?}")]
     ValueDoesNotExist(ValueRef),
+    #[error("commitment error: {0}")]
+    CommitmentError(String),
     #[error("missing encoding for value: {0:?}")]
     MissingEncoding(ValueRef),
     #[error(transparent)]
