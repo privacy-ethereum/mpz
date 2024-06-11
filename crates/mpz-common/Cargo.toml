@@ -5,7 +5,7 @@ edition = "2021"
 
 [features]
 default = ["sync"]
-sync = []
+sync = ["tokio/sync"]
 test-utils = ["uid-mux/test-utils"]
 ideal = []
 rayon = ["dep:rayon"]
@@ -16,6 +16,7 @@ mpz-core.workspace = true
 
 futures.workspace = true
 async-trait.workspace = true
+pin-project-lite.workspace = true
 scoped-futures.workspace = true
 thiserror.workspace = true
 serio.workspace = true
@@ -24,6 +25,7 @@ serde = { workspace = true, features = ["derive"] }
 pollster.workspace = true
 rayon = { workspace = true, optional = true }
 cfg-if.workspace = true
+tokio = { workspace = true, optional = true, default-features = false }
 
 [dev-dependencies]
 tokio = { workspace = true, features = [
