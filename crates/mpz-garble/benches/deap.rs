@@ -2,7 +2,7 @@ use criterion::{criterion_group, criterion_main, Criterion};
 
 use mpz_circuits::circuits::AES128;
 use mpz_common::executor::test_mt_executor;
-use mpz_garble::{config::Role, protocol::deap::DEAPVm, Decode, Execute, Memory};
+use mpz_garble::{config::Role, protocol::deap::DEAPThread, Decode, Execute, Memory};
 use mpz_ot::ideal::ot::ideal_ot;
 
 fn criterion_benchmark(c: &mut Criterion) {
@@ -23,7 +23,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                 async move {
                     let leader_ctx = leader_exec.new_thread().await.unwrap();
 
-                    let mut leader_vm = DEAPVm::new(
+                    let mut leader_vm = DEAPThread::new(
                         Role::Leader,
                         [42u8; 32],
                         leader_ctx,
@@ -57,7 +57,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                 async move {
                     let follower_ctx = follower_exec.new_thread().await.unwrap();
 
-                    let mut follower_vm = DEAPVm::new(
+                    let mut follower_vm = DEAPThread::new(
                         Role::Follower,
                         [69u8; 32],
                         follower_ctx,
