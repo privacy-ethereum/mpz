@@ -2,20 +2,20 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 
-use mpz_common::{sync::Mutex, Context};
+use mpz_common::{sync::AsyncMutex, Context};
 use mpz_core::Block;
-use mpz_ot_core::OTSenderOutput;
 use serio::{stream::IoStreamExt as _, SinkExt as _};
 
 use crate::{
     kos::{Sender, SenderError},
-    OTError, OTReceiver, OTSender,
+    CommittedOTReceiver, CommittedOTSender, OTError, OTReceiver, OTSender, OTSenderOutput,
+    ROTSenderOutput, RandomOTSender,
 };
 
 /// A shared KOS sender.
 #[derive(Debug, Clone)]
 pub struct SharedSender<BaseOT> {
-    inner: Arc<Mutex<Sender<BaseOT>>>,
+    inner: Arc<AsyncMutex<Sender<BaseOT>>>,
 }
 
 impl<BaseOT> SharedSender<BaseOT> {
@@ -23,7 +23,7 @@ impl<BaseOT> SharedSender<BaseOT> {
     pub fn new(sender: Sender<BaseOT>) -> Self {
         Self {
             // KOS sender is always the follower.
-            inner: Arc::new(Mutex::new_follower(sender)),
+            inner: Arc::new(AsyncMutex::new_follower(sender)),
         }
     }
 }
@@ -53,5 +53,36 @@ where
             .map_err(SenderError::from)?;
 
         Ok(OTSenderOutput { id })
+    }
+}
+
+#[async_trait]
+impl<Ctx, BaseOT> RandomOTSender<Ctx, [Block; 2]> for SharedSender<BaseOT>
+where
+    Ctx: Context,
+    BaseOT: OTReceiver<Ctx, bool, Block> + Send + 'static,
+{
+    async fn send_random(
+        &mut self,
+        ctx: &mut Ctx,
+        count: usize,
+    ) -> Result<ROTSenderOutput<[Block; 2]>, OTError> {
+        self.inner.lock(ctx).await?.send_random(ctx, count).await
+    }
+}
+
+#[async_trait]
+impl<Ctx, BaseOT> CommittedOTSender<Ctx, [Block; 2]> for SharedSender<BaseOT>
+where
+    Ctx: Context,
+    BaseOT: CommittedOTReceiver<Ctx, bool, Block> + Send + 'static,
+{
+    async fn reveal(&mut self, ctx: &mut Ctx) -> Result<(), OTError> {
+        self.inner
+            .lock(ctx)
+            .await?
+            .reveal(ctx)
+            .await
+            .map_err(OTError::from)
     }
 }
