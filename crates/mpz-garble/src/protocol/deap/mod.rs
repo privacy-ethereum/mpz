@@ -140,6 +140,8 @@ impl DEAP {
     }
 
     /// Commits the provided input values.
+    ///
+    /// Values which are already committed are ignored.
     pub async fn commit<Ctx, OTS, OTR>(
         &self,
         ctx: &mut Ctx,
@@ -182,6 +184,8 @@ impl DEAP {
     }
 
     /// Commits the provided values for proving.
+    ///
+    /// Values which are already committed are ignored.
     pub async fn commit_prove<Ctx, OTR>(
         &self,
         ctx: &mut Ctx,
@@ -200,7 +204,9 @@ impl DEAP {
         Ok(())
     }
 
-    /// Commits the provided values for verifying.
+    /// Receives commitments to the provided values from the prover.
+    ///
+    /// Values which are already committed are ignored.
     pub async fn commit_verify<Ctx, OTS>(
         &self,
         ctx: &mut Ctx,
