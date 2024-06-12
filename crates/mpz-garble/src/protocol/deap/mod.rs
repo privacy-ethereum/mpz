@@ -153,12 +153,6 @@ impl DEAP {
         OTR: OTReceiveEncoding<Ctx> + Send,
     {
         let assigned = self.state().memory.drain_assigned(inputs);
-        if assigned.len() != inputs.iter().map(|value| value.len()).sum() {
-            return Err(DEAPError::CommitmentError(
-                "attempted to commit unassigned values".to_string(),
-            ));
-        }
-
         match self.role {
             Role::Leader => {
                 try_join!(
@@ -199,17 +193,6 @@ impl DEAP {
         OTR: OTReceiveEncoding<Ctx> + Send,
     {
         let assigned = self.state().memory.drain_assigned(values);
-
-        if assigned.len() != values.iter().map(|value| value.len()).sum() {
-            return Err(DEAPError::CommitmentError(
-                "attempted to commit unassigned values".to_string(),
-            ));
-        } else if !assigned.blind.is_empty() {
-            return Err(DEAPError::CommitmentError(
-                "attempted to commit blind values as prover".to_string(),
-            ));
-        }
-
         self.ev
             .setup_assigned_values(ctx, &assigned, ot_recv)
             .await?;
@@ -229,17 +212,6 @@ impl DEAP {
         OTS: OTSendEncoding<Ctx> + Send,
     {
         let assigned = self.state().memory.drain_assigned(values);
-
-        if assigned.len() != values.iter().map(|value| value.len()).sum() {
-            return Err(DEAPError::CommitmentError(
-                "attempted to commit to unassigned values".to_string(),
-            ));
-        } else if !assigned.private.is_empty() {
-            return Err(DEAPError::CommitmentError(
-                "attempted to commit private values as verifier".to_string(),
-            ));
-        }
-
         self.gen
             .setup_assigned_values(ctx, &assigned, ot_send)
             .await?;
