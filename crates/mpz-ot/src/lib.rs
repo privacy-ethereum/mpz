@@ -15,7 +15,6 @@ pub mod ideal;
 pub mod kos;
 
 use async_trait::async_trait;
-use mpz_common::Context;
 
 pub use mpz_ot_core::{
     COTReceiverOutput, COTSenderOutput, OTReceiverOutput, OTSenderOutput, RCOTReceiverOutput,
@@ -40,10 +39,7 @@ pub enum OTError {
 
 /// An oblivious transfer protocol that needs to perform a one-time setup.
 #[async_trait]
-pub trait OTSetup<Ctx>
-where
-    Ctx: Context,
-{
+pub trait OTSetup<Ctx> {
     /// Runs any one-time setup for the protocol.
     ///
     /// # Arguments
@@ -134,12 +130,7 @@ pub trait OTReceiver<Ctx, T, U> {
 
 /// A correlated oblivious transfer receiver.
 #[async_trait]
-pub trait COTReceiver<Ctx, T, U>
-where
-    Ctx: Context,
-    T: Send + Sync,
-    U: Send + Sync,
-{
+pub trait COTReceiver<Ctx, T, U> {
     /// Obliviously receives correlated messages from the sender.
     ///
     /// # Arguments
@@ -155,12 +146,7 @@ where
 
 /// A random OT receiver.
 #[async_trait]
-pub trait RandomOTReceiver<Ctx, T, U>
-where
-    Ctx: Context,
-    T: Send + Sync,
-    U: Send + Sync,
-{
+pub trait RandomOTReceiver<Ctx, T, U> {
     /// Outputs the choice bits and the corresponding messages.
     ///
     /// # Arguments
@@ -176,12 +162,7 @@ where
 
 /// A random correlated oblivious transfer receiver.
 #[async_trait]
-pub trait RandomCOTReceiver<Ctx, T, U>
-where
-    Ctx: Context,
-    T: Send + Sync,
-    U: Send + Sync,
-{
+pub trait RandomCOTReceiver<Ctx, T, U> {
     /// Obliviously receives correlated messages with random choices.
     ///
     /// Returns a tuple of the choices and the messages, respectively.

@@ -1,9 +1,11 @@
+use std::mem;
+
 use async_trait::async_trait;
 use enum_try_as_inner::EnumTryAsInner;
 use futures::TryFutureExt;
 use itybity::IntoBits;
 use mpz_cointoss as cointoss;
-use mpz_common::{try_join, Context};
+use mpz_common::{try_join, Allocate, Context, Preprocess};
 use mpz_core::{prg::Prg, Block};
 use mpz_ot_core::{
     kos::{
@@ -13,8 +15,11 @@ use mpz_ot_core::{
     },
     OTSenderOutput, ROTSenderOutput,
 };
-use rand::{thread_rng, Rng};
-use rand_core::{RngCore, SeedableRng};
+use rand::{
+    distributions::{Distribution, Standard},
+    thread_rng, Rng,
+};
+use rand_core::SeedableRng;
 use serio::{stream::IoStreamExt as _, SinkExt as _};
 use utils_aio::non_blocking_backend::{Backend, NonBlockingBackend};
 
@@ -37,7 +42,7 @@ pub(crate) enum State {
 pub struct Sender<BaseOT> {
     state: State,
     base: BaseOT,
-
+    alloc: usize,
     cointoss_sender: Option<cointoss::Sender<cointoss::sender_state::Received>>,
 }
 
@@ -51,6 +56,7 @@ impl<BaseOT: Send> Sender<BaseOT> {
         Self {
             state: State::Initialized(SenderCore::new(config)),
             base,
+            alloc: 0,
             cointoss_sender: None,
         }
     }
@@ -256,6 +262,34 @@ where
     }
 }
 
+impl<BaseOT> Allocate for Sender<BaseOT> {
+    fn alloc(&mut self, count: usize) {
+        self.alloc += count;
+    }
+}
+
+#[async_trait]
+impl<Ctx, BaseOT> Preprocess<Ctx> for Sender<BaseOT>
+where
+    Ctx: Context,
+    BaseOT: OTSetup<Ctx> + OTReceiver<Ctx, bool, Block> + Send + 'static,
+{
+    type Error = OTError;
+
+    async fn preprocess(&mut self, ctx: &mut Ctx) -> Result<(), OTError> {
+        if self.state.is_initialized() {
+            self.setup(ctx).await?;
+        }
+
+        let count = mem::take(&mut self.alloc);
+        if count == 0 {
+            return Ok(());
+        }
+
+        self.extend(ctx, count).await.map_err(OTError::from)
+    }
+}
+
 #[async_trait]
 impl<Ctx, BaseOT> OTSender<Ctx, [Block; 2]> for Sender<BaseOT>
 where
@@ -289,32 +323,6 @@ where
             .map_err(SenderError::from)?;
 
         Ok(OTSenderOutput { id })
-    }
-}
-
-#[async_trait]
-impl<Ctx, BaseOT> RandomOTSender<Ctx, [Block; 2]> for Sender<BaseOT>
-where
-    Ctx: Context,
-    BaseOT: Send,
-{
-    async fn send_random(
-        &mut self,
-        _ctx: &mut Ctx,
-        count: usize,
-    ) -> Result<ROTSenderOutput<[Block; 2]>, OTError> {
-        let sender = self
-            .state
-            .try_as_extension_mut()
-            .map_err(SenderError::from)?;
-
-        let random_outputs = sender.keys(count).map_err(SenderError::from)?;
-        let id = random_outputs.id();
-
-        Ok(ROTSenderOutput {
-            id,
-            msgs: random_outputs.take_keys(),
-        })
     }
 }
 
@@ -353,39 +361,37 @@ where
 }
 
 #[async_trait]
-impl<Ctx, const N: usize, BaseOT> RandomOTSender<Ctx, [[u8; N]; 2]> for Sender<BaseOT>
+impl<Ctx, T, BaseOT> RandomOTSender<Ctx, [T; 2]> for Sender<BaseOT>
 where
     Ctx: Context,
+    Standard: Distribution<T>,
     BaseOT: Send,
 {
     async fn send_random(
         &mut self,
         _ctx: &mut Ctx,
         count: usize,
-    ) -> Result<ROTSenderOutput<[[u8; N]; 2]>, OTError> {
+    ) -> Result<ROTSenderOutput<[T; 2]>, OTError> {
         let sender = self
             .state
             .try_as_extension_mut()
             .map_err(SenderError::from)?;
 
-        let random_outputs = sender.keys(count).map_err(SenderError::from)?;
-        let id = random_outputs.id();
+        let keys = sender.keys(count).map_err(SenderError::from)?;
+        let id = keys.id();
 
-        let prng = |block| {
-            let mut prg = Prg::from_seed(block);
-            let mut out = [0_u8; N];
-            prg.fill_bytes(&mut out);
-            out
-        };
+        let msgs = keys
+            .take_keys()
+            .into_iter()
+            .map(|[k0, k1]| {
+                let mut prg_0 = Prg::from_seed(k0);
+                let mut prg_1 = Prg::from_seed(k1);
 
-        Ok(ROTSenderOutput {
-            id,
-            msgs: random_outputs
-                .take_keys()
-                .into_iter()
-                .map(|[a, b]| [prng(a), prng(b)])
-                .collect(),
-        })
+                [prg_0.gen::<T>(), prg_1.gen::<T>()]
+            })
+            .collect();
+
+        Ok(ROTSenderOutput { id, msgs })
     }
 }
 

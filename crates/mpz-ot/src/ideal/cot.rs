@@ -4,7 +4,7 @@ use async_trait::async_trait;
 
 use mpz_common::{
     ideal::{ideal_f2p, Alice, Bob},
-    Context,
+    Allocate, Context, Preprocess,
 };
 use mpz_core::Block;
 use mpz_ot_core::{
@@ -59,6 +59,22 @@ where
     }
 }
 
+impl Allocate for IdealCOTSender {
+    fn alloc(&mut self, _count: usize) {}
+}
+
+#[async_trait]
+impl<Ctx> Preprocess<Ctx> for IdealCOTSender
+where
+    Ctx: Context,
+{
+    type Error = OTError;
+
+    async fn preprocess(&mut self, _ctx: &mut Ctx) -> Result<(), OTError> {
+        Ok(())
+    }
+}
+
 #[async_trait]
 impl<Ctx: Context> COTSender<Ctx, Block> for IdealCOTSender {
     async fn send_correlated(
@@ -91,6 +107,22 @@ where
     Ctx: Context,
 {
     async fn setup(&mut self, _ctx: &mut Ctx) -> Result<(), OTError> {
+        Ok(())
+    }
+}
+
+impl Allocate for IdealCOTReceiver {
+    fn alloc(&mut self, _count: usize) {}
+}
+
+#[async_trait]
+impl<Ctx> Preprocess<Ctx> for IdealCOTReceiver
+where
+    Ctx: Context,
+{
+    type Error = OTError;
+
+    async fn preprocess(&mut self, _ctx: &mut Ctx) -> Result<(), OTError> {
         Ok(())
     }
 }

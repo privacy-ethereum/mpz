@@ -4,7 +4,7 @@ use crate::{OLEError, OLEReceiver, OLESender};
 use async_trait::async_trait;
 use mpz_common::{
     ideal::{ideal_f2p, Alice, Bob},
-    Context,
+    Allocate, Context, Preprocess,
 };
 use mpz_fields::Field;
 use rand::thread_rng;
@@ -34,6 +34,32 @@ fn ole<F: Field>(_: &mut (), alice_input: Vec<F>, bob_input: Vec<F>) -> (Vec<F>,
         .collect();
 
     (alice_output, bob_output)
+}
+
+impl Allocate for IdealOLESender {
+    fn alloc(&mut self, _: usize) {}
+}
+
+impl Allocate for IdealOLEReceiver {
+    fn alloc(&mut self, _: usize) {}
+}
+
+#[async_trait]
+impl<Ctx: Context> Preprocess<Ctx> for IdealOLESender {
+    type Error = OLEError;
+
+    async fn preprocess(&mut self, _: &mut Ctx) -> Result<(), OLEError> {
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl<Ctx: Context> Preprocess<Ctx> for IdealOLEReceiver {
+    type Error = OLEError;
+
+    async fn preprocess(&mut self, _: &mut Ctx) -> Result<(), OLEError> {
+        Ok(())
+    }
 }
 
 #[async_trait]

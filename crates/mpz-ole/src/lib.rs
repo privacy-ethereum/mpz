@@ -82,6 +82,7 @@ impl OLEError {
 impl Display for OLEError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.kind {
+            OLEErrorKind::Context => write!(f, "Context Error"),
             OLEErrorKind::OT => write!(f, "OT Error"),
             OLEErrorKind::IO => write!(f, "IO Error"),
             OLEErrorKind::Core => write!(f, "OLE Core Error"),
@@ -99,11 +100,24 @@ impl Display for OLEError {
 
 #[derive(Debug)]
 pub(crate) enum OLEErrorKind {
+    Context,
     OT,
     IO,
     Core,
     Field,
     InsufficientOLEs,
+}
+
+impl From<mpz_common::ContextError> for OLEError {
+    fn from(value: mpz_common::ContextError) -> Self {
+        Self::new(OLEErrorKind::Context, value)
+    }
+}
+
+impl From<mpz_common::sync::MutexError> for OLEError {
+    fn from(value: mpz_common::sync::MutexError) -> Self {
+        Self::new(OLEErrorKind::Context, value)
+    }
 }
 
 impl From<OTError> for OLEError {

@@ -1,19 +1,23 @@
+use std::mem;
+
 use crate::{OLEError, OLEErrorKind, OLEReceiver as OLEReceive};
 use async_trait::async_trait;
 use itybity::ToBits;
-use mpz_common::Context;
+use mpz_common::{Allocate, Context, Preprocess};
 use mpz_fields::Field;
-use mpz_ole_core::msg::{BatchAdjust, MaskedCorrelations};
-use mpz_ole_core::OLEReceiver as OLECoreReceiver;
-use mpz_ot::RandomOTReceiver;
-use serio::stream::IoStreamExt;
-use serio::SinkExt;
-use serio::{Deserialize, Serialize};
+use mpz_ole_core::{
+    msg::{BatchAdjust, MaskedCorrelations},
+    BatchReceiverAdjust, OLEReceiver as OLECoreReceiver,
+};
+use mpz_ot::{OTError, RandomOTReceiver};
+use serio::{stream::IoStreamExt, Deserialize, Serialize, SinkExt};
 
 /// OLE receiver.
+#[derive(Debug)]
 pub struct OLEReceiver<T, F> {
     rot_receiver: T,
     core: OLECoreReceiver<F>,
+    alloc: usize,
 }
 
 impl<T, F> OLEReceiver<T, F>
@@ -25,27 +29,52 @@ where
         Self {
             rot_receiver,
             core: OLECoreReceiver::default(),
+            alloc: 0,
         }
+    }
+
+    pub(crate) fn adjust(
+        &mut self,
+        inputs: Vec<F>,
+    ) -> Result<(BatchReceiverAdjust<F>, BatchAdjust<F>), OLEError> {
+        let len = inputs.len();
+        self.core.adjust(inputs).ok_or_else(|| {
+            OLEError::new(
+                OLEErrorKind::InsufficientOLEs,
+                format!("{} < {}", self.core.cache_size(), len),
+            )
+        })
     }
 }
 
-impl<T, F> OLEReceiver<T, F>
+impl<T, F> Allocate for OLEReceiver<T, F>
 where
+    T: Allocate,
+    F: Field,
+{
+    fn alloc(&mut self, count: usize) {
+        self.rot_receiver.alloc(count * F::BIT_SIZE);
+        self.alloc += count;
+    }
+}
+
+#[async_trait]
+impl<Ctx, T, F> Preprocess<Ctx> for OLEReceiver<T, F>
+where
+    Ctx: Context,
+    T: Preprocess<Ctx, Error = OTError> + RandomOTReceiver<Ctx, bool, F> + Send,
     F: Field + Serialize + Deserialize,
 {
-    /// Preprocesses OLEs.
-    ///
-    /// # Arguments
-    ///
-    /// * `count` - The number of OLEs to preprocess.
-    pub async fn preprocess<Ctx: Context>(
-        &mut self,
-        ctx: &mut Ctx,
-        count: usize,
-    ) -> Result<(), OLEError>
-    where
-        T: RandomOTReceiver<Ctx, bool, F> + Send,
-    {
+    type Error = OLEError;
+
+    async fn preprocess(&mut self, ctx: &mut Ctx) -> Result<(), OLEError> {
+        let count = mem::take(&mut self.alloc);
+        if count == 0 {
+            return Ok(());
+        }
+
+        self.rot_receiver.preprocess(ctx).await?;
+
         let random_ot = self
             .rot_receiver
             .receive_random(ctx, count * F::BIT_SIZE)
@@ -73,14 +102,7 @@ where
     F: Field + Serialize + Deserialize,
 {
     async fn receive(&mut self, ctx: &mut Ctx, b_k: Vec<F>) -> Result<Vec<F>, OLEError> {
-        let len_requested = b_k.len();
-
-        let (receiver_adjust, adjust) = self.core.adjust(b_k).ok_or_else(|| {
-            OLEError::new(
-                OLEErrorKind::InsufficientOLEs,
-                format!("{} < {}", self.core.cache_size(), len_requested),
-            )
-        })?;
+        let (receiver_adjust, adjust) = self.adjust(b_k)?;
 
         let channel = ctx.io_mut();
         channel.send(adjust).await?;
