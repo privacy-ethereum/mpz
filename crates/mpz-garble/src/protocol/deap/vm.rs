@@ -177,6 +177,14 @@ where
     OTS: VerifiableOTSendEncoding<Ctx> + Send + Sync,
     OTR: VerifiableOTReceiveEncoding<Ctx> + Send + Sync,
 {
+    async fn commit(&mut self, values: &[ValueRef]) -> Result<(), ExecutionError> {
+        self.state
+            .get()
+            .commit(&mut self.ctx, values, &mut self.ot_send, &mut self.ot_recv)
+            .map_err(ExecutionError::from)
+            .await
+    }
+
     async fn execute(
         &mut self,
         circ: Arc<Circuit>,
@@ -205,6 +213,14 @@ where
     OTS: VerifiableOTSendEncoding<Ctx> + Send + Sync,
     OTR: VerifiableOTReceiveEncoding<Ctx> + Send + Sync,
 {
+    async fn commit_prove(&mut self, values: &[ValueRef]) -> Result<(), ProveError> {
+        self.state
+            .get()
+            .commit_prove(&mut self.ctx, values, &mut self.ot_recv)
+            .map_err(ProveError::from)
+            .await
+    }
+
     async fn execute_prove(
         &mut self,
         circ: Arc<Circuit>,
@@ -234,6 +250,14 @@ where
     OTS: VerifiableOTSendEncoding<Ctx> + Send + Sync,
     OTR: VerifiableOTReceiveEncoding<Ctx> + Send + Sync,
 {
+    async fn commit_verify(&mut self, values: &[ValueRef]) -> Result<(), VerifyError> {
+        self.state
+            .get()
+            .commit_verify(&mut self.ctx, values, &mut self.ot_send)
+            .map_err(VerifyError::from)
+            .await
+    }
+
     async fn execute_verify(
         &mut self,
         circ: Arc<Circuit>,

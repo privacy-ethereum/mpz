@@ -139,6 +139,92 @@ impl DEAP {
         self.state.lock().unwrap()
     }
 
+    /// Commits the provided input values.
+    ///
+    /// Values which are already committed are ignored.
+    pub async fn commit<Ctx, OTS, OTR>(
+        &self,
+        ctx: &mut Ctx,
+        inputs: &[ValueRef],
+        ot_send: &mut OTS,
+        ot_recv: &mut OTR,
+    ) -> Result<(), DEAPError>
+    where
+        Ctx: Context,
+        OTS: OTSendEncoding<Ctx> + Send,
+        OTR: OTReceiveEncoding<Ctx> + Send,
+    {
+        let assigned = self.state().memory.drain_assigned(inputs);
+        match self.role {
+            Role::Leader => {
+                try_join!(
+                    ctx,
+                    self.gen
+                        .setup_assigned_values(ctx, &assigned, ot_send)
+                        .map_err(DEAPError::from),
+                    self.ev
+                        .setup_assigned_values(ctx, &assigned, ot_recv)
+                        .map_err(DEAPError::from)
+                )??;
+            }
+            Role::Follower => {
+                try_join!(
+                    ctx,
+                    self.ev
+                        .setup_assigned_values(ctx, &assigned, ot_recv)
+                        .map_err(DEAPError::from),
+                    self.gen
+                        .setup_assigned_values(ctx, &assigned, ot_send)
+                        .map_err(DEAPError::from)
+                )??;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Commits the provided values for proving.
+    ///
+    /// Values which are already committed are ignored.
+    pub async fn commit_prove<Ctx, OTR>(
+        &self,
+        ctx: &mut Ctx,
+        values: &[ValueRef],
+        ot_recv: &mut OTR,
+    ) -> Result<(), DEAPError>
+    where
+        Ctx: Context,
+        OTR: OTReceiveEncoding<Ctx> + Send,
+    {
+        let assigned = self.state().memory.drain_assigned(values);
+        self.ev
+            .setup_assigned_values(ctx, &assigned, ot_recv)
+            .await?;
+
+        Ok(())
+    }
+
+    /// Receives commitments to the provided values from the prover.
+    ///
+    /// Values which are already committed are ignored.
+    pub async fn commit_verify<Ctx, OTS>(
+        &self,
+        ctx: &mut Ctx,
+        values: &[ValueRef],
+        ot_send: &mut OTS,
+    ) -> Result<(), DEAPError>
+    where
+        Ctx: Context,
+        OTS: OTSendEncoding<Ctx> + Send,
+    {
+        let assigned = self.state().memory.drain_assigned(values);
+        self.gen
+            .setup_assigned_values(ctx, &assigned, ot_send)
+            .await?;
+
+        Ok(())
+    }
+
     /// Performs pre-processing for executing the provided circuit.
     ///
     /// # Arguments
@@ -1002,6 +1088,108 @@ mod tests {
             follower.assign(&msg_ref, msg).unwrap();
 
             async move {
+                follower
+                    .execute(
+                        &mut ctx_b,
+                        AES128.clone(),
+                        &[key_ref, msg_ref],
+                        &[ciphertext_ref.clone()],
+                        &mut follower_ot_send,
+                        &mut follower_ot_recv,
+                    )
+                    .await
+                    .unwrap();
+
+                let outputs = follower
+                    .decode(&mut ctx_b, &[ciphertext_ref])
+                    .await
+                    .unwrap();
+
+                follower
+                    .finalize(&mut ctx_b, &mut follower_ot_recv)
+                    .await
+                    .unwrap();
+
+                outputs
+            }
+        };
+
+        let (leader_output, follower_output) = tokio::join!(leader_fut, follower_fut);
+
+        assert_eq!(leader_output, follower_output);
+    }
+
+    #[tokio::test]
+    async fn test_deap_commit() {
+        let (mut ctx_a, mut ctx_b) = test_st_executor(8);
+        let (mut leader_ot_send, mut follower_ot_recv) = ideal_ot();
+        let (mut follower_ot_send, mut leader_ot_recv) = ideal_ot();
+
+        let mut leader = DEAP::new(Role::Leader, [42u8; 32]);
+        let mut follower = DEAP::new(Role::Follower, [69u8; 32]);
+
+        let key = [42u8; 16];
+        let msg = [69u8; 16];
+
+        let leader_fut = {
+            let key_ref = leader.new_private_input::<[u8; 16]>("key").unwrap();
+            let msg_ref = leader.new_blind_input::<[u8; 16]>("msg").unwrap();
+            let ciphertext_ref = leader.new_output::<[u8; 16]>("ciphertext").unwrap();
+
+            leader.assign(&key_ref, key).unwrap();
+
+            async move {
+                leader
+                    .commit(
+                        &mut ctx_a,
+                        &[key_ref.clone(), msg_ref.clone()],
+                        &mut leader_ot_send,
+                        &mut leader_ot_recv,
+                    )
+                    .await
+                    .unwrap();
+
+                leader
+                    .execute(
+                        &mut ctx_a,
+                        AES128.clone(),
+                        &[key_ref, msg_ref],
+                        &[ciphertext_ref.clone()],
+                        &mut leader_ot_send,
+                        &mut leader_ot_recv,
+                    )
+                    .await
+                    .unwrap();
+
+                let outputs = leader.decode(&mut ctx_a, &[ciphertext_ref]).await.unwrap();
+
+                leader
+                    .finalize(&mut ctx_a, &mut leader_ot_recv)
+                    .await
+                    .unwrap();
+
+                outputs
+            }
+        };
+
+        let follower_fut = {
+            let key_ref = follower.new_blind_input::<[u8; 16]>("key").unwrap();
+            let msg_ref = follower.new_private_input::<[u8; 16]>("msg").unwrap();
+            let ciphertext_ref = follower.new_output::<[u8; 16]>("ciphertext").unwrap();
+
+            follower.assign(&msg_ref, msg).unwrap();
+
+            async move {
+                follower
+                    .commit(
+                        &mut ctx_b,
+                        &[key_ref.clone(), msg_ref.clone()],
+                        &mut follower_ot_send,
+                        &mut follower_ot_recv,
+                    )
+                    .await
+                    .unwrap();
+
                 follower
                     .execute(
                         &mut ctx_b,
