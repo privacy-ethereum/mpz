@@ -305,6 +305,9 @@ pub trait Load {
 /// This trait provides methods for executing a circuit.
 #[async_trait]
 pub trait Execute {
+    /// Commits the provided inputs values for execution.
+    async fn commit(&mut self, inputs: &[ValueRef]) -> Result<(), ExecutionError>;
+
     /// Executes a circuit with the provided inputs, assigning to the provided output values
     async fn execute(
         &mut self,
@@ -318,6 +321,9 @@ pub trait Execute {
 /// circuit.
 #[async_trait]
 pub trait Prove {
+    /// Commits the provided input values for proving.
+    async fn commit_prove(&mut self, inputs: &[ValueRef]) -> Result<(), ProveError>;
+
     /// Executes the provided circuit as the prover, assigning to the provided output values.
     async fn execute_prove(
         &mut self,
@@ -334,6 +340,9 @@ pub trait Prove {
 /// circuit.
 #[async_trait]
 pub trait Verify {
+    /// Commits the provided input values for verifying.
+    async fn commit_verify(&mut self, inputs: &[ValueRef]) -> Result<(), VerifyError>;
+
     /// Executes the provided circuit as the verifier, assigning to the provided output values.
     async fn execute_verify(
         &mut self,
