@@ -23,11 +23,28 @@ pub mod ideal;
 #[cfg(feature = "sync")]
 pub mod sync;
 
+use async_trait::async_trait;
 pub use context::{Context, ContextError};
 pub use id::{Counter, ThreadId};
 
 // Re-export scoped-futures for use with the callback-like API in `Context`.
 pub use scoped_futures;
+
+/// Allocates capacity from a functionality in the pre-processing model.
+pub trait Allocate {
+    /// Allocates `count` capacity.
+    fn alloc(&mut self, count: usize);
+}
+
+/// A functionality in the pre-processing model.
+#[async_trait]
+pub trait Preprocess<Ctx>: Allocate {
+    /// Error type.
+    type Error: std::error::Error + Send + Sync + 'static;
+
+    /// Preprocesses the functionality.
+    async fn preprocess(&mut self, ctx: &mut Ctx) -> Result<(), Self::Error>;
+}
 
 /// A convenience macro for creating a closure which returns a scoped future.
 ///

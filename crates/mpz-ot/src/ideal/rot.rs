@@ -4,7 +4,7 @@ use async_trait::async_trait;
 
 use mpz_common::{
     ideal::{ideal_f2p, Alice, Bob},
-    Context,
+    Allocate, Context, Preprocess,
 };
 use mpz_ot_core::{ideal::rot::IdealROT, ROTReceiverOutput, ROTSenderOutput};
 use rand::distributions::{Distribution, Standard};
@@ -44,6 +44,22 @@ where
     }
 }
 
+impl Allocate for IdealROTSender {
+    fn alloc(&mut self, _count: usize) {}
+}
+
+#[async_trait]
+impl<Ctx> Preprocess<Ctx> for IdealROTSender
+where
+    Ctx: Context,
+{
+    type Error = OTError;
+
+    async fn preprocess(&mut self, _ctx: &mut Ctx) -> Result<(), OTError> {
+        Ok(())
+    }
+}
+
 #[async_trait]
 impl<T: Copy + Send + 'static, Ctx: Context> RandomOTSender<Ctx, [T; 2]> for IdealROTSender
 where
@@ -68,6 +84,22 @@ where
     Ctx: Context,
 {
     async fn setup(&mut self, _ctx: &mut Ctx) -> Result<(), OTError> {
+        Ok(())
+    }
+}
+
+impl Allocate for IdealROTReceiver {
+    fn alloc(&mut self, _count: usize) {}
+}
+
+#[async_trait]
+impl<Ctx> Preprocess<Ctx> for IdealROTReceiver
+where
+    Ctx: Context,
+{
+    type Error = OTError;
+
+    async fn preprocess(&mut self, _ctx: &mut Ctx) -> Result<(), OTError> {
         Ok(())
     }
 }

@@ -12,7 +12,7 @@ mod tests {
         rot::{OLEReceiver, OLESender},
         OLEReceiver as _, OLESender as _,
     };
-    use mpz_common::executor::test_st_executor;
+    use mpz_common::{executor::test_st_executor, Allocate, Preprocess};
     use mpz_core::{prg::Prg, Block};
     use mpz_fields::{p256::P256, UniformRand};
     use mpz_ot::ideal::rot::ideal_rot;
@@ -33,9 +33,12 @@ mod tests {
 
         let (mut ctx_sender, mut ctx_receiver) = test_st_executor(10);
 
+        ole_sender.alloc(count);
+        ole_receiver.alloc(count);
+
         tokio::try_join!(
-            ole_sender.preprocess(&mut ctx_sender, count),
-            ole_receiver.preprocess(&mut ctx_receiver, count)
+            ole_sender.preprocess(&mut ctx_sender),
+            ole_receiver.preprocess(&mut ctx_receiver)
         )
         .unwrap();
 

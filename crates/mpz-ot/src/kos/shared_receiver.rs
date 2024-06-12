@@ -2,21 +2,31 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use itybity::IntoBitIterator;
-use mpz_common::{sync::AsyncMutex, Context};
+use mpz_common::{sync::AsyncMutex, Allocate, Context, Preprocess};
 use mpz_core::Block;
 use mpz_ot_core::{kos::msgs::SenderPayload, OTReceiverOutput, ROTReceiverOutput, TransferId};
+use rand::distributions::{Distribution, Standard};
 use serio::{stream::IoStreamExt, SinkExt};
 use utils_aio::non_blocking_backend::{Backend, NonBlockingBackend};
 
 use crate::{
     kos::{Receiver, ReceiverError},
-    OTError, OTReceiver, RandomOTReceiver, VerifiableOTReceiver, VerifiableOTSender,
+    OTError, OTReceiver, OTSender, OTSetup, RandomOTReceiver, VerifiableOTReceiver,
+    VerifiableOTSender,
 };
 
 /// A shared KOS receiver.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct SharedReceiver<BaseOT> {
     inner: Arc<AsyncMutex<Receiver<BaseOT>>>,
+}
+
+impl<BaseOT> Clone for SharedReceiver<BaseOT> {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+        }
+    }
 }
 
 impl<BaseOT> SharedReceiver<BaseOT> {
@@ -26,6 +36,25 @@ impl<BaseOT> SharedReceiver<BaseOT> {
             // KOS receiver is always the leader.
             inner: Arc::new(AsyncMutex::new_leader(receiver)),
         }
+    }
+}
+
+impl<BaseOT> Allocate for SharedReceiver<BaseOT> {
+    fn alloc(&mut self, count: usize) {
+        self.inner.blocking_lock_unsync().alloc(count);
+    }
+}
+
+#[async_trait]
+impl<Ctx, BaseOT> Preprocess<Ctx> for SharedReceiver<BaseOT>
+where
+    Ctx: Context,
+    BaseOT: OTSetup<Ctx> + OTSender<Ctx, [Block; 2]> + Send,
+{
+    type Error = OTError;
+
+    async fn preprocess(&mut self, ctx: &mut Ctx) -> Result<(), OTError> {
+        self.inner.lock(ctx).await?.preprocess(ctx).await
     }
 }
 
@@ -61,16 +90,17 @@ where
 }
 
 #[async_trait]
-impl<Ctx, BaseOT> RandomOTReceiver<Ctx, bool, Block> for SharedReceiver<BaseOT>
+impl<Ctx, T, BaseOT> RandomOTReceiver<Ctx, bool, T> for SharedReceiver<BaseOT>
 where
     Ctx: Context,
+    Standard: Distribution<T>,
     BaseOT: Send,
 {
     async fn receive_random(
         &mut self,
         ctx: &mut Ctx,
         count: usize,
-    ) -> Result<ROTReceiverOutput<bool, Block>, OTError> {
+    ) -> Result<ROTReceiverOutput<bool, T>, OTError> {
         self.inner.lock(ctx).await?.receive_random(ctx, count).await
     }
 }

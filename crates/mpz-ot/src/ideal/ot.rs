@@ -6,7 +6,7 @@ use async_trait::async_trait;
 
 use mpz_common::{
     ideal::{ideal_f2p, Alice, Bob},
-    Context,
+    Allocate, Context, Preprocess,
 };
 use mpz_ot_core::{ideal::ot::IdealOT, TransferId};
 
@@ -52,6 +52,22 @@ where
     }
 }
 
+impl<T> Allocate for IdealOTSender<T> {
+    fn alloc(&mut self, _count: usize) {}
+}
+
+#[async_trait]
+impl<Ctx, T> Preprocess<Ctx> for IdealOTSender<T>
+where
+    Ctx: Context,
+{
+    type Error = OTError;
+
+    async fn preprocess(&mut self, _ctx: &mut Ctx) -> Result<(), OTError> {
+        Ok(())
+    }
+}
+
 #[async_trait]
 impl<Ctx: Context, T: Copy + Send + Sync + 'static> OTSender<Ctx, [T; 2]>
     for IdealOTSender<[T; 2]>
@@ -89,6 +105,22 @@ where
     Ctx: Context,
 {
     async fn setup(&mut self, _ctx: &mut Ctx) -> Result<(), OTError> {
+        Ok(())
+    }
+}
+
+impl<T> Allocate for IdealOTReceiver<T> {
+    fn alloc(&mut self, _count: usize) {}
+}
+
+#[async_trait]
+impl<Ctx, T> Preprocess<Ctx> for IdealOTReceiver<T>
+where
+    Ctx: Context,
+{
+    type Error = OTError;
+
+    async fn preprocess(&mut self, _ctx: &mut Ctx) -> Result<(), OTError> {
         Ok(())
     }
 }

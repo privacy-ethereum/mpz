@@ -1,8 +1,10 @@
+use std::mem;
+
 use async_trait::async_trait;
 use futures::TryFutureExt as _;
 use itybity::{FromBitIterator, IntoBitIterator};
 use mpz_cointoss as cointoss;
-use mpz_common::{try_join, Context};
+use mpz_common::{try_join, Allocate, Context, Preprocess};
 use mpz_core::{prg::Prg, Block};
 use mpz_ot_core::{
     kos::{
@@ -14,8 +16,11 @@ use mpz_ot_core::{
 };
 
 use enum_try_as_inner::EnumTryAsInner;
-use rand::{thread_rng, Rng};
-use rand_core::{RngCore, SeedableRng};
+use rand::{
+    distributions::{Distribution, Standard},
+    thread_rng, Rng,
+};
+use rand_core::SeedableRng;
 use serio::{stream::IoStreamExt as _, SinkExt as _};
 use utils_aio::non_blocking_backend::{Backend, NonBlockingBackend};
 
@@ -39,7 +44,7 @@ pub(crate) enum State {
 pub struct Receiver<BaseOT> {
     state: State,
     base: BaseOT,
-
+    alloc: usize,
     cointoss_receiver: Option<cointoss::Receiver<cointoss::receiver_state::Received>>,
 }
 
@@ -56,6 +61,7 @@ where
         Self {
             state: State::Initialized(Box::new(ReceiverCore::new(config))),
             base,
+            alloc: 0,
             cointoss_receiver: None,
         }
     }
@@ -214,6 +220,34 @@ where
     }
 }
 
+impl<BaseOT> Allocate for Receiver<BaseOT> {
+    fn alloc(&mut self, count: usize) {
+        self.alloc += count;
+    }
+}
+
+#[async_trait]
+impl<Ctx, BaseOT> Preprocess<Ctx> for Receiver<BaseOT>
+where
+    Ctx: Context,
+    BaseOT: OTSetup<Ctx> + OTSender<Ctx, [Block; 2]> + Send,
+{
+    type Error = OTError;
+
+    async fn preprocess(&mut self, ctx: &mut Ctx) -> Result<(), OTError> {
+        if self.state.is_initialized() {
+            self.setup(ctx).await?;
+        }
+
+        let count = mem::take(&mut self.alloc);
+        if count == 0 {
+            return Ok(());
+        }
+
+        self.extend(ctx, count).await.map_err(OTError::from)
+    }
+}
+
 #[async_trait]
 impl<Ctx, BaseOT> OTReceiver<Ctx, bool, Block> for Receiver<BaseOT>
 where
@@ -256,16 +290,17 @@ where
 }
 
 #[async_trait]
-impl<Ctx, BaseOT> RandomOTReceiver<Ctx, bool, Block> for Receiver<BaseOT>
+impl<Ctx, T, BaseOT> RandomOTReceiver<Ctx, bool, T> for Receiver<BaseOT>
 where
     Ctx: Context,
+    Standard: Distribution<T>,
     BaseOT: Send,
 {
     async fn receive_random(
         &mut self,
         _ctx: &mut Ctx,
         count: usize,
-    ) -> Result<ROTReceiverOutput<bool, Block>, OTError> {
+    ) -> Result<ROTReceiverOutput<bool, T>, OTError> {
         let receiver = self
             .state
             .try_as_extension_mut()
@@ -273,7 +308,9 @@ where
 
         let keys = receiver.keys(count).map_err(ReceiverError::from)?;
         let id = keys.id();
-        let (choices, msgs) = keys.take_choices_and_keys();
+        let (choices, keys) = keys.take_choices_and_keys();
+
+        let msgs = keys.into_iter().map(|k| Prg::from_seed(k).gen()).collect();
 
         Ok(ROTReceiverOutput { id, choices, msgs })
     }
@@ -317,40 +354,6 @@ where
         .await?;
 
         Ok(OTReceiverOutput { id, msgs: received })
-    }
-}
-
-#[async_trait]
-impl<Ctx, const N: usize, BaseOT> RandomOTReceiver<Ctx, bool, [u8; N]> for Receiver<BaseOT>
-where
-    Ctx: Context,
-    BaseOT: Send,
-{
-    async fn receive_random(
-        &mut self,
-        _ctx: &mut Ctx,
-        count: usize,
-    ) -> Result<ROTReceiverOutput<bool, [u8; N]>, OTError> {
-        let receiver = self
-            .state
-            .try_as_extension_mut()
-            .map_err(ReceiverError::from)?;
-
-        let keys = receiver.keys(count).map_err(ReceiverError::from)?;
-        let id = keys.id();
-
-        let (choices, random_outputs) = keys.take_choices_and_keys();
-        let msgs = random_outputs
-            .into_iter()
-            .map(|block| {
-                let mut prg = Prg::from_seed(block);
-                let mut out = [0_u8; N];
-                prg.fill_bytes(&mut out);
-                out
-            })
-            .collect();
-
-        Ok(ROTReceiverOutput { id, choices, msgs })
     }
 }
 

@@ -13,7 +13,7 @@ pub mod msg;
 mod receiver;
 mod sender;
 
-pub use receiver::OLEReceiver;
+pub use receiver::{BatchReceiverAdjust, OLEReceiver};
 pub use sender::{BatchSenderAdjust, OLESender};
 use serde::{Deserialize, Serialize};
 

@@ -4,7 +4,7 @@ use async_trait::async_trait;
 
 use mpz_common::{
     ideal::{ideal_f2p, Alice, Bob},
-    Context,
+    Allocate, Context, Preprocess,
 };
 use mpz_fields::Field;
 use mpz_share_conversion_core::ideal::{IdealA2M, IdealM2A};
@@ -26,6 +26,22 @@ enum Role {
 /// An ideal share converter.
 #[derive(Debug)]
 pub struct IdealShareConverter(Role);
+
+impl Allocate for IdealShareConverter {
+    fn alloc(&mut self, _: usize) {}
+}
+
+#[async_trait]
+impl<Ctx> Preprocess<Ctx> for IdealShareConverter
+where
+    Ctx: Context,
+{
+    type Error = ShareConversionError;
+
+    async fn preprocess(&mut self, _ctx: &mut Ctx) -> Result<(), ShareConversionError> {
+        Ok(())
+    }
+}
 
 #[async_trait]
 impl<Ctx: Context, F: Field> AdditiveToMultiplicative<Ctx, F> for IdealShareConverter {
