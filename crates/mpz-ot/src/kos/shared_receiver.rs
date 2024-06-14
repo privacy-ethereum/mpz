@@ -111,6 +111,10 @@ where
     Ctx: Context,
     BaseOT: VerifiableOTSender<Ctx, bool, [Block; 2]> + Send,
 {
+    async fn accept_reveal(&mut self, ctx: &mut Ctx) -> Result<(), OTError> {
+        self.inner.lock(ctx).await?.accept_reveal(ctx).await
+    }
+
     async fn verify(
         &mut self,
         ctx: &mut Ctx,

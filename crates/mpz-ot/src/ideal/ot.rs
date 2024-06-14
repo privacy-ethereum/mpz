@@ -151,6 +151,10 @@ impl<Ctx: Context, T: Copy + Send + Sync + 'static> CommittedOTReceiver<Ctx, boo
 impl<Ctx: Context, U: Copy + Send + Sync + 'static, V> VerifiableOTReceiver<Ctx, bool, U, V>
     for IdealOTReceiver<U>
 {
+    async fn accept_reveal(&mut self, _ctx: &mut Ctx) -> Result<(), OTError> {
+        Ok(())
+    }
+
     async fn verify(
         &mut self,
         _ctx: &mut Ctx,
