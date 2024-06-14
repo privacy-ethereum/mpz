@@ -45,8 +45,8 @@ mod tests {
 
     use crate::{
         ideal::ot::{ideal_ot, IdealOTReceiver, IdealOTSender},
-        OTError, OTReceiver, OTSender, OTSetup, RandomOTReceiver, RandomOTSender,
-        VerifiableOTReceiver,
+        CommittedOTSender, OTError, OTReceiver, OTSender, OTSetup, RandomOTReceiver,
+        RandomOTSender, VerifiableOTReceiver,
     };
 
     #[fixture]
@@ -215,12 +215,15 @@ mod tests {
         assert_eq!(output_receiver.msgs, expected);
 
         tokio::try_join!(
-            sender.reveal(&mut ctx_sender).map_err(OTError::from),
-            receiver
-                .verify(&mut ctx_receiver, output_receiver.id, &data)
-                .map_err(OTError::from)
+            CommittedOTSender::reveal(&mut sender, &mut ctx_sender),
+            receiver.accept_reveal(&mut ctx_receiver)
         )
         .unwrap();
+
+        receiver
+            .verify(&mut ctx_receiver, output_receiver.id, &data)
+            .await
+            .unwrap();
     }
 
     #[rstest]

@@ -224,6 +224,13 @@ pub trait CommittedOTReceiver<Ctx, T, U>: OTReceiver<Ctx, T, U> {
 /// An oblivious transfer receiver that can verify the sender's messages.
 #[async_trait]
 pub trait VerifiableOTReceiver<Ctx, T, U, V>: OTReceiver<Ctx, T, U> {
+    /// Accepts revealed secrets from the sender which are requried to verify previous messages.
+    ///
+    /// # Arguments
+    ///
+    /// * `ctx` - The thread context.
+    async fn accept_reveal(&mut self, ctx: &mut Ctx) -> Result<(), OTError>;
+
     /// Verifies purported messages sent by the sender.
     ///
     /// # Arguments
