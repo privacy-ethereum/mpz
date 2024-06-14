@@ -5,7 +5,7 @@ use std::{
     task::{ready, Context as StdContext, Poll, Waker},
 };
 
-use futures::Future;
+use futures::{Future, FutureExt, TryFutureExt};
 use serio::{stream::IoStreamExt, IoDuplex, SinkExt};
 use tokio::sync::Mutex;
 
@@ -68,8 +68,11 @@ impl Leader {
         Fut: Future,
     {
         let mut tick_lock = self.tick.lock().await;
-        io.send(tick_lock.increment_in_place()).await?;
-        let output = fut.await;
+        let (_, output) = futures::try_join!(
+            io.send(tick_lock.increment_in_place())
+                .map_err(SyncError::from),
+            fut.map(Ok),
+        )?;
         drop(tick_lock);
 
         Ok(output)
