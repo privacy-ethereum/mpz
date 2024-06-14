@@ -15,8 +15,9 @@ use std::{
     task::{Context as StdContext, Poll, Waker},
 };
 
-use futures::{future::poll_fn, Future};
-use serio::{stream::IoStreamExt, IoDuplex};
+use futures::Future;
+use serio::{stream::IoStreamExt, IoDuplex, SinkExt};
+use tokio::sync::Mutex as TokioMutex;
 
 /// The error type for [`Syncer`].
 #[derive(Debug, thiserror::Error)]
@@ -76,7 +77,7 @@ enum SyncerInner {
 
 #[derive(Debug, Default, Clone)]
 struct Leader {
-    tick: Arc<StdMutex<Ticket>>,
+    tick: Arc<TokioMutex<Ticket>>,
 }
 
 impl Leader {
@@ -85,15 +86,11 @@ impl Leader {
         F: FnOnce() -> R + Unpin,
         R: Unpin,
     {
-        let mut io = Pin::new(io);
-        poll_fn(|cx| io.as_mut().poll_ready(cx)).await?;
-        let (output, tick) = {
-            let mut tick_lock = self.tick.lock().unwrap();
-            let output = f();
-            let tick = tick_lock.increment_in_place();
-            (output, tick)
-        };
-        io.start_send(tick)?;
+        let mut tick_lock = self.tick.lock().await;
+        io.send(tick_lock.increment_in_place()).await?;
+        let output = f();
+        drop(tick_lock);
+
         Ok(output)
     }
 }
