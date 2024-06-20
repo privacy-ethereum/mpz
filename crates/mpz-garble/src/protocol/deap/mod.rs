@@ -673,9 +673,10 @@ impl DEAP {
                 .enumerate()
                 .map(|(idx, value)| {
                     let (otp_ref, otp_value) =
-                        state.new_private_otp(&format!("{id}/{idx}/otp"), value);
+                        state.new_private_otp(&format!("{}/{id}/{idx}/otp", ctx.id()), value);
                     let otp_typ = otp_value.value_type();
-                    let mask_ref = state.new_output_mask(&format!("{id}/{idx}/mask"), value);
+                    let mask_ref =
+                        state.new_output_mask(&format!("{}/{id}/{idx}/mask", ctx.id()), value);
                     self.gen.generate_input_encoding(&otp_ref, &otp_typ);
                     (((otp_ref, otp_typ), otp_value), mask_ref)
                 })
@@ -727,8 +728,10 @@ impl DEAP {
                 .iter()
                 .enumerate()
                 .map(|(idx, value)| {
-                    let (otp_ref, otp_typ) = state.new_blind_otp(&format!("{id}/{idx}/otp"), value);
-                    let mask_ref = state.new_output_mask(&format!("{id}/{idx}/mask"), value);
+                    let (otp_ref, otp_typ) =
+                        state.new_blind_otp(&format!("{}/{id}/{idx}/otp", ctx.id()), value);
+                    let mask_ref =
+                        state.new_output_mask(&format!("{}/{id}/{idx}/mask", ctx.id()), value);
                     self.gen.generate_input_encoding(&otp_ref, &otp_typ);
                     ((otp_ref, otp_typ), mask_ref)
                 })
@@ -781,21 +784,22 @@ impl DEAP {
                 .map(|(idx, value)| {
                     let (otp_0_ref, otp_1_ref, otp_value, otp_typ) = match self.role {
                         Role::Leader => {
-                            let (otp_0_ref, otp_value) =
-                                state.new_private_otp(&format!("{id}/{idx}/otp_0"), value);
-                            let (otp_1_ref, otp_typ) =
-                                state.new_blind_otp(&format!("{id}/{idx}/otp_1"), value);
+                            let (otp_0_ref, otp_value) = state
+                                .new_private_otp(&format!("{}/{id}/{idx}/otp_0", ctx.id()), value);
+                            let (otp_1_ref, otp_typ) = state
+                                .new_blind_otp(&format!("{}/{id}/{idx}/otp_1", ctx.id()), value);
                             (otp_0_ref, otp_1_ref, otp_value, otp_typ)
                         }
                         Role::Follower => {
-                            let (otp_0_ref, otp_typ) =
-                                state.new_blind_otp(&format!("{id}/{idx}/otp_0"), value);
-                            let (otp_1_ref, otp_value) =
-                                state.new_private_otp(&format!("{id}/{idx}/otp_1"), value);
+                            let (otp_0_ref, otp_typ) = state
+                                .new_blind_otp(&format!("{}/{id}/{idx}/otp_0", ctx.id()), value);
+                            let (otp_1_ref, otp_value) = state
+                                .new_private_otp(&format!("{}/{id}/{idx}/otp_1", ctx.id()), value);
                             (otp_0_ref, otp_1_ref, otp_value, otp_typ)
                         }
                     };
-                    let mask_ref = state.new_output_mask(&format!("{id}/{idx}/mask"), value);
+                    let mask_ref =
+                        state.new_output_mask(&format!("{}/{id}/{idx}/mask", ctx.id()), value);
                     self.gen.generate_input_encoding(&otp_0_ref, &otp_typ);
                     self.gen.generate_input_encoding(&otp_1_ref, &otp_typ);
                     ((((otp_0_ref, otp_1_ref), otp_typ), otp_value), mask_ref)
