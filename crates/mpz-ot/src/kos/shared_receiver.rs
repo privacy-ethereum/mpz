@@ -117,17 +117,12 @@ where
 
     async fn verify(
         &mut self,
-        ctx: &mut Ctx,
+        _ctx: &mut Ctx,
         id: TransferId,
         msgs: &[[Block; 2]],
     ) -> Result<(), OTError> {
         let record = {
-            let mut inner = self.inner.lock(ctx).await?;
-
-            // Verify delta if we haven't yet.
-            if inner.state().is_extension() {
-                inner.verify_delta(ctx).await?;
-            }
+            let inner = self.inner.blocking_lock_unsync();
 
             let receiver = inner.state().try_as_verify().map_err(ReceiverError::from)?;
 
