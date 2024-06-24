@@ -88,10 +88,10 @@ prost-build = "0.9"
 bytes = "1"
 yamux = "0.10"
 bytemuck = { version = "1.13", features = ["derive"] }
-serio = { git = "https://github.com/tlsnotary/tlsn-utils", rev = "6e0be94" }
+serio = "0.1"
 
 # io
-uid-mux = { git = "https://github.com/tlsnotary/tlsn-utils", rev = "6e0be94" }
+uid-mux = "0.1"
 
 # testing
 prost = "0.9"
