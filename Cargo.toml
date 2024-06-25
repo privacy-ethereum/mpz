@@ -1,22 +1,22 @@
 [workspace]
 members = [
-    "mpz-core",
-    "mpz-common",
-    "mpz-fields",
-    "mpz-circuits",
-    "mpz-circuits-macros",
-    "mpz-cointoss",
-    "mpz-cointoss-core",
-    "mpz-ot",
-    "mpz-ot-core",
-    "mpz-garble",
-    "mpz-garble-core",
-    "mpz-share-conversion-core",
-    "mpz-share-conversion",
-    "matrix-transpose",
-    "clmul",
-    "mpz-ole-core",
-    "mpz-ole",
+    "crates/mpz-core",
+    "crates/mpz-common",
+    "crates/mpz-fields",
+    "crates/mpz-circuits",
+    "crates/mpz-circuits-macros",
+    "crates/mpz-cointoss",
+    "crates/mpz-cointoss-core",
+    "crates/mpz-ot",
+    "crates/mpz-ot-core",
+    "crates/mpz-garble",
+    "crates/mpz-garble-core",
+    "crates/mpz-share-conversion-core",
+    "crates/mpz-share-conversion",
+    "crates/matrix-transpose",
+    "crates/clmul",
+    "crates/mpz-ole-core",
+    "crates/mpz-ole",
 ]
 resolver = "2"
 
@@ -27,22 +27,22 @@ resolver = "2"
 # enum_glob_use = "deny"
 
 [workspace.dependencies]
-mpz-core = { path = "mpz-core" }
-mpz-common = { path = "mpz-common" }
-mpz-fields = { path = "mpz-fields" }
-mpz-circuits = { path = "mpz-circuits" }
-mpz-circuits-macros = { path = "mpz-circuits-macros" }
-mpz-cointoss = { path = "mpz-cointoss" }
-mpz-cointoss-core = { path = "mpz-cointoss-core" }
-mpz-ot = { path = "mpz-ot" }
-mpz-ot-core = { path = "mpz-ot-core" }
-mpz-garble = { path = "mpz-garble" }
-mpz-garble-core = { path = "mpz-garble-core" }
-mpz-share-conversion-core = { path = "mpz-share-conversion-core" }
-mpz-ole = { path = "mpz-ole" }
-mpz-ole-core = { path = "mpz-ole-core" }
-clmul = { path = "clmul" }
-matrix-transpose = { path = "matrix-transpose" }
+mpz-core = { path = "crates/mpz-core" }
+mpz-common = { path = "crates/mpz-common" }
+mpz-fields = { path = "crates/mpz-fields" }
+mpz-circuits = { path = "crates/mpz-circuits" }
+mpz-circuits-macros = { path = "crates/mpz-circuits-macros" }
+mpz-cointoss = { path = "crates/mpz-cointoss" }
+mpz-cointoss-core = { path = "crates/mpz-cointoss-core" }
+mpz-ot = { path = "crates/mpz-ot" }
+mpz-ot-core = { path = "crates/mpz-ot-core" }
+mpz-garble = { path = "crates/mpz-garble" }
+mpz-garble-core = { path = "crates/mpz-garble-core" }
+mpz-share-conversion-core = { path = "crates/mpz-share-conversion-core" }
+mpz-ole = { path = "crates/mpz-ole" }
+mpz-ole-core = { path = "crates/mpz-ole-core" }
+clmul = { path = "crates/clmul" }
+matrix-transpose = { path = "crates/matrix-transpose" }
 
 tlsn-utils = { git = "https://github.com/tlsnotary/tlsn-utils", rev = "6e0be94" }
 tlsn-utils-aio = { git = "https://github.com/tlsnotary/tlsn-utils", rev = "6e0be94" }
