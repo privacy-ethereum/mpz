@@ -107,7 +107,7 @@ where
                 deap.finalize(&mut self.ctx, &mut self.ot_recv).await
             }
             State::Child(_) => Err(FinalizationError::NotMainThread.into()),
-            State::Finalized => return Err(FinalizationError::AlreadyFinalized.into()),
+            State::Finalized => Err(FinalizationError::AlreadyFinalized.into()),
         }
     }
 }

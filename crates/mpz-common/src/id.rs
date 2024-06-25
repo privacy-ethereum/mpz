@@ -83,6 +83,7 @@ pub struct Counter(u32);
 
 impl Counter {
     /// Increments the counter in place, returning the previous value.
+    #[allow(clippy::should_implement_trait)]
     pub fn next(&mut self) -> Self {
         let prev = self.0;
         self.0 += 1;

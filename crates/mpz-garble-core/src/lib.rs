@@ -168,7 +168,7 @@ mod tests {
             .iter()
             .zip(full_outputs)
             .map(|(active_output, full_output)| {
-                full_output.commit().verify(&active_output).unwrap();
+                full_output.commit().verify(active_output).unwrap();
                 active_output.decode(&full_output.decoding()).unwrap()
             })
             .collect();
@@ -234,7 +234,7 @@ mod tests {
             .iter()
             .zip(full_outputs)
             .map(|(active_output, full_output)| {
-                full_output.commit().verify(&active_output).unwrap();
+                full_output.commit().verify(active_output).unwrap();
                 active_output.decode(&full_output.decoding()).unwrap()
             })
             .collect();

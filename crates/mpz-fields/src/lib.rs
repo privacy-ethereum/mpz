@@ -164,6 +164,6 @@ mod tests {
         assert!(GetBit::<Lsb0>::get_bit(&a, 0));
 
         assert_eq!(b, T::two_pow(T::BIT_SIZE as u32 - 1));
-        assert!(GetBit::<Lsb0>::get_bit(&b, (T::BIT_SIZE - 1) as usize));
+        assert!(GetBit::<Lsb0>::get_bit(&b, T::BIT_SIZE - 1));
     }
 }

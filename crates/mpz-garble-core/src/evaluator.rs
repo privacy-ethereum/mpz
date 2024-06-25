@@ -68,18 +68,10 @@ pub struct EvaluatorOutput {
 }
 
 /// Garbled circuit evaluator.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Evaluator {
     /// Buffer for the active labels.
     buffer: Vec<Label>,
-}
-
-impl Default for Evaluator {
-    fn default() -> Self {
-        Self {
-            buffer: Default::default(),
-        }
-    }
 }
 
 impl Evaluator {

@@ -143,7 +143,8 @@ impl<Ctx: Context, T: Copy + Send + Sync + 'static> CommittedOTReceiver<Ctx, boo
     for IdealOTReceiver<T>
 {
     async fn reveal_choices(&mut self, ctx: &mut Ctx) -> Result<(), OTError> {
-        Ok(self.0.call(ctx, (), verify).await)
+        self.0.call(ctx, (), verify).await;
+        Ok(())
     }
 }
 

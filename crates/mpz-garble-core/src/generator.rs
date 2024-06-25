@@ -77,18 +77,10 @@ pub struct GeneratorOutput {
 }
 
 /// Garbled circuit generator.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Generator {
     /// Buffer for the 0-bit labels.
     buffer: Vec<Label>,
-}
-
-impl Default for Generator {
-    fn default() -> Self {
-        Self {
-            buffer: Default::default(),
-        }
-    }
 }
 
 impl Generator {
@@ -295,7 +287,7 @@ where
                     // If we have generated all AND gates, we can compute
                     // the rest of the "free" gates.
                     if !self.has_gates() {
-                        assert!(matches!(self.next(), None));
+                        assert!(self.next().is_none());
 
                         self.complete = true;
                     }
@@ -356,7 +348,7 @@ where
 
         let mut batch = [EncryptedGate::default(); N];
         let mut i = 0;
-        while let Some(gate) = self.0.next() {
+        for gate in self.0.by_ref() {
             batch[i] = gate;
             i += 1;
 

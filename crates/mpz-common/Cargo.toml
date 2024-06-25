@@ -25,7 +25,7 @@ serde = { workspace = true, features = ["derive"] }
 pollster.workspace = true
 rayon = { workspace = true, optional = true }
 cfg-if.workspace = true
-tokio = { workspace = true, optional = true, default-features = false }
+tokio = { workspace = true, optional = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = [

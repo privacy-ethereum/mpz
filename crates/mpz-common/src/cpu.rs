@@ -33,12 +33,12 @@ mod st {
 
         /// Executes a closure on the CPU backend.
         #[inline]
-        pub fn blocking<F, R>(f: F) -> impl Future<Output = R> + Send
+        pub async fn blocking<F, R>(f: F) -> R
         where
             F: FnOnce() -> R + Send + 'static,
             R: Send + 'static,
         {
-            async move { f() }
+            f()
         }
     }
 
@@ -88,18 +88,16 @@ mod rayon_backend {
         }
 
         /// Executes a closure on the CPU backend.
-        pub fn blocking<F, R>(f: F) -> impl Future<Output = R> + Send
+        pub async fn blocking<F, R>(f: F) -> R
         where
             F: FnOnce() -> R + Send + 'static,
             R: Send + 'static,
         {
-            async move {
-                let (sender, receiver) = oneshot::channel();
-                rayon::spawn(move || {
-                    _ = sender.send(f());
-                });
-                receiver.await.expect("worker thread does not drop channel")
-            }
+            let (sender, receiver) = oneshot::channel();
+            rayon::spawn(move || {
+                _ = sender.send(f());
+            });
+            receiver.await.expect("worker thread does not drop channel")
         }
     }
 
