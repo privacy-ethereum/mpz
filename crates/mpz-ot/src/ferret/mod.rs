@@ -13,45 +13,24 @@ use mpz_core::lpn::LpnParameters;
 use mpz_ot_core::ferret::LpnType;
 
 /// Configuration of Ferret.
-#[derive(Debug)]
-pub struct FerretConfig<RandomCOT, SetupRandomCOT> {
-    rcot: RandomCOT,
-    setup_rcot: SetupRandomCOT,
+#[derive(Debug, Clone)]
+pub struct FerretConfig {
     lpn_parameters: LpnParameters,
     lpn_type: LpnType,
 }
 
-impl<RandomCOT: Clone, SetupRandomCOT> FerretConfig<RandomCOT, SetupRandomCOT> {
+impl FerretConfig {
     /// Create a new instance.
     ///
     /// # Arguments.
     ///
-    /// * `rcot` - The rcot for MPCOT.
-    /// * `setup_rcot` - The rcot for setup.
     /// * `lpn_parameters` - The parameters of LPN.
     /// * `lpn_type` - The type of LPN.
-    pub fn new(
-        rcot: RandomCOT,
-        setup_rcot: SetupRandomCOT,
-        lpn_parameters: LpnParameters,
-        lpn_type: LpnType,
-    ) -> Self {
+    pub fn new(lpn_parameters: LpnParameters, lpn_type: LpnType) -> Self {
         Self {
-            rcot,
-            setup_rcot,
             lpn_parameters,
             lpn_type,
         }
-    }
-
-    /// Get rcot
-    pub fn rcot(&self) -> RandomCOT {
-        self.rcot.clone()
-    }
-
-    /// Get the setup rcot
-    pub fn setup_rcot(&mut self) -> &mut SetupRandomCOT {
-        &mut self.setup_rcot
     }
 
     /// Get the lpn type
@@ -63,21 +42,23 @@ impl<RandomCOT: Clone, SetupRandomCOT> FerretConfig<RandomCOT, SetupRandomCOT> {
     pub fn lpn_parameters(&self) -> LpnParameters {
         self.lpn_parameters
     }
+
+    /// Returns the number of COTs required to bootstrap an extension.
+    pub(crate) fn bootstrap_rate(&self) -> usize {
+        self.lpn_parameters.k as usize
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use futures::TryFutureExt;
-    use mpz_common::executor::test_st_executor;
-    use mpz_core::{lpn::LpnParameters, Block};
-    use mpz_ot_core::{ferret::LpnType, test::assert_cot, RCOTReceiverOutput, RCOTSenderOutput};
-
-    use crate::{
-        ideal::cot::{ideal_rcot, IdealCOTReceiver, IdealCOTSender},
-        OTError, RandomCOTReceiver, RandomCOTSender,
-    };
-
     use super::*;
+    use futures::TryFutureExt as _;
+    use mpz_common::executor::test_st_executor;
+    use mpz_core::lpn::LpnParameters;
+    use mpz_ot_core::{ferret::LpnType, test::assert_cot, RCOTReceiverOutput, RCOTSenderOutput};
+    use rstest::*;
+
+    use crate::{ideal::cot::ideal_rcot, Correlation, OTError, RandomCOTReceiver, RandomCOTSender};
 
     // l = n - k = 8380
     const LPN_PARAMETERS_TEST: LpnParameters = LpnParameters {
@@ -86,73 +67,46 @@ mod tests {
         t: 600,
     };
 
-    fn setup() -> (
-        Sender<IdealCOTSender, IdealCOTSender>,
-        Receiver<IdealCOTReceiver, IdealCOTReceiver>,
-        Block,
-    ) {
-        let (mut rcot_sender, rcot_receiver) = ideal_rcot();
-
-        let sender_config = FerretConfig::new(
-            rcot_sender.clone(),
-            rcot_sender.clone(),
-            LPN_PARAMETERS_TEST,
-            LpnType::Regular,
-        );
-
-        let receiver_config = FerretConfig::new(
-            rcot_receiver.clone(),
-            rcot_receiver,
-            LPN_PARAMETERS_TEST,
-            LpnType::Regular,
-        );
-
-        let delta = rcot_sender.alice().get_mut().delta();
-
-        let sender = Sender::new(sender_config);
-
-        let receiver = Receiver::new(receiver_config);
-
-        (sender, receiver, delta)
-    }
-
+    #[rstest]
+    #[case::uniform(LpnType::Uniform)]
+    #[case::regular(LpnType::Regular)]
     #[tokio::test]
-    async fn test_ferret() {
+    async fn test_ferret(#[case] lpn_type: LpnType) {
         let (mut ctx_sender, mut ctx_receiver) = test_st_executor(8);
 
-        let (mut sender, mut receiver, delta) = setup();
+        let (rcot_sender, rcot_receiver) = ideal_rcot();
+
+        let config = FerretConfig::new(LPN_PARAMETERS_TEST, lpn_type);
+
+        let mut sender = Sender::new(config.clone(), rcot_sender);
+        let mut receiver = Receiver::new(config, rcot_receiver);
 
         tokio::try_join!(
-            sender
-                .setup_with_delta(&mut ctx_sender, delta)
-                .map_err(OTError::from),
+            sender.setup(&mut ctx_sender).map_err(OTError::from),
             receiver.setup(&mut ctx_receiver).map_err(OTError::from)
         )
         .unwrap();
 
         // extend once.
-        let count = 8000;
-        let (
-            RCOTSenderOutput {
-                id: sender_id,
-                msgs: u,
-            },
-            RCOTReceiverOutput {
-                id: receiver_id,
-                choices: b,
-                msgs: w,
-            },
-        ) = tokio::try_join!(
-            sender.send_random_correlated(&mut ctx_sender, count),
-            receiver.receive_random_correlated(&mut ctx_receiver, count)
+        let count = LPN_PARAMETERS_TEST.k;
+        tokio::try_join!(
+            sender.extend(&mut ctx_sender, count).map_err(OTError::from),
+            receiver
+                .extend(&mut ctx_receiver, count)
+                .map_err(OTError::from)
         )
         .unwrap();
-
-        assert_eq!(sender_id, receiver_id);
-        assert_cot(delta, &b, &u, &w);
 
         // extend twice
-        let count = 9000;
+        let count = 10000;
+        tokio::try_join!(
+            sender.extend(&mut ctx_sender, count).map_err(OTError::from),
+            receiver
+                .extend(&mut ctx_receiver, count)
+                .map_err(OTError::from)
+        )
+        .unwrap();
+
         let (
             RCOTSenderOutput {
                 id: sender_id,
@@ -170,6 +124,6 @@ mod tests {
         .unwrap();
 
         assert_eq!(sender_id, receiver_id);
-        assert_cot(delta, &b, &u, &w);
+        assert_cot(sender.delta(), &b, &u, &w);
     }
 }

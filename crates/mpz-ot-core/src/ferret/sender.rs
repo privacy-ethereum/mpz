@@ -1,4 +1,6 @@
 //! Ferret sender.
+use std::collections::VecDeque;
+
 use mpz_core::{
     lpn::{LpnEncoder, LpnParameters},
     Block,
@@ -6,7 +8,7 @@ use mpz_core::{
 
 use crate::{
     ferret::{error::SenderError, LpnType},
-    TransferId,
+    RCOTSenderOutput, TransferId,
 };
 
 use super::msgs::LpnMatrixSeed;
@@ -61,12 +63,28 @@ impl Sender {
                 lpn_encoder,
                 v: v.to_vec(),
                 id: TransferId::default(),
+                msgs_buffer: VecDeque::new(),
             },
         })
     }
 }
 
 impl Sender<state::Extension> {
+    /// Returns the current transfer id.
+    pub fn id(&self) -> TransferId {
+        self.state.id
+    }
+
+    /// Returns the number of remaining COTs.
+    pub fn remaining(&self) -> usize {
+        self.state.msgs_buffer.len()
+    }
+
+    /// Returns the delta correlation.
+    pub fn delta(&self) -> Block {
+        self.state.delta
+    }
+
     /// Outputs the information for MPCOT.
     ///
     /// See step 3 and 4.
@@ -86,7 +104,7 @@ impl Sender<state::Extension> {
     /// # Arguments.
     ///
     /// * `s` - The vector received from the MPCOT protocol.
-    pub fn extend(&mut self, s: &[Block]) -> Result<Vec<Block>, SenderError> {
+    pub fn extend(&mut self, s: Vec<Block>) -> Result<(), SenderError> {
         if s.len() != self.state.lpn_parameters.n {
             return Err(SenderError("the length of s should be n".to_string()));
         }
@@ -94,7 +112,7 @@ impl Sender<state::Extension> {
         self.state.id.next();
 
         // Compute y = A * v + s
-        let mut y = s.to_vec();
+        let mut y = s;
         self.state.lpn_encoder.compute(&mut y, &self.state.v);
 
         let y_ = y.split_off(self.state.lpn_parameters.k);
@@ -104,13 +122,26 @@ impl Sender<state::Extension> {
 
         // Update counter
         self.state.counter += 1;
+        self.state.msgs_buffer.extend(y_);
 
-        Ok(y_)
+        Ok(())
     }
 
-    /// Returns id
-    pub fn id(&self) -> TransferId {
-        self.state.id
+    /// Consumes `count` COTs.
+    pub fn consume(&mut self, count: usize) -> Result<RCOTSenderOutput<Block>, SenderError> {
+        if count > self.state.msgs_buffer.len() {
+            return Err(SenderError(format!(
+                "insufficient OTs: {} < {count}",
+                self.state.msgs_buffer.len()
+            )));
+        }
+
+        let msgs = self.state.msgs_buffer.drain(0..count).collect();
+
+        Ok(RCOTSenderOutput {
+            id: self.state.id.next(),
+            msgs,
+        })
     }
 }
 
@@ -159,8 +190,10 @@ pub mod state {
         /// Sender's COT message in the setup phase.
         pub(super) v: Vec<Block>,
 
-        /// TransferID.
+        /// Transfer ID.
         pub(crate) id: TransferId,
+        /// COT messages buffer.
+        pub(super) msgs_buffer: VecDeque<Block>,
     }
 
     impl State for Extension {}

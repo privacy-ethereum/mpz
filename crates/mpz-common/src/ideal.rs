@@ -35,7 +35,7 @@ impl<F> Clone for Alice<F> {
 
 impl<F> Alice<F> {
     /// Returns a lock to the ideal functionality.
-    pub fn get_mut(&mut self) -> MutexGuard<'_, F> {
+    pub fn lock(&self) -> MutexGuard<'_, F> {
         self.f.lock().unwrap()
     }
 
@@ -96,7 +96,7 @@ impl<F> Clone for Bob<F> {
 
 impl<F> Bob<F> {
     /// Returns a lock to the ideal functionality.
-    pub fn get_mut(&mut self) -> MutexGuard<'_, F> {
+    pub fn lock(&self) -> MutexGuard<'_, F> {
         self.f.lock().unwrap()
     }
 

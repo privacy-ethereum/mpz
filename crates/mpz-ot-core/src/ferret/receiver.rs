@@ -1,4 +1,6 @@
 //! Ferret receiver
+use std::collections::VecDeque;
+
 use mpz_core::{
     lpn::{LpnEncoder, LpnParameters},
     Block,
@@ -6,7 +8,7 @@ use mpz_core::{
 
 use crate::{
     ferret::{error::ReceiverError, LpnType},
-    TransferId,
+    RCOTReceiverOutput, TransferId,
 };
 
 use super::msgs::LpnMatrixSeed;
@@ -63,6 +65,8 @@ impl Receiver {
                     w: w.to_vec(),
                     e: Vec::default(),
                     id: TransferId::default(),
+                    choices_buffer: VecDeque::new(),
+                    msgs_buffer: VecDeque::new(),
                 },
             },
             LpnMatrixSeed { seed },
@@ -71,6 +75,16 @@ impl Receiver {
 }
 
 impl Receiver<state::Extension> {
+    /// Returns the current transfer id.
+    pub fn id(&self) -> TransferId {
+        self.state.id
+    }
+
+    /// Returns the number of remaining COTs.
+    pub fn remaining(&self) -> usize {
+        self.state.choices_buffer.len()
+    }
+
     /// The prepare precedure of extension, sample error vectors and outputs information for MPCOT.
     /// See step 3 and 4.
     pub fn get_mpcot_query(&mut self) -> (Vec<u32>, usize) {
@@ -100,7 +114,7 @@ impl Receiver<state::Extension> {
     /// # Arguments.
     ///
     /// * `r` - The vector received from the MPCOT protocol.
-    pub fn extend(&mut self, r: &[Block]) -> Result<(Vec<bool>, Vec<Block>), ReceiverError> {
+    pub fn extend(&mut self, r: Vec<Block>) -> Result<(), ReceiverError> {
         if r.len() != self.state.lpn_parameters.n {
             return Err(ReceiverError("the length of r should be n".to_string()));
         }
@@ -108,7 +122,7 @@ impl Receiver<state::Extension> {
         self.state.id.next();
 
         // Compute z = A * w + r.
-        let mut z = r.to_vec();
+        let mut z = r;
         self.state.lpn_encoder.compute(&mut z, &self.state.w);
 
         // Compute x = A * u + e.
@@ -133,12 +147,32 @@ impl Receiver<state::Extension> {
         // Update counter
         self.state.counter += 1;
 
-        Ok((x_, z_))
+        self.state.choices_buffer.extend(x_);
+        self.state.msgs_buffer.extend(z_);
+
+        Ok(())
     }
 
-    /// Returns id
-    pub fn id(&self) -> TransferId {
-        self.state.id
+    /// Consumes `count` COTs.
+    pub fn consume(
+        &mut self,
+        count: usize,
+    ) -> Result<RCOTReceiverOutput<bool, Block>, ReceiverError> {
+        if count > self.state.choices_buffer.len() {
+            return Err(ReceiverError(format!(
+                "insufficient OTs: {} < {count}",
+                self.state.choices_buffer.len()
+            )));
+        }
+
+        let choices = self.state.choices_buffer.drain(0..count).collect();
+        let msgs = self.state.msgs_buffer.drain(0..count).collect();
+
+        Ok(RCOTReceiverOutput {
+            id: self.state.id.next(),
+            choices,
+            msgs,
+        })
     }
 }
 
@@ -186,6 +220,9 @@ pub mod state {
 
         /// TransferID
         pub(super) id: TransferId,
+        /// Extended OTs buffers.
+        pub(super) choices_buffer: VecDeque<bool>,
+        pub(super) msgs_buffer: VecDeque<Block>,
     }
 
     impl State for Extension {}

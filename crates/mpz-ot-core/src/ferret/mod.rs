@@ -52,9 +52,11 @@ mod tests {
     use receiver::Receiver;
     use sender::Sender;
 
-    use crate::ideal::{cot::IdealCOT, mpcot::IdealMpcot};
-    use crate::test::assert_cot;
-    use crate::{MPCOTReceiverOutput, MPCOTSenderOutput, RCOTReceiverOutput, RCOTSenderOutput};
+    use crate::{
+        ideal::{cot::IdealCOT, mpcot::IdealMpcot},
+        test::assert_cot,
+        MPCOTReceiverOutput, MPCOTSenderOutput, RCOTReceiverOutput, RCOTSenderOutput,
+    };
     use mpz_core::{lpn::LpnParameters, prg::Prg};
 
     const LPN_PARAMETERS_TEST: LpnParameters = LpnParameters {
@@ -111,8 +113,15 @@ mod tests {
         let (MPCOTSenderOutput { s, .. }, MPCOTReceiverOutput { r, .. }) =
             ideal_mpcot.extend(&query.0, query.1);
 
-        let msgs = sender.extend(&s).unwrap();
-        let (choices, received) = receiver.extend(&r).unwrap();
+        sender.extend(s).unwrap();
+        receiver.extend(r).unwrap();
+
+        let RCOTSenderOutput { msgs, .. } = sender.consume(2).unwrap();
+        let RCOTReceiverOutput {
+            choices,
+            msgs: received,
+            ..
+        } = receiver.consume(2).unwrap();
 
         assert_cot(delta, &choices, &msgs, &received);
 
@@ -123,8 +132,15 @@ mod tests {
         let (MPCOTSenderOutput { s, .. }, MPCOTReceiverOutput { r, .. }) =
             ideal_mpcot.extend(&query.0, query.1);
 
-        let msgs = sender.extend(&s).unwrap();
-        let (choices, received) = receiver.extend(&r).unwrap();
+        sender.extend(s).unwrap();
+        receiver.extend(r).unwrap();
+
+        let RCOTSenderOutput { msgs, .. } = sender.consume(sender.remaining()).unwrap();
+        let RCOTReceiverOutput {
+            choices,
+            msgs: received,
+            ..
+        } = receiver.consume(receiver.remaining()).unwrap();
 
         assert_cot(delta, &choices, &msgs, &received);
     }

@@ -1,52 +1,53 @@
-use crate::{
-    ferret::{mpcot::Receiver as MpcotReceiver, ReceiverError},
-    RandomCOTReceiver,
-};
-use enum_try_as_inner::EnumTryAsInner;
-use mpz_common::Context;
+use std::mem;
+
+use async_trait::async_trait;
+use mpz_common::{cpu::CpuBackend, Allocate, Context, Preprocess};
 use mpz_core::{prg::Prg, Block};
 use mpz_ot_core::{
     ferret::receiver::{state, Receiver as ReceiverCore},
     RCOTReceiverOutput,
 };
 use serio::SinkExt;
-use utils_aio::non_blocking_backend::{Backend, NonBlockingBackend};
 
-use super::FerretConfig;
-use crate::{async_trait, OTError};
+use crate::{
+    ferret::{mpcot, FerretConfig, ReceiverError},
+    OTError, RandomCOTReceiver,
+};
 
-#[derive(Debug, EnumTryAsInner)]
-#[derive_err(Debug)]
+#[derive(Debug)]
 pub(crate) enum State {
     Initialized(ReceiverCore<state::Initialized>),
     Extension(ReceiverCore<state::Extension>),
-    Complete,
     Error,
+}
+
+impl State {
+    fn take(&mut self) -> Self {
+        std::mem::replace(self, State::Error)
+    }
 }
 
 /// Ferret Receiver.
 #[derive(Debug)]
-pub struct Receiver<RandomCOT, SetupRandomCOT> {
+pub struct Receiver<RandomCOT> {
     state: State,
-    mpcot: MpcotReceiver<RandomCOT>,
-    config: FerretConfig<RandomCOT, SetupRandomCOT>,
+    config: FerretConfig,
+    rcot: RandomCOT,
+    alloc: usize,
 }
 
-impl<RandomCOT, SetupRandomCOT> Receiver<RandomCOT, SetupRandomCOT>
-where
-    RandomCOT: Send + Default + Clone,
-    SetupRandomCOT: Send,
-{
+impl<RandomCOT> Receiver<RandomCOT> {
     /// Creates a new Receiver.
     ///
     /// # Arguments.
     ///
     /// * `config` - Ferret configuration.
-    pub fn new(config: FerretConfig<RandomCOT, SetupRandomCOT>) -> Self {
+    pub fn new(config: FerretConfig, rcot: RandomCOT) -> Self {
         Self {
             state: State::Initialized(ReceiverCore::new()),
-            mpcot: MpcotReceiver::new(config.lpn_type()),
             config,
+            rcot,
+            alloc: 0,
         }
     }
 
@@ -58,13 +59,11 @@ where
     pub async fn setup<Ctx>(&mut self, ctx: &mut Ctx) -> Result<(), ReceiverError>
     where
         Ctx: Context,
-        SetupRandomCOT: RandomCOTReceiver<Ctx, bool, Block>,
+        RandomCOT: RandomCOTReceiver<Ctx, bool, Block>,
     {
-        let ext_receiver =
-            std::mem::replace(&mut self.state, State::Error).try_into_initialized()?;
-
-        let rcot = self.config.rcot();
-        self.mpcot.setup(ctx, rcot).await?;
+        let State::Initialized(receiver) = self.state.take() else {
+            return Err(ReceiverError::state("receiver not in initialized state"));
+        };
 
         let params = self.config.lpn_parameters();
         let lpn_type = self.config.lpn_type();
@@ -75,19 +74,15 @@ where
             choices: u,
             msgs: w,
             ..
-        } = self
-            .config
-            .setup_rcot()
-            .receive_random_correlated(ctx, params.k)
-            .await?;
+        } = self.rcot.receive_random_correlated(ctx, params.k).await?;
 
         let seed = Prg::new().random_block();
 
-        let (ext_receiver, seed) = ext_receiver.setup(params, lpn_type, seed, &u, &w)?;
+        let (receiver, seed) = receiver.setup(params, lpn_type, seed, &u, &w)?;
 
         ctx.io_mut().send(seed).await?;
 
-        self.state = State::Extension(ext_receiver);
+        self.state = State::Extension(receiver);
 
         Ok(())
     }
@@ -96,97 +91,98 @@ where
     ///
     /// # Arguments
     ///
-    /// * `ctx` - The channel context.
-    async fn extend<Ctx>(&mut self, ctx: &mut Ctx) -> Result<(Vec<bool>, Vec<Block>), ReceiverError>
+    /// * `ctx` - Thread context.
+    /// * `count` - The number of OTs to extend.
+    pub async fn extend<Ctx>(&mut self, ctx: &mut Ctx, count: usize) -> Result<(), ReceiverError>
     where
         Ctx: Context,
-        RandomCOT: RandomCOTReceiver<Ctx, bool, Block>,
+        RandomCOT: RandomCOTReceiver<Ctx, bool, Block> + Send,
     {
-        let mut ext_receiver =
-            std::mem::replace(&mut self.state, State::Error).try_into_extension()?;
+        let State::Extension(mut receiver) = self.state.take() else {
+            return Err(ReceiverError::state("receiver not in extension state"));
+        };
 
-        let (alphas, n) = ext_receiver.get_mpcot_query();
+        let lpn_type = self.config.lpn_type();
+        let target = receiver.remaining() + count;
+        while receiver.remaining() < target {
+            let (alphas, n) = receiver.get_mpcot_query();
 
-        let r = self.mpcot.extend(ctx, &alphas, n as u32).await?;
+            let r = if receiver.remaining() < self.config.bootstrap_rate() {
+                mpcot::receive(ctx, &mut self.rcot, lpn_type, alphas, n as u32).await?
+            } else {
+                mpcot::receive(
+                    ctx,
+                    &mut BootstrappedReceiver(&mut receiver),
+                    lpn_type,
+                    alphas,
+                    n as u32,
+                )
+                .await?
+            };
 
-        let (ext_receiver, choices, msgs) = Backend::spawn(move || {
-            ext_receiver
-                .extend(&r)
-                .map(|(choices, msgs)| (ext_receiver, choices, msgs))
-        })
-        .await?;
+            receiver = CpuBackend::blocking(move || receiver.extend(r).map(|()| receiver)).await?;
+        }
 
-        self.state = State::Extension(ext_receiver);
-
-        Ok((choices, msgs))
-    }
-
-    /// Complete extension
-    pub fn finalize(&mut self) -> Result<(), ReceiverError> {
-        std::mem::replace(&mut self.state, State::Error).try_into_extension()?;
-        self.state = State::Complete;
-        self.mpcot.finalize()?;
+        self.state = State::Extension(receiver);
 
         Ok(())
     }
 }
 
 #[async_trait]
-impl<Ctx, RandomCOT, SetupRandomCOT> RandomCOTReceiver<Ctx, bool, Block>
-    for Receiver<RandomCOT, SetupRandomCOT>
+impl<Ctx, RandomCOT> RandomCOTReceiver<Ctx, bool, Block> for Receiver<RandomCOT>
 where
-    Ctx: Context,
-    RandomCOT: RandomCOTReceiver<Ctx, bool, Block> + Send + Clone + Default + 'static,
-    SetupRandomCOT: Send + 'static,
+    RandomCOT: Send,
 {
     async fn receive_random_correlated(
         &mut self,
-        ctx: &mut Ctx,
+        _ctx: &mut Ctx,
         count: usize,
     ) -> Result<RCOTReceiverOutput<bool, Block>, OTError> {
-        let (mut choices_buffer, mut msgs_buffer) = self.extend(ctx).await?;
+        let State::Extension(receiver) = &mut self.state else {
+            return Err(ReceiverError::state("receiver not in extension state").into());
+        };
 
-        assert_eq!(choices_buffer.len(), msgs_buffer.len());
+        receiver
+            .consume(count)
+            .map_err(ReceiverError::from)
+            .map_err(OTError::from)
+    }
+}
 
-        let l = choices_buffer.len();
+impl<RandomCOT> Allocate for Receiver<RandomCOT> {
+    fn alloc(&mut self, count: usize) {
+        self.alloc += count;
+    }
+}
 
-        let id = self
-            .state
-            .try_as_extension()
-            .map_err(ReceiverError::from)?
-            .id();
+#[async_trait]
+impl<Ctx, RandomCOT> Preprocess<Ctx> for Receiver<RandomCOT>
+where
+    Ctx: Context,
+    RandomCOT: RandomCOTReceiver<Ctx, bool, Block> + Send,
+{
+    type Error = ReceiverError;
 
-        if count <= l {
-            let choices_res = choices_buffer.drain(..count).collect();
+    async fn preprocess(&mut self, ctx: &mut Ctx) -> Result<(), Self::Error> {
+        let count = mem::take(&mut self.alloc);
+        self.extend(ctx, count).await
+    }
+}
 
-            let msgs_res = msgs_buffer.drain(..count).collect();
+#[derive(Debug)]
+struct BootstrappedReceiver<'a>(&'a mut ReceiverCore<state::Extension>);
 
-            return Ok(RCOTReceiverOutput {
-                id,
-                choices: choices_res,
-                msgs: msgs_res,
-            });
-        } else {
-            let mut choices_res = choices_buffer;
-            let mut msgs_res = msgs_buffer;
-
-            for _ in 0..count / l - 1 {
-                (choices_buffer, msgs_buffer) = self.extend(ctx).await?;
-
-                choices_res.extend_from_slice(&choices_buffer);
-                msgs_res.extend_from_slice(&msgs_buffer);
-            }
-
-            (choices_buffer, msgs_buffer) = self.extend(ctx).await?;
-
-            choices_res.extend_from_slice(&choices_buffer[0..count % l]);
-            msgs_res.extend_from_slice(&msgs_buffer[0..count % l]);
-
-            return Ok(RCOTReceiverOutput {
-                id,
-                choices: choices_res,
-                msgs: msgs_res,
-            });
-        }
+#[async_trait]
+impl<Ctx> RandomCOTReceiver<Ctx, bool, Block> for BootstrappedReceiver<'_> {
+    async fn receive_random_correlated(
+        &mut self,
+        _ctx: &mut Ctx,
+        count: usize,
+    ) -> Result<RCOTReceiverOutput<bool, Block>, OTError> {
+        self.0
+            .consume(count)
+            .map_err(ReceiverError::from)
+            .map_err(OTError::from)
     }
 }

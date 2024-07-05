@@ -11,7 +11,9 @@ use mpz_ot_core::{
     ideal::cot::IdealCOT, COTReceiverOutput, COTSenderOutput, RCOTReceiverOutput, RCOTSenderOutput,
 };
 
-use crate::{COTReceiver, COTSender, OTError, OTSetup, RandomCOTReceiver, RandomCOTSender};
+use crate::{
+    COTReceiver, COTSender, Correlation, OTError, OTSetup, RandomCOTReceiver, RandomCOTSender,
+};
 
 fn cot(
     f: &mut IdealCOT,
@@ -79,6 +81,14 @@ where
 
     async fn preprocess(&mut self, _ctx: &mut Ctx) -> Result<(), OTError> {
         Ok(())
+    }
+}
+
+impl Correlation for IdealCOTSender {
+    type Correlation = Block;
+
+    fn delta(&self) -> Block {
+        self.0.lock().delta()
     }
 }
 
@@ -170,7 +180,7 @@ mod tests {
         let (mut ctx_a, mut ctx_b) = test_st_executor(8);
         let (mut alice, mut bob) = ideal_cot();
 
-        let delta = alice.0.get_mut().delta();
+        let delta = alice.delta();
 
         let count = 10;
         let choices = (0..count).map(|_| rng.gen()).collect::<Vec<bool>>();
@@ -201,7 +211,7 @@ mod tests {
         let (mut ctx_a, mut ctx_b) = test_st_executor(8);
         let (mut alice, mut bob) = ideal_rcot();
 
-        let delta = alice.0.get_mut().delta();
+        let delta = alice.delta();
 
         let count = 10;
 

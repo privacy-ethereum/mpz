@@ -61,9 +61,18 @@ pub trait OTSender<Ctx, T> {
     async fn send(&mut self, ctx: &mut Ctx, msgs: &[T]) -> Result<OTSenderOutput, OTError>;
 }
 
+/// Correlation of COT messages.
+pub trait Correlation {
+    /// The type of the correlation.
+    type Correlation;
+
+    /// Returns the correlation.
+    fn delta(&self) -> Self::Correlation;
+}
+
 /// A correlated oblivious transfer sender.
 #[async_trait]
-pub trait COTSender<Ctx, T> {
+pub trait COTSender<Ctx, T>: Correlation {
     /// Obliviously transfers the correlated messages to the receiver.
     ///
     /// Returns the `0`-bit messages that were obliviously transferred.
@@ -97,7 +106,7 @@ pub trait RandomOTSender<Ctx, T> {
 
 /// A random correlated oblivious transfer sender.
 #[async_trait]
-pub trait RandomCOTSender<Ctx, T> {
+pub trait RandomCOTSender<Ctx, T>: Correlation {
     /// Obliviously transfers the correlated messages to the receiver.
     ///
     /// Returns the `0`-bit messages that were obliviously transferred.
