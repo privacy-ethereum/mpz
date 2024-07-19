@@ -1,7 +1,9 @@
 //! An estimator to analyse the security of different LPN parameters.
 //! The implementation is according to https://eprint.iacr.org/2022/712.pdf.
 
+#[cfg(feature = "rayon")]
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+
 use rug::{ops::Pow, Float};
 
 // The precision for security analysis.
@@ -370,13 +372,22 @@ impl LpnEstimator {
             Self::security_under_bjmm_isd_binary,
         ];
 
-        let res: Vec<f64> = funcs.par_iter().map(|&func| func(n, k, t)).collect();
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "rayon")]{
+                let iter = funcs.par_iter();
+            }else{
+                let iter = funcs.iter();
+            }
+        };
+
+        let res: Vec<f64> = iter.map(|&func| func(n, k, t)).collect();
 
         res.into_iter()
             .min_by(|a, b| a.partial_cmp(b).unwrap())
             .expect("Some error in finding min")
     }
 
+    // Attack in the [paper](https://eprint.iacr.org/2023/176.pdf)
     fn cost_agb_binary(n: usize, k: usize, t: usize, f: usize, mu: usize) -> f64 {
         let f = Float::with_val(PRECISION, f);
         let mu = Float::with_val(PRECISION, mu);
@@ -459,6 +470,7 @@ impl LpnEstimator {
         0.0
     }
 
+    // Attack in the [paper](https://eprint.iacr.org/2023/176.pdf)
     fn sub_agb_binary(n: usize, k: usize, t: usize, f: usize, mu: usize) -> f64 {
         let mu_copy = mu;
         let beta_copy = n / t;
@@ -522,6 +534,7 @@ impl LpnEstimator {
         res.to_f64()
     }
 
+    // Attack in the [paper](https://eprint.iacr.org/2023/176.pdf)
     fn security_under_agb_binary(n: usize, k: usize, t: usize) -> f64 {
         let mut res = u32::MAX as f64;
         for f in 0..t {
@@ -538,6 +551,7 @@ impl LpnEstimator {
     }
 
     /// The security of the regular lpn parameters for binary field.
+    /// See Sec 5.1 in this [paper](https://eprint.iacr.org/2022/712.pdf)
     /// # Arguments.
     ///
     /// * `n` - The number of samples.
@@ -546,11 +560,17 @@ impl LpnEstimator {
     ///
     /// NOTE: Run it in the release mode.
     pub fn security_for_binary_regular(n: usize, k: usize, t: usize) -> f64 {
-        let cost_agb = Self::security_under_agb_binary(n, k, t);
-
-        let n = n - t;
-        let k = k - t;
-        let cost_others = Self::security_for_binary(n, k, t);
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "rayon")]{
+                let (cost_agb, cost_others) = rayon::join(
+                    || Self::security_under_agb_binary(n, k, t),
+                    || Self::security_for_binary(n - t, k - t, t),
+                );
+            }else{
+                let cost_agb = Self::security_under_agb_binary(n, k, t);
+                let cost_others = Self::security_for_binary(n-t, k-t, t);
+            }
+        }
         cost_agb.min(cost_others)
     }
 }
@@ -558,7 +578,7 @@ impl LpnEstimator {
 mod tests {
     #[test]
     fn security_test() {
-        let security = crate::LpnEstimator::security_for_binary_regular(1 << 10, 100, 10);
+        let security = crate::LpnEstimator::security_for_binary_regular(1 << 10, 652, 57);
         println!("{:?}", security);
     }
 }
