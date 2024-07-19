@@ -1,6 +1,7 @@
 //! An estimator to analyse the security of different LPN parameters.
 //! The implementation is according to https://eprint.iacr.org/2022/712.pdf.
 
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use rug::{ops::Pow, Float};
 
 // The precision for security analysis.
@@ -34,7 +35,9 @@ impl LpnEstimator {
     ///
     /// * `n` - The number of samples.
     /// * `k` - The length of the secret.
-    /// * `t` - The Hammin weight of the error.
+    /// * `t` - The Hamming weight of the error.
+    ///
+    /// NOTE: Run it in the release mode.
     pub fn security_under_pooled_gauss(n: usize, k: usize, t: usize) -> f64 {
         let log_guess_prob = Self::cal_comb(n - k, t).log2() - Self::cal_comb(n, t).log2();
 
@@ -108,7 +111,9 @@ impl LpnEstimator {
     ///
     /// * `n` - The number of samples.
     /// * `k` - The length of the secret.
-    /// * `t` - The Hammin weight of the error.
+    /// * `t` - The Hamming weight of the error.
+    ///
+    /// NOTE: Run it in the release mode.
     pub fn security_under_sd_isd_binary(n: usize, k: usize, t: usize) -> f64 {
         let mut res = Self::sub_sd_isd_binary(n, k, t, 0, 0);
 
@@ -300,7 +305,9 @@ impl LpnEstimator {
     ///
     /// * `n` - The number of samples.
     /// * `k` - The length of the secret.
-    /// * `t` - The Hammin weight of the error.
+    /// * `t` - The Hamming weight of the error.
+    ///
+    /// NOTE: Run it in the release mode.
     pub fn security_under_bjmm_isd_binary(n: usize, k: usize, t: usize) -> f64 {
         let mut res = Self::min_sub_bjmm_isd_binary_with_fixed_p2(n, k, t, 0);
 
@@ -312,12 +319,71 @@ impl LpnEstimator {
         }
         res
     }
+
+    /// The security of the lpn parameters under SD attack for binary field. See The equation with s = 0 in page 39 in this [paper](https://eprint.iacr.org/2022/712.pdf).
+    ///
+    /// # Arguments.
+    ///
+    /// * `n` - The number of samples.
+    /// * `k` - The length of the secret.
+    /// * `t` - The Hamming weight of the error.
+    ///
+    /// NOTE: Run it in the release mode.
+    pub fn security_under_sd_binary(n: usize, k: usize, t: usize) -> f64 {
+        let cost = Float::with_val(PRECISION, n - t + 1) / Float::with_val(PRECISION, n - k - t);
+
+        let cost = cost.log2() * 2 * t + 2;
+
+        let cost: Float = Float::with_val(PRECISION, k + 1).log2() + cost;
+        cost.to_f64()
+    }
+
+    /// The security of the lpn parameters under SD 2.0 attack for binary field. See The equation with in page 39 in this [paper](https://eprint.iacr.org/2022/712.pdf).
+    ///
+    /// # Arguments.
+    ///
+    /// * `n` - The number of samples.
+    /// * `k` - The length of the secret.
+    /// * `t` - The Hamming weight of the error.
+    ///
+    /// NOTE: Run it in the release mode.
+    pub fn security_under_sd2_binary(n: usize, k: usize, t: usize) -> f64 {
+        let s = Self::security_under_pooled_gauss(n, k, t) as usize;
+        Self::security_under_sd_binary(n, k - s, t)
+    }
+
+    /// The security of the exact lpn parameters for binary field.
+    /// # Arguments.
+    ///
+    /// * `n` - The number of samples.
+    /// * `k` - The length of the secret.
+    /// * `t` - The Hamming weight of the error.
+    ///
+    /// NOTE: Run it in the release mode.
+    pub fn security_for_binary(n: usize, k: usize, t: usize) -> f64 {
+        let funcs: Vec<fn(usize, usize, usize) -> f64> = vec![
+            Self::security_under_pooled_gauss,
+            Self::security_under_sd_binary,
+            Self::security_under_sd2_binary,
+            Self::security_under_sd_isd_binary,
+            Self::security_under_bjmm_isd_binary,
+        ];
+
+        let res: Vec<f64> = funcs.par_iter().map(|&func| func(n, k, t)).collect();
+
+        let res = res
+            .into_iter()
+            .min_by(|a, b| a.partial_cmp(b).unwrap())
+            .expect("Some error in finding min");
+
+        res
+    }
 }
 
 mod tests {
     #[test]
     fn security_test() {
-        let security = crate::LpnEstimator::security_under_bjmm_isd_binary(1 << 10, 100, 10);
+        let security = crate::LpnEstimator::security_for_binary(1 << 10, 657, 57);
         println!("{:?}", security);
     }
 }
