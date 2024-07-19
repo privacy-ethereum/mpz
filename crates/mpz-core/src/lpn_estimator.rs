@@ -127,6 +127,7 @@ impl LpnEstimator {
     }
 
     // Compute the fomulas inside the min function of Theorem 16 in this [paper](https://eprint.iacr.org/2022/712.pdf).
+    #[allow(clippy::too_many_arguments)]
     fn sub_bjmm_isd_binary(
         n: usize,
         k: usize,
@@ -371,19 +372,193 @@ impl LpnEstimator {
 
         let res: Vec<f64> = funcs.par_iter().map(|&func| func(n, k, t)).collect();
 
-        let res = res
-            .into_iter()
+        res.into_iter()
             .min_by(|a, b| a.partial_cmp(b).unwrap())
-            .expect("Some error in finding min");
+            .expect("Some error in finding min")
+    }
 
+    fn cost_agb_binary(n: usize, k: usize, t: usize, f: usize, mu: usize) -> f64 {
+        let f = Float::with_val(PRECISION, f);
+        let mu = Float::with_val(PRECISION, mu);
+        let beta = Float::with_val(PRECISION, n / t);
+
+        let beta_minus_mu_minus_one: Float = beta.clone() - mu - 1;
+
+        let a1 = beta_minus_mu_minus_one.clone() * f.clone();
+        let a2: Float = beta_minus_mu_minus_one.clone().pow(2) * f.clone() * (f.clone() - 1) / 2;
+        let a3: Float =
+            beta_minus_mu_minus_one.clone().pow(3) * f.clone() * (f.clone() - 1) * (f.clone() - 2)
+                / 6;
+        let a4 = beta_minus_mu_minus_one.pow(4)
+            * f.clone()
+            * (f.clone() - 1)
+            * (f.clone() - 2)
+            * (f.clone() - 3)
+            / 24;
+
+        let beta_minus_one: Float = beta - 1;
+        let t_minus_f = Float::with_val(PRECISION, t - f);
+
+        let b1 = beta_minus_one.clone() * t_minus_f.clone();
+        let b2: Float =
+            beta_minus_one.clone().pow(2) * t_minus_f.clone() * (t_minus_f.clone() - 1) / 2;
+        let b3: Float = beta_minus_one.clone().pow(3)
+            * t_minus_f.clone()
+            * (t_minus_f.clone() - 1)
+            * (t_minus_f.clone() - 2)
+            / 6;
+        let b4 = beta_minus_one.pow(4)
+            * t_minus_f.clone()
+            * (t_minus_f.clone() - 1)
+            * (t_minus_f.clone() - 2)
+            * (t_minus_f - 3)
+            / 24;
+
+        let c1 = -Self::cal_comb(n - k - 1, 1);
+        let c2 = Self::cal_comb(n - k, 2);
+        let c3 = -Self::cal_comb(n - k + 1, 3);
+        let c4 = Self::cal_comb(n - k + 2, 4);
+
+        let d2 = a1.clone()
+            + b1.clone()
+            + c1.clone()
+            + a1.clone() * b1.clone()
+            + a1.clone() * c1.clone()
+            + b1.clone() * c1.clone()
+            + a2.clone()
+            + b2.clone()
+            + c2.clone();
+
+        let d3 = c3.clone()
+            + b1.clone() * c2.clone()
+            + b2.clone() * c1.clone()
+            + b3.clone()
+            + a1.clone() * (b1.clone() * c1.clone() + b2.clone() + c2.clone())
+            + a2.clone() * (b1.clone() + c1.clone())
+            + a3.clone();
+
+        let d4 = c4
+            + b1.clone() * c3.clone()
+            + b2.clone() * c2.clone()
+            + b3.clone() * c1.clone()
+            + b4
+            + a1 * (b1.clone() * c2.clone() + b2.clone() * c1.clone() + b3 + c3)
+            + a2 * (b2 + c2 + b1.clone() * c1.clone())
+            + a3 * (b1 + c1)
+            + a4;
+
+        if d2 < 1 {
+            return 2.0;
+        }
+        if d3 < 1 {
+            return 3.0;
+        }
+        if d4 < 1 {
+            return 4.0;
+        }
+        0.0
+    }
+
+    fn sub_agb_binary(n: usize, k: usize, t: usize, f: usize, mu: usize) -> f64 {
+        let mu_copy = mu;
+        let beta_copy = n / t;
+        let f_copy = f;
+        let f = Float::with_val(PRECISION, f);
+        let mu = Float::with_val(PRECISION, mu);
+        let beta = Float::with_val(PRECISION, n / t);
+
+        let beta_minus_mu_minus_one: Float = beta.clone() - mu - 1;
+
+        let a1 = beta_minus_mu_minus_one.clone() * f.clone();
+        let a2: Float = beta_minus_mu_minus_one.clone().pow(2) * f.clone() * (f.clone() - 1) / 2;
+        let a3: Float =
+            beta_minus_mu_minus_one.clone().pow(3) * f.clone() * (f.clone() - 1) * (f.clone() - 2)
+                / 6;
+        let a4 = beta_minus_mu_minus_one.pow(4)
+            * f.clone()
+            * (f.clone() - 1)
+            * (f.clone() - 2)
+            * (f.clone() - 3)
+            / 24;
+
+        let beta_minus_one: Float = beta - 1;
+        let t_minus_f: Float = Float::with_val(PRECISION, t - f);
+
+        let b1 = beta_minus_one.clone() * t_minus_f.clone();
+        let b2: Float =
+            beta_minus_one.clone().pow(2) * t_minus_f.clone() * (t_minus_f.clone() - 1) / 2;
+        let b3: Float = beta_minus_one.clone().pow(3)
+            * t_minus_f.clone()
+            * (t_minus_f.clone() - 1)
+            * (t_minus_f.clone() - 2)
+            / 6;
+        let b4 = beta_minus_one.pow(4)
+            * t_minus_f.clone()
+            * (t_minus_f.clone() - 1)
+            * (t_minus_f.clone() - 2)
+            * (t_minus_f - 3)
+            / 24;
+
+        let d = Self::cost_agb_binary(n, k, t, f_copy, mu_copy);
+        let mut cost = a1.clone() + b1.clone() + a1.clone() * b1.clone() + a2.clone() + b2.clone();
+        if d == 2.0 {
+            cost += 0;
+        } else if d == 3.0 {
+            let d3 = b3 + a1 * b2 + a2 * b1 + a3;
+            cost += d3;
+        } else if d == 4.0 {
+            let d3 = b3.clone() + a1.clone() * b2.clone() + a2.clone() * b1.clone() + a3.clone();
+            let d4 = b4 + a1 * b3 + a2 * b2 + a3 * b1 + a4;
+            cost += d3 + d4;
+        } else {
+            return u32::MAX as f64;
+        }
+
+        let res: Float = 2 * cost.log2()
+            + Float::with_val(PRECISION, 3 * (k + 1 - f_copy * mu_copy)).log2()
+            - f_copy
+                * Float::with_val(PRECISION, 1.0 - (mu_copy as f64) / (beta_copy as f64)).log2();
+
+        res.to_f64()
+    }
+
+    fn security_under_agb_binary(n: usize, k: usize, t: usize) -> f64 {
+        let mut res = u32::MAX as f64;
+        for f in 0..t {
+            for mu in 0..n / t {
+                if f * mu < k + 1 {
+                    let cost = Self::sub_agb_binary(n, k, t, f, mu);
+                    if res > cost {
+                        res = cost;
+                    }
+                }
+            }
+        }
         res
+    }
+
+    /// The security of the regular lpn parameters for binary field.
+    /// # Arguments.
+    ///
+    /// * `n` - The number of samples.
+    /// * `k` - The length of the secret.
+    /// * `t` - The Hamming weight of the error.
+    ///
+    /// NOTE: Run it in the release mode.
+    pub fn security_for_binary_regular(n: usize, k: usize, t: usize) -> f64 {
+        let cost_agb = Self::security_under_agb_binary(n, k, t);
+
+        let n = n - t;
+        let k = k - t;
+        let cost_others = Self::security_for_binary(n, k, t);
+        cost_agb.min(cost_others)
     }
 }
 
 mod tests {
     #[test]
     fn security_test() {
-        let security = crate::LpnEstimator::security_for_binary(1 << 10, 657, 57);
+        let security = crate::LpnEstimator::security_for_binary_regular(1 << 10, 100, 10);
         println!("{:?}", security);
     }
 }
