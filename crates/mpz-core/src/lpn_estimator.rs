@@ -19,6 +19,17 @@ impl LpnEstimator {
         let range = std::cmp::min(m, n - m);
         for i in 0..range {
             res *= (n - i) as f64 / (range - i) as f64;
+            println!("res: {}", res);
+        }
+        res
+    }
+
+    fn cal_comb_log2(n: u64, m: u64) -> f64 {
+        assert!(n >= m);
+        let mut res = 0.0;
+        let range = std::cmp::min(m, n - m);
+        for i in 0..range {
+            res += ((n - i) as f64).log2() - ((range - i) as f64).log2();
         }
         res
     }
@@ -34,16 +45,27 @@ impl LpnEstimator {
     /// NOTE: Run it in the release mode.
     pub fn security_under_pooled_gauss(n: u64, k: u64, t: u64) -> f64 {
         let log_guess_prob = Self::cal_comb(n - k, t).log2() - Self::cal_comb(n, t).log2();
+        println!("guess prob: {}", log_guess_prob);
 
         let matrix_inversion_cost = (std::cmp::min(n - k, k) as f64).powf(2.8);
+        println!("inversion cost: {}", matrix_inversion_cost);
 
         matrix_inversion_cost.log2() - log_guess_prob
     }
 
+    ///
+    pub fn security_under_pooled_gauss_opt(n: u64, k: u64, t: u64) -> f64 {
+        let log_guess_prob = Self::cal_comb_log2(n - k, t) - Self::cal_comb_log2(n, t);
+        println!("guess prob: {}", log_guess_prob);
+        let matrix_inversion_cost = (std::cmp::min(n - k, k) as f64).powf(2.8);
+        matrix_inversion_cost.log2() - log_guess_prob
+    }
     // Compute the fomulas inside the min function of Theorem 14 in this [paper](https://eprint.iacr.org/2022/712.pdf).
     fn sub_sd_isd_binary(n: u64, k: u64, t: u64, l: u64, p: u64) -> f64 {
-        let l_zero = Self::cal_comb((k + l) / 2 + 1, p / 2);
-        let log_l_zero = l_zero.log2();
+        // let l_zero = Self::cal_comb((k + l) / 2 + 1, p / 2);
+        // let log_l_zero = l_zero.log2();
+        let log_l_zero = Self::cal_comb_log2((k + l) / 2 + 1, p / 2);
+        let l_zero = 2.0_f64.powf(log_l_zero);
         let log_s = 2.0 * log_l_zero - (l as f64);
 
         // Quick break, the cost should be larger than log_l_zero and log_s.
@@ -64,7 +86,9 @@ impl LpnEstimator {
         cost *= n as f64;
 
         // Compute log P(p,l).
-        let mut log_p = Self::cal_comb(n - k - l, t - p).log2() - Self::cal_comb(n, t).log2();
+        // let mut log_p = Self::cal_comb(n - k - l, t - p).log2() - Self::cal_comb(n, t).log2();
+
+        let mut log_p = Self::cal_comb_log2(n - k - l, t - p) - Self::cal_comb_log2(n, t);
 
         log_p += l as f64 + log_s;
 
@@ -159,10 +183,13 @@ impl LpnEstimator {
         assert!(p1 >= e1);
         let p = 2 * (p1 - e1);
 
-        let s3 = Self::cal_comb((k + l) / 2 + 1, p2 / 2);
+        // let s3 = Self::cal_comb((k + l) / 2 + 1, p2 / 2);
 
-        let log_s3 = s3.log2();
-        let log_c3 = s3.log2() * 2.0 - r2 as f64;
+        let log_s3 = Self::cal_comb_log2((k + 1) / 2 + 1, p2 / 2);
+        let s3 = 2.0_f64.powf(log_s3);
+
+        // let log_s3 = s3.log2();
+        let log_c3 = log_s3 * 2.0 - r2 as f64;
         let c3 = 2.0_f64.powf(log_c3);
 
         let log_c2 = log_c3 * 2.0 - r1 as f64;
@@ -170,11 +197,16 @@ impl LpnEstimator {
 
         assert!(k + l >= p2);
         assert!(p2 >= e2);
-        let log_mu2 = Self::cal_comb(p2, e2).log2() + Self::cal_comb(k + l - p2, p2 - e2).log2()
-            - Self::cal_comb(k + l, p2).log2();
+        // let log_mu2 = Self::cal_comb(p2, e2).log2() + Self::cal_comb(k + l - p2, p2 - e2).log2()
+        //     - Self::cal_comb(k + l, p2).log2();
+
+        let log_mu2 = Self::cal_comb_log2(p2, e2) + Self::cal_comb_log2(k + l - p2, p2 - e2)
+            - Self::cal_comb_log2(k + l, p2);
 
         let log_s1_left = log_mu2 + log_c2;
-        let log_s1_right = Self::cal_comb(k + l, p1).log2() - (r1 + r2) as f64;
+        // let log_s1_right = Self::cal_comb(k + l, p1).log2() - (r1 + r2) as f64;
+        let log_s1_right = Self::cal_comb_log2(k + l, p1) - (r1 + r2) as f64;
+
         let log_s1 = log_s1_left.min(log_s1_right);
 
         let log_c1 = log_s1 * 2.0 - (l - r1 - r2) as f64;
@@ -182,11 +214,15 @@ impl LpnEstimator {
 
         assert!(k + l >= p1);
         assert!(p1 >= e1);
-        let log_mu1 = Self::cal_comb(p1, e1).log2() + Self::cal_comb(k + l - p1, p1 - e1).log2()
-            - Self::cal_comb(k + l, p1).log2();
+        // let log_mu1 = Self::cal_comb(p1, e1).log2() + Self::cal_comb(k + l - p1, p1 - e1).log2()
+        //     - Self::cal_comb(k + l, p1).log2();
+
+        let log_mu1 = Self::cal_comb_log2(p1, e1) + Self::cal_comb_log2(k + l - p1, p1 - e1)
+            - Self::cal_comb_log2(k + l, p1);
 
         let log_s_left = log_mu1 + log_c1;
-        let log_s_right = Self::cal_comb(k + l, p).log2() - l as f64;
+        // let log_s_right = Self::cal_comb(k + l, p).log2() - l as f64;
+        let log_s_right = Self::cal_comb_log2(k + l, p) - l as f64;
 
         let log_s = log_s_left.min(log_s_right);
 
@@ -203,7 +239,9 @@ impl LpnEstimator {
         // Compute log P(p,l).
         assert!(n >= k + l);
         assert!(t >= p);
-        let mut log_p = Self::cal_comb(n - k - l, t - p).log2() - Self::cal_comb(n, t).log2();
+        // let mut log_p = Self::cal_comb(n - k - l, t - p).log2() - Self::cal_comb(n, t).log2();
+
+        let mut log_p = Self::cal_comb_log2(n - k - l, t - p) - Self::cal_comb_log2(n, t);
 
         log_p += l as f64 + log_s;
 
@@ -234,12 +272,18 @@ impl LpnEstimator {
                 assert!(p2 >= e2);
                 assert!(p1 >= e1);
                 // Proposition 1 in this [paper](https://eprint.iacr.org/2013/162.pdf).
-                let log_mu2 = Self::cal_comb(p2, e2).log2()
-                    + Self::cal_comb(k + l - p2, p2 - e2).log2()
-                    - Self::cal_comb(k + l, p2).log2();
+                // let log_mu2 = Self::cal_comb(p2, e2).log2()
+                //     + Self::cal_comb(k + l - p2, p2 - e2).log2()
+                //     - Self::cal_comb(k + l, p2).log2();
+                let log_mu2 = Self::cal_comb_log2(p2, e2)
+                    + Self::cal_comb_log2(k + l - p2, p2 - e2)
+                    - Self::cal_comb_log2(k + l, p2);
 
-                let r2 = log_mu2 + 4.0 * (Self::cal_comb((k + l) / 2, p2 / 2).log2())
-                    - Self::cal_comb(k + l, p1).log2();
+                // let r2 = log_mu2 + 4.0 * (Self::cal_comb((k + l) / 2, p2 / 2).log2())
+                //     - Self::cal_comb(k + l, p1).log2();
+
+                let r2 = log_mu2 + 4.0 * (Self::cal_comb_log2((k + l) / 2, p2 / 2))
+                    - Self::cal_comb_log2(k + l, p1);
 
                 let r2 = if r2 <= 0.0 {
                     0
@@ -250,10 +294,15 @@ impl LpnEstimator {
                 };
 
                 // Also use the equation of mu_1 in Proposition 1.
-                let r = Self::cal_comb(p1, e1).log2()
-                    + Self::cal_comb(k + l - p1, p1 - e1).log2()
-                    + Self::cal_comb(k + l, p1).log2()
-                    - Self::cal_comb(k + l, p).log2();
+                // let r = Self::cal_comb(p1, e1).log2()
+                //     + Self::cal_comb(k + l - p1, p1 - e1).log2()
+                //     + Self::cal_comb(k + l, p1).log2()
+                //     - Self::cal_comb(k + l, p).log2();
+
+                let r = Self::cal_comb_log2(p1, e1)
+                + Self::cal_comb_log2(k + l - p1, p1 - e1)
+                + Self::cal_comb_log2(k + l, p1)
+                - Self::cal_comb_log2(k + l, p);
 
                 let r1 = r - r2 as f64;
                 let r1 = if r1 <= 0.0 {
@@ -276,7 +325,7 @@ impl LpnEstimator {
 
     // Minimize sub_bjmm_isd_binary with fixed p2.
     fn min_sub_bjmm_isd_binary_with_fixed_p2(n: u64, k: u64, t: u64, p2: u64) -> f64 {
-        let mut start = 1;
+        let mut start = 0;
         let mut end = (n - k - 2) / 8;
 
         let mut min_cost = Self::min_sub_bjmm_isd_binary_with_fixed_p2_and_l(n, k, t, p2, start);
@@ -321,8 +370,7 @@ impl LpnEstimator {
     ///
     /// NOTE: Run it in the release mode.
     pub fn security_under_bjmm_isd_binary(n: u64, k: u64, t: u64) -> f64 {
-        let mut res = Self::min_sub_bjmm_isd_binary_with_fixed_p2(n, k, t, 0);
-
+        let mut res = HIGHEST_SECURITY as f64;
         for p2 in (0..t).step_by(2) {
             let min = Self::min_sub_bjmm_isd_binary_with_fixed_p2(n, k, t, p2);
             if min < res {
@@ -362,7 +410,7 @@ impl LpnEstimator {
     ///
     /// NOTE: Run it in the release mode.
     pub fn security_under_sd2_binary(n: u64, k: u64, t: u64) -> f64 {
-        let s = Self::security_under_pooled_gauss(n, k, t) as u64;
+        let s = Self::security_under_pooled_gauss_opt(n, k, t) as u64;
         Self::security_under_sd_binary(n, k - s, t)
     }
 
@@ -376,7 +424,7 @@ impl LpnEstimator {
     /// NOTE: Run it in the release mode.
     pub fn security_for_binary(n: u64, k: u64, t: u64) -> f64 {
         let funcs: Vec<fn(u64, u64, u64) -> f64> = vec![
-            Self::security_under_pooled_gauss,
+            Self::security_under_pooled_gauss_opt,
             Self::security_under_sd_binary,
             Self::security_under_sd2_binary,
             Self::security_under_sd_isd_binary,
