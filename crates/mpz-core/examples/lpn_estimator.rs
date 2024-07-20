@@ -8,4 +8,3 @@ fn main() {
     // let sec = LpnEstimator::security_for_binary(1 << 22, 67440, 2735);
     println!("security: {} bits", sec);
 }
-

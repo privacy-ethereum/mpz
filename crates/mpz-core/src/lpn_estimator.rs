@@ -3,6 +3,10 @@
 
 #[cfg(feature = "rayon")]
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use rug::{ops::Pow, Float};
+
+// The precision.
+const PRECISION: u32 = 200;
 
 // The highest security level.
 const HIGHEST_SECURITY: usize = 256;
@@ -12,18 +16,17 @@ pub struct LpnEstimator;
 
 impl LpnEstimator {
     // Compute the combination number of n choose m.
-    fn cal_comb(n: u64, m: u64) -> f64 {
+    fn cal_comb(n: u64, m: u64) -> Float {
         assert!(n >= m);
-
-        let mut res = 1.0;
+        let mut res = Float::with_val(PRECISION, 1);
         let range = std::cmp::min(m, n - m);
         for i in 0..range {
-            res *= (n - i) as f64 / (range - i) as f64;
-            println!("res: {}", res);
+            res *= Float::with_val(PRECISION, n - i) / Float::with_val(PRECISION, range - i);
         }
         res
     }
 
+    // Compute the logrithm of combination number of n choose m.
     fn cal_comb_log2(n: u64, m: u64) -> f64 {
         assert!(n >= m);
         let mut res = 0.0;
@@ -44,26 +47,13 @@ impl LpnEstimator {
     ///
     /// NOTE: Run it in the release mode.
     pub fn security_under_pooled_gauss(n: u64, k: u64, t: u64) -> f64 {
-        let log_guess_prob = Self::cal_comb(n - k, t).log2() - Self::cal_comb(n, t).log2();
-        println!("guess prob: {}", log_guess_prob);
-
-        let matrix_inversion_cost = (std::cmp::min(n - k, k) as f64).powf(2.8);
-        println!("inversion cost: {}", matrix_inversion_cost);
-
-        matrix_inversion_cost.log2() - log_guess_prob
-    }
-
-    ///
-    pub fn security_under_pooled_gauss_opt(n: u64, k: u64, t: u64) -> f64 {
         let log_guess_prob = Self::cal_comb_log2(n - k, t) - Self::cal_comb_log2(n, t);
-        println!("guess prob: {}", log_guess_prob);
         let matrix_inversion_cost = (std::cmp::min(n - k, k) as f64).powf(2.8);
         matrix_inversion_cost.log2() - log_guess_prob
     }
+
     // Compute the fomulas inside the min function of Theorem 14 in this [paper](https://eprint.iacr.org/2022/712.pdf).
     fn sub_sd_isd_binary(n: u64, k: u64, t: u64, l: u64, p: u64) -> f64 {
-        // let l_zero = Self::cal_comb((k + l) / 2 + 1, p / 2);
-        // let log_l_zero = l_zero.log2();
         let log_l_zero = Self::cal_comb_log2((k + l) / 2 + 1, p / 2);
         let l_zero = 2.0_f64.powf(log_l_zero);
         let log_s = 2.0 * log_l_zero - (l as f64);
@@ -84,9 +74,6 @@ impl LpnEstimator {
         let mut cost = ((n - k - l) * (n - k)) as f64 / ((n - k - l) as f64).log2();
         cost += 2.0 * l_zero + 2.0 * s;
         cost *= n as f64;
-
-        // Compute log P(p,l).
-        // let mut log_p = Self::cal_comb(n - k - l, t - p).log2() - Self::cal_comb(n, t).log2();
 
         let mut log_p = Self::cal_comb_log2(n - k - l, t - p) - Self::cal_comb_log2(n, t);
 
@@ -183,12 +170,9 @@ impl LpnEstimator {
         assert!(p1 >= e1);
         let p = 2 * (p1 - e1);
 
-        // let s3 = Self::cal_comb((k + l) / 2 + 1, p2 / 2);
-
         let log_s3 = Self::cal_comb_log2((k + 1) / 2 + 1, p2 / 2);
         let s3 = 2.0_f64.powf(log_s3);
 
-        // let log_s3 = s3.log2();
         let log_c3 = log_s3 * 2.0 - r2 as f64;
         let c3 = 2.0_f64.powf(log_c3);
 
@@ -197,14 +181,11 @@ impl LpnEstimator {
 
         assert!(k + l >= p2);
         assert!(p2 >= e2);
-        // let log_mu2 = Self::cal_comb(p2, e2).log2() + Self::cal_comb(k + l - p2, p2 - e2).log2()
-        //     - Self::cal_comb(k + l, p2).log2();
 
         let log_mu2 = Self::cal_comb_log2(p2, e2) + Self::cal_comb_log2(k + l - p2, p2 - e2)
             - Self::cal_comb_log2(k + l, p2);
 
         let log_s1_left = log_mu2 + log_c2;
-        // let log_s1_right = Self::cal_comb(k + l, p1).log2() - (r1 + r2) as f64;
         let log_s1_right = Self::cal_comb_log2(k + l, p1) - (r1 + r2) as f64;
 
         let log_s1 = log_s1_left.min(log_s1_right);
@@ -214,14 +195,11 @@ impl LpnEstimator {
 
         assert!(k + l >= p1);
         assert!(p1 >= e1);
-        // let log_mu1 = Self::cal_comb(p1, e1).log2() + Self::cal_comb(k + l - p1, p1 - e1).log2()
-        //     - Self::cal_comb(k + l, p1).log2();
 
         let log_mu1 = Self::cal_comb_log2(p1, e1) + Self::cal_comb_log2(k + l - p1, p1 - e1)
             - Self::cal_comb_log2(k + l, p1);
 
         let log_s_left = log_mu1 + log_c1;
-        // let log_s_right = Self::cal_comb(k + l, p).log2() - l as f64;
         let log_s_right = Self::cal_comb_log2(k + l, p) - l as f64;
 
         let log_s = log_s_left.min(log_s_right);
@@ -239,7 +217,6 @@ impl LpnEstimator {
         // Compute log P(p,l).
         assert!(n >= k + l);
         assert!(t >= p);
-        // let mut log_p = Self::cal_comb(n - k - l, t - p).log2() - Self::cal_comb(n, t).log2();
 
         let mut log_p = Self::cal_comb_log2(n - k - l, t - p) - Self::cal_comb_log2(n, t);
 
@@ -272,15 +249,9 @@ impl LpnEstimator {
                 assert!(p2 >= e2);
                 assert!(p1 >= e1);
                 // Proposition 1 in this [paper](https://eprint.iacr.org/2013/162.pdf).
-                // let log_mu2 = Self::cal_comb(p2, e2).log2()
-                //     + Self::cal_comb(k + l - p2, p2 - e2).log2()
-                //     - Self::cal_comb(k + l, p2).log2();
                 let log_mu2 = Self::cal_comb_log2(p2, e2)
                     + Self::cal_comb_log2(k + l - p2, p2 - e2)
                     - Self::cal_comb_log2(k + l, p2);
-
-                // let r2 = log_mu2 + 4.0 * (Self::cal_comb((k + l) / 2, p2 / 2).log2())
-                //     - Self::cal_comb(k + l, p1).log2();
 
                 let r2 = log_mu2 + 4.0 * (Self::cal_comb_log2((k + l) / 2, p2 / 2))
                     - Self::cal_comb_log2(k + l, p1);
@@ -293,16 +264,10 @@ impl LpnEstimator {
                     r2 as u64
                 };
 
-                // Also use the equation of mu_1 in Proposition 1.
-                // let r = Self::cal_comb(p1, e1).log2()
-                //     + Self::cal_comb(k + l - p1, p1 - e1).log2()
-                //     + Self::cal_comb(k + l, p1).log2()
-                //     - Self::cal_comb(k + l, p).log2();
-
                 let r = Self::cal_comb_log2(p1, e1)
-                + Self::cal_comb_log2(k + l - p1, p1 - e1)
-                + Self::cal_comb_log2(k + l, p1)
-                - Self::cal_comb_log2(k + l, p);
+                    + Self::cal_comb_log2(k + l - p1, p1 - e1)
+                    + Self::cal_comb_log2(k + l, p1)
+                    - Self::cal_comb_log2(k + l, p);
 
                 let r1 = r - r2 as f64;
                 let r1 = if r1 <= 0.0 {
@@ -325,7 +290,7 @@ impl LpnEstimator {
 
     // Minimize sub_bjmm_isd_binary with fixed p2.
     fn min_sub_bjmm_isd_binary_with_fixed_p2(n: u64, k: u64, t: u64, p2: u64) -> f64 {
-        let mut start = 0;
+        let mut start = 1;
         let mut end = (n - k - 2) / 8;
 
         let mut min_cost = Self::min_sub_bjmm_isd_binary_with_fixed_p2_and_l(n, k, t, p2, start);
@@ -410,7 +375,7 @@ impl LpnEstimator {
     ///
     /// NOTE: Run it in the release mode.
     pub fn security_under_sd2_binary(n: u64, k: u64, t: u64) -> f64 {
-        let s = Self::security_under_pooled_gauss_opt(n, k, t) as u64;
+        let s = Self::security_under_pooled_gauss(n, k, t) as u64;
         Self::security_under_sd_binary(n, k - s, t)
     }
 
@@ -424,7 +389,7 @@ impl LpnEstimator {
     /// NOTE: Run it in the release mode.
     pub fn security_for_binary(n: u64, k: u64, t: u64) -> f64 {
         let funcs: Vec<fn(u64, u64, u64) -> f64> = vec![
-            Self::security_under_pooled_gauss_opt,
+            Self::security_under_pooled_gauss,
             Self::security_under_sd_binary,
             Self::security_under_sd2_binary,
             Self::security_under_sd_isd_binary,
@@ -441,205 +406,203 @@ impl LpnEstimator {
 
         let res: Vec<f64> = iter.map(|&func| func(n, k, t)).collect();
 
-        // res.into_iter()
-        //     .min_by(|a, b| a.partial_cmp(b).unwrap())
-        //     .expect("Some error in finding min")
-        println!("res: {:?}", res);
+        res.into_iter()
+            .min_by(|a, b| a.partial_cmp(b).unwrap())
+            .expect("Some error in finding min")
+    }
+
+    // Attack in the [paper](https://eprint.iacr.org/2023/176.pdf)
+    fn cost_agb_binary(n: u64, k: u64, t: u64, f: u64, mu: u64) -> f64 {
+        let f = Float::with_val(PRECISION, f);
+        let mu = Float::with_val(PRECISION, mu);
+        let beta = Float::with_val(PRECISION, n / t);
+
+        let beta_minus_mu_minus_one: Float = beta.clone() - mu - 1;
+
+        let a1 = beta_minus_mu_minus_one.clone() * f.clone();
+        let a2: Float = beta_minus_mu_minus_one.clone().pow(2) * f.clone() * (f.clone() - 1) / 2;
+        let a3: Float =
+            beta_minus_mu_minus_one.clone().pow(3) * f.clone() * (f.clone() - 1) * (f.clone() - 2)
+                / 6;
+        let a4 = beta_minus_mu_minus_one.pow(4)
+            * f.clone()
+            * (f.clone() - 1)
+            * (f.clone() - 2)
+            * (f.clone() - 3)
+            / 24;
+
+        let beta_minus_one: Float = beta - 1;
+        let t_minus_f = Float::with_val(PRECISION, t - f);
+
+        let b1 = beta_minus_one.clone() * t_minus_f.clone();
+        let b2: Float =
+            beta_minus_one.clone().pow(2) * t_minus_f.clone() * (t_minus_f.clone() - 1) / 2;
+        let b3: Float = beta_minus_one.clone().pow(3)
+            * t_minus_f.clone()
+            * (t_minus_f.clone() - 1)
+            * (t_minus_f.clone() - 2)
+            / 6;
+        let b4 = beta_minus_one.pow(4)
+            * t_minus_f.clone()
+            * (t_minus_f.clone() - 1)
+            * (t_minus_f.clone() - 2)
+            * (t_minus_f - 3)
+            / 24;
+
+        let c1 = -Self::cal_comb(n - k - 1, 1);
+        let c2 = Self::cal_comb(n - k, 2);
+        let c3 = -Self::cal_comb(n - k + 1, 3);
+        let c4 = Self::cal_comb(n - k + 2, 4);
+
+        let d2 = a1.clone()
+            + b1.clone()
+            + c1.clone()
+            + a1.clone() * b1.clone()
+            + a1.clone() * c1.clone()
+            + b1.clone() * c1.clone()
+            + a2.clone()
+            + b2.clone()
+            + c2.clone();
+
+        let d3 = c3.clone()
+            + b1.clone() * c2.clone()
+            + b2.clone() * c1.clone()
+            + b3.clone()
+            + a1.clone() * (b1.clone() * c1.clone() + b2.clone() + c2.clone())
+            + a2.clone() * (b1.clone() + c1.clone())
+            + a3.clone();
+
+        let d4 = c4
+            + b1.clone() * c3.clone()
+            + b2.clone() * c2.clone()
+            + b3.clone() * c1.clone()
+            + b4
+            + a1 * (b1.clone() * c2.clone() + b2.clone() * c1.clone() + b3 + c3)
+            + a2 * (b2 + c2 + b1.clone() * c1.clone())
+            + a3 * (b1 + c1)
+            + a4;
+
+        if d2 < 1 {
+            return 2.0;
+        }
+        if d3 < 1 {
+            return 3.0;
+        }
+        if d4 < 1 {
+            return 4.0;
+        }
         0.0
     }
 
-    // // Attack in the [paper](https://eprint.iacr.org/2023/176.pdf)
-    // fn cost_agb_binary(n: usize, k: usize, t: usize, f: usize, mu: usize) -> f64 {
-    //     let f = Float::with_val(PRECISION, f);
-    //     let mu = Float::with_val(PRECISION, mu);
-    //     let beta = Float::with_val(PRECISION, n / t);
+    // Attack in the [paper](https://eprint.iacr.org/2023/176.pdf)
+    fn sub_agb_binary(n: u64, k: u64, t: u64, f: u64, mu: u64) -> f64 {
+        let mu_copy = mu;
+        let beta_copy = n / t;
+        let f_copy = f;
+        let f = Float::with_val(PRECISION, f);
+        let mu = Float::with_val(PRECISION, mu);
+        let beta = Float::with_val(PRECISION, n / t);
 
-    //     let beta_minus_mu_minus_one: Float = beta.clone() - mu - 1;
+        let beta_minus_mu_minus_one: Float = beta.clone() - mu - 1;
 
-    //     let a1 = beta_minus_mu_minus_one.clone() * f.clone();
-    //     let a2: Float = beta_minus_mu_minus_one.clone().pow(2) * f.clone() * (f.clone() - 1) / 2;
-    //     let a3: Float =
-    //         beta_minus_mu_minus_one.clone().pow(3) * f.clone() * (f.clone() - 1) * (f.clone() - 2)
-    //             / 6;
-    //     let a4 = beta_minus_mu_minus_one.pow(4)
-    //         * f.clone()
-    //         * (f.clone() - 1)
-    //         * (f.clone() - 2)
-    //         * (f.clone() - 3)
-    //         / 24;
+        let a1 = beta_minus_mu_minus_one.clone() * f.clone();
+        let a2: Float = beta_minus_mu_minus_one.clone().pow(2) * f.clone() * (f.clone() - 1) / 2;
+        let a3: Float =
+            beta_minus_mu_minus_one.clone().pow(3) * f.clone() * (f.clone() - 1) * (f.clone() - 2)
+                / 6;
+        let a4 = beta_minus_mu_minus_one.pow(4)
+            * f.clone()
+            * (f.clone() - 1)
+            * (f.clone() - 2)
+            * (f.clone() - 3)
+            / 24;
 
-    //     let beta_minus_one: Float = beta - 1;
-    //     let t_minus_f = Float::with_val(PRECISION, t - f);
+        let beta_minus_one: Float = beta - 1;
+        let t_minus_f: Float = Float::with_val(PRECISION, t - f);
 
-    //     let b1 = beta_minus_one.clone() * t_minus_f.clone();
-    //     let b2: Float =
-    //         beta_minus_one.clone().pow(2) * t_minus_f.clone() * (t_minus_f.clone() - 1) / 2;
-    //     let b3: Float = beta_minus_one.clone().pow(3)
-    //         * t_minus_f.clone()
-    //         * (t_minus_f.clone() - 1)
-    //         * (t_minus_f.clone() - 2)
-    //         / 6;
-    //     let b4 = beta_minus_one.pow(4)
-    //         * t_minus_f.clone()
-    //         * (t_minus_f.clone() - 1)
-    //         * (t_minus_f.clone() - 2)
-    //         * (t_minus_f - 3)
-    //         / 24;
+        let b1 = beta_minus_one.clone() * t_minus_f.clone();
+        let b2: Float =
+            beta_minus_one.clone().pow(2) * t_minus_f.clone() * (t_minus_f.clone() - 1) / 2;
+        let b3: Float = beta_minus_one.clone().pow(3)
+            * t_minus_f.clone()
+            * (t_minus_f.clone() - 1)
+            * (t_minus_f.clone() - 2)
+            / 6;
+        let b4 = beta_minus_one.pow(4)
+            * t_minus_f.clone()
+            * (t_minus_f.clone() - 1)
+            * (t_minus_f.clone() - 2)
+            * (t_minus_f - 3)
+            / 24;
 
-    //     let c1 = -Self::cal_comb(n - k - 1, 1);
-    //     let c2 = Self::cal_comb(n - k, 2);
-    //     let c3 = -Self::cal_comb(n - k + 1, 3);
-    //     let c4 = Self::cal_comb(n - k + 2, 4);
+        let d = Self::cost_agb_binary(n, k, t, f_copy, mu_copy);
+        let mut cost = a1.clone() + b1.clone() + a1.clone() * b1.clone() + a2.clone() + b2.clone();
+        if d == 2.0 {
+            cost += 0;
+        } else if d == 3.0 {
+            let d3 = b3 + a1 * b2 + a2 * b1 + a3;
+            cost += d3;
+        } else if d == 4.0 {
+            let d3 = b3.clone() + a1.clone() * b2.clone() + a2.clone() * b1.clone() + a3.clone();
+            let d4 = b4 + a1 * b3 + a2 * b2 + a3 * b1 + a4;
+            cost += d3 + d4;
+        } else {
+            return HIGHEST_SECURITY as f64;
+        }
 
-    //     let d2 = a1.clone()
-    //         + b1.clone()
-    //         + c1.clone()
-    //         + a1.clone() * b1.clone()
-    //         + a1.clone() * c1.clone()
-    //         + b1.clone() * c1.clone()
-    //         + a2.clone()
-    //         + b2.clone()
-    //         + c2.clone();
+        let res: Float = 2 * cost.log2()
+            + Float::with_val(PRECISION, 3 * (k + 1 - f_copy * mu_copy)).log2()
+            - f_copy
+                * Float::with_val(PRECISION, 1.0 - (mu_copy as f64) / (beta_copy as f64)).log2();
 
-    //     let d3 = c3.clone()
-    //         + b1.clone() * c2.clone()
-    //         + b2.clone() * c1.clone()
-    //         + b3.clone()
-    //         + a1.clone() * (b1.clone() * c1.clone() + b2.clone() + c2.clone())
-    //         + a2.clone() * (b1.clone() + c1.clone())
-    //         + a3.clone();
+        res.to_f64()
+    }
 
-    //     let d4 = c4
-    //         + b1.clone() * c3.clone()
-    //         + b2.clone() * c2.clone()
-    //         + b3.clone() * c1.clone()
-    //         + b4
-    //         + a1 * (b1.clone() * c2.clone() + b2.clone() * c1.clone() + b3 + c3)
-    //         + a2 * (b2 + c2 + b1.clone() * c1.clone())
-    //         + a3 * (b1 + c1)
-    //         + a4;
+    // Attack in the [paper](https://eprint.iacr.org/2023/176.pdf)
+    fn security_under_agb_binary(n: u64, k: u64, t: u64) -> f64 {
+        let mut res = HIGHEST_SECURITY as f64;
+        for f in 0..t {
+            for mu in 0..n / t {
+                if f * mu < k + 1 {
+                    let cost = Self::sub_agb_binary(n, k, t, f, mu);
+                    if res > cost {
+                        res = cost;
+                    }
+                }
+            }
+        }
+        res
+    }
 
-    //     if d2 < 1 {
-    //         return 2.0;
-    //     }
-    //     if d3 < 1 {
-    //         return 3.0;
-    //     }
-    //     if d4 < 1 {
-    //         return 4.0;
-    //     }
-    //     0.0
-    // }
-
-    // // Attack in the [paper](https://eprint.iacr.org/2023/176.pdf)
-    // fn sub_agb_binary(n: usize, k: usize, t: usize, f: usize, mu: usize) -> f64 {
-    //     let mu_copy = mu;
-    //     let beta_copy = n / t;
-    //     let f_copy = f;
-    //     let f = Float::with_val(PRECISION, f);
-    //     let mu = Float::with_val(PRECISION, mu);
-    //     let beta = Float::with_val(PRECISION, n / t);
-
-    //     let beta_minus_mu_minus_one: Float = beta.clone() - mu - 1;
-
-    //     let a1 = beta_minus_mu_minus_one.clone() * f.clone();
-    //     let a2: Float = beta_minus_mu_minus_one.clone().pow(2) * f.clone() * (f.clone() - 1) / 2;
-    //     let a3: Float =
-    //         beta_minus_mu_minus_one.clone().pow(3) * f.clone() * (f.clone() - 1) * (f.clone() - 2)
-    //             / 6;
-    //     let a4 = beta_minus_mu_minus_one.pow(4)
-    //         * f.clone()
-    //         * (f.clone() - 1)
-    //         * (f.clone() - 2)
-    //         * (f.clone() - 3)
-    //         / 24;
-
-    //     let beta_minus_one: Float = beta - 1;
-    //     let t_minus_f: Float = Float::with_val(PRECISION, t - f);
-
-    //     let b1 = beta_minus_one.clone() * t_minus_f.clone();
-    //     let b2: Float =
-    //         beta_minus_one.clone().pow(2) * t_minus_f.clone() * (t_minus_f.clone() - 1) / 2;
-    //     let b3: Float = beta_minus_one.clone().pow(3)
-    //         * t_minus_f.clone()
-    //         * (t_minus_f.clone() - 1)
-    //         * (t_minus_f.clone() - 2)
-    //         / 6;
-    //     let b4 = beta_minus_one.pow(4)
-    //         * t_minus_f.clone()
-    //         * (t_minus_f.clone() - 1)
-    //         * (t_minus_f.clone() - 2)
-    //         * (t_minus_f - 3)
-    //         / 24;
-
-    //     let d = Self::cost_agb_binary(n, k, t, f_copy, mu_copy);
-    //     let mut cost = a1.clone() + b1.clone() + a1.clone() * b1.clone() + a2.clone() + b2.clone();
-    //     if d == 2.0 {
-    //         cost += 0;
-    //     } else if d == 3.0 {
-    //         let d3 = b3 + a1 * b2 + a2 * b1 + a3;
-    //         cost += d3;
-    //     } else if d == 4.0 {
-    //         let d3 = b3.clone() + a1.clone() * b2.clone() + a2.clone() * b1.clone() + a3.clone();
-    //         let d4 = b4 + a1 * b3 + a2 * b2 + a3 * b1 + a4;
-    //         cost += d3 + d4;
-    //     } else {
-    //         return u32::MAX as f64;
-    //     }
-
-    //     let res: Float = 2 * cost.log2()
-    //         + Float::with_val(PRECISION, 3 * (k + 1 - f_copy * mu_copy)).log2()
-    //         - f_copy
-    //             * Float::with_val(PRECISION, 1.0 - (mu_copy as f64) / (beta_copy as f64)).log2();
-
-    //     res.to_f64()
-    // }
-
-    // // Attack in the [paper](https://eprint.iacr.org/2023/176.pdf)
-    // fn security_under_agb_binary(n: usize, k: usize, t: usize) -> f64 {
-    //     let mut res = u32::MAX as f64;
-    //     for f in 0..t {
-    //         for mu in 0..n / t {
-    //             if f * mu < k + 1 {
-    //                 let cost = Self::sub_agb_binary(n, k, t, f, mu);
-    //                 if res > cost {
-    //                     res = cost;
-    //                 }
-    //             }
-    //         }
-    //     }
-    //     res
-    // }
-
-    // /// The security of the regular lpn parameters for binary field.
-    // /// See Sec 5.1 in this [paper](https://eprint.iacr.org/2022/712.pdf)
-    // /// # Arguments.
-    // ///
-    // /// * `n` - The number of samples.
-    // /// * `k` - The length of the secret.
-    // /// * `t` - The Hamming weight of the error.
-    // ///
-    // /// NOTE: Run it in the release mode.
-    // pub fn security_for_binary_regular(n: usize, k: usize, t: usize) -> f64 {
-    //     cfg_if::cfg_if! {
-    //         if #[cfg(feature = "rayon")]{
-    //             let (cost_agb, cost_others) = rayon::join(
-    //                 || Self::security_under_agb_binary(n, k, t),
-    //                 || Self::security_for_binary(n - t, k - t, t),
-    //             );
-    //         }else{
-    //             let cost_agb = Self::security_under_agb_binary(n, k, t);
-    //             let cost_others = Self::security_for_binary(n-t, k-t, t);
-    //         }
-    //     }
-    //     cost_agb.min(cost_others)
-    // }
+    /// The security of the regular lpn parameters for binary field.
+    /// See Sec 5.1 in this [paper](https://eprint.iacr.org/2022/712.pdf)
+    /// # Arguments.
+    ///
+    /// * `n` - The number of samples.
+    /// * `k` - The length of the secret.
+    /// * `t` - The Hamming weight of the error.
+    ///
+    /// NOTE: Run it in the release mode.
+    pub fn security_for_binary_regular(n: u64, k: u64, t: u64) -> f64 {
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "rayon")]{
+                let (cost_agb, cost_others) = rayon::join(
+                    || Self::security_under_agb_binary(n, k, t),
+                    || Self::security_for_binary(n - t, k - t, t),
+                );
+            }else{
+                let cost_agb = Self::security_under_agb_binary(n, k, t);
+                let cost_others = Self::security_for_binary(n-t, k-t, t);
+            }
+        }
+        cost_agb.min(cost_others)
+    }
 }
 
 mod tests {
     #[test]
     fn security_test() {
-        let security = crate::LpnEstimator::security_for_binary(1 << 22, 67440, 2735);
+        let security = crate::LpnEstimator::security_for_binary_regular(1 << 22, 67440, 2735);
         println!("{:?}", security);
     }
 }
