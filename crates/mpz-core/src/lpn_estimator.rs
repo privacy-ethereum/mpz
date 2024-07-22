@@ -103,7 +103,7 @@ impl LpnEstimator {
         if start < 10 {
             start = 0;
         } else {
-            start = start - 10;
+            start -= 10;
         }
 
         for l in start..=end + 10 {
@@ -303,7 +303,7 @@ impl LpnEstimator {
         if start < 5 {
             start = 0;
         } else {
-            start = start - 5;
+            start -= 5;
         }
         for l in start..end + 5 {
             let min_middle = Self::min_sub_bjmm_isd_binary_with_fixed_p2_and_l(n, k, t, p2, l);
@@ -349,7 +349,7 @@ impl LpnEstimator {
     pub fn security_under_sd_binary(n: u64, k: u64, t: u64) -> f64 {
         let cost = (n - t + 1) as f64 / (n - k - t) as f64;
 
-        let cost = cost.log2() * 2.0 * t as f64 + 2 as f64;
+        let cost = cost.log2() * 2.0 * t as f64 + 2.0;
 
         ((k + 1) as f64).log2() + cost
     }
@@ -407,7 +407,7 @@ impl LpnEstimator {
         let t = t as u128;
         let f = f as u128;
         let mu = mu as u128;
-        let beta = (n / t) as u128;
+        let beta = n / t;
 
         let beta_minus_mu_minus_one = beta - mu - 1;
 
@@ -424,7 +424,7 @@ impl LpnEstimator {
         }
 
         let beta_minus_one = beta - 1;
-        let t_minus_f = t as u128 - f;
+        let t_minus_f = t - f;
 
         let mut b1 = 0;
         let mut b2 = 0;
