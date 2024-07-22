@@ -614,7 +614,12 @@ mod tests {
     fn security_test() {
         let sec = crate::LpnEstimator::security_for_binary(1 << 10, 652, 57);
         let sec_reg = crate::LpnEstimator::security_for_binary_regular(1 << 10, 652, 57);
+        let dual_sec = crate::LpnEstimator::security_dual_for_binary(1 << 10, 1 << 12, 44);
+        let dual_sec_reg =
+            crate::LpnEstimator::security_dual_for_binary_regular(1 << 10, 1 << 12, 44);
         assert!(sec < 95.0);
         assert!(sec_reg < 90.0);
+        assert!(dual_sec < 98.0);
+        assert!(dual_sec_reg < 97.0);
     }
 }
