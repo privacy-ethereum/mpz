@@ -6,7 +6,7 @@ use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use rug::Float;
 
 // The precision.
-const PRECISION: u32 = 200;
+const PRECISION: u32 = 64;
 
 // The highest security level.
 const HIGHEST_SECURITY: usize = 256;
@@ -531,11 +531,11 @@ impl LpnEstimator {
             return HIGHEST_SECURITY as f64;
         }
 
-        let res: Float = 2 * Float::with_val(PRECISION, cost).log2()
-            + Float::with_val(PRECISION, 3 * (k + 1 - f as u64 * mu as u64)).log2()
-            - f * Float::with_val(PRECISION, 1.0 - (mu as f64) / (beta as f64)).log2();
+        let mut res = 2.0 * Float::with_val(PRECISION, cost).log2().to_f64();
+        res += ((3 * (k + 1 - f as u64 * mu as u64)) as f64).log2();
+        res -= (f as f64) * (1.0 - (mu as f64) / (beta as f64)).log2();
 
-        res.to_f64()
+        res
     }
 
     // Attack in the [paper](https://eprint.iacr.org/2023/176.pdf)
