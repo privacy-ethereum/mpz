@@ -3,7 +3,7 @@
 
 #[cfg(feature = "rayon")]
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
-use rug::{ops::Pow, Float};
+use rug::Float;
 
 // The precision.
 const PRECISION: u32 = 200;
@@ -15,17 +15,6 @@ const HIGHEST_SECURITY: usize = 256;
 pub struct LpnEstimator;
 
 impl LpnEstimator {
-    // Compute the combination number of n choose m.
-    fn cal_comb(n: u64, m: u64) -> Float {
-        assert!(n >= m);
-        let mut res = Float::with_val(PRECISION, 1);
-        let range = std::cmp::min(m, n - m);
-        for i in 0..range {
-            res *= Float::with_val(PRECISION, n - i) / Float::with_val(PRECISION, range - i);
-        }
-        res
-    }
-
     // Compute the logrithm of combination number of n choose m.
     fn cal_comb_log2(n: u64, m: u64) -> f64 {
         assert!(n >= m);
@@ -411,76 +400,52 @@ impl LpnEstimator {
             .expect("Some error in finding min")
     }
 
-    // Attack in the [paper](https://eprint.iacr.org/2023/176.pdf)
+    // Algebraic attack in the [paper](https://eprint.iacr.org/2023/176.pdf)
     fn cost_agb_binary(n: u64, k: u64, t: u64, f: u64, mu: u64) -> f64 {
-        let f = Float::with_val(PRECISION, f);
-        let mu = Float::with_val(PRECISION, mu);
-        let beta = Float::with_val(PRECISION, n / t);
+        let n = n as u128;
+        let k = k as u128;
+        let t = t as u128;
+        let f = f as u128;
+        let mu = mu as u128;
+        let beta = (n / t) as u128;
 
-        let beta_minus_mu_minus_one: Float = beta.clone() - mu - 1;
+        let beta_minus_mu_minus_one = beta - mu - 1;
 
-        let a1 = beta_minus_mu_minus_one.clone() * f.clone();
-        let a2: Float = beta_minus_mu_minus_one.clone().pow(2) * f.clone() * (f.clone() - 1) / 2;
-        let a3: Float =
-            beta_minus_mu_minus_one.clone().pow(3) * f.clone() * (f.clone() - 1) * (f.clone() - 2)
-                / 6;
-        let a4 = beta_minus_mu_minus_one.pow(4)
-            * f.clone()
-            * (f.clone() - 1)
-            * (f.clone() - 2)
-            * (f.clone() - 3)
-            / 24;
+        let a1 = beta_minus_mu_minus_one * f;
+        let a2 = beta_minus_mu_minus_one.pow(2) * f * (f - 1) / 2;
+        let a3 = beta_minus_mu_minus_one.pow(3) * f * (f - 1) * (f - 2) / 6;
+        let a4 = beta_minus_mu_minus_one.pow(4) * f * (f - 1) * (f - 2) * (f - 3) / 24;
 
-        let beta_minus_one: Float = beta - 1;
-        let t_minus_f = Float::with_val(PRECISION, t - f);
+        let beta_minus_one = beta - 1;
+        let t_minus_f = t as u128 - f;
 
-        let b1 = beta_minus_one.clone() * t_minus_f.clone();
-        let b2: Float =
-            beta_minus_one.clone().pow(2) * t_minus_f.clone() * (t_minus_f.clone() - 1) / 2;
-        let b3: Float = beta_minus_one.clone().pow(3)
-            * t_minus_f.clone()
-            * (t_minus_f.clone() - 1)
-            * (t_minus_f.clone() - 2)
-            / 6;
-        let b4 = beta_minus_one.pow(4)
-            * t_minus_f.clone()
-            * (t_minus_f.clone() - 1)
-            * (t_minus_f.clone() - 2)
-            * (t_minus_f - 3)
-            / 24;
+        let b1 = beta_minus_one * t_minus_f;
+        let b2 = beta_minus_one.pow(2) * t_minus_f * (t_minus_f - 1) / 2;
+        let b3 = beta_minus_one.pow(3) * t_minus_f * (t_minus_f - 1) * (t_minus_f - 2) / 6;
+        let b4 =
+            beta_minus_one.pow(4) * t_minus_f * (t_minus_f - 1) * (t_minus_f - 2) * (t_minus_f - 3)
+                / 24;
 
-        let c1 = -Self::cal_comb(n - k - 1, 1);
-        let c2 = Self::cal_comb(n - k, 2);
-        let c3 = -Self::cal_comb(n - k + 1, 3);
-        let c4 = Self::cal_comb(n - k + 2, 4);
+        let minus_c1 = n - k - 1;
+        let c2 = (n - k) * (n - k - 1) / 2;
+        let minus_c3 = (n - k + 1) * (n - k) * (n - k - 1) / 6;
+        let c4 = (n - k + 2) * (n - k + 1) * (n - k) * (n - k - 1) / 24;
 
-        let d2 = a1.clone()
-            + b1.clone()
-            + c1.clone()
-            + a1.clone() * b1.clone()
-            + a1.clone() * c1.clone()
-            + b1.clone() * c1.clone()
-            + a2.clone()
-            + b2.clone()
-            + c2.clone();
+        let d2 = a1 + b1 + a1 * b1 + a2 + b2 + c2 - (a1 + b1) * minus_c1 - minus_c1;
 
-        let d3 = c3.clone()
-            + b1.clone() * c2.clone()
-            + b2.clone() * c1.clone()
-            + b3.clone()
-            + a1.clone() * (b1.clone() * c1.clone() + b2.clone() + c2.clone())
-            + a2.clone() * (b1.clone() + c1.clone())
-            + a3.clone();
+        let d3 = b1 * c2 + b3 + a1 * (b2 + c2) + a2 * b1 + a3
+            - minus_c3
+            - b2 * minus_c1
+            - a1 * b1 * minus_c1
+            - a2 * minus_c1;
 
-        let d4 = c4
-            + b1.clone() * c3.clone()
-            + b2.clone() * c2.clone()
-            + b3.clone() * c1.clone()
-            + b4
-            + a1 * (b1.clone() * c2.clone() + b2.clone() * c1.clone() + b3 + c3)
-            + a2 * (b2 + c2 + b1.clone() * c1.clone())
-            + a3 * (b1 + c1)
-            + a4;
+        let d4 = c4 + b2 * c2 + b4 + a1 * (b1 * c2 + b2 + b3) + a2 * (b2 + c2 + b1) + a3 * b1 + a4
+            - b1 * minus_c3
+            - b3 * minus_c1
+            - a3 * minus_c1
+            - a1 * b2 * minus_c1
+            - a2 * b1 * minus_c1
+            - a1 * minus_c3;
 
         if d2 < 1 {
             return 2.0;
@@ -496,46 +461,29 @@ impl LpnEstimator {
 
     // Attack in the [paper](https://eprint.iacr.org/2023/176.pdf)
     fn sub_agb_binary(n: u64, k: u64, t: u64, f: u64, mu: u64) -> f64 {
-        let mu_copy = mu;
-        let beta_copy = n / t;
-        let f_copy = f;
-        let f = Float::with_val(PRECISION, f);
-        let mu = Float::with_val(PRECISION, mu);
-        let beta = Float::with_val(PRECISION, n / t);
+        let f = f as u128;
+        let mu = mu as u128;
+        let beta = (n / t) as u128;
 
-        let beta_minus_mu_minus_one: Float = beta.clone() - mu - 1;
+        let beta_minus_mu_minus_one = beta - mu - 1;
 
-        let a1 = beta_minus_mu_minus_one.clone() * f.clone();
-        let a2: Float = beta_minus_mu_minus_one.clone().pow(2) * f.clone() * (f.clone() - 1) / 2;
-        let a3: Float =
-            beta_minus_mu_minus_one.clone().pow(3) * f.clone() * (f.clone() - 1) * (f.clone() - 2)
-                / 6;
-        let a4 = beta_minus_mu_minus_one.pow(4)
-            * f.clone()
-            * (f.clone() - 1)
-            * (f.clone() - 2)
-            * (f.clone() - 3)
-            / 24;
+        let a1 = beta_minus_mu_minus_one * f;
+        let a2 = beta_minus_mu_minus_one.pow(2) * f * (f - 1) / 2;
+        let a3 = beta_minus_mu_minus_one.pow(3) * f * (f - 1) * (f - 2) / 6;
+        let a4 = beta_minus_mu_minus_one.pow(4) * f * (f - 1) * (f - 2) * (f - 3) / 24;
 
-        let beta_minus_one: Float = beta - 1;
-        let t_minus_f: Float = Float::with_val(PRECISION, t - f);
+        let beta_minus_one = beta - 1;
+        let t_minus_f = t as u128 - f;
 
-        let b1 = beta_minus_one.clone() * t_minus_f.clone();
-        let b2: Float =
-            beta_minus_one.clone().pow(2) * t_minus_f.clone() * (t_minus_f.clone() - 1) / 2;
-        let b3: Float = beta_minus_one.clone().pow(3)
-            * t_minus_f.clone()
-            * (t_minus_f.clone() - 1)
-            * (t_minus_f.clone() - 2)
-            / 6;
-        let b4 = beta_minus_one.pow(4)
-            * t_minus_f.clone()
-            * (t_minus_f.clone() - 1)
-            * (t_minus_f.clone() - 2)
-            * (t_minus_f - 3)
-            / 24;
+        let b1 = beta_minus_one * t_minus_f;
+        let b2 = beta_minus_one.pow(2) * t_minus_f * (t_minus_f - 1) / 2;
+        let b3 = beta_minus_one.pow(3) * t_minus_f * (t_minus_f - 1) * (t_minus_f - 2) / 6;
+        let b4 =
+            beta_minus_one.pow(4) * t_minus_f * (t_minus_f - 1) * (t_minus_f - 2) * (t_minus_f - 3)
+                / 24;
 
-        let d = Self::cost_agb_binary(n, k, t, f_copy, mu_copy);
+        let d = Self::cost_agb_binary(n, k, t, f as u64, mu as u64);
+
         let mut cost = a1.clone() + b1.clone() + a1.clone() * b1.clone() + a2.clone() + b2.clone();
         if d == 2.0 {
             cost += 0;
@@ -550,10 +498,9 @@ impl LpnEstimator {
             return HIGHEST_SECURITY as f64;
         }
 
-        let res: Float = 2 * cost.log2()
-            + Float::with_val(PRECISION, 3 * (k + 1 - f_copy * mu_copy)).log2()
-            - f_copy
-                * Float::with_val(PRECISION, 1.0 - (mu_copy as f64) / (beta_copy as f64)).log2();
+        let res: Float = 2 * Float::with_val(PRECISION, cost).log2()
+            + Float::with_val(PRECISION, 3 * (k + 1 - f as u64 * mu as u64)).log2()
+            - f * Float::with_val(PRECISION, 1.0 - (mu as f64) / (beta as f64)).log2();
 
         res.to_f64()
     }
