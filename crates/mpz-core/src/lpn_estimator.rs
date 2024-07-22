@@ -411,49 +411,83 @@ impl LpnEstimator {
 
         let beta_minus_mu_minus_one = beta - mu - 1;
 
-        let a1 = beta_minus_mu_minus_one * f;
-        let a2 = beta_minus_mu_minus_one.pow(2) * f * (f - 1) / 2;
-        let a3 = beta_minus_mu_minus_one.pow(3) * f * (f - 1) * (f - 2) / 6;
-        let a4 = beta_minus_mu_minus_one.pow(4) * f * (f - 1) * (f - 2) * (f - 3) / 24;
+        let mut a1 = 0;
+        let mut a2 = 0;
+        let mut a3 = 0;
+        let mut a4 = 0;
+
+        if f >= 3 {
+            a1 = beta_minus_mu_minus_one * f;
+            a2 = beta_minus_mu_minus_one.pow(2) * f * (f - 1) / 2;
+            a3 = beta_minus_mu_minus_one.pow(3) * f * (f - 1) * (f - 2) / 6;
+            a4 = beta_minus_mu_minus_one.pow(4) * f * (f - 1) * (f - 2) * (f - 3) / 24;
+        }
 
         let beta_minus_one = beta - 1;
         let t_minus_f = t as u128 - f;
 
-        let b1 = beta_minus_one * t_minus_f;
-        let b2 = beta_minus_one.pow(2) * t_minus_f * (t_minus_f - 1) / 2;
-        let b3 = beta_minus_one.pow(3) * t_minus_f * (t_minus_f - 1) * (t_minus_f - 2) / 6;
-        let b4 =
-            beta_minus_one.pow(4) * t_minus_f * (t_minus_f - 1) * (t_minus_f - 2) * (t_minus_f - 3)
+        let mut b1 = 0;
+        let mut b2 = 0;
+        let mut b3 = 0;
+        let mut b4 = 0;
+
+        if t_minus_f >= 3 {
+            b1 = beta_minus_one * t_minus_f;
+            b2 = beta_minus_one.pow(2) * t_minus_f * (t_minus_f - 1) / 2;
+            b3 = beta_minus_one.pow(3) * t_minus_f * (t_minus_f - 1) * (t_minus_f - 2) / 6;
+            b4 = beta_minus_one.pow(4)
+                * t_minus_f
+                * (t_minus_f - 1)
+                * (t_minus_f - 2)
+                * (t_minus_f - 3)
                 / 24;
+        }
 
         let minus_c1 = n - k - 1;
         let c2 = (n - k) * (n - k - 1) / 2;
         let minus_c3 = (n - k + 1) * (n - k) * (n - k - 1) / 6;
         let c4 = (n - k + 2) * (n - k + 1) * (n - k) * (n - k - 1) / 24;
 
-        let d2 = a1 + b1 + a1 * b1 + a2 + b2 + c2 - (a1 + b1) * minus_c1 - minus_c1;
+        let d2_left = a1 + b1 + a1 * b1 + a2 + b2 + c2;
+        let d2_right = (a1 + b1) * minus_c1 + minus_c1;
+        // let d2 = a1 + b1 + a1 * b1 + a2 + b2 + c2 - (a1 + b1) * minus_c1 - minus_c1;
 
-        let d3 = b1 * c2 + b3 + a1 * (b2 + c2) + a2 * b1 + a3
-            - minus_c3
-            - b2 * minus_c1
-            - a1 * b1 * minus_c1
-            - a2 * minus_c1;
+        let d3_left = b1 * c2 + b3 + a1 * (b2 + c2) + a2 * b1 + a3;
+        let d3_right = minus_c3 + b2 * minus_c1 + a1 * b1 * minus_c1 + a2 * minus_c1;
 
-        let d4 = c4 + b2 * c2 + b4 + a1 * (b1 * c2 + b2 + b3) + a2 * (b2 + c2 + b1) + a3 * b1 + a4
-            - b1 * minus_c3
-            - b3 * minus_c1
-            - a3 * minus_c1
-            - a1 * b2 * minus_c1
-            - a2 * b1 * minus_c1
-            - a1 * minus_c3;
+        // let d3 = b1 * c2 + b3 + a1 * (b2 + c2) + a2 * b1 + a3
+        //     - minus_c3
+        //     - b2 * minus_c1
+        //     - a1 * b1 * minus_c1
+        //     - a2 * minus_c1;
 
-        if d2 < 1 {
+        let d4_left =
+            c4 + b2 * c2 + b4 + a1 * (b1 * c2 + b2 + b3) + a2 * (b2 + c2 + b1) + a3 * b1 + a4;
+        let d4_right = b1 * minus_c3
+            + b3 * minus_c1
+            + a3 * minus_c1
+            + a1 * b2 * minus_c1
+            + a2 * b1 * minus_c1
+            + a1 * minus_c3;
+
+        // let d4 = c4 + b2 * c2 + b4 + a1 * (b1 * c2 + b2 + b3) + a2 * (b2 + c2 + b1) + a3 * b1 + a4
+        //     - b1 * minus_c3
+        //     - b3 * minus_c1
+        //     - a3 * minus_c1
+        //     - a1 * b2 * minus_c1
+        //     - a2 * b1 * minus_c1
+        //     - a1 * minus_c3;
+
+        // if d2 < 1 {
+        if d2_left <= d2_right {
             return 2.0;
         }
-        if d3 < 1 {
+        // if d3 < 1 {
+        if d3_left <= d3_right {
             return 3.0;
         }
-        if d4 < 1 {
+        // if d4 < 1 {
+        if d4_left <= d4_right {
             return 4.0;
         }
         0.0
@@ -467,20 +501,37 @@ impl LpnEstimator {
 
         let beta_minus_mu_minus_one = beta - mu - 1;
 
-        let a1 = beta_minus_mu_minus_one * f;
-        let a2 = beta_minus_mu_minus_one.pow(2) * f * (f - 1) / 2;
-        let a3 = beta_minus_mu_minus_one.pow(3) * f * (f - 1) * (f - 2) / 6;
-        let a4 = beta_minus_mu_minus_one.pow(4) * f * (f - 1) * (f - 2) * (f - 3) / 24;
+        let mut a1 = 0;
+        let mut a2 = 0;
+        let mut a3 = 0;
+        let mut a4 = 0;
+
+        if f >= 3 {
+            a1 = beta_minus_mu_minus_one * f;
+            a2 = beta_minus_mu_minus_one.pow(2) * f * (f - 1) / 2;
+            a3 = beta_minus_mu_minus_one.pow(3) * f * (f - 1) * (f - 2) / 6;
+            a4 = beta_minus_mu_minus_one.pow(4) * f * (f - 1) * (f - 2) * (f - 3) / 24;
+        }
 
         let beta_minus_one = beta - 1;
         let t_minus_f = t as u128 - f;
 
-        let b1 = beta_minus_one * t_minus_f;
-        let b2 = beta_minus_one.pow(2) * t_minus_f * (t_minus_f - 1) / 2;
-        let b3 = beta_minus_one.pow(3) * t_minus_f * (t_minus_f - 1) * (t_minus_f - 2) / 6;
-        let b4 =
-            beta_minus_one.pow(4) * t_minus_f * (t_minus_f - 1) * (t_minus_f - 2) * (t_minus_f - 3)
+        let mut b1 = 0;
+        let mut b2 = 0;
+        let mut b3 = 0;
+        let mut b4 = 0;
+
+        if t_minus_f >= 3 {
+            b1 = beta_minus_one * t_minus_f;
+            b2 = beta_minus_one.pow(2) * t_minus_f * (t_minus_f - 1) / 2;
+            b3 = beta_minus_one.pow(3) * t_minus_f * (t_minus_f - 1) * (t_minus_f - 2) / 6;
+            b4 = beta_minus_one.pow(4)
+                * t_minus_f
+                * (t_minus_f - 1)
+                * (t_minus_f - 2)
+                * (t_minus_f - 3)
                 / 24;
+        }
 
         let d = Self::cost_agb_binary(n, k, t, f as u64, mu as u64);
 
@@ -549,7 +600,9 @@ impl LpnEstimator {
 mod tests {
     #[test]
     fn security_test() {
-        let security = crate::LpnEstimator::security_for_binary_regular(1 << 22, 67440, 2735);
-        println!("{:?}", security);
+        let sec = crate::LpnEstimator::security_for_binary(1 << 10, 652, 57);
+        let sec_reg = crate::LpnEstimator::security_for_binary_regular(1 << 10, 652, 57);
+        assert!(sec < 95.0);
+        assert!(sec_reg < 90.0);
     }
 }
