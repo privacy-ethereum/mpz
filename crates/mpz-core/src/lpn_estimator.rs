@@ -450,16 +450,9 @@ impl LpnEstimator {
 
         let d2_left = a1 + b1 + a1 * b1 + a2 + b2 + c2;
         let d2_right = (a1 + b1) * minus_c1 + minus_c1;
-        // let d2 = a1 + b1 + a1 * b1 + a2 + b2 + c2 - (a1 + b1) * minus_c1 - minus_c1;
 
         let d3_left = b1 * c2 + b3 + a1 * (b2 + c2) + a2 * b1 + a3;
         let d3_right = minus_c3 + b2 * minus_c1 + a1 * b1 * minus_c1 + a2 * minus_c1;
-
-        // let d3 = b1 * c2 + b3 + a1 * (b2 + c2) + a2 * b1 + a3
-        //     - minus_c3
-        //     - b2 * minus_c1
-        //     - a1 * b1 * minus_c1
-        //     - a2 * minus_c1;
 
         let d4_left =
             c4 + b2 * c2 + b4 + a1 * (b1 * c2 + b2 + b3) + a2 * (b2 + c2 + b1) + a3 * b1 + a4;
@@ -470,23 +463,12 @@ impl LpnEstimator {
             + a2 * b1 * minus_c1
             + a1 * minus_c3;
 
-        // let d4 = c4 + b2 * c2 + b4 + a1 * (b1 * c2 + b2 + b3) + a2 * (b2 + c2 + b1) + a3 * b1 + a4
-        //     - b1 * minus_c3
-        //     - b3 * minus_c1
-        //     - a3 * minus_c1
-        //     - a1 * b2 * minus_c1
-        //     - a2 * b1 * minus_c1
-        //     - a1 * minus_c3;
-
-        // if d2 < 1 {
         if d2_left <= d2_right {
             return 2.0;
         }
-        // if d3 < 1 {
         if d3_left <= d3_right {
             return 3.0;
         }
-        // if d4 < 1 {
         if d4_left <= d4_right {
             return 4.0;
         }
@@ -535,14 +517,14 @@ impl LpnEstimator {
 
         let d = Self::cost_agb_binary(n, k, t, f as u64, mu as u64);
 
-        let mut cost = a1.clone() + b1.clone() + a1.clone() * b1.clone() + a2.clone() + b2.clone();
+        let mut cost = a1 + b1 + a1 * b1 + a2 + b2;
         if d == 2.0 {
             cost += 0;
         } else if d == 3.0 {
             let d3 = b3 + a1 * b2 + a2 * b1 + a3;
             cost += d3;
         } else if d == 4.0 {
-            let d3 = b3.clone() + a1.clone() * b2.clone() + a2.clone() * b1.clone() + a3.clone();
+            let d3 = b3 + a1 * b2 + a2 * b1 + a3;
             let d4 = b4 + a1 * b3 + a2 * b2 + a3 * b1 + a4;
             cost += d3 + d4;
         } else {
