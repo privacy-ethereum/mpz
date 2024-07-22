@@ -577,6 +577,36 @@ impl LpnEstimator {
         }
         cost_agb.min(cost_others)
     }
+
+    /// The security of the parameters for dual lpn in binary field.
+    /// See Sec 5.1 in this [paper](https://eprint.iacr.org/2022/712.pdf)
+    /// # Arguments.
+    ///
+    /// * `rank` - The rank of the matrix, i.e., the output length.
+    /// * `n` - The number of samples.
+    /// * `t` - The Hamming weight of the error.
+    ///
+    /// NOTE: Run it in the release mode.
+    #[inline]
+    pub fn security_dual_for_binary(rank: u64, n: u64, t: u64) -> f64 {
+        let k = n - rank;
+        Self::security_for_binary(n, k, t)
+    }
+
+    /// The security of the parameters for regular dual lpn in binary field.
+    /// See Sec 5.1 in this [paper](https://eprint.iacr.org/2022/712.pdf)
+    /// # Arguments.
+    ///
+    /// * `rank` - The rank of the matrix, i.e., the output length.
+    /// * `n` - The number of samples.
+    /// * `t` - The Hamming weight of the error.
+    ///
+    /// NOTE: Run it in the release mode.
+    #[inline]
+    pub fn security_dual_for_binary_regular(rank: u64, n: u64, t: u64) -> f64 {
+        let k = n - rank;
+        Self::security_for_binary_regular(n, k, t)
+    }
 }
 
 mod tests {
