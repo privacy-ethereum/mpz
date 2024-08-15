@@ -4,7 +4,10 @@ use async_trait::async_trait;
 use mpz_common::{cpu::CpuBackend, Allocate, Context, Preprocess};
 use mpz_core::{prg::Prg, Block};
 use mpz_ot_core::{
-    ferret::receiver::{state, Receiver as ReceiverCore},
+    ferret::{
+        receiver::{state, Receiver as ReceiverCore},
+        LpnType, CSP, CUCKOO_HASH_NUM,
+    },
     RCOTReceiverOutput,
 };
 use serio::SinkExt;
@@ -34,6 +37,8 @@ pub struct Receiver<RandomCOT> {
     config: FerretConfig,
     rcot: RandomCOT,
     alloc: usize,
+    buffer: ReceiverBuffer,
+    buffer_len: usize,
 }
 
 impl<RandomCOT> Receiver<RandomCOT> {
@@ -41,13 +46,16 @@ impl<RandomCOT> Receiver<RandomCOT> {
     ///
     /// # Arguments.
     ///
-    /// * `config` - Ferret configuration.
+    /// * `config` - The Ferret config.
+    /// * `rcot` - The random COT in setup.
     pub fn new(config: FerretConfig, rcot: RandomCOT) -> Self {
         Self {
             state: State::Initialized(ReceiverCore::new()),
             config,
             rcot,
             alloc: 0,
+            buffer: Default::default(),
+            buffer_len: 0,
         }
     }
 
@@ -68,13 +76,42 @@ impl<RandomCOT> Receiver<RandomCOT> {
         let params = self.config.lpn_parameters();
         let lpn_type = self.config.lpn_type();
 
-        // Get random blocks from ideal Random COT.
+        // Compute the number of buffered OTs.
+        self.buffer_len = match lpn_type {
+            // The number here is a rough estimation to ensure sufficient buffer.
+            // It is hard to precisely compute the number because of the Cuckoo hashes.
+            LpnType::Uniform => {
+                let m = (1.5 * (params.t as f32)).ceil() as usize;
+                m * ((2 * CUCKOO_HASH_NUM * params.n / m)
+                    .checked_next_power_of_two()
+                    .expect("The length should be less than usize::MAX / 2 - 1")
+                    .ilog2() as usize)
+                    + CSP
+            }
+            // In our chosen paramters, we always set n is divided by t and n/t is a power of 2.
+            LpnType::Regular => {
+                assert!(params.n % params.t == 0 && (params.n / params.t).is_power_of_two());
+                params.t * ((params.n / params.t).ilog2() as usize) + CSP
+            }
+        };
 
+        // Get random blocks from ideal Random COT.
         let RCOTReceiverOutput {
-            choices: u,
-            msgs: w,
-            ..
-        } = self.rcot.receive_random_correlated(ctx, params.k).await?;
+            choices: mut u,
+            msgs: mut w,
+            id,
+        } = self
+            .rcot
+            .receive_random_correlated(ctx, params.k + self.buffer_len)
+            .await?;
+
+        // Initiate buffer.
+        let buffer = RCOTReceiverOutput {
+            id,
+            choices: u.drain(0..self.buffer_len).collect(),
+            msgs: w.drain(0..self.buffer_len).collect(),
+        };
+        self.buffer = ReceiverBuffer::new(buffer);
 
         let seed = Prg::new().random_block();
 
@@ -107,20 +144,17 @@ impl<RandomCOT> Receiver<RandomCOT> {
         while receiver.remaining() < target {
             let (alphas, n) = receiver.get_mpcot_query();
 
-            let r = if receiver.remaining() < self.config.bootstrap_rate() {
-                mpcot::receive(ctx, &mut self.rcot, lpn_type, alphas, n as u32).await?
-            } else {
-                mpcot::receive(
-                    ctx,
-                    &mut BootstrappedReceiver(&mut receiver),
-                    lpn_type,
-                    alphas,
-                    n as u32,
-                )
-                .await?
-            };
+            let r = mpcot::receive(ctx, &mut self.buffer, lpn_type, alphas, n as u32).await?;
 
             receiver = CpuBackend::blocking(move || receiver.extend(r).map(|()| receiver)).await?;
+
+            // Update receiver buffer.
+            let buffer = receiver
+                .consume(self.buffer_len)
+                .map_err(ReceiverError::from)
+                .map_err(OTError::from)?;
+
+            self.buffer = ReceiverBuffer::new(buffer);
         }
 
         self.state = State::Extension(receiver);
@@ -171,18 +205,49 @@ where
 }
 
 #[derive(Debug)]
-struct BootstrappedReceiver<'a>(&'a mut ReceiverCore<state::Extension>);
+struct ReceiverBuffer {
+    buffer: RCOTReceiverOutput<bool, Block>,
+}
+
+impl ReceiverBuffer {
+    fn new(buffer: RCOTReceiverOutput<bool, Block>) -> Self {
+        Self { buffer }
+    }
+}
+
+impl Default for ReceiverBuffer {
+    fn default() -> Self {
+        ReceiverBuffer {
+            buffer: RCOTReceiverOutput {
+                id: Default::default(),
+                choices: Vec::new(),
+                msgs: Vec::new(),
+            },
+        }
+    }
+}
 
 #[async_trait]
-impl<Ctx> RandomCOTReceiver<Ctx, bool, Block> for BootstrappedReceiver<'_> {
+impl<Ctx> RandomCOTReceiver<Ctx, bool, Block> for ReceiverBuffer {
     async fn receive_random_correlated(
         &mut self,
         _ctx: &mut Ctx,
         count: usize,
     ) -> Result<RCOTReceiverOutput<bool, Block>, OTError> {
-        self.0
-            .consume(count)
-            .map_err(ReceiverError::from)
-            .map_err(OTError::from)
+        if count > self.buffer.choices.len() {
+            return Err(ReceiverError::io(format!(
+                "insufficient OTs: {} < {count}",
+                self.buffer.choices.len()
+            ))
+            .into());
+        }
+
+        let choices = self.buffer.choices.drain(0..count).collect();
+        let msgs = self.buffer.msgs.drain(0..count).collect();
+        Ok(RCOTReceiverOutput {
+            id: self.buffer.id.next(),
+            choices,
+            msgs,
+        })
     }
 }

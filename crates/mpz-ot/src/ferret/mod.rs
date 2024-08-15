@@ -42,11 +42,6 @@ impl FerretConfig {
     pub fn lpn_parameters(&self) -> LpnParameters {
         self.lpn_parameters
     }
-
-    /// Returns the number of COTs required to bootstrap an extension.
-    pub(crate) fn bootstrap_rate(&self) -> usize {
-        self.lpn_parameters.k as usize
-    }
 }
 
 #[cfg(test)]

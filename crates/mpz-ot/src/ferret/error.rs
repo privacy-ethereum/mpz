@@ -15,6 +15,13 @@ impl SenderError {
             source: Some(msg.into().into()),
         }
     }
+
+    pub(crate) fn io(msg: impl Into<String>) -> Self {
+        Self {
+            kind: SenderErrorKind::Io,
+            source: Some(msg.into().into()),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -98,6 +105,13 @@ impl ReceiverError {
     pub(crate) fn state(msg: impl Into<String>) -> Self {
         Self {
             kind: ReceiverErrorKind::State,
+            source: Some(msg.into().into()),
+        }
+    }
+
+    pub(crate) fn io(msg: impl Into<String>) -> Self {
+        Self {
+            kind: ReceiverErrorKind::Io,
             source: Some(msg.into().into()),
         }
     }
