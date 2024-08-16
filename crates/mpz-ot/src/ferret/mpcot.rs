@@ -148,7 +148,11 @@ mod tests {
         let (mut ctx_sender, mut ctx_receiver) = test_st_executor(8);
         let (mut rcot_sender, mut rcot_receiver) = ideal_rcot();
 
-        let alphas = vec![0, 1, 3, 4, 2];
+        let alphas = match lpn_type {
+            LpnType::Uniform => vec![0, 1, 3, 4, 2],
+            LpnType::Regular => vec![0, 3, 4, 7, 9],
+        };
+
         let t = alphas.len();
         let n = 10;
         let delta = rcot_sender.delta();
