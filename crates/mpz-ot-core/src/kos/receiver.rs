@@ -1,39 +1,34 @@
-use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex},
-};
+use std::{collections::VecDeque, mem};
 
 use crate::{
-    kos::{
-        error::ReceiverVerifyError,
-        msgs::{Check, Ciphertexts, Extend, SenderPayload},
-        Aes128Ctr, ReceiverConfig, ReceiverError, Rng, RngSeed, CSP, SSP,
-    },
-    msgs::Derandomize,
+    kos::{Check, Extend, ReceiverConfig, ReceiverError, CSP, SSP},
+    rcot::{RCOTReceiver, RCOTReceiverOutput},
     TransferId,
 };
 
-use itybity::{FromBitIterator, IntoBits, ToBits};
-use mpz_core::{aes::FIXED_KEY_AES, Block};
+use itybity::{FromBitIterator, IntoBits};
+use mpz_common::future::{new_output, MaybeDone, Sender};
+use mpz_core::{prg::Prg, Block};
 
-use blake3::Hasher;
-use cipher::{KeyIvInit, StreamCipher};
 use rand::{thread_rng, Rng as _, SeedableRng};
-use rand_chacha::ChaCha20Rng;
 use rand_core::RngCore;
 
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
 
-#[derive(Debug, Default)]
-struct Tape {
-    records: HashMap<TransferId, PayloadRecordNoDelta>,
+#[derive(Debug)]
+struct Queued {
+    count: usize,
+    sender: Sender<RCOTReceiverOutput<bool, Block>>,
 }
 
 /// KOS15 receiver.
 #[derive(Debug, Default)]
 pub struct Receiver<T: state::State = state::Initialized> {
     config: ReceiverConfig,
+    alloc: usize,
+    transfer_id: TransferId,
+    queue: VecDeque<Queued>,
     state: T,
 }
 
@@ -54,15 +49,15 @@ impl Receiver {
     ///
     /// * `config` - The Receiver's configuration
     pub fn new(config: ReceiverConfig) -> Self {
-        let tape = if config.sender_commit() {
-            Some(Default::default())
-        } else {
-            None
-        };
-
         Receiver {
             config,
-            state: state::Initialized { tape },
+            // We need to extend CSP + SSP OTs for the consistency check.
+            // Right now we only support one extension, so we just alloc
+            // them here.
+            alloc: CSP + SSP,
+            transfer_id: TransferId::default(),
+            queue: VecDeque::default(),
+            state: state::Initialized {},
         }
     }
 
@@ -72,80 +67,48 @@ impl Receiver {
     ///
     /// * `seeds` - The receiver's rng seeds
     pub fn setup(self, seeds: [[Block; 2]; CSP]) -> Receiver<state::Extension> {
-        let rngs = seeds
-            .iter()
-            .map(|seeds| {
-                seeds.map(|seed| {
-                    // Stretch the Block-sized seed to a 32-byte seed.
-                    let mut seed_ = RngSeed::default();
-                    seed_
-                        .iter_mut()
-                        .zip(seed.to_bytes().into_iter().cycle())
-                        .for_each(|(s, c)| *s = c);
-                    Rng::from_seed(seed_)
-                })
-            })
-            .collect();
-
         Receiver {
             config: self.config,
+            alloc: self.alloc,
+            transfer_id: self.transfer_id,
+            queue: self.queue,
             state: state::Extension {
-                rngs,
-                ts: Vec::default(),
-                keys: Vec::default(),
+                rngs: seeds
+                    .into_iter()
+                    .map(|seeds| seeds.map(|seed| Prg::from_seed(seed)))
+                    .collect(),
+                msgs: Vec::default(),
                 choices: Vec::default(),
-                index: 0,
-                transfer_id: TransferId::default(),
                 extended: false,
                 unchecked_ts: Vec::default(),
                 unchecked_choices: Vec::default(),
-                tape: self.state.tape,
             },
         }
     }
 }
 
 impl Receiver<state::Extension> {
-    /// Returns the current transfer id.
-    pub fn current_transfer_id(&self) -> TransferId {
-        self.state.transfer_id
+    /// Returns `true` if the receiver wants to extend.
+    pub fn wants_extend(&self) -> bool {
+        self.alloc != 0 && !self.state.extended
     }
 
-    /// The number of remaining OTs which can be consumed.
-    pub fn remaining(&self) -> usize {
-        self.state.keys.len()
+    /// Returns `true` if the receiver wants to run the consistency check.
+    pub fn wants_check(&self) -> bool {
+        self.alloc == 0 && !self.state.unchecked_ts.is_empty()
     }
 
     /// Perform the IKNP OT extension.
-    ///
-    /// The provided count _must_ be a multiple of 64, otherwise an error will be returned.
-    ///
-    /// # Sacrificial OTs
-    ///
-    /// Performing the consistency check sacrifices 256 OTs, so be sure to
-    /// extend enough OTs to compensate for this.
-    ///
-    /// # Streaming
-    ///
-    /// Extension can be performed in a streaming fashion by calling this method multiple times, sending
-    /// the `Extend` messages to the sender in-between calls.
-    ///
-    /// The freshly extended OTs are not available until after the consistency check has been
-    /// performed. See [`Receiver::check`].
-    ///
-    /// # Arguments
-    ///
-    /// * `count` - The number of OTs to extend (must be a multiple of 64).
-    pub fn extend(&mut self, count: usize) -> Result<Extend, ReceiverError> {
+    pub fn extend(&mut self) -> Result<Extend, ReceiverError> {
         if self.state.extended {
             return Err(ReceiverError::InvalidState(
                 "extending more than once is currently disabled".to_string(),
             ));
         }
 
-        if count % 64 != 0 {
-            return Err(ReceiverError::InvalidCount(count));
-        }
+        let count = self.config.batch_size().min(self.alloc);
+        // round up count to a multiple of 64
+        let count = (count + 63) & !63;
 
         const NROWS: usize = CSP;
         let row_width = count / 8;
@@ -199,43 +162,33 @@ impl Receiver<state::Extension> {
                 .map(|t| Block::try_from(t).unwrap()),
         );
         self.state.unchecked_choices.extend(choices);
+        self.alloc = self.alloc.saturating_sub(count);
 
-        Ok(Extend { us })
+        Ok(Extend { count, us })
     }
 
     /// Performs the correlation check for all outstanding OTS.
     ///
     /// See section 3.1 of the paper for more details.
     ///
-    /// # Sacrificial OTs
-    ///
-    /// Performing this check sacrifices 256 OTs for the consistency check, so be sure to
-    /// extend enough OTs to compensate for this.
-    ///
     /// # ⚠️ Warning ⚠️
     ///
-    /// The provided seed must be unbiased! It should be generated using a secure
-    /// coin-toss protocol **after** the receiver has sent their setup message, ie
-    /// after they have already committed to their choice vectors.
+    /// The provided seed must be unbiased! It should be generated using a
+    /// secure coin-toss protocol **after** the receiver has sent their
+    /// setup message, ie after they have already committed to their choice
+    /// vectors.
     ///
     /// # Arguments
     ///
     /// * `chi_seed` - The seed used to generate the consistency check weights.
     pub fn check(&mut self, chi_seed: Block) -> Result<Check, ReceiverError> {
-        // Make sure we have enough sacrificial OTs to perform the consistency check.
-        if self.state.unchecked_ts.len() < CSP + SSP {
-            return Err(ReceiverError::InsufficientSetup(
-                CSP + SSP,
-                self.state.unchecked_ts.len(),
+        if !self.wants_check() {
+            return Err(ReceiverError::InvalidState(
+                "receiver not ready to check".to_string(),
             ));
         }
 
-        let mut seed = RngSeed::default();
-        seed.iter_mut()
-            .zip(chi_seed.to_bytes().into_iter().cycle())
-            .for_each(|(s, c)| *s = c);
-
-        let mut rng = Rng::from_seed(seed);
+        let mut rng = Prg::from_seed(chi_seed);
 
         let mut unchecked_ts = std::mem::take(&mut self.state.unchecked_ts);
         let mut unchecked_choices = std::mem::take(&mut self.state.unchecked_choices);
@@ -284,389 +237,125 @@ impl Receiver<state::Extension> {
         unchecked_ts.truncate(nrows);
         unchecked_choices.truncate(nrows);
 
-        cfg_if::cfg_if! {
-            if #[cfg(feature = "rayon")] {
-                let iter = unchecked_ts.par_iter().enumerate();
-            } else {
-                let iter = unchecked_ts.iter().enumerate();
-            }
-        }
-
-        let cipher = &(*FIXED_KEY_AES);
-        let keys = iter
-            .map(|(j, t)| {
-                let j = Block::from(((self.state.index + j) as u128).to_be_bytes());
-                cipher.tccr(j, *t)
-            })
-            .collect::<Vec<_>>();
-
-        self.state.index += keys.len();
-
-        // Add to existing keys.
-        self.state.keys.extend(keys);
-        self.state.choices.extend(unchecked_choices);
-
-        // If we're recording, we track `ts` too
-        if self.state.tape.is_some() {
-            self.state.ts.extend(unchecked_ts);
-        }
-
-        // Disable any further extensions.
+        // Add to existing msgs.
+        self.state.msgs.extend_from_slice(&unchecked_ts);
+        self.state.choices.extend_from_slice(&unchecked_choices);
         self.state.extended = true;
+
+        // Resolve any queued transfers.
+        if !self.queue.is_empty() {
+            let mut i = 0;
+            for Queued { count, sender } in mem::take(&mut self.queue) {
+                let choices = self.state.choices[i..i + count].to_vec();
+                let msgs = self.state.msgs[i..i + count].to_vec();
+                i += count;
+                sender.send(RCOTReceiverOutput {
+                    id: self.transfer_id.next(),
+                    choices,
+                    msgs,
+                });
+            }
+
+            self.state.choices.drain(..i);
+            self.state.msgs.drain(..i);
+        }
 
         Ok(Check { x, t0, t1 })
     }
-
-    /// Returns receiver's keys for the given number of OTs.
-    ///
-    /// # Arguments
-    ///
-    /// * `count` - The number of keys to take.
-    pub fn keys(&mut self, count: usize) -> Result<ReceiverKeys, ReceiverError> {
-        if count > self.state.keys.len() {
-            return Err(ReceiverError::InsufficientSetup(
-                count,
-                self.state.keys.len(),
-            ));
-        }
-
-        let id = self.state.transfer_id.next();
-        let index = self.state.index - self.state.keys.len();
-
-        Ok(ReceiverKeys {
-            id,
-            index,
-            keys: self.state.keys.drain(..count).collect(),
-            choices: self.state.choices.drain(..count).collect(),
-            ts: if self.state.tape.is_some() {
-                Some(self.state.ts.drain(..count).collect())
-            } else {
-                None
-            },
-            tape: self.state.tape.clone(),
-        })
-    }
-
-    /// Enters the verification state for verifiable OT.
-    ///
-    /// # ⚠️ Warning ⚠️
-    ///
-    /// The authenticity of `delta` must be established outside the context of this function. This
-    /// can be achieved using verifiable base OT.
-    ///
-    /// # Arguments
-    ///
-    /// * `delta` - The sender's base OT choice bits.
-    pub fn start_verification(
-        mut self,
-        delta: Block,
-    ) -> Result<Receiver<state::Verify>, ReceiverError> {
-        let Some(tape) = self.state.tape.take() else {
-            return Err(ReceiverVerifyError::TapeNotRecorded)?;
-        };
-
-        Ok(Receiver {
-            config: self.config,
-            state: state::Verify { tape, delta },
-        })
-    }
 }
 
-impl Receiver<state::Verify> {
-    /// Returns the [`PayloadRecord`] for the given transfer id if it exists.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the record does not exist.
-    ///
-    /// # Arguments
-    ///
-    /// * `id` - The transfer id
-    pub fn remove_record(&self, id: TransferId) -> Result<PayloadRecord, ReceiverError> {
-        let PayloadRecordNoDelta {
-            index,
-            choices,
-            ts,
-            keys,
-            ciphertext_digest,
-        } = self
-            .state
-            .tape
-            .lock()
-            .unwrap()
-            .records
-            .remove(&id)
-            .ok_or(ReceiverVerifyError::InvalidTransferId(id))
-            .map_err(ReceiverError::from)?;
+impl RCOTReceiver<bool, Block> for Receiver<state::Initialized> {
+    type Error = ReceiverError;
+    type Future = MaybeDone<RCOTReceiverOutput<bool, Block>>;
 
-        Ok(PayloadRecord {
-            index,
-            choices,
-            ts,
-            keys,
-            delta: self.state.delta,
-            ciphertext_digest,
-        })
-    }
-}
-
-/// KOS receiver's keys for a single transfer.
-///
-/// Returned by the [`Receiver::keys`] method, used in cases where the receiver
-/// wishes to reserve a set of keys for a transfer, but hasn't yet received the
-/// payload.
-pub struct ReceiverKeys {
-    /// Transfer ID
-    id: TransferId,
-    /// Start index of the OTs
-    index: usize,
-    /// Decryption keys
-    keys: Vec<Block>,
-    /// The Receiver's choices. If derandomization is performed, these are the overwritten
-    /// with the derandomized choices.
-    choices: Vec<bool>,
-
-    /// Receiver `ts`
-    ts: Option<Vec<Block>>,
-    /// Receiver tape
-    tape: Option<Arc<Mutex<Tape>>>,
-}
-
-opaque_debug::implement!(ReceiverKeys);
-
-impl ReceiverKeys {
-    /// Returns the transfer ID.
-    pub fn id(&self) -> TransferId {
-        self.id
-    }
-
-    /// Derandomizes the receiver's choices.
-    pub fn derandomize(&mut self, choices: &[bool]) -> Result<Derandomize, ReceiverError> {
-        if choices.len() != self.choices.len() {
-            return Err(ReceiverError::CountMismatch(
-                self.choices.len(),
-                choices.len(),
-            ));
-        }
-
-        let derandomize = Derandomize {
-            id: self.id,
-            count: self.choices.len() as u32,
-            flip: Vec::<u8>::from_lsb0_iter(
-                self.choices
-                    .iter()
-                    .zip(choices)
-                    .map(|(setup_choice, new_choice)| setup_choice ^ new_choice),
-            ),
-        };
-
-        self.choices.copy_from_slice(choices);
-
-        Ok(derandomize)
-    }
-
-    /// Decrypts the sender's payload.
-    pub fn decrypt_blocks(mut self, payload: SenderPayload) -> Result<Vec<Block>, ReceiverError> {
-        let SenderPayload { id, ciphertexts } = payload;
-
-        let Ciphertexts::Blocks { ciphertexts } = ciphertexts else {
-            return Err(ReceiverError::InvalidPayload(
-                "expected block ciphertexts".to_string(),
-            ));
-        };
-
-        if id != self.id {
-            return Err(ReceiverError::IdMismatch(self.id, id));
-        }
-
-        if ciphertexts.len() / 2 != self.keys.len() {
-            return Err(ReceiverError::CountMismatch(
-                self.keys.len(),
-                ciphertexts.len() / 2,
-            ));
-        }
-
-        if let Some(tape) = self.tape.take() {
-            let ts = self.ts.take().expect("ts set if tape is set");
-
-            let mut hasher = Hasher::default();
-            ciphertexts.iter().for_each(|ct| {
-                hasher.update(&ct.to_bytes());
-            });
-
-            tape.lock().unwrap().records.insert(
-                id,
-                PayloadRecordNoDelta {
-                    index: self.index,
-                    choices: Vec::from_lsb0_iter(self.choices.iter().copied()),
-                    ts,
-                    keys: self.keys.clone(),
-                    ciphertext_digest: hasher.finalize().into(),
-                },
-            );
-        }
-
-        Ok(self
-            .keys
-            .into_iter()
-            .zip(self.choices)
-            .zip(ciphertexts.chunks(2))
-            .map(|((key, c), ct)| if c { key ^ ct[1] } else { key ^ ct[0] })
-            .collect())
-    }
-
-    /// Decrypts the sender's payload.
-    ///
-    /// # Verifiable OT
-    ///
-    /// Verifiable OT with KOS does not currently support byte payloads, so no record of this payload
-    /// will be recorded.
-    pub fn decrypt_bytes<const N: usize>(
-        self,
-        payload: SenderPayload,
-    ) -> Result<Vec<[u8; N]>, ReceiverError> {
-        let SenderPayload { id, ciphertexts } = payload;
-
-        let Ciphertexts::Bytes {
-            ciphertexts,
-            iv,
-            length,
-        } = ciphertexts
-        else {
-            return Err(ReceiverError::InvalidPayload(
-                "expected byte ciphertexts".to_string(),
-            ));
-        };
-
-        if id != self.id {
-            return Err(ReceiverError::IdMismatch(self.id, id));
-        }
-
-        let length = length as usize;
-        if length != N {
-            return Err(ReceiverError::InvalidPayload(format!(
-                "invalid message length: expected {}, got {}",
-                N, length
-            )));
-        }
-
-        if ciphertexts.len() / (2 * length) != self.keys.len() {
-            return Err(ReceiverError::CountMismatch(
-                self.keys.len(),
-                ciphertexts.len() / (2 * length),
-            ));
-        }
-
-        let iv: [u8; 16] = iv
-            .try_into()
-            .map_err(|_| ReceiverError::InvalidPayload("invalid iv length".to_string()))?;
-
-        Ok(self
-            .keys
-            .into_iter()
-            .zip(self.choices)
-            .zip(ciphertexts.chunks(2 * N))
-            .map(|((key, c), ct)| {
-                // Initialize AES-CTR with the key from ROT.
-                let mut e = Aes128Ctr::new(&key.into(), &iv.into());
-
-                let mut msg = [0u8; N];
-                if c {
-                    msg.copy_from_slice(&ct[N..])
-                } else {
-                    msg.copy_from_slice(&ct[..N])
-                };
-
-                e.apply_keystream(&mut msg);
-
-                msg
-            })
-            .collect())
-    }
-
-    /// Returns the choices and the keys
-    pub fn take_choices_and_keys(self) -> (Vec<bool>, Vec<Block>) {
-        (self.choices, self.keys)
-    }
-}
-
-struct PayloadRecordNoDelta {
-    /// The starting index for the corresponding OTs. This is used to compute the
-    /// "tweak" for the randomization.
-    index: usize,
-    /// The receiver's choices for the transfer.
-    choices: Vec<u8>,
-    ts: Vec<Block>,
-    keys: Vec<Block>,
-    ciphertext_digest: [u8; 32],
-}
-
-opaque_debug::implement!(PayloadRecordNoDelta);
-
-/// A record of a transfer's payload.
-pub struct PayloadRecord {
-    /// The starting index for the corresponding OTs. This is used to compute the
-    /// "tweak" for the randomization.
-    index: usize,
-    /// The receiver's choices for the transfer.
-    choices: Vec<u8>,
-    ts: Vec<Block>,
-    keys: Vec<Block>,
-    /// The sender's base OT choice bits.
-    delta: Block,
-    ciphertext_digest: [u8; 32],
-}
-
-opaque_debug::implement!(PayloadRecord);
-
-impl PayloadRecord {
-    /// Checks the purported messages against the record
-    ///
-    /// # Arguments
-    ///
-    /// * `purported_msgs` - The purported messages sent by the sender.
-    pub fn verify(self, purported_msgs: &[[Block; 2]]) -> Result<(), ReceiverError> {
-        let PayloadRecord {
-            index: counter,
-            choices,
-            ts,
-            keys,
-            delta,
-            ciphertext_digest,
-        } = self;
-
-        // Here we compute the complementary key to the one used earlier in the protocol.
-        //
-        // From this, we encrypt the purported messages and check that the ciphertext digests match.
-        let cipher = &(*FIXED_KEY_AES);
-        let mut hasher = Hasher::default();
-        for (j, (((c, t), key), msgs)) in choices
-            .iter_lsb0()
-            .zip(ts)
-            .zip(keys)
-            .zip(purported_msgs)
-            .enumerate()
-        {
-            let j = Block::new(((counter + j) as u128).to_be_bytes());
-            let key_ = cipher.tccr(j, t ^ delta);
-
-            let (ct0, ct1) = if c {
-                (msgs[0] ^ key_, msgs[1] ^ key)
-            } else {
-                (msgs[0] ^ key, msgs[1] ^ key_)
-            };
-
-            hasher.update(&ct0.to_bytes());
-            hasher.update(&ct1.to_bytes());
-        }
-
-        let digest: [u8; 32] = hasher.finalize().into();
-
-        if ciphertext_digest != digest {
-            return Err(ReceiverVerifyError::InconsistentPayload)?;
-        }
+    fn alloc(&mut self, count: usize) -> Result<(), Self::Error> {
+        self.alloc += count;
 
         Ok(())
+    }
+
+    fn available(&self) -> usize {
+        0
+    }
+
+    fn try_recv_rcot(
+        &mut self,
+        _count: usize,
+    ) -> Result<RCOTReceiverOutput<bool, Block>, Self::Error> {
+        return Err(ReceiverError::InvalidState(
+            "receiver has not been setup yet".to_string(),
+        ));
+    }
+
+    fn queue_recv_rcot(&mut self, count: usize) -> Result<Self::Future, Self::Error> {
+        let (sender, recv) = new_output();
+
+        self.queue.push_back(Queued { count, sender });
+
+        return Ok(recv);
+    }
+}
+
+impl RCOTReceiver<bool, Block> for Receiver<state::Extension> {
+    type Error = ReceiverError;
+    type Future = MaybeDone<RCOTReceiverOutput<bool, Block>>;
+
+    fn alloc(&mut self, count: usize) -> Result<(), Self::Error> {
+        if self.state.extended {
+            return Err(ReceiverError::InvalidState(
+                "extending more than once is currently disabled".to_string(),
+            ));
+        }
+
+        self.alloc += count;
+
+        Ok(())
+    }
+
+    fn available(&self) -> usize {
+        self.state.msgs.len()
+    }
+
+    fn try_recv_rcot(
+        &mut self,
+        count: usize,
+    ) -> Result<RCOTReceiverOutput<bool, Block>, Self::Error> {
+        if self.available() < count {
+            return Err(ReceiverError::InsufficientSetup {
+                expected: count,
+                actual: self.available(),
+            });
+        }
+
+        let choices = self.state.choices.drain(..count).collect();
+        let keys = self.state.msgs.drain(..count).collect();
+
+        Ok(RCOTReceiverOutput {
+            id: self.transfer_id.next(),
+            choices,
+            msgs: keys,
+        })
+    }
+
+    fn queue_recv_rcot(&mut self, count: usize) -> Result<Self::Future, Self::Error> {
+        if self.available() >= count {
+            let output = self.try_recv_rcot(count)?;
+            let (sender, recv) = new_output();
+            sender.send(output);
+
+            return Ok(recv);
+        } else if !self.state.extended {
+            let (sender, recv) = new_output();
+
+            self.queue.push_back(Queued { count, sender });
+
+            return Ok(recv);
+        } else {
+            return Err(ReceiverError::InsufficientSetup {
+                expected: count,
+                actual: self.available(),
+            });
+        }
     }
 }
 
@@ -679,7 +368,6 @@ pub mod state {
 
         impl Sealed for super::Initialized {}
         impl Sealed for super::Extension {}
-        impl Sealed for super::Verify {}
     }
 
     /// The receiver's state.
@@ -687,10 +375,7 @@ pub mod state {
 
     /// The receiver's initial state.
     #[derive(Default)]
-    pub struct Initialized {
-        /// Protocol tape
-        pub(super) tape: Option<Arc<Mutex<Tape>>>,
-    }
+    pub struct Initialized {}
 
     impl State for Initialized {}
 
@@ -698,21 +383,11 @@ pub mod state {
 
     /// The receiver's state after the setup phase.
     ///
-    /// In this state the receiver performs OT extension (potentially multiple times). Also in this
-    /// state the receiver sends OT requests.
+    /// In this state the receiver performs OT extension (potentially multiple
+    /// times). Also in this state the receiver sends OT requests.
     pub struct Extension {
         /// Receiver's rngs
-        pub(super) rngs: Vec<[ChaCha20Rng; 2]>,
-        /// Receiver's ts
-        pub(super) ts: Vec<Block>,
-        /// Receiver's keys
-        pub(super) keys: Vec<Block>,
-        /// Receiver's random choices
-        pub(super) choices: Vec<bool>,
-        /// Current OT index
-        pub(super) index: usize,
-        /// Current transfer id
-        pub(super) transfer_id: TransferId,
+        pub(super) rngs: Vec<[Prg; 2]>,
 
         /// Whether extension has occurred yet
         ///
@@ -724,23 +399,13 @@ pub mod state {
         /// Receiver's unchecked choices
         pub(super) unchecked_choices: Vec<bool>,
 
-        /// Protocol tape
-        pub(super) tape: Option<Arc<Mutex<Tape>>>,
+        /// Receiver's chosen messages.
+        pub(super) msgs: Vec<Block>,
+        /// Receiver's random choices.
+        pub(super) choices: Vec<bool>,
     }
 
     impl State for Extension {}
 
     opaque_debug::implement!(Extension);
-
-    /// The receiver's state after receiving the sender's base OT choice bits, a.k.a delta.
-    pub struct Verify {
-        /// Protocol tape
-        pub(super) tape: Arc<Mutex<Tape>>,
-        /// The sender's base OT choice bits.
-        pub(super) delta: Block,
-    }
-
-    impl State for Verify {}
-
-    opaque_debug::implement!(Verify);
 }

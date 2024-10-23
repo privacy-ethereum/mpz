@@ -1,9 +1,10 @@
 //! Common functionality for `mpz`.
 //!
-//! This crate provides various common functionalities needed for modeling protocol execution, I/O,
-//! and multi-threading.
+//! This crate provides various common functionalities needed for modeling
+//! protocol execution, I/O, and multi-threading.
 //!
-//! This crate does not provide any cryptographic primitives, see `mpz-core` for that.
+//! This crate does not provide any cryptographic primitives, see `mpz-core` for
+//! that.
 
 #![deny(
     unsafe_code,
@@ -14,9 +15,14 @@
     clippy::all
 )]
 
+#[cfg(any(test, feature = "ctx"))]
 mod context;
+#[cfg(any(test, feature = "cpu"))]
 pub mod cpu;
+#[cfg(any(test, feature = "executor"))]
 pub mod executor;
+#[cfg(any(test, feature = "future"))]
+pub mod future;
 mod id;
 #[cfg(any(test, feature = "ideal"))]
 pub mod ideal;
@@ -24,6 +30,7 @@ pub mod ideal;
 pub mod sync;
 
 use async_trait::async_trait;
+#[cfg(any(test, feature = "ctx"))]
 pub use context::{Context, ContextError};
 pub use id::{Counter, ThreadId};
 
@@ -44,6 +51,19 @@ pub trait Preprocess<Ctx>: Allocate {
 
     /// Preprocesses the functionality.
     async fn preprocess(&mut self, ctx: &mut Ctx) -> Result<(), Self::Error>;
+}
+
+/// A functionality that can be flushed.
+#[async_trait]
+pub trait Flush<Ctx> {
+    /// Error type.
+    type Error: std::error::Error + Send + Sync + 'static;
+
+    /// Returns `true` if the functionality wants to be flushed.
+    fn wants_flush(&self) -> bool;
+
+    /// Flushes the functionality.
+    async fn flush(&mut self, ctx: &mut Ctx) -> Result<(), Self::Error>;
 }
 
 /// A convenience macro for creating a closure which returns a scoped future.

@@ -3,6 +3,7 @@
 #![deny(clippy::all)]
 
 pub mod aes;
+pub mod bitvec;
 pub mod block;
 pub mod commit;
 pub mod ggm_tree;

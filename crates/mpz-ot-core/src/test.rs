@@ -2,6 +2,20 @@
 
 use mpz_core::Block;
 
+/// Asserts the correctness of oblivious transfer.
+pub fn assert_ot(choices: &[bool], msgs: &[[Block; 2]], received: &[Block]) {
+    assert!(choices
+        .iter()
+        .zip(msgs.iter().zip(received))
+        .all(|(&choice, (&msg, &received))| {
+            if choice {
+                received == msg[1]
+            } else {
+                received == msg[0]
+            }
+        }));
+}
+
 /// Asserts the correctness of correlated oblivious transfer.
 pub fn assert_cot(delta: Block, choices: &[bool], msgs: &[Block], received: &[Block]) {
     assert!(choices

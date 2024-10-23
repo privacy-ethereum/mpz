@@ -32,6 +32,7 @@ bytemuck = { workspace = true, features = ["derive"] }
 generic-array.workspace = true
 rayon = { workspace = true, optional = true }
 cfg-if.workspace = true
+bitvec = { workspace = true, features = ["serde"] }
 
 [dev-dependencies]
 rstest.workspace = true

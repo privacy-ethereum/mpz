@@ -5,7 +5,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::TransferId;
 
-/// Extension message sent by the receiver to agree upon the number of OTs to set up.
+/// Extension message sent by the receiver to agree upon the number of OTs to
+/// set up.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct StartExtend {
     /// The number of OTs to set up.
@@ -47,15 +48,6 @@ impl Iterator for ExtendChunks {
             })
         }
     }
-}
-
-/// Values for the correlation check sent by the receiver.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[allow(missing_docs)]
-pub struct Check {
-    pub x: Block,
-    pub t0: Block,
-    pub t1: Block,
 }
 
 /// Sender payload message.
