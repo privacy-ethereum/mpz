@@ -3,7 +3,7 @@ use rand::{thread_rng, Rng};
 use serio::SinkExt as _;
 
 use mpz_cointoss::{self as cointoss, cointoss_sender};
-use mpz_common::{future::MaybeDone, scoped, Context, ContextError, Flush};
+use mpz_common::{future::MaybeDone, Context, ContextError, Flush};
 use mpz_core::Block;
 use mpz_ot_core::{
     kos::{receiver_state as state, Receiver as Core, ReceiverConfig, ReceiverError as CoreError},
@@ -137,25 +137,19 @@ where
             return Ok(());
         }
 
-        let receiver = ctx
-            .blocking(scoped!(move |ctx| {
-                while receiver.wants_extend() {
-                    let extend = receiver.extend()?;
-                    ctx.io_mut().send(extend).await?;
-                }
+        while receiver.wants_extend() {
+            let extend = receiver.extend()?;
+            ctx.io_mut().send(extend).await?;
+        }
 
-                let seed = thread_rng().gen();
+        let seed = thread_rng().gen();
 
-                // See issue #176.
-                let chi_seed = cointoss_sender(ctx, vec![seed]).await?[0];
+        // See issue #176.
+        let chi_seed = cointoss_sender(ctx, vec![seed]).await?[0];
 
-                let receiver_check = receiver.check(chi_seed)?;
+        let receiver_check = receiver.check(chi_seed)?;
 
-                ctx.io_mut().send(receiver_check).await?;
-
-                Ok::<_, Error>(receiver)
-            }))
-            .await??;
+        ctx.io_mut().send(receiver_check).await?;
 
         self.state = State::Extension(receiver);
 
