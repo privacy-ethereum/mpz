@@ -1,19 +1,18 @@
 //! Executors.
 
-mod dummy;
-mod mt;
-mod st;
-
-pub use dummy::{DummyExecutor, DummyIo};
-pub use mt::{MTContext, MTExecutor};
-pub use st::STExecutor;
+#[cfg(any(test, feature = "test-utils"))]
+pub mod dummy;
+pub mod mt;
+pub mod st;
 
 #[cfg(any(test, feature = "test-utils"))]
 mod test_utils {
+    use super::{
+        mt::{MTConfig, MTExecutor},
+        st::STExecutor,
+    };
     use serio::channel::{duplex, MemoryDuplex};
     use uid_mux::test_utils::{test_framed_mux, TestFramedMux};
-
-    use super::*;
 
     /// Test single-threaded executor.
     pub type TestSTExecutor = STExecutor<MemoryDuplex>;
@@ -26,18 +25,22 @@ mod test_utils {
     }
 
     /// Test multi-threaded executor.
-    pub type TestMTExecutor = MTExecutor<TestFramedMux>;
+    pub type TestMTExecutor = MTExecutor<TestFramedMux, MemoryDuplex>;
 
-    /// Creates a pair of multi-threaded executors with multiplexed I/O channels.
+    /// Creates a pair of multi-threaded executors with multiplexed I/O
+    /// channels.
     ///
     /// # Arguments
     ///
     /// * `io_buffer` - The size of the I/O buffer (channel capacity).
-    pub fn test_mt_executor(io_buffer: usize) -> (TestMTExecutor, TestMTExecutor) {
+    pub fn test_mt_executor(
+        io_buffer: usize,
+        config: MTConfig,
+    ) -> (TestMTExecutor, TestMTExecutor) {
         let (mux_0, mux_1) = test_framed_mux(io_buffer);
 
-        let exec_0 = MTExecutor::new(mux_0, 8);
-        let exec_1 = MTExecutor::new(mux_1, 8);
+        let exec_0 = MTExecutor::new(mux_0, config.clone());
+        let exec_1 = MTExecutor::new(mux_1, config);
 
         (exec_0, exec_1)
     }

@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use itybity::IntoBits;
 use mpz_cointoss::{self as cointoss, cointoss_receiver};
-use mpz_common::{future::MaybeDone, scoped, Context, ContextError, Flush};
+use mpz_common::{future::MaybeDone, Context, ContextError, Flush};
 use mpz_core::Block;
 use mpz_ot_core::{
     kos::{sender_state as state, Sender as Core, SenderConfig, SenderError as CoreError},
@@ -139,25 +139,19 @@ where
             return Ok(());
         }
 
-        let sender = ctx
-            .blocking(scoped!(move |ctx| {
-                while sender.wants_extend() {
-                    let extend = ctx.io_mut().expect_next().await?;
-                    sender.extend(extend)?;
-                }
+        while sender.wants_extend() {
+            let extend = ctx.io_mut().expect_next().await?;
+            sender.extend(extend)?;
+        }
 
-                let seed = thread_rng().gen();
+        let seed = thread_rng().gen();
 
-                // See issue #176.
-                let chi_seed = cointoss_receiver(ctx, vec![seed]).await?[0];
+        // See issue #176.
+        let chi_seed = cointoss_receiver(ctx, vec![seed]).await?[0];
 
-                let receiver_check = ctx.io_mut().expect_next().await?;
+        let receiver_check = ctx.io_mut().expect_next().await?;
 
-                sender.check(chi_seed, receiver_check)?;
-
-                Ok::<_, Error>(sender)
-            }))
-            .await??;
+        sender.check(chi_seed, receiver_check)?;
 
         self.state = State::Extension(sender);
 
