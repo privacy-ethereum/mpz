@@ -5,13 +5,12 @@ edition = "2021"
 
 [features]
 default = []
-ctx = []
 cpu = ["rayon"]
-executor = ["ctx", "cpu"]
-sync = ["tokio/sync", "ctx"]
+executor = ["cpu"]
+sync = ["tokio/sync"]
 future = []
 test-utils = ["dep:uid-mux", "uid-mux/test-utils"]
-ideal = ["ctx"]
+ideal = []
 rayon = ["dep:rayon"]
 force-st = []
 

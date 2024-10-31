@@ -15,7 +15,6 @@
     clippy::all
 )]
 
-#[cfg(any(test, feature = "ctx"))]
 mod context;
 #[cfg(any(test, feature = "cpu"))]
 pub mod cpu;
@@ -29,13 +28,13 @@ pub mod ideal;
 #[cfg(feature = "sync")]
 pub mod sync;
 
-use async_trait::async_trait;
-#[cfg(any(test, feature = "ctx"))]
 pub use context::{Context, ContextError};
 pub use id::{Counter, ThreadId};
 
 // Re-export scoped-futures for use with the callback-like API in `Context`.
 pub use scoped_futures;
+
+use async_trait::async_trait;
 
 /// Allocates capacity from a functionality in the pre-processing model.
 pub trait Allocate {
