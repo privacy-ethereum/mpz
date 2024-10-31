@@ -21,6 +21,7 @@ mod tests {
         test_rot(
             RandomizeRCOTSender::new(sender),
             RandomizeRCOTReceiver::new(receiver),
+            8,
         )
         .await
     }

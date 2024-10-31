@@ -28,6 +28,6 @@ mod tests {
     async fn test_any_rot() {
         let mut rng = StdRng::seed_from_u64(0);
         let (sender, receiver) = ideal_rot(rng.gen());
-        test_rot::<_, _, Foo>(AnySender::new(sender), AnyReceiver::new(receiver)).await
+        test_rot::<_, _, Foo>(AnySender::new(sender), AnyReceiver::new(receiver), 8).await
     }
 }

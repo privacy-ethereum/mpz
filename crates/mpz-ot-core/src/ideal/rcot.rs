@@ -90,10 +90,10 @@ impl IdealRCOT {
     /// Returns `true` if the functionality wants to be flushed.
     pub fn wants_flush(&self) -> bool {
         let this = self.inner.lock().unwrap();
-        let sender_queue = this.sender_state.queue.len();
-        let receiver_queue = this.receiver_state.queue.len();
+        let sender_count = this.sender_state.alloc;
+        let receiver_count = this.receiver_state.alloc;
 
-        sender_queue > 0 && receiver_queue > 0 && sender_queue == receiver_queue
+        sender_count > 0 && receiver_count > 0 && sender_count == receiver_count
     }
 
     /// Flushes pending operations.

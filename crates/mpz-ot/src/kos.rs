@@ -28,6 +28,6 @@ mod tests {
         let sender = Sender::new(SenderConfig::default(), delta, base_receiver);
         let receiver = Receiver::new(ReceiverConfig::default(), base_sender);
 
-        test_rcot(sender, receiver).await;
+        test_rcot(sender, receiver, 1).await;
     }
 }

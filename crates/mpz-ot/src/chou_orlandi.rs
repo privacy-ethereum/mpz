@@ -14,6 +14,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_chou_orlandi() {
-        test_ot(Sender::new(), Receiver::new()).await;
+        test_ot(Sender::new(), Receiver::new(), 8).await;
     }
 }

@@ -13,7 +13,7 @@ use mpz_ot_core::{
 use rand::{rngs::StdRng, Rng, SeedableRng};
 
 /// Tests OT functionality.
-pub async fn test_ot<S, R>(mut sender: S, mut receiver: R)
+pub async fn test_ot<S, R>(mut sender: S, mut receiver: R, cycles: usize)
 where
     S: OTSender<Block> + Flush<TestSTExecutor>,
     R: OTReceiver<bool, Block> + Flush<TestSTExecutor>,
@@ -24,27 +24,29 @@ where
     let msgs = (0..128).map(|_| [rng.gen(), rng.gen()]).collect::<Vec<_>>();
     let choices = (0..128).map(|_| rng.gen()).collect::<Vec<_>>();
 
-    let (output_sender, output_receiver) = futures::join! {
-        async {
-            sender.alloc(msgs.len()).unwrap();
-            let output = sender.queue_send_ot(&msgs).unwrap();
-            sender.flush(&mut sender_ctx).await.unwrap();
-            output.await.unwrap()
-        },
-        async {
-            receiver.alloc(choices.len()).unwrap();
-            let output = receiver.queue_recv_ot(&choices).unwrap();
-            receiver.flush(&mut receiver_ctx).await.unwrap();
-            output.await.unwrap()
-        }
-    };
+    for _ in 0..cycles {
+        let (output_sender, output_receiver) = futures::join! {
+            async {
+                sender.alloc(msgs.len()).unwrap();
+                let output = sender.queue_send_ot(&msgs).unwrap();
+                sender.flush(&mut sender_ctx).await.unwrap();
+                output.await.unwrap()
+            },
+            async {
+                receiver.alloc(choices.len()).unwrap();
+                let output = receiver.queue_recv_ot(&choices).unwrap();
+                receiver.flush(&mut receiver_ctx).await.unwrap();
+                output.await.unwrap()
+            }
+        };
 
-    assert_eq!(output_sender.id, output_receiver.id);
-    assert_ot(&choices, &msgs, &output_receiver.msgs);
+        assert_eq!(output_sender.id, output_receiver.id);
+        assert_ot(&choices, &msgs, &output_receiver.msgs);
+    }
 }
 
 /// Tests RCOT functionality.
-pub async fn test_rcot<S, R>(mut sender: S, mut receiver: R)
+pub async fn test_rcot<S, R>(mut sender: S, mut receiver: R, cycles: usize)
 where
     S: RCOTSender<Block> + Flush<TestSTExecutor>,
     R: RCOTReceiver<bool, Block> + Flush<TestSTExecutor>,
@@ -52,37 +54,39 @@ where
     let (mut sender_ctx, mut receiver_ctx) = test_st_executor(8);
 
     let count = 128;
-    let (
-        RCOTSenderOutput {
-            id: sender_id,
-            keys,
-        },
-        RCOTReceiverOutput {
-            id: receiver_id,
-            choices,
-            msgs,
-        },
-    ) = futures::join! {
-        async {
-            sender.alloc(count).unwrap();
-            let output = sender.queue_send_rcot(count).unwrap();
-            sender.flush(&mut sender_ctx).await.unwrap();
-            output.await.unwrap()
-        },
-        async {
-            receiver.alloc(count).unwrap();
-            let output = receiver.queue_recv_rcot(count).unwrap();
-            receiver.flush(&mut receiver_ctx).await.unwrap();
-            output.await.unwrap()
-        }
-    };
+    for _ in 0..cycles {
+        let (
+            RCOTSenderOutput {
+                id: sender_id,
+                keys,
+            },
+            RCOTReceiverOutput {
+                id: receiver_id,
+                choices,
+                msgs,
+            },
+        ) = futures::join! {
+            async {
+                sender.alloc(count).unwrap();
+                let output = sender.queue_send_rcot(count).unwrap();
+                sender.flush(&mut sender_ctx).await.unwrap();
+                output.await.unwrap()
+            },
+            async {
+                receiver.alloc(count).unwrap();
+                let output = receiver.queue_recv_rcot(count).unwrap();
+                receiver.flush(&mut receiver_ctx).await.unwrap();
+                output.await.unwrap()
+            }
+        };
 
-    assert_eq!(sender_id, receiver_id);
-    assert_cot(sender.delta(), &choices, &keys, &msgs);
+        assert_eq!(sender_id, receiver_id);
+        assert_cot(sender.delta(), &choices, &keys, &msgs);
+    }
 }
 
 /// Tests COT functionality.
-pub async fn test_cot<S, R>(mut sender: S, mut receiver: R)
+pub async fn test_cot<S, R>(mut sender: S, mut receiver: R, cycles: usize)
 where
     S: COTSender<Block> + Flush<TestSTExecutor>,
     R: COTReceiver<bool, Block> + Flush<TestSTExecutor>,
@@ -93,27 +97,29 @@ where
     let keys = (0..128).map(|_| rng.gen()).collect::<Vec<_>>();
     let choices = (0..128).map(|_| rng.gen()).collect::<Vec<_>>();
 
-    let (output_sender, output_receiver) = futures::join! {
-        async {
-            sender.alloc(keys.len()).unwrap();
-            let output = sender.queue_send_cot(&keys).unwrap();
-            sender.flush(&mut sender_ctx).await.unwrap();
-            output.await.unwrap()
-        },
-        async {
-            receiver.alloc(choices.len()).unwrap();
-            let output = receiver.queue_recv_cot(&choices).unwrap();
-            receiver.flush(&mut receiver_ctx).await.unwrap();
-            output.await.unwrap()
-        }
-    };
+    for _ in 0..cycles {
+        let (output_sender, output_receiver) = futures::join! {
+            async {
+                sender.alloc(keys.len()).unwrap();
+                let output = sender.queue_send_cot(&keys).unwrap();
+                sender.flush(&mut sender_ctx).await.unwrap();
+                output.await.unwrap()
+            },
+            async {
+                receiver.alloc(choices.len()).unwrap();
+                let output = receiver.queue_recv_cot(&choices).unwrap();
+                receiver.flush(&mut receiver_ctx).await.unwrap();
+                output.await.unwrap()
+            }
+        };
 
-    assert_eq!(output_sender.id, output_receiver.id);
-    assert_cot(sender.delta(), &choices, &keys, &output_receiver.msgs);
+        assert_eq!(output_sender.id, output_receiver.id);
+        assert_cot(sender.delta(), &choices, &keys, &output_receiver.msgs);
+    }
 }
 
 /// Tests ROT functionality.
-pub async fn test_rot<S, R, T>(mut sender: S, mut receiver: R)
+pub async fn test_rot<S, R, T>(mut sender: S, mut receiver: R, cycles: usize)
 where
     S: ROTSender<[T; 2]> + Flush<TestSTExecutor>,
     R: ROTReceiver<bool, T> + Flush<TestSTExecutor>,
@@ -122,31 +128,34 @@ where
     let (mut sender_ctx, mut receiver_ctx) = test_st_executor(8);
 
     let count = 128;
-    let (
-        ROTSenderOutput {
-            id: sender_id,
-            keys,
-        },
-        ROTReceiverOutput {
-            id: receiver_id,
-            choices,
-            msgs,
-        },
-    ) = futures::join! {
-        async {
-            sender.alloc(count).unwrap();
-            let output = sender.queue_send_rot(count).unwrap();
-            sender.flush(&mut sender_ctx).await.unwrap();
-            output.await.unwrap()
-        },
-        async {
-            receiver.alloc(count).unwrap();
-            let output = receiver.queue_recv_rot(count).unwrap();
-            receiver.flush(&mut receiver_ctx).await.unwrap();
-            output.await.unwrap()
-        }
-    };
 
-    assert_eq!(sender_id, receiver_id);
-    assert_rot(&choices, &keys, &msgs);
+    for _ in 0..cycles {
+        let (
+            ROTSenderOutput {
+                id: sender_id,
+                keys,
+            },
+            ROTReceiverOutput {
+                id: receiver_id,
+                choices,
+                msgs,
+            },
+        ) = futures::join! {
+            async {
+                sender.alloc(count).unwrap();
+                let output = sender.queue_send_rot(count).unwrap();
+                sender.flush(&mut sender_ctx).await.unwrap();
+                output.await.unwrap()
+            },
+            async {
+                receiver.alloc(count).unwrap();
+                let output = receiver.queue_recv_rot(count).unwrap();
+                receiver.flush(&mut receiver_ctx).await.unwrap();
+                output.await.unwrap()
+            }
+        };
+
+        assert_eq!(sender_id, receiver_id);
+        assert_rot(&choices, &keys, &msgs);
+    }
 }
