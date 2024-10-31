@@ -16,6 +16,7 @@ test-utils = []
 
 [dependencies]
 mpz-core.workspace = true
+mpz-common = { workspace = true, features = ["future"] }
 clmul.workspace = true
 matrix-transpose.workspace = true
 
@@ -38,6 +39,7 @@ opaque-debug.workspace = true
 cfg-if.workspace = true
 bytemuck = { workspace = true, features = ["derive"] }
 enum-try-as-inner.workspace = true
+futures = { workspace = true }
 
 [dev-dependencies]
 rstest.workspace = true

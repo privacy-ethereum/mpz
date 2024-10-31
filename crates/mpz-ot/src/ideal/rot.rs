@@ -1,120 +1,127 @@
-//! Ideal functionality for random oblivious transfer.
+//! Ideal functionality for random correlated OT.
 
 use async_trait::async_trait;
-
-use mpz_common::{
-    ideal::{ideal_f2p, Alice, Bob},
-    Allocate, Context, Preprocess,
+use mpz_common::Flush;
+use mpz_core::Block;
+use mpz_ot_core::{
+    ideal::rot::{IdealROT as Core, IdealROTError as CoreError},
+    rot::{ROTReceiver, ROTReceiverOutput, ROTSender, ROTSenderOutput},
 };
-use mpz_ot_core::{ideal::rot::IdealROT, ROTReceiverOutput, ROTSenderOutput};
-use rand::distributions::{Distribution, Standard};
 
-use crate::{OTError, OTSetup, RandomOTReceiver, RandomOTSender};
-
-fn rot<T: Copy>(
-    f: &mut IdealROT,
-    sender_count: usize,
-    receiver_count: usize,
-) -> (ROTSenderOutput<[T; 2]>, ROTReceiverOutput<bool, T>)
-where
-    Standard: Distribution<T>,
-{
-    assert_eq!(sender_count, receiver_count);
-
-    f.random(sender_count)
-}
-
-/// Returns an ideal ROT sender and receiver.
-pub fn ideal_rot() -> (IdealROTSender, IdealROTReceiver) {
-    let (alice, bob) = ideal_f2p(IdealROT::default());
-    (IdealROTSender(alice), IdealROTReceiver(bob))
+/// Returns a new ideal ROT sender and receiver.
+pub fn ideal_rot(seed: Block) -> (IdealROTSender, IdealROTReceiver) {
+    let core = Core::new(seed);
+    (
+        IdealROTSender { core: core.clone() },
+        IdealROTReceiver { core },
+    )
 }
 
 /// Ideal ROT sender.
-#[derive(Debug, Clone)]
-pub struct IdealROTSender(Alice<IdealROT>);
+pub struct IdealROTSender {
+    core: Core,
+}
 
-#[async_trait]
-impl<Ctx> OTSetup<Ctx> for IdealROTSender
-where
-    Ctx: Context,
-{
-    async fn setup(&mut self, _ctx: &mut Ctx) -> Result<(), OTError> {
-        Ok(())
+impl ROTSender<[Block; 2]> for IdealROTSender {
+    type Error = IdealROTError;
+    type Future = <Core as ROTSender<[Block; 2]>>::Future;
+
+    fn alloc(&mut self, count: usize) -> Result<(), Self::Error> {
+        ROTSender::alloc(&mut self.core, count).map_err(From::from)
     }
-}
 
-impl Allocate for IdealROTSender {
-    fn alloc(&mut self, _count: usize) {}
-}
+    fn available(&self) -> usize {
+        ROTSender::available(&self.core)
+    }
 
-#[async_trait]
-impl<Ctx> Preprocess<Ctx> for IdealROTSender
-where
-    Ctx: Context,
-{
-    type Error = OTError;
+    fn try_send_rot(&mut self, count: usize) -> Result<ROTSenderOutput<[Block; 2]>, Self::Error> {
+        self.core.try_send_rot(count).map_err(From::from)
+    }
 
-    async fn preprocess(&mut self, _ctx: &mut Ctx) -> Result<(), OTError> {
-        Ok(())
+    fn queue_send_rot(&mut self, count: usize) -> Result<Self::Future, Self::Error> {
+        self.core.queue_send_rot(count).map_err(From::from)
     }
 }
 
 #[async_trait]
-impl<T: Copy + Send + 'static, Ctx: Context> RandomOTSender<Ctx, [T; 2]> for IdealROTSender
-where
-    Standard: Distribution<T>,
-{
-    async fn send_random(
+impl<Ctx> Flush<Ctx> for IdealROTSender {
+    type Error = IdealROTError;
+
+    fn wants_flush(&self) -> bool {
+        self.core.wants_flush()
+    }
+
+    async fn flush(&mut self, _ctx: &mut Ctx) -> Result<(), Self::Error> {
+        if self.core.wants_flush() {
+            self.core.flush().map_err(IdealROTError::from)?;
+        }
+
+        Ok(())
+    }
+}
+
+/// Ideal OT receiver.
+pub struct IdealROTReceiver {
+    core: Core,
+}
+
+impl ROTReceiver<bool, Block> for IdealROTReceiver {
+    type Error = IdealROTError;
+    type Future = <Core as ROTReceiver<bool, Block>>::Future;
+
+    fn alloc(&mut self, count: usize) -> Result<(), Self::Error> {
+        ROTReceiver::alloc(&mut self.core, count).map_err(From::from)
+    }
+
+    fn available(&self) -> usize {
+        ROTReceiver::available(&self.core)
+    }
+
+    fn try_recv_rot(
         &mut self,
-        ctx: &mut Ctx,
         count: usize,
-    ) -> Result<ROTSenderOutput<[T; 2]>, OTError> {
-        Ok(self.0.call(ctx, count, rot).await)
+    ) -> Result<ROTReceiverOutput<bool, Block>, Self::Error> {
+        self.core.try_recv_rot(count).map_err(From::from)
+    }
+
+    fn queue_recv_rot(&mut self, count: usize) -> Result<Self::Future, Self::Error> {
+        self.core.queue_recv_rot(count).map_err(From::from)
     }
 }
 
-/// Ideal ROT receiver.
-#[derive(Debug, Clone)]
-pub struct IdealROTReceiver(Bob<IdealROT>);
-
 #[async_trait]
-impl<Ctx> OTSetup<Ctx> for IdealROTReceiver
-where
-    Ctx: Context,
-{
-    async fn setup(&mut self, _ctx: &mut Ctx) -> Result<(), OTError> {
+impl<Ctx> Flush<Ctx> for IdealROTReceiver {
+    type Error = IdealROTError;
+
+    fn wants_flush(&self) -> bool {
+        self.core.wants_flush()
+    }
+
+    async fn flush(&mut self, _ctx: &mut Ctx) -> Result<(), Self::Error> {
+        if self.core.wants_flush() {
+            self.core.flush().map_err(IdealROTError::from)?;
+        }
+
         Ok(())
     }
 }
 
-impl Allocate for IdealROTReceiver {
-    fn alloc(&mut self, _count: usize) {}
-}
+/// Ideal OT error.
+#[derive(Debug, thiserror::Error)]
+#[error(transparent)]
+pub struct IdealROTError(#[from] CoreError);
 
-#[async_trait]
-impl<Ctx> Preprocess<Ctx> for IdealROTReceiver
-where
-    Ctx: Context,
-{
-    type Error = OTError;
+#[cfg(test)]
+mod tests {
+    use rand::{rngs::StdRng, Rng, SeedableRng};
 
-    async fn preprocess(&mut self, _ctx: &mut Ctx) -> Result<(), OTError> {
-        Ok(())
-    }
-}
+    use super::*;
+    use crate::test::test_rot;
 
-#[async_trait]
-impl<T: Copy + Send + Sync + 'static, Ctx: Context> RandomOTReceiver<Ctx, bool, T>
-    for IdealROTReceiver
-where
-    Standard: Distribution<T>,
-{
-    async fn receive_random(
-        &mut self,
-        ctx: &mut Ctx,
-        count: usize,
-    ) -> Result<ROTReceiverOutput<bool, T>, OTError> {
-        Ok(self.0.call(ctx, count, rot).await)
+    #[tokio::test]
+    async fn test_ideal_rot() {
+        let mut rng = StdRng::seed_from_u64(0);
+        let (sender, receiver) = ideal_rot(rng.gen());
+        test_rot(sender, receiver, 8).await;
     }
 }

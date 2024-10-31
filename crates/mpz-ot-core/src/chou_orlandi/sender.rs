@@ -1,13 +1,16 @@
+use std::{collections::VecDeque, mem};
+
 use crate::{
     chou_orlandi::{
         hash_point,
-        msgs::{ReceiverPayload, ReceiverReveal, SenderPayload, SenderSetup},
-        Receiver, ReceiverConfig, SenderConfig, SenderError, SenderVerifyError,
+        msgs::{ReceiverPayload, SenderPayload, SenderSetup},
+        SenderError,
     },
+    ot::{OTSender, OTSenderOutput},
     TransferId,
 };
 
-use itybity::IntoBitIterator;
+use mpz_common::future::{new_output, MaybeDone, Sender as OutputSender};
 use mpz_core::Block;
 
 use curve25519_dalek::{
@@ -19,50 +22,38 @@ use rand_chacha::ChaCha20Rng;
 #[cfg(feature = "rayon")]
 use rayon::prelude::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
 
-/// A tape used to record all the blinded choices made by the receiver, which
-/// can later be used to perform a consistency check.
-#[derive(Debug, Default)]
-struct Tape {
-    receiver_choices: Vec<RistrettoPoint>,
+type Error = SenderError;
+type Result<T, E = Error> = core::result::Result<T, E>;
+
+#[derive(Debug)]
+struct Queued {
+    sender: OutputSender<OTSenderOutput>,
 }
 
 /// A [CO15](https://eprint.iacr.org/2015/267.pdf) sender.
 #[derive(Debug, Default)]
 pub struct Sender<T: state::State = state::Initialized> {
-    config: SenderConfig,
+    queue: VecDeque<Queued>,
+    msgs: Vec<[Block; 2]>,
     /// Current state
     state: T,
-    /// Protocol tape
-    tape: Option<Tape>,
 }
 
 impl Sender {
     /// Creates a new Sender
-    ///
-    /// # Arguments
-    ///
-    /// * `config` - The Sender's configuration
-    pub fn new(config: SenderConfig) -> Self {
-        let tape = if config.receiver_commit() {
-            Some(Tape::default())
-        } else {
-            None
-        };
-
+    pub fn new() -> Self {
         Sender {
-            config,
+            queue: VecDeque::new(),
+            msgs: Vec::new(),
             state: state::Initialized::default(),
-            tape,
         }
     }
 
     /// Creates a new Sender with the provided RNG seed
     ///
     /// # Arguments
-    ///
-    /// * `config` - The Sender's configuration
     /// * `seed` - The RNG seed used to generate the sender's keys
-    pub fn new_with_seed(config: SenderConfig, seed: [u8; 32]) -> Self {
+    pub fn new_with_seed(seed: [u8; 32]) -> Self {
         let mut rng = ChaCha20Rng::from_seed(seed);
 
         let private_key = Scalar::random(&mut rng);
@@ -72,22 +63,11 @@ impl Sender {
             public_key,
         };
 
-        let tape = if config.receiver_commit() {
-            Some(Tape::default())
-        } else {
-            None
-        };
-
         Sender {
-            config,
+            queue: VecDeque::new(),
+            msgs: Vec::new(),
             state,
-            tape,
         }
-    }
-
-    /// Returns the Sender's configuration
-    pub fn config(&self) -> &SenderConfig {
-        &self.config
     }
 
     /// Returns the setup message to be sent to the receiver.
@@ -100,129 +80,90 @@ impl Sender {
         (
             SenderSetup { public_key },
             Sender {
-                config: self.config,
+                queue: self.queue,
+                msgs: self.msgs,
                 state: state::Setup {
                     private_key,
                     public_key,
                     transfer_id: TransferId::default(),
                     counter: 0,
                 },
-                tape: self.tape,
             },
         )
     }
 }
 
 impl Sender<state::Setup> {
-    /// Obliviously sends `inputs` to the receiver.
+    /// Returns `true` if the sender wants to receive.
+    pub fn wants_recv(&self) -> bool {
+        !self.queue.is_empty()
+    }
+
+    /// Obliviously sends messages to the receiver.
     ///
     /// # Arguments
     ///
-    /// * `inputs` - The inputs to be obliviously sent to the receiver.
     /// * `receiver_payload` - The receiver's choice payload.
-    pub fn send(
-        &mut self,
-        inputs: &[[Block; 2]],
-        receiver_payload: ReceiverPayload,
-    ) -> Result<SenderPayload, SenderError> {
+    pub fn send(&mut self, receiver_payload: ReceiverPayload) -> Result<SenderPayload> {
         let state::Setup {
             private_key,
             public_key,
-            transfer_id: current_id,
+            transfer_id,
             counter,
             ..
         } = &mut self.state;
 
-        let ReceiverPayload {
-            id,
-            blinded_choices,
-        } = receiver_payload;
+        let ReceiverPayload { blinded_choices } = receiver_payload;
+        let msgs = mem::take(&mut self.msgs);
 
-        // Check that the transfer id matches
-        let expected_id = current_id.next();
-        if id != expected_id {
-            return Err(SenderError::IdMismatch(expected_id, id));
-        }
-
-        // Check that the number of inputs matches the number of choices
-        if inputs.len() != blinded_choices.len() {
+        // Check that the number of messages matches the number of choices
+        if msgs.len() != blinded_choices.len() {
             return Err(SenderError::CountMismatch(
-                inputs.len(),
+                msgs.len(),
                 blinded_choices.len(),
             ));
-        }
-
-        if let Some(tape) = self.tape.as_mut() {
-            // Record the receiver's choices
-            tape.receiver_choices.extend_from_slice(&blinded_choices);
         }
 
         let mut payload =
             compute_encryption_keys(private_key, public_key, &blinded_choices, *counter);
 
-        *counter += inputs.len();
+        *counter += msgs.len();
 
-        // Encrypt the inputs
-        for (input, payload) in inputs.iter().zip(payload.iter_mut()) {
-            payload[0] = input[0] ^ payload[0];
-            payload[1] = input[1] ^ payload[1];
+        // Encrypt the messages
+        for (msg, payload) in msgs.iter().zip(payload.iter_mut()) {
+            payload[0] = msg[0] ^ payload[0];
+            payload[1] = msg[1] ^ payload[1];
         }
 
-        Ok(SenderPayload { id, payload })
+        // Clear the queue.
+        for Queued { sender } in self.queue.drain(..) {
+            sender.send(OTSenderOutput {
+                id: transfer_id.next(),
+            });
+        }
+
+        Ok(SenderPayload { payload })
+    }
+}
+
+impl<S> OTSender<Block> for Sender<S>
+where
+    S: state::State,
+{
+    type Error = Error;
+    type Future = MaybeDone<OTSenderOutput>;
+
+    fn alloc(&mut self, _count: usize) -> Result<()> {
+        Ok(())
     }
 
-    /// Returns the Receiver choices after verifying them against the tape.
-    ///
-    /// # ⚠️ Warning ⚠️
-    ///
-    /// The receiver's RNG seed must be unbiased such as generated by
-    /// a secure coin toss protocol with the sender.
-    ///
-    /// # Arguments
-    ///
-    /// * `receiver_seed` - The seed used to generate the receiver's private keys.
-    /// * `receiver_reveal` - The receiver's private inputs.
-    pub fn verify_choices(
-        self,
-        receiver_seed: [u8; 32],
-        receiver_reveal: ReceiverReveal,
-    ) -> Result<Vec<bool>, SenderError> {
-        let state::Setup { public_key, .. } = self.state;
+    fn queue_send_ot(&mut self, msgs: &[[Block; 2]]) -> Result<Self::Future> {
+        let (sender, recv) = new_output();
 
-        let Some(tape) = &self.tape else {
-            return Err(SenderVerifyError::TapeNotRecorded)?;
-        };
+        self.msgs.extend_from_slice(msgs);
+        self.queue.push_back(Queued { sender });
 
-        let ReceiverReveal { choices } = receiver_reveal;
-
-        let choices = choices
-            .into_iter_lsb0()
-            .take(tape.receiver_choices.len())
-            .collect::<Vec<bool>>();
-
-        // Check that the number of choices matches
-        if tape.receiver_choices.len() != choices.len() {
-            return Err(SenderVerifyError::ChoiceCountMismatch(
-                tape.receiver_choices.len(),
-                choices.len(),
-            ))?;
-        }
-
-        // Simulate the receiver
-        let receiver = Receiver::new_with_seed(ReceiverConfig::default(), receiver_seed);
-
-        let mut receiver = receiver.setup(SenderSetup { public_key });
-
-        let ReceiverPayload {
-            blinded_choices, ..
-        } = receiver.receive_random(&choices);
-
-        // Check that the simulated receiver's choices match the ones recorded in the tape
-        if blinded_choices != tape.receiver_choices {
-            return Err(SenderVerifyError::InconsistentChoice)?;
-        }
-
-        Ok(choices)
+        Ok(recv)
     }
 }
 
@@ -233,8 +174,8 @@ impl Sender<state::Setup> {
 /// * `private_key` - The sender's private key.
 /// * `public_key` - The sender's public key.
 /// * `blinded_choices` - The receiver's blinded choices.
-/// * `offset` - The number of OTs that have already been performed
-///              (used for the key derivation tweak)
+/// * `offset` - The number of OTs that have already been performed (used for
+///   the key derivation tweak)
 fn compute_encryption_keys(
     private_key: &Scalar,
     public_key: &RistrettoPoint,
