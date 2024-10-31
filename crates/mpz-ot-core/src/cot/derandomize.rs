@@ -28,7 +28,6 @@ struct QueuedSend {
 #[derive(Debug)]
 pub struct DerandCOTSender<T> {
     rcot: T,
-    pending: usize,
     adjust: Vec<Block>,
     queue: VecDeque<QueuedSend>,
 }
@@ -38,7 +37,6 @@ impl<T> DerandCOTSender<T> {
     pub fn new(rcot: T) -> Self {
         Self {
             rcot,
-            pending: 0,
             adjust: Vec::new(),
             queue: VecDeque::new(),
         }
@@ -66,7 +64,7 @@ where
 {
     /// Returns `true` if the sender wants to send adjustments.
     pub fn wants_adjust(&self) -> bool {
-        self.pending > 0
+        !self.adjust.is_empty()
     }
 
     /// Returns the adjustment message.
@@ -76,11 +74,11 @@ where
     ) -> Result<Adjust<Block>, DerandCOTSenderError> {
         let Derandomize { flip } = derandomize;
 
-        if flip.len() != self.pending {
+        if flip.len() != self.adjust.len() {
             return Err(DerandCOTSenderError::new(format!(
                 "derandomize is wrong length: {} != {}",
                 flip.len(),
-                self.pending
+                self.adjust.len()
             )));
         }
 
@@ -106,8 +104,6 @@ where
 
             sender.send(COTSenderOutput { id });
         }
-
-        self.pending = 0;
 
         Ok(Adjust { adjust })
     }
@@ -137,7 +133,6 @@ where
         let (sender, recv) = new_output();
 
         self.adjust.extend_from_slice(keys);
-        self.pending += count;
         self.queue.push_back(QueuedSend { count, sender });
 
         Ok(recv)
@@ -170,7 +165,6 @@ struct QueuedReceive {
 #[derive(Debug)]
 pub struct DerandCOTReceiver<T> {
     rcot: T,
-    pending: usize,
     derandomize: BitVec,
     queue: VecDeque<QueuedReceive>,
 }
@@ -180,7 +174,6 @@ impl<T> DerandCOTReceiver<T> {
     pub fn new(rcot: T) -> Self {
         Self {
             rcot,
-            pending: 0,
             derandomize: BitVec::new(),
             queue: VecDeque::new(),
         }
@@ -208,14 +201,14 @@ where
 {
     /// Returns `true` if the receiver wants to adjust COTs.
     pub fn wants_adjust(&self) -> bool {
-        self.pending > 0
+        !self.derandomize.is_empty()
     }
 
     /// Adjusts the COTs.
     pub fn adjust(
         &mut self,
     ) -> Result<(Derandomize, ReceiveAdjust<'_, T>), DerandCOTReceiverError> {
-        let mut flip = self.derandomize.clone();
+        let mut flip = mem::take(&mut self.derandomize);
         let mut cots = Vec::new();
         let mut i = 0;
         for QueuedReceive { count, .. } in self.queue.iter() {
@@ -292,8 +285,6 @@ where
             sender.send(output);
         }
 
-        self.recv.pending -= self.count;
-
         Ok(())
     }
 }
@@ -318,7 +309,6 @@ where
         let (sender, recv) = new_output();
 
         self.derandomize.extend(choices.iter().copied());
-        self.pending += count;
         self.queue.push_back(QueuedReceive { count, sender });
 
         Ok(recv)
@@ -360,31 +350,38 @@ mod tests {
         let mut receiver = DerandCOTReceiver::new(rcot);
 
         let count = 10;
-        sender.alloc(count).unwrap();
-        receiver.alloc(count).unwrap();
-
-        sender.rcot_mut().flush().unwrap();
-
         let choices = (0..count).map(|_| rng.gen()).collect::<Vec<_>>();
         let keys: Vec<_> = (0..count).map(|_| Block::random(&mut rng)).collect();
 
-        let mut sender_output = sender.queue_send_cot(&keys).unwrap();
-        let mut receiver_output = receiver.queue_recv_cot(&choices).unwrap();
+        sender.alloc(count).unwrap();
+        receiver.alloc(count).unwrap();
 
-        assert!(sender.wants_adjust());
-        assert!(receiver.wants_adjust());
+        let _ = sender.queue_send_cot(&keys).unwrap();
+        let _ = receiver.queue_recv_cot(&choices).unwrap();
 
-        let (derandomize, recv) = receiver.adjust().unwrap();
-        let adjust = sender.adjust(derandomize).unwrap();
-        recv.receive(adjust).unwrap();
+        for _ in 0..8 {
+            sender.alloc(count).unwrap();
+            receiver.alloc(count).unwrap();
+            sender.rcot_mut().flush().unwrap();
 
-        let COTSenderOutput { id: sender_id } = sender_output.try_recv().unwrap().unwrap();
-        let COTReceiverOutput {
-            id: receiver_id,
-            msgs,
-        } = receiver_output.try_recv().unwrap().unwrap();
+            let mut sender_output = sender.queue_send_cot(&keys).unwrap();
+            let mut receiver_output = receiver.queue_recv_cot(&choices).unwrap();
 
-        assert_eq!(sender_id, receiver_id);
-        assert_cot(delta, &choices, &keys, &msgs);
+            assert!(sender.wants_adjust());
+            assert!(receiver.wants_adjust());
+
+            let (derandomize, recv) = receiver.adjust().unwrap();
+            let adjust = sender.adjust(derandomize).unwrap();
+            recv.receive(adjust).unwrap();
+
+            let COTSenderOutput { id: sender_id } = sender_output.try_recv().unwrap().unwrap();
+            let COTReceiverOutput {
+                id: receiver_id,
+                msgs,
+            } = receiver_output.try_recv().unwrap().unwrap();
+
+            assert_eq!(sender_id, receiver_id);
+            assert_cot(delta, &choices, &keys, &msgs);
+        }
     }
 }
