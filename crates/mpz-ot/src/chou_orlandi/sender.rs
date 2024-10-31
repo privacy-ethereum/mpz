@@ -1,97 +1,118 @@
-use crate::{
-    chou_orlandi::SenderError, OTError, OTSender, OTSenderOutput, OTSetup, VerifiableOTSender,
-};
-
 use async_trait::async_trait;
-use mpz_cointoss as cointoss;
-use mpz_common::Context;
+use mpz_common::{future::MaybeDone, Context, Flush};
 use mpz_core::Block;
-use mpz_ot_core::chou_orlandi::{sender_state as state, Sender as SenderCore, SenderConfig};
-use rand::{thread_rng, Rng};
-use serio::{stream::IoStreamExt, SinkExt as _};
+use mpz_ot_core::{
+    chou_orlandi::{sender_state as state, Sender as Core, SenderError as CoreError},
+    ot::{OTSender, OTSenderOutput},
+};
+use serio::{stream::IoStreamExt, SinkExt};
 use utils_aio::non_blocking_backend::{Backend, NonBlockingBackend};
 
-use enum_try_as_inner::EnumTryAsInner;
-
-#[derive(Debug, EnumTryAsInner)]
-#[derive_err(Debug)]
-pub(crate) enum State {
-    Initialized(SenderCore<state::Initialized>),
-    Setup(SenderCore<state::Setup>),
-    Complete,
-    Error,
-}
+type Error = SenderError;
 
 /// Chou-Orlandi sender.
 #[derive(Debug)]
 pub struct Sender {
     state: State,
-    /// The coin toss receiver after revealing one's own seed but before receiving a decommitment
-    /// from the coin toss sender.
-    cointoss_receiver: Option<cointoss::Receiver<cointoss::receiver_state::Received>>,
 }
 
-impl Default for Sender {
-    fn default() -> Self {
-        Self {
-            state: State::Initialized(SenderCore::new(SenderConfig::default())),
-            cointoss_receiver: None,
-        }
+#[derive(Debug)]
+enum State {
+    Initialized(Core<state::Initialized>),
+    Setup(Core<state::Setup>),
+    Error,
+}
+
+impl State {
+    fn take(&mut self) -> Self {
+        std::mem::replace(self, Self::Error)
     }
 }
 
 impl Sender {
     /// Creates a new Sender
-    ///
-    /// # Arguments
-    ///
-    /// * `config` - The sender's configuration
-    pub fn new(config: SenderConfig) -> Self {
-        Self {
-            state: State::Initialized(SenderCore::new(config)),
-            cointoss_receiver: None,
-        }
+    pub fn new() -> Self {
+        Self::default()
     }
 
     /// Creates a new Sender with the provided RNG seed
     ///
     /// # Arguments
     ///
-    /// * `config` - The sender's configuration
     /// * `seed` - The RNG seed used to generate the sender's keys
-    pub fn new_with_seed(config: SenderConfig, seed: [u8; 32]) -> Self {
+    pub fn new_with_seed(seed: [u8; 32]) -> Self {
         Self {
-            state: State::Initialized(SenderCore::new_with_seed(config, seed)),
-            cointoss_receiver: None,
+            state: State::Initialized(Core::new_with_seed(seed)),
+        }
+    }
+}
+
+impl Default for Sender {
+    fn default() -> Self {
+        Self {
+            state: State::Initialized(Core::new()),
+        }
+    }
+}
+
+impl OTSender<Block> for Sender {
+    type Error = Error;
+    type Future = MaybeDone<OTSenderOutput>;
+
+    fn alloc(&mut self, count: usize) -> Result<(), Self::Error> {
+        match &mut self.state {
+            State::Initialized(sender) => sender.alloc(count).map_err(Error::from),
+            State::Setup(sender) => sender.alloc(count).map_err(Error::from),
+            State::Error => Err(Error::state("can not allocate, sender is in error state")),
+        }
+    }
+
+    fn queue_send_ot(&mut self, msgs: &[[Block; 2]]) -> Result<Self::Future, Self::Error> {
+        match &mut self.state {
+            State::Initialized(sender) => sender.queue_send_ot(msgs).map_err(Error::from),
+            State::Setup(sender) => sender.queue_send_ot(msgs).map_err(Error::from),
+            State::Error => Err(Error::state("can not queue ot, sender is in error state")),
         }
     }
 }
 
 #[async_trait]
-impl<Ctx: Context> OTSetup<Ctx> for Sender {
-    async fn setup(&mut self, ctx: &mut Ctx) -> Result<(), OTError> {
-        if self.state.is_setup() {
+impl<Ctx> Flush<Ctx> for Sender
+where
+    Ctx: Context,
+{
+    type Error = Error;
+
+    fn wants_flush(&self) -> bool {
+        match &self.state {
+            State::Initialized(_) => true,
+            State::Setup(sender) => sender.wants_recv(),
+            State::Error => false,
+        }
+    }
+
+    async fn flush(&mut self, ctx: &mut Ctx) -> Result<(), Self::Error> {
+        let mut sender = match self.state.take() {
+            State::Initialized(sender) => {
+                let (setup, sender) = sender.setup();
+                ctx.io_mut().send(setup).await?;
+                sender
+            }
+            State::Setup(sender) => sender,
+            State::Error => return Err(Error::state("can not flush, sender is in error state")),
+        };
+
+        if !sender.wants_recv() {
+            self.state = State::Setup(sender);
             return Ok(());
         }
 
-        let sender = std::mem::replace(&mut self.state, State::Error)
-            .try_into_initialized()
-            .map_err(SenderError::from)?;
+        let payload = ctx.io_mut().expect_next().await?;
 
-        // If the receiver is committed, we run the cointoss protocol
-        if sender.config().receiver_commit() {
-            let cointoss_seed = thread_rng().gen();
-            self.cointoss_receiver = Some(
-                cointoss::Receiver::new(vec![cointoss_seed])
-                    .receive(ctx)
-                    .await
-                    .map_err(SenderError::from)?,
-            );
-        }
+        let (payload, sender) =
+            Backend::spawn(|| sender.send(payload).map(|payload| (payload, sender))).await?;
 
-        let (msg, sender) = sender.setup();
-
-        ctx.io_mut().send(msg).await?;
+        ctx.io_mut().send(payload).await?;
 
         self.state = State::Setup(sender);
 
@@ -99,70 +120,35 @@ impl<Ctx: Context> OTSetup<Ctx> for Sender {
     }
 }
 
-#[async_trait]
-impl<Ctx: Context> OTSender<Ctx, [Block; 2]> for Sender {
-    async fn send(
-        &mut self,
-        ctx: &mut Ctx,
-        input: &[[Block; 2]],
-    ) -> Result<OTSenderOutput, OTError> {
-        let mut sender = std::mem::replace(&mut self.state, State::Error)
-            .try_into_setup()
-            .map_err(SenderError::from)?;
+/// Error for [`Sender`].
+#[derive(Debug, thiserror::Error)]
+#[error(transparent)]
+pub struct SenderError(#[from] ErrorRepr);
 
-        let receiver_payload = ctx.io_mut().expect_next().await?;
-
-        let input = input.to_vec();
-        let (sender, payload) = Backend::spawn(move || {
-            sender
-                .send(&input, receiver_payload)
-                .map(|payload| (sender, payload))
-        })
-        .await
-        .map_err(SenderError::from)?;
-
-        let id = payload.id;
-
-        ctx.io_mut().send(payload).await?;
-
-        self.state = State::Setup(sender);
-
-        Ok(OTSenderOutput { id })
+impl SenderError {
+    fn state(msg: impl Into<String>) -> Self {
+        Self(ErrorRepr::State(msg.into()))
     }
 }
 
-#[async_trait]
-impl<Ctx: Context> VerifiableOTSender<Ctx, bool, [Block; 2]> for Sender {
-    async fn verify_choices(&mut self, ctx: &mut Ctx) -> Result<Vec<bool>, OTError> {
-        let sender = std::mem::replace(&mut self.state, State::Error)
-            .try_into_setup()
-            .map_err(SenderError::from)?;
+#[derive(Debug, thiserror::Error)]
+enum ErrorRepr {
+    #[error("core error: {0}")]
+    Core(#[from] CoreError),
+    #[error("state error: {0}")]
+    State(String),
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
+}
 
-        let Some(cointoss_receiver) = self.cointoss_receiver.take() else {
-            Err(SenderError::InvalidConfig(
-                "receiver commitment not enabled".to_string(),
-            ))?
-        };
+impl From<CoreError> for SenderError {
+    fn from(err: CoreError) -> Self {
+        SenderError(ErrorRepr::Core(err))
+    }
+}
 
-        let seed = cointoss_receiver
-            .finalize(ctx)
-            .await
-            .map_err(SenderError::from)?;
-
-        let seed = seed[0].to_bytes();
-        // Stretch seed to 32 bytes
-        let mut stretched_seed = [0u8; 32];
-        stretched_seed[..16].copy_from_slice(&seed);
-        stretched_seed[16..].copy_from_slice(&seed);
-
-        let receiver_reveal = ctx.io_mut().expect_next().await?;
-        let verified_choices =
-            Backend::spawn(move || sender.verify_choices(stretched_seed, receiver_reveal))
-                .await
-                .map_err(SenderError::from)?;
-
-        self.state = State::Complete;
-
-        Ok(verified_choices)
+impl From<std::io::Error> for SenderError {
+    fn from(err: std::io::Error) -> Self {
+        SenderError(ErrorRepr::Io(err))
     }
 }

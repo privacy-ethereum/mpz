@@ -1,19 +1,15 @@
+use std::{collections::VecDeque, mem};
+
 use crate::{
-    kos::{
-        extension_matrix_size,
-        msgs::{Check, Ciphertexts, Extend, SenderPayload},
-        Aes128Ctr, Rng, RngSeed, SenderConfig, SenderError, CSP, SSP,
-    },
-    msgs::Derandomize,
+    kos::{Check, Extend, SenderConfig, SenderError, CSP, SSP},
+    rcot::{RCOTSender, RCOTSenderOutput},
     TransferId,
 };
 
-use cipher::{KeyIvInit, StreamCipher};
-use itybity::ToBits;
-use mpz_core::{aes::FIXED_KEY_AES, Block};
+use mpz_common::future::{new_output, MaybeDone, Sender as OutputSender};
+use mpz_core::{prg::Prg, Block};
 
 use rand::{Rng as _, SeedableRng};
-use rand_chacha::ChaCha20Rng;
 use rand_core::RngCore;
 
 cfg_if::cfg_if! {
@@ -25,10 +21,20 @@ cfg_if::cfg_if! {
     }
 }
 
+#[derive(Debug)]
+struct Queued {
+    count: usize,
+    sender: OutputSender<RCOTSenderOutput<Block>>,
+}
+
 /// KOS15 sender.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Sender<T: state::State = state::Initialized> {
     config: SenderConfig,
+    alloc: usize,
+    queue: VecDeque<Queued>,
+    transfer_id: TransferId,
+    delta: Block,
     state: T,
 }
 
@@ -42,15 +48,24 @@ where
     }
 }
 
-impl Sender {
+impl Sender<state::Initialized> {
     /// Creates a new Sender
     ///
     /// # Arguments
     ///
-    /// * `config` - The Sender's configuration
-    pub fn new(config: SenderConfig) -> Self {
+    /// * `config` - Sender's configuration.
+    /// * `delta` - Global COT correlation.
+    /// * `base_ot` - Base OT.
+    pub fn new(config: SenderConfig, delta: Block) -> Self {
         Sender {
             config,
+            // We need to extend CSP + SSP OTs for the consistency check.
+            // Right now we only support one extension, so we just alloc
+            // them here.
+            alloc: CSP + SSP,
+            transfer_id: TransferId::default(),
+            queue: VecDeque::default(),
+            delta,
             state: state::Initialized::default(),
         }
     }
@@ -61,28 +76,16 @@ impl Sender {
     ///
     /// * `delta` - The sender's base OT choice bits
     /// * `seeds` - The rng seeds chosen during base OT
-    pub fn setup(self, delta: Block, seeds: [Block; CSP]) -> Sender<state::Extension> {
-        let rngs = seeds
-            .iter()
-            .map(|seed| {
-                // Stretch the Block-sized seed to a 32-byte seed.
-                let mut seed_ = RngSeed::default();
-                seed_
-                    .iter_mut()
-                    .zip(seed.to_bytes().into_iter().cycle())
-                    .for_each(|(s, c)| *s = c);
-                Rng::from_seed(seed_)
-            })
-            .collect();
-
+    pub fn setup(self, seeds: [Block; CSP]) -> Sender<state::Extension> {
         Sender {
             config: self.config,
+            alloc: self.alloc,
+            transfer_id: self.transfer_id,
+            queue: self.queue,
+            delta: self.delta,
             state: state::Extension {
-                delta,
-                rngs,
+                rngs: seeds.into_iter().map(|seed| Prg::from_seed(seed)).collect(),
                 keys: Vec::default(),
-                transfer_id: TransferId::default(),
-                counter: 0,
                 extended: false,
                 unchecked_qs: Vec::default(),
             },
@@ -91,62 +94,53 @@ impl Sender {
 }
 
 impl Sender<state::Extension> {
-    /// The number of remaining OTs which can be consumed.
-    pub fn remaining(&self) -> usize {
-        self.state.keys.len()
+    /// Returns `true` if the sender wants to extend.
+    pub fn wants_extend(&self) -> bool {
+        self.alloc != 0
+    }
+
+    /// Returns `true` if the sender wants to run the consistency check.
+    pub fn wants_check(&self) -> bool {
+        self.alloc == 0 && !self.state.unchecked_qs.is_empty()
     }
 
     /// Perform the IKNP OT extension.
     ///
-    /// The provided count _must_ be a multiple of 64, otherwise an error will be returned.
-    ///
-    /// # Sacrificial OTs
-    ///
-    /// Performing the consistency check sacrifices 256 OTs, so be sure to extend enough to
-    /// compensate for this.
-    ///
-    /// # Streaming
-    ///
-    /// Extension can be performed in a streaming fashion by processing an extension in batches via
-    /// multiple calls to this method.
-    ///
-    /// The freshly extended OTs are not available until after the consistency check has been
-    /// performed. See [`Sender::check`].
-    ///
     /// # Arguments
     ///
-    /// * `count` - The number of additional OTs to extend (must be a multiple of 64).
-    /// * `extend` - The receiver's setup message.
-    pub fn extend(&mut self, count: usize, extend: Extend) -> Result<(), SenderError> {
+    /// * `extend` - Extend message from the receiver.
+    pub fn extend(&mut self, extend: Extend) -> Result<(), SenderError> {
         if self.state.extended {
             return Err(SenderError::InvalidState(
                 "extending more than once is currently disabled".to_string(),
             ));
         }
 
-        if count % 64 != 0 {
-            return Err(SenderError::InvalidCount(count));
+        let Extend { count, us } = extend;
+
+        let expected_count = self.config.batch_size().min(self.alloc);
+        // round up count to a multiple of 64
+        let expected_count = (expected_count + 63) & !63;
+        if count != expected_count {
+            return Err(SenderError::CountMismatch {
+                expected: expected_count,
+                actual: count,
+            });
         }
 
         const NROWS: usize = CSP;
         let row_width = count / 8;
 
-        let Extend { us } = extend;
-
-        if us.len() != extension_matrix_size(count) {
-            return Err(SenderError::InvalidExtend);
-        }
-
         let mut qs = vec![0u8; NROWS * row_width];
         cfg_if::cfg_if! {
             if #[cfg(feature = "rayon")] {
-                let iter = self.state.delta
+                let iter = self.delta
                     .par_iter_lsb0()
                     .zip(self.state.rngs.par_iter_mut())
                     .zip(qs.par_chunks_exact_mut(row_width))
                     .zip(us.par_chunks_exact(row_width));
             } else {
-                let iter = self.state.delta
+                let iter = self.delta
                     .iter_lsb0()
                     .zip(self.state.rngs.iter_mut())
                     .zip(qs.chunks_exact_mut(row_width))
@@ -159,7 +153,8 @@ impl Sender<state::Extension> {
         iter.for_each(|(((b, rng), q), u)| {
             // Reuse `q` to avoid memory allocation for tⁱ_∆ᵢ
             rng.fill_bytes(q);
-            // If `b` (i.e. ∆ᵢ) is true, xor `u` into `q`, otherwise xor 0 into `q` (constant time).
+            // If `b` (i.e. ∆ᵢ) is true, xor `u` into `q`, otherwise xor 0 into `q`
+            // (constant time).
             let u = if b { u } else { &zero };
             q.iter_mut().zip(u).for_each(|(q, u)| *q ^= u);
         });
@@ -173,6 +168,7 @@ impl Sender<state::Extension> {
                 let q: Block = q.try_into().unwrap();
                 q
             }));
+        self.alloc = self.alloc.saturating_sub(count);
 
         Ok(())
     }
@@ -181,36 +177,31 @@ impl Sender<state::Extension> {
     ///
     /// See section 3.1 of the paper for more details.
     ///
-    /// # Sacrificial OTs
-    ///
-    /// Performing this check sacrifices 256 OTs for the consistency check, so be sure to
-    /// extend enough OTs to compensate for this.
-    ///
     /// # ⚠️ Warning ⚠️
     ///
-    /// The provided seed must be unbiased! It should be generated using a secure
-    /// coin-toss protocol **after** the receiver has sent their extension message, ie
-    /// after they have already committed to their choice vectors.
+    /// The provided seed must be unbiased! It should be generated using a
+    /// secure coin-toss protocol **after** the receiver has sent their
+    /// extension message, ie after they have already committed to their
+    /// choice vectors.
     ///
     /// # Arguments
     ///
     /// * `chi_seed` - The seed used to generate the consistency check weights.
     /// * `receiver_check` - The receiver's consistency check message.
     pub fn check(&mut self, chi_seed: Block, receiver_check: Check) -> Result<(), SenderError> {
-        // Make sure we have enough sacrificial OTs to perform the consistency check.
-        if self.state.unchecked_qs.len() < CSP + SSP {
-            return Err(SenderError::InsufficientSetup(
-                CSP + SSP,
-                self.state.unchecked_qs.len(),
-            ));
+        if !self.wants_check() {
+            return Err(SenderError::InvalidState("not ready to check".to_string()));
         }
 
-        let mut seed = RngSeed::default();
-        seed.iter_mut()
-            .zip(chi_seed.to_bytes().into_iter().cycle())
-            .for_each(|(s, c)| *s = c);
+        // Make sure we have enough sacrificial OTs to perform the consistency check.
+        if self.state.unchecked_qs.len() < CSP + SSP {
+            return Err(SenderError::InsufficientSetup {
+                expected: CSP + SSP,
+                actual: self.state.unchecked_qs.len(),
+            });
+        }
 
-        let mut rng = Rng::from_seed(seed);
+        let mut rng = Prg::from_seed(chi_seed);
 
         let mut unchecked_qs = std::mem::take(&mut self.state.unchecked_qs);
 
@@ -242,7 +233,7 @@ impl Sender<state::Extension> {
         }
 
         let Check { x, t0, t1 } = receiver_check;
-        let tmp = x.clmul(self.state.delta);
+        let tmp = x.clmul(self.delta);
         let check = (check.0 ^ tmp.0, check.1 ^ tmp.1);
 
         // The Receiver is malicious.
@@ -256,198 +247,120 @@ impl Sender<state::Extension> {
         let nrows = unchecked_qs.len() - (CSP + SSP);
         unchecked_qs.truncate(nrows);
 
-        // Figure 7, "Randomization"
-        cfg_if::cfg_if! {
-            if #[cfg(feature = "rayon")] {
-                let iter = unchecked_qs.into_par_iter().enumerate();
-            } else {
-                let iter = unchecked_qs.into_iter().enumerate();
+        self.state.keys.extend_from_slice(&unchecked_qs);
+        self.state.extended = true;
+
+        // Resolve any queued transfers.
+        if !self.queue.is_empty() {
+            let mut i = 0;
+            for Queued { count, sender } in mem::take(&mut self.queue) {
+                let keys = self.state.keys[i..i + count].to_vec();
+                i += count;
+                sender.send(RCOTSenderOutput {
+                    id: self.transfer_id.next(),
+                    keys,
+                });
             }
+
+            self.state.keys.drain(..i);
         }
 
-        let cipher = &(*FIXED_KEY_AES);
-        let keys = iter
-            .map(|(j, q)| {
-                let j = Block::new(((self.state.counter + j) as u128).to_be_bytes());
+        Ok(())
+    }
+}
 
-                let k0 = cipher.tccr(j, q);
-                let k1 = cipher.tccr(j, q ^ self.state.delta);
+impl RCOTSender<Block> for Sender<state::Initialized> {
+    type Error = SenderError;
+    type Future = MaybeDone<RCOTSenderOutput<Block>>;
 
-                [k0, k1]
-            })
-            .collect::<Vec<_>>();
-
-        self.state.counter += keys.len();
-        self.state.keys.extend(keys);
-        self.state.extended = true;
+    fn alloc(&mut self, count: usize) -> Result<(), Self::Error> {
+        self.alloc += count;
 
         Ok(())
     }
 
-    /// Reserves a set of keys which can be used to encrypt a payload later.
-    ///
-    /// # Arguments
-    ///
-    /// * `count` - The number of keys to reserve.
-    pub fn keys(&mut self, count: usize) -> Result<SenderKeys, SenderError> {
-        if count > self.state.keys.len() {
-            return Err(SenderError::InsufficientSetup(count, self.state.keys.len()));
-        }
+    fn available(&self) -> usize {
+        0
+    }
 
-        let id = self.state.transfer_id.next();
+    fn delta(&self) -> Block {
+        self.delta
+    }
 
-        Ok(SenderKeys {
-            id,
-            keys: self.state.keys.drain(..count).collect(),
-            derandomize: None,
-        })
+    fn try_send_rcot(&mut self, _count: usize) -> Result<RCOTSenderOutput<Block>, Self::Error> {
+        return Err(SenderError::InvalidState(
+            "sender has not been setup yet".to_string(),
+        ));
+    }
+
+    fn queue_send_rcot(&mut self, count: usize) -> Result<Self::Future, Self::Error> {
+        let (sender, recv) = new_output();
+
+        self.queue.push_back(Queued { count, sender });
+
+        return Ok(recv);
     }
 }
 
-/// KOS sender's keys for a single transfer.
-///
-/// Returned by the [`Sender::keys`] method, used in cases where the sender
-/// wishes to reserve a set of keys for use later, while still being able to process
-/// other payloads.
-pub struct SenderKeys {
-    /// Transfer ID
-    id: TransferId,
-    /// Encryption keys
-    keys: Vec<[Block; 2]>,
-    /// Derandomization
-    derandomize: Option<Derandomize>,
-}
+impl RCOTSender<Block> for Sender<state::Extension> {
+    type Error = SenderError;
+    type Future = MaybeDone<RCOTSenderOutput<Block>>;
 
-impl SenderKeys {
-    /// Returns the transfer ID.
-    pub fn id(&self) -> TransferId {
-        self.id
-    }
-
-    /// Applies Beaver derandomization to correct the receiver's choices made during extension.
-    pub fn derandomize(&mut self, derandomize: Derandomize) -> Result<(), SenderError> {
-        if derandomize.id != self.id {
-            return Err(SenderError::IdMismatch(self.id, derandomize.id));
-        }
-
-        if derandomize.count as usize != self.keys.len() {
-            return Err(SenderError::CountMismatch(
-                self.keys.len(),
-                derandomize.count as usize,
+    fn alloc(&mut self, count: usize) -> Result<(), Self::Error> {
+        if self.state.extended {
+            return Err(SenderError::InvalidState(
+                "extending more than once is currently disabled".to_string(),
             ));
         }
 
-        self.derandomize = Some(derandomize);
+        self.alloc += count;
 
         Ok(())
     }
 
-    /// Encrypts the provided messages using the keys.
-    ///
-    /// # Arguments
-    ///
-    /// * `msgs` - The messages to encrypt
-    pub fn encrypt_blocks(self, msgs: &[[Block; 2]]) -> Result<SenderPayload, SenderError> {
-        if msgs.len() != self.keys.len() {
-            return Err(SenderError::InsufficientSetup(msgs.len(), self.keys.len()));
+    fn available(&self) -> usize {
+        self.state.keys.len()
+    }
+
+    fn delta(&self) -> Block {
+        self.delta
+    }
+
+    fn try_send_rcot(&mut self, count: usize) -> Result<RCOTSenderOutput<Block>, Self::Error> {
+        if self.available() < count {
+            return Err(SenderError::InsufficientSetup {
+                expected: count,
+                actual: self.available(),
+            });
         }
 
-        // If we have derandomization, use it to correct the receiver's choices, else we use
-        // default
-        let flip = self
-            .derandomize
-            .map(|x| x.flip)
-            .unwrap_or_else(|| vec![0; self.keys.len() / 8 + 1]);
+        let keys = self.state.keys.drain(..count).collect();
 
-        // Encrypt the chosen messages using the generated keys from ROT.
-        let ciphertexts = self
-            .keys
-            .into_iter()
-            .zip(msgs)
-            .zip(flip.iter_lsb0())
-            .flat_map(|(([k0, k1], [m0, m1]), flip)| {
-                // Use Beaver derandomization to correct the receiver's choices
-                // from the extension phase.
-                if flip {
-                    [k1 ^ *m0, k0 ^ *m1]
-                } else {
-                    [k0 ^ *m0, k1 ^ *m1]
-                }
-            })
-            .collect();
-
-        Ok(SenderPayload {
-            id: self.id,
-            ciphertexts: Ciphertexts::Blocks { ciphertexts },
+        Ok(RCOTSenderOutput {
+            id: self.transfer_id.next(),
+            keys,
         })
     }
 
-    /// Encrypts the provided messages using the keys.
-    ///
-    /// # Arguments
-    ///
-    /// * `msgs` - The messages to encrypt
-    pub fn encrypt_bytes<const N: usize>(
-        self,
-        msgs: &[[[u8; N]; 2]],
-    ) -> Result<SenderPayload, SenderError> {
-        if msgs.len() != self.keys.len() {
-            return Err(SenderError::InsufficientSetup(msgs.len(), self.keys.len()));
+    fn queue_send_rcot(&mut self, count: usize) -> Result<Self::Future, Self::Error> {
+        if self.available() >= count {
+            let output = self.try_send_rcot(count)?;
+            let (sender, recv) = new_output();
+            sender.send(output);
+
+            return Ok(recv);
+        } else if !self.state.extended {
+            let (sender, recv) = new_output();
+
+            self.queue.push_back(Queued { count, sender });
+
+            return Ok(recv);
+        } else {
+            return Err(SenderError::InsufficientSetup {
+                expected: count,
+                actual: self.available(),
+            });
         }
-
-        // Generate a random IV which is used for all messages.
-        // This is safe because every message is encrypted with a different key.
-        let iv: [u8; 16] = rand::thread_rng().gen();
-
-        // If we have derandomization, use it to correct the receiver's choices, else we use
-        // default
-        let flip = self
-            .derandomize
-            .map(|x| x.flip)
-            .unwrap_or_else(|| vec![0; self.keys.len() / 8 + 1]);
-
-        // Encrypt the chosen messages using the generated keys from ROT.
-        let ciphertexts = self
-            .keys
-            .into_iter()
-            .zip(msgs)
-            .zip(flip.iter_lsb0())
-            .flat_map(|(([k0, k1], [m0, m1]), flip)| {
-                // Initialize AES-CTR with the keys from ROT.
-                let mut e0 = Aes128Ctr::new(&k0.into(), &iv.into());
-                let mut e1 = Aes128Ctr::new(&k1.into(), &iv.into());
-
-                let mut m0 = *m0;
-                let mut m1 = *m1;
-
-                // Use Beaver derandomization to correct the receiver's choices
-                // from the extension phase.
-                if flip {
-                    e1.apply_keystream(&mut m0);
-                    e0.apply_keystream(&mut m1);
-                } else {
-                    e0.apply_keystream(&mut m0);
-                    e1.apply_keystream(&mut m1);
-                }
-
-                [m0, m1]
-            })
-            .flatten()
-            .collect();
-
-        Ok(SenderPayload {
-            id: self.id,
-            ciphertexts: Ciphertexts::Bytes {
-                ciphertexts,
-                iv: iv.to_vec(),
-                length: N as u32,
-            },
-        })
-    }
-
-    /// Returns the keys
-    pub fn take_keys(self) -> Vec<[Block; 2]> {
-        self.keys
     }
 }
 
@@ -475,28 +388,19 @@ pub mod state {
 
     /// The sender's state after the setup phase.
     ///
-    /// In this state the sender performs OT extension (potentially multiple times). Also in this
-    /// state the sender responds to OT requests.
+    /// In this state the sender performs OT extension (potentially multiple
+    /// times). Also in this state the sender responds to OT requests.
     pub struct Extension {
-        /// Sender's base OT choices
-        pub(super) delta: Block,
         /// Receiver's rngs seeded from seeds obliviously received from base OT
-        pub(super) rngs: Vec<ChaCha20Rng>,
-        /// Sender's keys
-        pub(super) keys: Vec<[Block; 2]>,
-
-        /// Current transfer id
-        pub(super) transfer_id: TransferId,
-        /// Current OT counter
-        pub(super) counter: usize,
-
+        pub(super) rngs: Vec<Prg>,
         /// Whether extension has occurred yet
         ///
         /// This is to prevent the receiver from extending twice
         pub(super) extended: bool,
-
         /// Sender's unchecked qs
         pub(super) unchecked_qs: Vec<Block>,
+        /// Sender's keys
+        pub(super) keys: Vec<Block>,
     }
 
     impl State for Extension {}

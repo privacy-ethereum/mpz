@@ -1,223 +1,120 @@
-//! Ideal functionality for correlated oblivious transfer.
+//! Ideal functionality for correlated OT.
 
 use async_trait::async_trait;
-
-use mpz_common::{
-    ideal::{ideal_f2p, Alice, Bob},
-    Allocate, Context, Preprocess,
-};
+use mpz_common::Flush;
 use mpz_core::Block;
 use mpz_ot_core::{
-    ideal::cot::IdealCOT, COTReceiverOutput, COTSenderOutput, RCOTReceiverOutput, RCOTSenderOutput,
+    cot::{COTReceiver, COTSender},
+    ideal::cot::{IdealCOT as Core, IdealCOTError as CoreError},
 };
 
-use crate::{COTReceiver, COTSender, OTError, OTSetup, RandomCOTReceiver, RandomCOTSender};
-
-fn cot(
-    f: &mut IdealCOT,
-    sender_count: usize,
-    choices: Vec<bool>,
-) -> (COTSenderOutput<Block>, COTReceiverOutput<Block>) {
-    assert_eq!(sender_count, choices.len());
-
-    f.correlated(choices)
-}
-
-fn rcot(
-    f: &mut IdealCOT,
-    sender_count: usize,
-    receiver_count: usize,
-) -> (RCOTSenderOutput<Block>, RCOTReceiverOutput<bool, Block>) {
-    assert_eq!(sender_count, receiver_count);
-
-    f.random_correlated(sender_count)
-}
-
-/// Returns an ideal COT sender and receiver.
-pub fn ideal_cot() -> (IdealCOTSender, IdealCOTReceiver) {
-    let (alice, bob) = ideal_f2p(IdealCOT::default());
-    (IdealCOTSender(alice), IdealCOTReceiver(bob))
-}
-
-/// Returns an ideal random COT sender and receiver.
-pub fn ideal_rcot() -> (IdealCOTSender, IdealCOTReceiver) {
-    let (alice, bob) = ideal_f2p(IdealCOT::default());
-    (IdealCOTSender(alice), IdealCOTReceiver(bob))
+/// Returns a new ideal COT sender and receiver.
+pub fn ideal_cot(delta: Block) -> (IdealCOTSender, IdealCOTReceiver) {
+    let core = Core::new(delta);
+    (
+        IdealCOTSender { core: core.clone() },
+        IdealCOTReceiver { core },
+    )
 }
 
 /// Ideal COT sender.
-#[derive(Debug, Clone)]
-pub struct IdealCOTSender(Alice<IdealCOT>);
+pub struct IdealCOTSender {
+    core: Core,
+}
+
+impl COTSender<Block> for IdealCOTSender {
+    type Error = IdealCOTError;
+    type Future = <Core as COTSender<Block>>::Future;
+
+    fn alloc(&mut self, count: usize) -> Result<(), Self::Error> {
+        COTSender::alloc(&mut self.core, count).map_err(From::from)
+    }
+
+    fn available(&self) -> usize {
+        COTSender::available(&self.core)
+    }
+
+    fn delta(&self) -> Block {
+        COTSender::delta(&self.core)
+    }
+
+    fn queue_send_cot(&mut self, msgs: &[Block]) -> Result<Self::Future, Self::Error> {
+        self.core.queue_send_cot(msgs).map_err(From::from)
+    }
+}
 
 #[async_trait]
-impl<Ctx> OTSetup<Ctx> for IdealCOTSender
-where
-    Ctx: Context,
-{
-    async fn setup(&mut self, _ctx: &mut Ctx) -> Result<(), OTError> {
+impl<Ctx> Flush<Ctx> for IdealCOTSender {
+    type Error = IdealCOTError;
+
+    fn wants_flush(&self) -> bool {
+        self.core.wants_flush()
+    }
+
+    async fn flush(&mut self, _ctx: &mut Ctx) -> Result<(), Self::Error> {
+        if self.core.wants_flush() {
+            self.core.flush().map_err(IdealCOTError::from)?;
+        }
+
         Ok(())
-    }
-}
-
-impl Allocate for IdealCOTSender {
-    fn alloc(&mut self, _count: usize) {}
-}
-
-#[async_trait]
-impl<Ctx> Preprocess<Ctx> for IdealCOTSender
-where
-    Ctx: Context,
-{
-    type Error = OTError;
-
-    async fn preprocess(&mut self, _ctx: &mut Ctx) -> Result<(), OTError> {
-        Ok(())
-    }
-}
-
-#[async_trait]
-impl<Ctx: Context> COTSender<Ctx, Block> for IdealCOTSender {
-    async fn send_correlated(
-        &mut self,
-        ctx: &mut Ctx,
-        count: usize,
-    ) -> Result<COTSenderOutput<Block>, OTError> {
-        Ok(self.0.call(ctx, count, cot).await)
-    }
-}
-
-#[async_trait]
-impl<Ctx: Context> RandomCOTSender<Ctx, Block> for IdealCOTSender {
-    async fn send_random_correlated(
-        &mut self,
-        ctx: &mut Ctx,
-        count: usize,
-    ) -> Result<RCOTSenderOutput<Block>, OTError> {
-        Ok(self.0.call(ctx, count, rcot).await)
     }
 }
 
 /// Ideal COT receiver.
-#[derive(Debug, Clone)]
-pub struct IdealCOTReceiver(Bob<IdealCOT>);
+pub struct IdealCOTReceiver {
+    core: Core,
+}
+
+impl COTReceiver<bool, Block> for IdealCOTReceiver {
+    type Error = IdealCOTError;
+    type Future = <Core as COTReceiver<bool, Block>>::Future;
+
+    fn alloc(&mut self, count: usize) -> Result<(), Self::Error> {
+        COTReceiver::alloc(&mut self.core, count).map_err(From::from)
+    }
+
+    fn available(&self) -> usize {
+        COTReceiver::available(&self.core)
+    }
+
+    fn queue_recv_cot(&mut self, choices: &[bool]) -> Result<Self::Future, Self::Error> {
+        self.core.queue_recv_cot(choices).map_err(From::from)
+    }
+}
 
 #[async_trait]
-impl<Ctx> OTSetup<Ctx> for IdealCOTReceiver
-where
-    Ctx: Context,
-{
-    async fn setup(&mut self, _ctx: &mut Ctx) -> Result<(), OTError> {
+impl<Ctx> Flush<Ctx> for IdealCOTReceiver {
+    type Error = IdealCOTError;
+
+    fn wants_flush(&self) -> bool {
+        self.core.wants_flush()
+    }
+
+    async fn flush(&mut self, _ctx: &mut Ctx) -> Result<(), Self::Error> {
+        if self.core.wants_flush() {
+            self.core.flush().map_err(IdealCOTError::from)?;
+        }
+
         Ok(())
     }
 }
 
-impl Allocate for IdealCOTReceiver {
-    fn alloc(&mut self, _count: usize) {}
-}
-
-#[async_trait]
-impl<Ctx> Preprocess<Ctx> for IdealCOTReceiver
-where
-    Ctx: Context,
-{
-    type Error = OTError;
-
-    async fn preprocess(&mut self, _ctx: &mut Ctx) -> Result<(), OTError> {
-        Ok(())
-    }
-}
-
-#[async_trait]
-impl<Ctx: Context> COTReceiver<Ctx, bool, Block> for IdealCOTReceiver {
-    async fn receive_correlated(
-        &mut self,
-        ctx: &mut Ctx,
-        choices: &[bool],
-    ) -> Result<COTReceiverOutput<Block>, OTError> {
-        Ok(self.0.call(ctx, choices.to_vec(), cot).await)
-    }
-}
-
-#[async_trait]
-impl<Ctx: Context> RandomCOTReceiver<Ctx, bool, Block> for IdealCOTReceiver {
-    async fn receive_random_correlated(
-        &mut self,
-        ctx: &mut Ctx,
-        count: usize,
-    ) -> Result<RCOTReceiverOutput<bool, Block>, OTError> {
-        Ok(self.0.call(ctx, count, rcot).await)
-    }
-}
+/// Ideal COT error.
+#[derive(Debug, thiserror::Error)]
+#[error(transparent)]
+pub struct IdealCOTError(#[from] CoreError);
 
 #[cfg(test)]
 mod tests {
+    use rand::{rngs::StdRng, Rng, SeedableRng};
+
     use super::*;
-    use mpz_common::executor::test_st_executor;
-    use mpz_ot_core::test::assert_cot;
-    use rand::{Rng, SeedableRng};
-    use rand_chacha::ChaCha12Rng;
+    use crate::test::test_cot;
 
     #[tokio::test]
     async fn test_ideal_cot() {
-        let mut rng = ChaCha12Rng::seed_from_u64(0);
-        let (mut ctx_a, mut ctx_b) = test_st_executor(8);
-        let (mut alice, mut bob) = ideal_cot();
-
-        let delta = alice.0.get_mut().delta();
-
-        let count = 10;
-        let choices = (0..count).map(|_| rng.gen()).collect::<Vec<bool>>();
-
-        let (
-            COTSenderOutput {
-                id: id_a,
-                msgs: sender_msgs,
-            },
-            COTReceiverOutput {
-                id: id_b,
-                msgs: receiver_msgs,
-            },
-        ) = tokio::try_join!(
-            alice.send_correlated(&mut ctx_a, count),
-            bob.receive_correlated(&mut ctx_b, &choices)
-        )
-        .unwrap();
-
-        assert_eq!(id_a, id_b);
-        assert_eq!(count, sender_msgs.len());
-        assert_eq!(count, receiver_msgs.len());
-        assert_cot(delta, &choices, &sender_msgs, &receiver_msgs);
-    }
-
-    #[tokio::test]
-    async fn test_ideal_rcot() {
-        let (mut ctx_a, mut ctx_b) = test_st_executor(8);
-        let (mut alice, mut bob) = ideal_rcot();
-
-        let delta = alice.0.get_mut().delta();
-
-        let count = 10;
-
-        let (
-            RCOTSenderOutput {
-                id: id_a,
-                msgs: sender_msgs,
-            },
-            RCOTReceiverOutput {
-                id: id_b,
-                choices,
-                msgs: receiver_msgs,
-            },
-        ) = tokio::try_join!(
-            alice.send_random_correlated(&mut ctx_a, count),
-            bob.receive_random_correlated(&mut ctx_b, count)
-        )
-        .unwrap();
-
-        assert_eq!(id_a, id_b);
-        assert_eq!(count, sender_msgs.len());
-        assert_eq!(count, receiver_msgs.len());
-        assert_eq!(count, choices.len());
-        assert_cot(delta, &choices, &sender_msgs, &receiver_msgs);
+        let mut rng = StdRng::seed_from_u64(0);
+        let (sender, receiver) = ideal_cot(rng.gen());
+        test_cot(sender, receiver, 8).await;
     }
 }

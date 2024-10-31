@@ -11,8 +11,9 @@ name = "mpz_ot"
 
 [features]
 default = ["rayon"]
-rayon = ["mpz-ot-core/rayon"]
+rayon = ["mpz-ot-core/rayon", "mpz-common/rayon"]
 ideal = ["mpz-common/ideal"]
+test-utils = ["mpz-ot-core/test-utils"]
 
 [dependencies]
 mpz-core.workspace = true
@@ -38,7 +39,11 @@ serio.workspace = true
 cfg-if.workspace = true
 
 [dev-dependencies]
-mpz-common = { workspace = true, features = ["test-utils", "ideal"] }
+mpz-common = { workspace = true, features = [
+    "test-utils",
+    "ideal",
+    "executor",
+] }
 mpz-ot-core = { workspace = true, features = ["test-utils"] }
 rstest = { workspace = true }
 criterion = { workspace = true, features = ["async_tokio"] }
@@ -48,7 +53,3 @@ tokio = { workspace = true, features = [
     "rt",
     "rt-multi-thread",
 ] }
-
-[[bench]]
-name = "ot"
-harness = false

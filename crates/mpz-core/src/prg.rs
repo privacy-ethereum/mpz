@@ -118,6 +118,11 @@ impl Prg {
         Prg::from_seed(rand::random::<Block>())
     }
 
+    /// Create a new PRG from a seed.
+    pub fn new_with_seed(seed: [u8; 16]) -> Self {
+        Prg::from_seed(Block::from(seed))
+    }
+
     /// Returns the current counter.
     pub fn counter(&self) -> u64 {
         self.0.core.counter

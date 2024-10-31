@@ -8,16 +8,16 @@ pub enum SenderError {
     InvalidState(String),
     #[error("invalid count, must be a multiple of 64: {0}")]
     InvalidCount(usize),
-    #[error("count mismatch: expected {0}, got {1}")]
-    CountMismatch(usize, usize),
+    #[error("count mismatch: expected {expected}, got {actual}")]
+    CountMismatch { expected: usize, actual: usize },
     #[error("id mismatch: expected {0}, got {1}")]
     IdMismatch(TransferId, TransferId),
     #[error("invalid extend")]
     InvalidExtend,
     #[error("consistency check failed")]
     ConsistencyCheckFailed,
-    #[error("not enough OTs are setup: expected {0}, actual {1}")]
-    InsufficientSetup(usize, usize),
+    #[error("not enough OTs are setup: expected {expected}, actual {actual}")]
+    InsufficientSetup { expected: usize, actual: usize },
 }
 
 /// Errors that can occur when using the KOS15 receiver.
@@ -32,22 +32,8 @@ pub enum ReceiverError {
     CountMismatch(usize, usize),
     #[error("id mismatch: expected {0}, got {1}")]
     IdMismatch(TransferId, TransferId),
-    #[error("not enough OTs are setup: expected {0}, actual {1}")]
-    InsufficientSetup(usize, usize),
+    #[error("not enough OTs are setup: expected {expected}, actual {actual}")]
+    InsufficientSetup { expected: usize, actual: usize },
     #[error("invalid payload")]
     InvalidPayload(String),
-    #[error(transparent)]
-    ReceiverVerifyError(#[from] ReceiverVerifyError),
-}
-
-/// Errors that can occur during verification of the sender's messages.
-#[derive(Debug, thiserror::Error)]
-#[allow(missing_docs)]
-pub enum ReceiverVerifyError {
-    #[error("tape was not recorded")]
-    TapeNotRecorded,
-    #[error("invalid transfer id: {0}")]
-    InvalidTransferId(TransferId),
-    #[error("payload inconsistent")]
-    InconsistentPayload,
 }
