@@ -11,11 +11,12 @@ name = "mpz_share_conversion"
 
 [features]
 default = []
-ideal = ["mpz-common/ideal"]
+test-utils = ["mpz-share-conversion-core/test-utils"]
 
 [dependencies]
+mpz-core = { workspace = true }
 mpz-common.workspace = true
-mpz-share-conversion-core.workspace = true
+mpz-share-conversion-core = { workspace = true }
 mpz-fields.workspace = true
 mpz-ole.workspace = true
 
@@ -25,8 +26,9 @@ serio.workspace = true
 rand.workspace = true
 
 [dev-dependencies]
-mpz-ole = { workspace = true, features = ["ideal"] }
-mpz-common = { workspace = true, features = ["test-utils"] }
+mpz-share-conversion-core = { workspace = true, features = ["test-utils"] }
+mpz-ole = { workspace = true, features = ["test-utils"] }
+mpz-common = { workspace = true, features = ["executor", "test-utils"] }
 mpz-core.workspace = true
 tokio = { workspace = true, features = [
     "net",

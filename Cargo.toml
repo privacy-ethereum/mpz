@@ -48,8 +48,8 @@ mpz-vm-core = { path = "crates/mpz-vm-core" }
 clmul = { path = "crates/clmul" }
 matrix-transpose = { path = "crates/matrix-transpose" }
 
-tlsn-utils = { git = "https://github.com/tlsnotary/tlsn-utils", rev = "5899190" }
-tlsn-utils-aio = { git = "https://github.com/tlsnotary/tlsn-utils", rev = "5899190" }
+tlsn-utils = { git = "https://github.com/tlsnotary/tlsn-utils", rev = "43995c5" }
+tlsn-utils-aio = { git = "https://github.com/tlsnotary/tlsn-utils", rev = "43995c5" }
 
 # rand
 rand_chacha = "0.3"
@@ -92,10 +92,10 @@ prost-build = "0.9"
 bytes = "1"
 yamux = "0.10"
 bytemuck = { version = "1.13", features = ["derive"] }
-serio = "0.1"
+serio = { git = "https://github.com/tlsnotary/tlsn-utils", rev = "43995c5" }
 
 # io
-uid-mux = "0.1"
+uid-mux = { git = "https://github.com/tlsnotary/tlsn-utils", rev = "43995c5" }
 
 # testing
 prost = "0.9"

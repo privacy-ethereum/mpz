@@ -128,7 +128,7 @@ impl IdealRCOT {
             let keys = this.keys[i..i + count].to_vec();
             i += count;
             sender.send(RCOTSenderOutput {
-                id: this.sender_state.transfer_id,
+                id: this.sender_state.transfer_id.next(),
                 keys,
             });
         }
@@ -140,7 +140,7 @@ impl IdealRCOT {
             let keys = this.msgs[i..i + count].to_vec();
             i += count;
             sender.send(RCOTReceiverOutput {
-                id: this.receiver_state.transfer_id,
+                id: this.receiver_state.transfer_id.next(),
                 choices,
                 msgs: keys,
             });

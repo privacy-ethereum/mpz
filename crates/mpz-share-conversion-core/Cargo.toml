@@ -9,14 +9,22 @@ workspace = true
 [lib]
 name = "mpz_share_conversion_core"
 
+[features]
+default = []
+test-utils = []
+
 [dependencies]
 mpz-fields.workspace = true
 mpz-core.workspace = true
+mpz-common = { workspace = true, default-features = false, features = [
+    "future",
+] }
+mpz-ole-core = { workspace = true }
 
 rand.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
-mpz-ole-core.workspace = true
+mpz-ole-core = { workspace = true, features = ["test-utils"] }
 mpz-core.workspace = true

@@ -1,124 +1,169 @@
 //! A2M conversion protocol.
 //!
-//! Let `A` be an element of some finite field with `A = x + y`, where `x` is only known to Alice
-//! and `y` is only known to Bob. A is unknown to both parties and it is their goal that each of
-//! them ends up with a multiplicative share of A. So both parties start with `x` and `y` and want to
-//! end up with `a` and `b`, where `A = x + y = a * b`.
+//! Let `A` be an element of some finite field with `A = x + y`, where `x` is
+//! only known to Alice and `y` is only known to Bob. A is unknown to both
+//! parties and it is their goal that each of them ends up with a multiplicative
+//! share of A. So both parties start with `x` and `y` and want to end up with
+//! `a` and `b`, where `A = x + y = a * b`.
 //!
 //! This module implements the A2M protocol from <https://eprint.iacr.org/2023/964>, page 40,
 //! figure 16, 4.
 
-use crate::{ErrorKind, ShareConversionError};
 use mpz_fields::Field;
+use mpz_ole_core::{OLEShare, Offset};
+use serde::{Deserialize, Serialize};
 
-/// Converts additive sender shares into multiplicative shares.
-///
-/// # Arguments
-///
-/// * `input` - The sender's input field elements.
-/// * `ole_input` - The input from an OLE sender.
-/// * `ole_output` - The output from an OLE sender.
-///
-/// # Returns
-///
-/// * The additive shares of the sender.
-/// * The masks which have to be sent to the receiver.
-pub fn a2m_convert_sender<F: Field>(
-    input: Vec<F>,
-    mut ole_input: Vec<F>,
-    ole_output: Vec<F>,
-) -> Result<(Vec<F>, A2MMasks<F>), ShareConversionError> {
-    if input.len() != ole_output.len() || ole_input.len() != ole_output.len() {
-        return Err(ShareConversionError::new(
-            ErrorKind::UnequalLength,
-            format!(
-                "Vectors have unequal length: {}, {}, {}",
-                input.len(),
-                ole_input.len(),
-                ole_output.len()
-            ),
-        ));
-    }
+/// Masked share for the A2M conversion.
+#[derive(Debug, Serialize, Deserialize)]
+pub(crate) struct A2MMasked<F>(F);
 
-    let masks: Vec<F> = input
-        .iter()
-        .zip(ole_input.iter().copied())
-        .zip(ole_output)
-        .map(|((&i, r), o)| i * r + -o)
-        .collect();
-
-    ole_input.iter_mut().for_each(|r| *r = r.inverse());
-
-    Ok((ole_input, A2MMasks(masks)))
+/// Start state for A2M sender.
+///
+/// We start with a ROLE, where the receiver needs to derandomize
+/// their input.
+#[derive(Debug)]
+pub(crate) struct A2MSenderDerand<F> {
+    input: F,
+    add: F,
+    mul: F,
 }
 
-/// Converts the A2M sender's masks into multiplicative receiver shares.
-///
-/// # Arguments
-///
-/// * `masks` - The masks received by the sender.
-/// * `ole_output` - The output from an OLE receiver.
-///
-/// # Returns
-///
-/// * The additive shares of the receiver.
-pub fn a2m_convert_receiver<F: Field>(
-    masks: A2MMasks<F>,
-    ole_output: Vec<F>,
-) -> Result<Vec<F>, ShareConversionError> {
-    let masks = masks.0;
-
-    if masks.len() != ole_output.len() {
-        return Err(ShareConversionError::new(
-            ErrorKind::UnequalLength,
-            format!(
-                "Vectors have unequal length: {} != {}",
-                masks.len(),
-                ole_output.len()
-            ),
-        ));
+impl<F> A2MSenderDerand<F>
+where
+    F: Field,
+{
+    pub(crate) fn new(input: F, role: OLEShare<F>) -> Self {
+        Self {
+            input,
+            add: role.add,
+            mul: role.mul,
+        }
     }
 
-    let output = masks.iter().zip(ole_output).map(|(&m, o)| m + o).collect();
-    Ok(output)
+    /// Receives the receiver's offset.
+    pub(crate) fn offset(self, offset: Offset<F>) -> A2MSenderAdjust<F> {
+        A2MSenderAdjust {
+            input: self.input,
+            add: self.add + self.mul * offset.0,
+            mul: self.mul,
+        }
+    }
 }
 
-/// The masks created by the sender and sent to the receiver.
-pub struct A2MMasks<F>(pub(crate) Vec<F>);
+/// A2M Sender sends masked share to the receiver.
+#[derive(Debug)]
+pub(crate) struct A2MSenderAdjust<F> {
+    input: F,
+    add: F,
+    mul: F,
+}
+
+impl<F> A2MSenderAdjust<F>
+where
+    F: Field,
+{
+    /// Sends the masked share to the receiver.
+    ///
+    /// Returns the multiplicative share and masked share, respectively.
+    pub(crate) fn send(self) -> Result<(F, A2MMasked<F>), A2MError> {
+        let masked = (self.input * self.mul) + self.add;
+        let output = self.mul.inverse().ok_or(A2MError { _private: () })?;
+
+        Ok((output, A2MMasked(masked)))
+    }
+}
+
+/// Start state for A2M receiver.
+///
+/// We start with a ROLE and derandomize the receiver's input.
+#[derive(Debug)]
+pub(crate) struct A2MReceiverDerand<F> {
+    input: F,
+    add: F,
+    mul: F,
+}
+
+impl<F> A2MReceiverDerand<F>
+where
+    F: Field,
+{
+    pub(crate) fn new(input: F, role: OLEShare<F>) -> Self {
+        Self {
+            input,
+            add: role.add,
+            mul: role.mul,
+        }
+    }
+
+    /// Sends the offset to the sender.
+    pub(crate) fn offset(self) -> (A2MReceiverAdjust<F>, Offset<F>) {
+        let offset = self.input - self.mul;
+
+        (A2MReceiverAdjust { add: self.add }, Offset(offset))
+    }
+}
+
+/// A2M Receiver receives the masked share.
+#[derive(Debug)]
+pub(crate) struct A2MReceiverAdjust<F> {
+    add: F,
+}
+
+impl<F> A2MReceiverAdjust<F>
+where
+    F: Field,
+{
+    /// Receives the masked share, returning the multiplicative share.
+    pub(crate) fn receive(self, masked: A2MMasked<F>) -> F {
+        self.add + masked.0
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("A2M error, sender's OLE input is zero")]
+pub(crate) struct A2MError {
+    _private: (),
+}
 
 #[cfg(test)]
 mod tests {
-    use mpz_core::{prg::Prg, Block};
-    use mpz_fields::{p256::P256, UniformRand};
-    use mpz_ole_core::ideal::IdealOLE;
-    use rand::SeedableRng;
-
-    use crate::{a2m_convert_receiver, a2m_convert_sender};
+    use super::*;
+    use mpz_fields::{gf2_128::Gf2_128, p256::P256};
+    use mpz_ole_core::test::role_shares;
+    use rand::{rngs::StdRng, SeedableRng};
 
     #[test]
-    fn test_a2m() {
-        let count = 12;
-        let mut rng = Prg::from_seed(Block::ZERO);
-        let mut ole = IdealOLE::default();
+    fn test_a2m_p256() {
+        test_a2m::<P256>();
+    }
 
-        let ole_sender_input: Vec<P256> = (0..count).map(|_| P256::rand(&mut rng)).collect();
-        let ole_receiver_input: Vec<P256> = (0..count).map(|_| P256::rand(&mut rng)).collect();
+    #[test]
+    fn test_a2m_gf2_128() {
+        test_a2m::<Gf2_128>();
+    }
 
-        let (ole_sender_output, ole_receiver_output) =
-            ole.generate(&ole_sender_input, &ole_receiver_input);
+    fn test_a2m<F: Field>() {
+        let mut rng = StdRng::seed_from_u64(0);
 
-        let sender_input: Vec<P256> = (0..count).map(|_| P256::rand(&mut rng)).collect();
-        let receiver_input: Vec<P256> = ole_receiver_input;
+        let sender_input = F::rand(&mut rng);
+        let receiver_input = F::rand(&mut rng);
+        let (sender_role, receiver_role) = role_shares(&mut rng);
 
-        let (sender_output, masks) =
-            a2m_convert_sender(sender_input.clone(), ole_sender_input, ole_sender_output).unwrap();
-        let receiver_output = a2m_convert_receiver(masks, ole_receiver_output).unwrap();
+        let sender = A2MSenderDerand::new(sender_input, sender_role);
+        let receiver = A2MReceiverDerand::new(receiver_input, receiver_role);
 
-        sender_input
-            .iter()
-            .zip(receiver_input)
-            .zip(sender_output)
-            .zip(receiver_output)
-            .for_each(|(((&x, y), a), b)| assert_eq!(x + y, a * b));
+        let (receiver, offset) = receiver.offset();
+        let sender = sender.offset(offset);
+
+        // Check that OLE is derandomized correctly.
+        assert_eq!(sender.mul * receiver_input, sender.add + receiver.add);
+
+        let (sender_output, masked) = sender.send().unwrap();
+        let receiver_output = receiver.receive(masked);
+
+        assert_eq!(
+            sender_output * receiver_output,
+            sender_input + receiver_input
+        );
     }
 }

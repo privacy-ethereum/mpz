@@ -1,148 +1,202 @@
 //! Receiver implementation.
 
-use crate::{
-    core::{ReceiverAdjust, ReceiverShare, ShareAdjust},
-    msg::{BatchAdjust, MaskedCorrelations},
-    OLEError, TransferId,
-};
-use mpz_fields::Field;
 use std::collections::VecDeque;
 
-/// A receiver for batched OLE.
+use hybrid_array::Array;
+
+use mpz_common::future::{new_output, MaybeDone, Sender as OutputSender};
+use mpz_fields::Field;
+use mpz_ot_core::rot::{ROTReceiver, ROTReceiverOutput};
+
+use crate::{OLEId, OLEShare, ROLEReceiver, ROLEReceiverOutput, SenderMasks};
+
 #[derive(Debug)]
-pub struct OLEReceiver<F> {
-    id: TransferId,
-    cache: VecDeque<ReceiverShare<F>>,
+struct Queued<F> {
+    count: usize,
+    sender: OutputSender<ROLEReceiverOutput<F>>,
 }
 
-impl<F: Field> Default for OLEReceiver<F> {
-    fn default() -> Self {
-        OLEReceiver {
-            id: TransferId::default(),
-            cache: VecDeque::default(),
-        }
-    }
+/// ROLE receiver wrapping a random OT receiver.
+#[derive(Debug)]
+pub struct Receiver<T, F> {
+    id: OLEId,
+    alloc: usize,
+    pending: usize,
+    queue: VecDeque<Queued<F>>,
+    rot: T,
+    role: Vec<OLEShare<F>>,
 }
 
-impl<F: Field> OLEReceiver<F> {
-    /// Generates new OLEs and stores them internally.
+impl<T, F> Receiver<T, F> {
+    /// Creates a new ROLE receiver.
     ///
     /// # Arguments
     ///
-    /// * `input` - The receiver's OLE input shares.
-    /// * `random` - Uniformly random field elements.
-    /// * `masked` - The correlations from the sender.
-    pub fn preprocess(
-        &mut self,
-        input: Vec<F>,
-        random: Vec<F>,
-        masked: MaskedCorrelations<F>,
-    ) -> Result<(), OLEError> {
-        let masks = masked.try_into()?;
-        let shares = ReceiverShare::new_vec(input, random, masks)?;
+    /// * `rot` - Random OT receiver.
+    pub fn new(rot: T) -> Self {
+        Self {
+            id: OLEId::default(),
+            alloc: 0,
+            pending: 0,
+            queue: VecDeque::new(),
+            rot,
+            role: Vec::new(),
+        }
+    }
 
-        self.cache.extend(shares);
+    /// Returns the random OT receiver.
+    pub fn rot(&self) -> &T {
+        &self.rot
+    }
+
+    /// Returns a mutable reference to the random OT receiver.
+    pub fn rot_mut(&mut self) -> &mut T {
+        &mut self.rot
+    }
+
+    /// Returns the random OT receiver.
+    pub fn into_inner(self) -> T {
+        self.rot
+    }
+}
+
+impl<T, F> Receiver<T, F>
+where
+    T: ROTReceiver<bool, F>,
+    F: Field,
+{
+    /// Returns `true` if the receiver wants to receive.
+    pub fn wants_recv(&self) -> bool {
+        self.alloc > 0
+    }
+
+    /// Receives the OLEs.
+    pub fn recv(&mut self, msg: SenderMasks<F>) -> Result<(), ReceiverError> {
+        let SenderMasks { masks } = msg;
+
+        let count = self.alloc;
+        if self.pending > count {
+            return Err(ReceiverError(ErrorRepr::InsufficientOle {
+                count: self.pending,
+                available: count,
+            }));
+        } else if masks.len() != count {
+            return Err(ReceiverError(ErrorRepr::WrongCount {
+                expected: count,
+                actual: masks.len(),
+            }));
+        }
+
+        let ROTReceiverOutput {
+            choices,
+            msgs: corr,
+            ..
+        } = self
+            .rot
+            .try_recv_rot(count * F::BIT_SIZE)
+            .map_err(ReceiverError::ot)?;
+
+        let shares: Vec<OLEShare<F>> = choices
+            .chunks(F::BIT_SIZE)
+            .zip(corr.chunks(F::BIT_SIZE))
+            .zip(masks)
+            .map(|((bits, corr), mask)| {
+                OLEShare::new_ole_receiver(
+                    F::from_lsb0_iter(bits.iter().copied()),
+                    Array::<F, F::BitSize>::try_from(corr)
+                        .expect("slice should have length of bit size of field element"),
+                    mask,
+                )
+            })
+            .collect();
+
+        let mut i = 0;
+        for Queued { count, sender } in self.queue.drain(..) {
+            let shares = shares[i..i + count].to_vec();
+            i += count;
+
+            sender.send(ROLEReceiverOutput {
+                id: self.id.next(),
+                shares,
+            });
+        }
+
+        self.role.extend_from_slice(&shares[i..]);
+        self.alloc = 0;
+        self.pending = 0;
+
+        Ok(())
+    }
+}
+
+impl<T, F> ROLEReceiver<F> for Receiver<T, F>
+where
+    T: ROTReceiver<bool, F>,
+    F: Field,
+{
+    type Error = ReceiverError;
+    type Future = MaybeDone<ROLEReceiverOutput<F>>;
+
+    fn alloc(&mut self, count: usize) -> Result<(), ReceiverError> {
+        self.rot
+            .alloc(count * F::BIT_SIZE)
+            .map_err(ReceiverError::ot)?;
+
+        self.alloc += count;
+
         Ok(())
     }
 
-    /// Returns OLEs from internal cache.
-    ///
-    /// For consumption of OLEs which have been stored by [`OLEReceiver::preprocess`].
-    ///
-    /// # Arguments
-    ///
-    /// * `count` - The number of shares to return.
-    ///
-    /// # Returns
-    ///
-    /// * A vector of [`ReceiverShare`]s containing the OLE outputs for the receiver.
-    pub fn consume(&mut self, count: usize) -> Option<Vec<ReceiverShare<F>>> {
-        if count > self.cache.len() {
-            return None;
+    fn available(&self) -> usize {
+        self.role.len()
+    }
+
+    fn try_recv_role(&mut self, count: usize) -> Result<ROLEReceiverOutput<F>, Self::Error> {
+        if count > self.role.len() {
+            return Err(ReceiverError(ErrorRepr::InsufficientOle {
+                count,
+                available: self.role.len(),
+            }));
         }
 
-        let shares = self.cache.drain(..count).collect();
-        Some(shares)
+        let shares = self.role.drain(..count).collect();
+
+        Ok(ROLEReceiverOutput {
+            id: self.id.next(),
+            shares,
+        })
     }
 
-    /// Adjusts OLEs in the internal cache.
-    ///
-    /// # Arguments
-    ///
-    /// * `targets` - The new OLE receiver inputs.
-    ///
-    /// # Returns
-    ///
-    /// * [`BatchReceiverAdjust`] which needs to be converted by [`BatchReceiverAdjust::finish_adjust`].
-    /// * [`BatchAdjust`] which needs to be sent to the sender.
-    pub fn adjust(&mut self, targets: Vec<F>) -> Option<(BatchReceiverAdjust<F>, BatchAdjust<F>)> {
-        let shares = self.consume(targets.len())?;
-        let (receiver_adjust, adjustments) = shares
-            .into_iter()
-            .zip(targets)
-            .map(|(s, t)| {
-                let (share, adjust) = s.adjust(t);
-                (share, adjust.0)
-            })
-            .unzip();
+    fn queue_recv_role(&mut self, count: usize) -> Result<Self::Future, Self::Error> {
+        let (sender, recv) = new_output();
 
-        let id = self.id.next();
+        self.pending += count;
+        self.queue.push_back(Queued { count, sender });
 
-        let receiver_adjust = BatchReceiverAdjust {
-            id,
-            adjust: receiver_adjust,
-        };
-        let adjustments = BatchAdjust { id, adjustments };
-
-        Some((receiver_adjust, adjustments))
-    }
-
-    /// Returns the number of preprocessed OLEs that are available.
-    pub fn cache_size(&self) -> usize {
-        self.cache.len()
+        Ok(recv)
     }
 }
 
-/// Receiver adjustments waiting for [`BatchAdjust`] from the sender.
-pub struct BatchReceiverAdjust<F> {
-    id: TransferId,
-    adjust: Vec<ReceiverAdjust<F>>,
+/// Error for [`Receiver`].
+#[derive(Debug, thiserror::Error)]
+#[error(transparent)]
+pub struct ReceiverError(#[from] ErrorRepr);
+
+impl ReceiverError {
+    fn ot<E>(err: E) -> Self
+    where
+        E: Into<Box<dyn std::error::Error + Send + Sync + 'static>>,
+    {
+        Self(ErrorRepr::Ot(err.into()))
+    }
 }
 
-impl<F: Field> BatchReceiverAdjust<F> {
-    /// Completes the adjustment and returns the new shares.
-    ///
-    /// # Arguments
-    ///
-    /// * `batch_adjust` - The sender's adjustments.
-    ///
-    /// # Returns
-    ///
-    /// * A vector of [`ReceiverShare`]s containing the new OLE outputs for the receiver.
-    pub fn finish_adjust(
-        self,
-        batch_adjust: BatchAdjust<F>,
-    ) -> Result<Vec<ReceiverShare<F>>, OLEError> {
-        if self.id != batch_adjust.id {
-            return Err(OLEError::WrongId(batch_adjust.id, self.id));
-        }
-
-        let receiver_adjust = self.adjust;
-        let adjustments = batch_adjust.adjustments;
-
-        if receiver_adjust.len() != adjustments.len() {
-            return Err(OLEError::UnequalAdjustments(
-                adjustments.len(),
-                receiver_adjust.len(),
-            ));
-        }
-
-        let shares = receiver_adjust
-            .into_iter()
-            .zip(adjustments)
-            .map(|(s, a)| s.finish(ShareAdjust(a)))
-            .collect();
-
-        Ok(shares)
-    }
+#[derive(Debug, thiserror::Error)]
+enum ErrorRepr {
+    #[error("ot error: {0}")]
+    Ot(Box<dyn std::error::Error + Send + Sync + 'static>),
+    #[error("insufficient OLE, wanted: {count}, available: {available}")]
+    InsufficientOle { count: usize, available: usize },
+    #[error("sender sent wrong number of OLEs, expected: {expected}, actual: {actual}")]
+    WrongCount { expected: usize, actual: usize },
 }

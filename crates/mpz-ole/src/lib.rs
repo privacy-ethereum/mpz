@@ -1,145 +1,67 @@
-//! IO wrappers for Oblivious Linear Function Evaluation (OLE).
+//! Oblivious linear evaluation.
 
 #![deny(missing_docs, unreachable_pub, unused_must_use)]
 #![deny(unsafe_code)]
 #![deny(clippy::all)]
 
-use async_trait::async_trait;
-use mpz_common::Context;
-use mpz_fields::{Field, FieldError};
-use mpz_ole_core::OLEError as OLECoreError;
-use mpz_ot::OTError;
-use std::{
-    error::Error,
-    fmt::{Debug, Display},
-    io::Error as IOError,
-};
-
-#[cfg(feature = "ideal")]
+#[cfg(any(test, feature = "test-utils"))]
 pub mod ideal;
-pub mod rot;
+mod receiver;
+mod sender;
 
-/// Batch OLE Sender.
-///
-/// The sender inputs field elements `a_k` and gets outputs `x_k`, such that
-/// `y_k = a_k * b_k + x_k` holds, where `b_k` and `y_k` are the [`OLEReceiver`]'s inputs and outputs
-/// respectively.
-#[async_trait]
-pub trait OLESender<Ctx: Context, F: Field> {
-    /// Sends his masked inputs to the [`OLEReceiver`].
-    ///
-    /// # Arguments
-    ///
-    /// * `ctx` - The context.
-    /// * `inputs` - The sender's OLE inputs.
-    ///
-    /// # Returns
-    ///
-    /// * The sender's OLE outputs `x_k`.
-    async fn send(&mut self, ctx: &mut Ctx, inputs: Vec<F>) -> Result<Vec<F>, OLEError>;
-}
+pub use mpz_ole_core::{ROLEReceiver, ROLEReceiverOutput, ROLESender, ROLESenderOutput};
+pub use receiver::{Receiver, ReceiverError};
+pub use sender::{Sender, SenderError};
 
-/// Batch OLE Receiver.
-///
-/// The receiver inputs field elements `b_k` and gets outputs `y_k`, such that
-/// `y_k = a_k * b_k + x_k` holds, where `a_k` and `x_k` are the [`OLESender`]'s inputs and outputs
-/// respectively.
-#[async_trait]
-pub trait OLEReceiver<Ctx: Context, F: Field> {
-    /// Receives the masked inputs of the [`OLESender`].
-    ///
-    /// # Arguments
-    ///
-    /// * `ctx` - The context.
-    /// * `inputs` - The receiver's OLE inputs.
-    ///
-    /// # Returns
-    ///
-    /// * The receiver's OLE outputs `y_k`.
-    async fn receive(&mut self, ctx: &mut Ctx, inputs: Vec<F>) -> Result<Vec<F>, OLEError>;
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use mpz_common::{executor::test_st_executor, Flush};
+    use mpz_core::Block;
+    use mpz_fields::p256::P256;
+    use mpz_ole_core::test::assert_ole;
+    use mpz_ot::{
+        ideal::rot::ideal_rot,
+        rot::any::{AnyReceiver, AnySender},
+    };
+    use rand::{rngs::StdRng, SeedableRng};
+    use sender::Sender;
 
-/// An OLE error.
-#[derive(Debug, thiserror::Error)]
-pub struct OLEError {
-    kind: OLEErrorKind,
-    #[source]
-    source: Option<Box<dyn Error + Send + Sync>>,
-}
+    #[tokio::test]
+    async fn test_role() {
+        let (mut ctx_sender, mut ctx_receiver) = test_st_executor(8);
+        let mut rng = StdRng::seed_from_u64(0);
+        let (rot_sender, rot_receiver) = ideal_rot(Block::random(&mut rng));
 
-impl OLEError {
-    fn new<E>(kind: OLEErrorKind, source: E) -> Self
-    where
-        E: Into<Box<dyn Error + Send + Sync>>,
-    {
-        Self {
-            kind,
-            source: Some(source.into()),
-        }
-    }
-}
+        let mut sender =
+            Sender::<_, P256>::new(Block::random(&mut rng), AnySender::new(rot_sender));
+        let mut receiver = Receiver::<_, P256>::new(AnyReceiver::new(rot_receiver));
 
-impl Display for OLEError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self.kind {
-            OLEErrorKind::Context => write!(f, "Context Error"),
-            OLEErrorKind::OT => write!(f, "OT Error"),
-            OLEErrorKind::IO => write!(f, "IO Error"),
-            OLEErrorKind::Core => write!(f, "OLE Core Error"),
-            OLEErrorKind::Field => write!(f, "FieldError"),
-            OLEErrorKind::InsufficientOLEs => write!(f, "Insufficient OLEs"),
-        }?;
+        let count = 8;
+        sender.alloc(8).unwrap();
+        receiver.alloc(8).unwrap();
 
-        if let Some(source) = self.source.as_ref() {
-            write!(f, " caused by: {source}")?;
-        }
+        futures::join!(
+            async { sender.flush(&mut ctx_sender).await.unwrap() },
+            async { receiver.flush(&mut ctx_receiver).await.unwrap() }
+        );
 
-        Ok(())
-    }
-}
+        let ROLESenderOutput {
+            id: sender_id,
+            shares: sender_shares,
+        } = sender.try_send_role(count).unwrap();
 
-#[derive(Debug)]
-pub(crate) enum OLEErrorKind {
-    Context,
-    OT,
-    IO,
-    Core,
-    Field,
-    InsufficientOLEs,
-}
+        let ROLEReceiverOutput {
+            id: receiver_id,
+            shares: receiver_shares,
+        } = receiver.try_recv_role(count).unwrap();
 
-impl From<mpz_common::ContextError> for OLEError {
-    fn from(value: mpz_common::ContextError) -> Self {
-        Self::new(OLEErrorKind::Context, value)
-    }
-}
-
-impl From<mpz_common::sync::MutexError> for OLEError {
-    fn from(value: mpz_common::sync::MutexError) -> Self {
-        Self::new(OLEErrorKind::Context, value)
-    }
-}
-
-impl From<OTError> for OLEError {
-    fn from(value: OTError) -> Self {
-        Self::new(OLEErrorKind::OT, value)
-    }
-}
-
-impl From<IOError> for OLEError {
-    fn from(value: IOError) -> Self {
-        Self::new(OLEErrorKind::IO, value)
-    }
-}
-
-impl From<OLECoreError> for OLEError {
-    fn from(value: OLECoreError) -> Self {
-        Self::new(OLEErrorKind::Core, value)
-    }
-}
-
-impl From<FieldError> for OLEError {
-    fn from(value: FieldError) -> Self {
-        Self::new(OLEErrorKind::Field, value)
+        assert_eq!(sender_id, receiver_id);
+        sender_shares
+            .into_iter()
+            .zip(receiver_shares)
+            .for_each(|(s, r)| {
+                assert_ole(s, r);
+            });
     }
 }

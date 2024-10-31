@@ -10,7 +10,7 @@ pub mod p256;
 use std::{
     error::Error,
     fmt::Debug,
-    ops::{Add, Mul, Neg},
+    ops::{Add, Mul, Neg, Sub},
 };
 
 use hybrid_array::{Array, ArraySize};
@@ -22,6 +22,7 @@ use typenum::Unsigned;
 /// A trait for finite fields.
 pub trait Field:
     Add<Output = Self>
+    + Sub<Output = Self>
     + Mul<Output = Self>
     + Neg<Output = Self>
     + Copy
@@ -63,8 +64,9 @@ pub trait Field:
     /// Return a field element from a power of two.
     fn two_pow(rhs: u32) -> Self;
 
-    /// Return the multiplicative inverse.
-    fn inverse(self) -> Self;
+    /// Return the multiplicative inverse, returning `None` if the element is
+    /// zero.
+    fn inverse(self) -> Option<Self>;
 
     /// Return field element as little-endian bytes.
     fn to_le_bytes(&self) -> Vec<u8>;
@@ -80,8 +82,9 @@ pub struct FieldError(Box<dyn Error + Send + Sync + 'static>);
 
 /// A trait for sampling random elements of the field.
 ///
-/// This is helpful, because we do not need to import other traits since this is a supertrait of
-/// field (which is not possible with `Standard` and `Distribution`).
+/// This is helpful, because we do not need to import other traits since this is
+/// a supertrait of field (which is not possible with `Standard` and
+/// `Distribution`).
 pub trait UniformRand: Sized {
     /// Return a random field element.
     fn rand<R: Rng + ?Sized>(rng: &mut R) -> Self;
@@ -99,11 +102,13 @@ where
 
 /// Iteratively multiplies some field element with another field element.
 ///
-/// This function multiplies the last element in `powers` with some other field element `factor`
-/// and appends the result to `powers`. This process is repeated `count` times.
+/// This function multiplies the last element in `powers` with some other field
+/// element `factor` and appends the result to `powers`. This process is
+/// repeated `count` times.
 ///
 /// * `powers` - The vector to which the new higher powers get pushed.
-/// * `factor` - The field element with which the last element of the vector is multiplied.
+/// * `factor` - The field element with which the last element of the vector is
+///   multiplied.
 /// * `count` - How many products are computed.
 pub fn compute_product_repeated<T: Field>(powers: &mut Vec<T>, factor: T, count: usize) {
     for _ in 0..count {
@@ -131,8 +136,8 @@ mod tests {
         assert_eq!(a + zero, a);
         assert_eq!(a * zero, zero);
         assert_eq!(a * one, a);
-        assert_eq!(a * a.inverse(), one);
-        assert_eq!(one.inverse(), one);
+        assert_eq!(a * a.inverse().unwrap(), one);
+        assert_eq!(one.inverse().unwrap(), one);
         assert_eq!(a + -a, zero);
     }
 
