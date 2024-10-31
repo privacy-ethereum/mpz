@@ -4,6 +4,7 @@ use mpz_core::Block;
 
 /// Asserts the correctness of oblivious transfer.
 pub fn assert_ot(choices: &[bool], msgs: &[[Block; 2]], received: &[Block]) {
+<<<<<<< HEAD
     assert!(
         choices
             .iter()
@@ -16,6 +17,18 @@ pub fn assert_ot(choices: &[bool], msgs: &[[Block; 2]], received: &[Block]) {
                 }
             })
     );
+=======
+    assert!(choices
+        .iter()
+        .zip(msgs.iter().zip(received))
+        .all(|(&choice, (&msg, &received))| {
+            if choice {
+                received == msg[1]
+            } else {
+                received == msg[0]
+            }
+        }));
+>>>>>>> b81b562 (feat: lazy ot (#186))
 }
 
 /// Asserts the correctness of correlated oblivious transfer.

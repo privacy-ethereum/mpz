@@ -7,10 +7,13 @@ edition = "2024"
 default = []
 cpu = ["rayon"]
 executor = ["cpu"]
+default = []
+cpu = ["rayon"]
+executor = ["cpu"]
 sync = ["tokio/sync"]
 future = []
-test-utils = ["uid-mux/test-utils"]
-ideal = ["tokio/sync"]
+test-utils = ["dep:uid-mux", "uid-mux/test-utils"]
+ideal = []
 rayon = ["dep:rayon"]
 force-st = []
 
@@ -23,7 +26,7 @@ bytes = { workspace = true }
 pin-project-lite.workspace = true
 thiserror.workspace = true
 serio.workspace = true
-uid-mux = { workspace = true }
+uid-mux = { workspace = true, optional = true }
 serde = { workspace = true, features = ["derive"] }
 pollster.workspace = true
 rayon = { workspace = true, optional = true }

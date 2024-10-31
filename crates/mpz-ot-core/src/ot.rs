@@ -16,7 +16,11 @@ pub trait OTSender<T> {
     /// Error type.
     type Error: std::error::Error + Send + Sync + 'static;
     /// Future type.
+<<<<<<< HEAD
     type Future: Output<OTSenderOutput>;
+=======
+    type Future: Output<Ok = OTSenderOutput>;
+>>>>>>> b81b562 (feat: lazy ot (#186))
 
     /// Allocates `count` OTs for preprocessing.
     fn alloc(&mut self, count: usize) -> Result<(), Self::Error>;
@@ -43,7 +47,11 @@ pub trait OTReceiver<T, U> {
     /// Error type.
     type Error: std::error::Error + Send + Sync + 'static;
     /// Future type.
+<<<<<<< HEAD
     type Future: Output<OTReceiverOutput<U>>;
+=======
+    type Future: Output<Ok = OTReceiverOutput<U>>;
+>>>>>>> b81b562 (feat: lazy ot (#186))
 
     /// Allocates `count` OTs for preprocessing.
     fn alloc(&mut self, count: usize) -> Result<(), Self::Error>;

@@ -5,14 +5,24 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+<<<<<<< HEAD
 use mpz_common::future::{MaybeDone, Sender, new_output};
 use mpz_core::{Block, prg::Prg};
+=======
+use mpz_common::future::{new_output, MaybeDone, Sender};
+use mpz_core::{prg::Prg, Block};
+>>>>>>> b81b562 (feat: lazy ot (#186))
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 
 use crate::{
+<<<<<<< HEAD
     TransferId,
     rcot::{RCOTReceiver, RCOTReceiverOutput, RCOTSender, RCOTSenderOutput},
+=======
+    rcot::{RCOTReceiver, RCOTReceiverOutput, RCOTSender, RCOTSenderOutput},
+    TransferId,
+>>>>>>> b81b562 (feat: lazy ot (#186))
 };
 
 type Error = IdealRCOTError;
@@ -93,7 +103,11 @@ impl IdealRCOT {
         let sender_count = this.sender_state.alloc;
         let receiver_count = this.receiver_state.alloc;
 
+<<<<<<< HEAD
         sender_count > 0 || receiver_count > 0
+=======
+        sender_count > 0 && receiver_count > 0 && sender_count == receiver_count
+>>>>>>> b81b562 (feat: lazy ot (#186))
     }
 
     /// Flushes pending operations.
@@ -108,8 +122,13 @@ impl IdealRCOT {
 
         let count = this.sender_state.alloc;
 
+<<<<<<< HEAD
         let keys = (0..count).map(|_| this.prg.random()).collect::<Vec<_>>();
         let choices = (0..count).map(|_| this.prg.random()).collect::<Vec<_>>();
+=======
+        let keys = (0..count).map(|_| this.prg.gen()).collect::<Vec<_>>();
+        let choices = (0..count).map(|_| this.prg.gen()).collect::<Vec<_>>();
+>>>>>>> b81b562 (feat: lazy ot (#186))
         let msgs = keys
             .iter()
             .zip(&choices)
@@ -128,7 +147,11 @@ impl IdealRCOT {
             let keys = this.keys[i..i + count].to_vec();
             i += count;
             sender.send(RCOTSenderOutput {
+<<<<<<< HEAD
                 id: this.sender_state.transfer_id.next(),
+=======
+                id: this.sender_state.transfer_id,
+>>>>>>> b81b562 (feat: lazy ot (#186))
                 keys,
             });
         }
@@ -140,7 +163,11 @@ impl IdealRCOT {
             let keys = this.msgs[i..i + count].to_vec();
             i += count;
             sender.send(RCOTReceiverOutput {
+<<<<<<< HEAD
                 id: this.receiver_state.transfer_id.next(),
+=======
+                id: this.receiver_state.transfer_id,
+>>>>>>> b81b562 (feat: lazy ot (#186))
                 choices,
                 msgs: keys,
             });
@@ -269,7 +296,11 @@ impl RCOTReceiver<bool, Block> for IdealRCOT {
 impl Default for IdealRCOT {
     fn default() -> Self {
         let mut rng = ChaCha8Rng::seed_from_u64(0);
+<<<<<<< HEAD
         Self::new(rng.random(), rng.random())
+=======
+        Self::new(rng.gen(), rng.gen())
+>>>>>>> b81b562 (feat: lazy ot (#186))
     }
 }
 

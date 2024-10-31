@@ -6,8 +6,13 @@ mod receiver;
 mod sender;
 
 pub use error::{ReceiverError, SenderError, SenderVerifyError};
+<<<<<<< HEAD
 pub use receiver::{Receiver, state as receiver_state};
 pub use sender::{Sender, state as sender_state};
+=======
+pub use receiver::{state as receiver_state, Receiver};
+pub use sender::{state as sender_state, Sender};
+>>>>>>> b81b562 (feat: lazy ot (#186))
 
 use blake3::Hasher;
 use curve25519_dalek::ristretto::RistrettoPoint;
@@ -51,19 +56,27 @@ mod tests {
     #[fixture]
     fn choices() -> Vec<bool> {
         let mut rng = ChaCha12Rng::seed_from_u64(0);
+<<<<<<< HEAD
         (0..128).map(|_| rng.random()).collect()
+=======
+        (0..128).map(|_| rng.gen()).collect()
+>>>>>>> b81b562 (feat: lazy ot (#186))
     }
 
     #[fixture]
     fn data() -> Vec<[Block; 2]> {
         let mut rng = ChaCha12Rng::seed_from_u64(0);
         (0..128)
+<<<<<<< HEAD
             .map(|_| {
                 [
                     rng.random::<[u8; 16]>().into(),
                     rng.random::<[u8; 16]>().into(),
                 ]
             })
+=======
+            .map(|_| [rng.gen::<[u8; 16]>().into(), rng.gen::<[u8; 16]>().into()])
+>>>>>>> b81b562 (feat: lazy ot (#186))
             .collect()
     }
 

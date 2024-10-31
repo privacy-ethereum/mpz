@@ -1,6 +1,11 @@
 use mpz_common::future::{Map, OutputExt};
+<<<<<<< HEAD
 use mpz_core::{Block, prg::Prg};
 use rand::{Rng, distr::StandardUniform, prelude::Distribution};
+=======
+use mpz_core::{prg::Prg, Block};
+use rand::{distributions::Standard, prelude::Distribution, Rng};
+>>>>>>> b81b562 (feat: lazy ot (#186))
 
 use crate::rot::{ROTReceiver, ROTReceiverOutput, ROTSender, ROTSenderOutput};
 
@@ -35,6 +40,7 @@ impl<T> AnySender<T> {
 impl<T, U> ROTSender<[U; 2]> for AnySender<T>
 where
     T: ROTSender<[Block; 2]>,
+<<<<<<< HEAD
     StandardUniform: Distribution<U>,
 {
     type Error = T::Error;
@@ -43,6 +49,12 @@ where
         ROTSenderOutput<[Block; 2]>,
         fn(ROTSenderOutput<[Block; 2]>) -> ROTSenderOutput<[U; 2]>,
     >;
+=======
+    Standard: Distribution<U>,
+{
+    type Error = T::Error;
+    type Future = Map<T::Future, fn(ROTSenderOutput<[Block; 2]>) -> ROTSenderOutput<[U; 2]>>;
+>>>>>>> b81b562 (feat: lazy ot (#186))
 
     fn alloc(&mut self, count: usize) -> Result<(), Self::Error> {
         self.rot.alloc(count)
@@ -65,7 +77,11 @@ where
 
 fn map_sender<T>(output: ROTSenderOutput<[Block; 2]>) -> ROTSenderOutput<[T; 2]>
 where
+<<<<<<< HEAD
     StandardUniform: Distribution<T>,
+=======
+    Standard: Distribution<T>,
+>>>>>>> b81b562 (feat: lazy ot (#186))
 {
     let ROTSenderOutput { id, keys } = output;
     let keys = keys
@@ -74,7 +90,11 @@ where
             let mut prg_0 = Prg::new_with_seed(k0.to_bytes());
             let mut prg_1 = Prg::new_with_seed(k1.to_bytes());
 
+<<<<<<< HEAD
             [prg_0.random(), prg_1.random()]
+=======
+            [prg_0.gen(), prg_1.gen()]
+>>>>>>> b81b562 (feat: lazy ot (#186))
         })
         .collect();
     ROTSenderOutput { id, keys }
@@ -111,6 +131,7 @@ impl<T> AnyReceiver<T> {
 impl<T, U> ROTReceiver<bool, U> for AnyReceiver<T>
 where
     T: ROTReceiver<bool, Block>,
+<<<<<<< HEAD
     StandardUniform: Distribution<U>,
 {
     type Error = T::Error;
@@ -119,6 +140,12 @@ where
         ROTReceiverOutput<bool, Block>,
         fn(ROTReceiverOutput<bool, Block>) -> ROTReceiverOutput<bool, U>,
     >;
+=======
+    Standard: Distribution<U>,
+{
+    type Error = T::Error;
+    type Future = Map<T::Future, fn(ROTReceiverOutput<bool, Block>) -> ROTReceiverOutput<bool, U>>;
+>>>>>>> b81b562 (feat: lazy ot (#186))
 
     fn alloc(&mut self, count: usize) -> Result<(), Self::Error> {
         self.rot.alloc(count)
@@ -141,14 +168,22 @@ where
 
 fn map_receiver<T>(output: ROTReceiverOutput<bool, Block>) -> ROTReceiverOutput<bool, T>
 where
+<<<<<<< HEAD
     StandardUniform: Distribution<T>,
+=======
+    Standard: Distribution<T>,
+>>>>>>> b81b562 (feat: lazy ot (#186))
 {
     let ROTReceiverOutput { id, choices, msgs } = output;
     let msgs = msgs
         .into_iter()
         .map(|msg| {
             let mut prg = Prg::new_with_seed(msg.to_bytes());
+<<<<<<< HEAD
             prg.random()
+=======
+            prg.gen()
+>>>>>>> b81b562 (feat: lazy ot (#186))
         })
         .collect();
     ROTReceiverOutput { id, choices, msgs }

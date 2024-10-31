@@ -1,13 +1,23 @@
 use std::{collections::VecDeque, mem};
 
 use crate::{
+<<<<<<< HEAD
+=======
+    kos::{Check, Extend, SenderConfig, SenderError, CSP, SSP},
+    rcot::{RCOTSender, RCOTSenderOutput},
+>>>>>>> b81b562 (feat: lazy ot (#186))
     TransferId,
     kos::{CSP, Check, Extend, SSP, SenderConfig, SenderError},
     rcot::{RCOTSender, RCOTSenderOutput},
 };
 
+<<<<<<< HEAD
 use mpz_common::future::{MaybeDone, Sender as OutputSender, new_output};
 use mpz_core::{Block, prg::Prg};
+=======
+use mpz_common::future::{new_output, MaybeDone, Sender as OutputSender};
+use mpz_core::{prg::Prg, Block};
+>>>>>>> b81b562 (feat: lazy ot (#186))
 
 use rand::{Rng as _, SeedableRng};
 use rand_core::RngCore;
@@ -55,6 +65,10 @@ impl Sender<state::Initialized> {
     ///
     /// * `config` - Sender's configuration.
     /// * `delta` - Global COT correlation.
+<<<<<<< HEAD
+=======
+    /// * `base_ot` - Base OT.
+>>>>>>> b81b562 (feat: lazy ot (#186))
     pub fn new(config: SenderConfig, delta: Block) -> Self {
         Sender {
             config,
@@ -82,7 +96,11 @@ impl Sender<state::Initialized> {
             queue: self.queue,
             delta: self.delta,
             state: state::Extension {
+<<<<<<< HEAD
                 rngs: seeds.into_iter().map(Prg::from_seed).collect(),
+=======
+                rngs: seeds.into_iter().map(|seed| Prg::from_seed(seed)).collect(),
+>>>>>>> b81b562 (feat: lazy ot (#186))
                 keys: Vec::default(),
                 extended: false,
                 unchecked_qs: Vec::default(),
@@ -286,9 +304,15 @@ impl RCOTSender<Block> for Sender<state::Initialized> {
     }
 
     fn try_send_rcot(&mut self, _count: usize) -> Result<RCOTSenderOutput<Block>, Self::Error> {
+<<<<<<< HEAD
         Err(SenderError::InvalidState(
             "sender has not been setup yet".to_string(),
         ))
+=======
+        return Err(SenderError::InvalidState(
+            "sender has not been setup yet".to_string(),
+        ));
+>>>>>>> b81b562 (feat: lazy ot (#186))
     }
 
     fn queue_send_rcot(&mut self, count: usize) -> Result<Self::Future, Self::Error> {
@@ -296,7 +320,11 @@ impl RCOTSender<Block> for Sender<state::Initialized> {
 
         self.queue.push_back(Queued { count, sender });
 
+<<<<<<< HEAD
         Ok(recv)
+=======
+        return Ok(recv);
+>>>>>>> b81b562 (feat: lazy ot (#186))
     }
 }
 
@@ -346,18 +374,31 @@ impl RCOTSender<Block> for Sender<state::Extension> {
             let (sender, recv) = new_output();
             sender.send(output);
 
+<<<<<<< HEAD
             Ok(recv)
+=======
+            return Ok(recv);
+>>>>>>> b81b562 (feat: lazy ot (#186))
         } else if !self.state.extended {
             let (sender, recv) = new_output();
 
             self.queue.push_back(Queued { count, sender });
 
+<<<<<<< HEAD
             Ok(recv)
         } else {
             Err(SenderError::InsufficientSetup {
                 expected: count,
                 actual: self.available(),
             })
+=======
+            return Ok(recv);
+        } else {
+            return Err(SenderError::InsufficientSetup {
+                expected: count,
+                actual: self.available(),
+            });
+>>>>>>> b81b562 (feat: lazy ot (#186))
         }
     }
 }

@@ -16,7 +16,11 @@ pub enum SenderError {
     InvalidExtend,
     #[error("consistency check failed")]
     ConsistencyCheckFailed,
+<<<<<<< HEAD
     #[error("not enough OTs are set up: expected {expected}, actual {actual}")]
+=======
+    #[error("not enough OTs are setup: expected {expected}, actual {actual}")]
+>>>>>>> b81b562 (feat: lazy ot (#186))
     InsufficientSetup { expected: usize, actual: usize },
 }
 
@@ -32,7 +36,11 @@ pub enum ReceiverError {
     CountMismatch(usize, usize),
     #[error("id mismatch: expected {0}, got {1}")]
     IdMismatch(TransferId, TransferId),
+<<<<<<< HEAD
     #[error("not enough OTs are set up: expected {expected}, actual {actual}")]
+=======
+    #[error("not enough OTs are setup: expected {expected}, actual {actual}")]
+>>>>>>> b81b562 (feat: lazy ot (#186))
     InsufficientSetup { expected: usize, actual: usize },
     #[error("invalid payload")]
     InvalidPayload(String),

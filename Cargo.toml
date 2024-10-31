@@ -57,7 +57,8 @@ mpz-zk = { path = "crates/mpz-zk" }
 clmul = { path = "crates/clmul" }
 matrix-transpose = { path = "crates/matrix-transpose" }
 
-tlsn-utils = { git = "https://github.com/tlsnotary/tlsn-utils", rev = "425614e" }
+tlsn-utils = { git = "https://github.com/tlsnotary/tlsn-utils", rev = "5899190" }
+tlsn-utils-aio = { git = "https://github.com/tlsnotary/tlsn-utils", rev = "5899190" }
 
 # rand
 rand_chacha = "0.9"
@@ -138,4 +139,3 @@ itybity = "0.3"
 enum-try-as-inner = "0.1.0"
 bitvec = "1.0"
 hashbrown = "0.14.5"
-crossbeam-channel = "0.5"

@@ -1,5 +1,9 @@
 use mpz_common::future::{Map, OutputExt};
+<<<<<<< HEAD
 use mpz_core::{Block, aes::FIXED_KEY_AES};
+=======
+use mpz_core::{aes::FIXED_KEY_AES, Block};
+>>>>>>> b81b562 (feat: lazy ot (#186))
 
 use crate::{
     rcot::{RCOTReceiver, RCOTReceiverOutput, RCOTSender, RCOTSenderOutput},
@@ -7,7 +11,11 @@ use crate::{
 };
 
 // We have to Box the closure because it's not name-able in the associated type.
+<<<<<<< HEAD
 type FnSender = Box<dyn FnOnce(RCOTSenderOutput<Block>) -> ROTSenderOutput<[Block; 2]> + Send>;
+=======
+type FnSender = Box<dyn FnOnce(RCOTSenderOutput<Block>) -> ROTSenderOutput<[Block; 2]>>;
+>>>>>>> b81b562 (feat: lazy ot (#186))
 
 /// ROT sender which randomizes the output of an RCOT sender.
 #[derive(Debug)]
@@ -46,7 +54,11 @@ where
     T: RCOTSender<Block>,
 {
     type Error = T::Error;
+<<<<<<< HEAD
     type Future = Map<T::Future, RCOTSenderOutput<Block>, FnSender>;
+=======
+    type Future = Map<T::Future, FnSender>;
+>>>>>>> b81b562 (feat: lazy ot (#186))
 
     fn alloc(&mut self, count: usize) -> Result<(), Self::Error> {
         self.rcot.alloc(count)
@@ -137,11 +149,16 @@ where
     T: RCOTReceiver<bool, Block>,
 {
     type Error = T::Error;
+<<<<<<< HEAD
     type Future = Map<
         T::Future,
         RCOTReceiverOutput<bool, Block>,
         fn(RCOTReceiverOutput<bool, Block>) -> ROTReceiverOutput<bool, Block>,
     >;
+=======
+    type Future =
+        Map<T::Future, fn(RCOTReceiverOutput<bool, Block>) -> ROTReceiverOutput<bool, Block>>;
+>>>>>>> b81b562 (feat: lazy ot (#186))
 
     fn alloc(&mut self, count: usize) -> Result<(), Self::Error> {
         self.rcot.alloc(count)
@@ -196,7 +213,11 @@ fn randomize_receiver(output: RCOTReceiverOutput<bool, Block>) -> ROTReceiverOut
 #[cfg(test)]
 mod tests {
     use mpz_common::future::Output;
+<<<<<<< HEAD
     use rand::{Rng, SeedableRng, rngs::StdRng};
+=======
+    use rand::{rngs::StdRng, Rng, SeedableRng};
+>>>>>>> b81b562 (feat: lazy ot (#186))
 
     use super::*;
 
@@ -205,7 +226,11 @@ mod tests {
     #[test]
     fn test_randomize_rcot() {
         let mut rng = StdRng::seed_from_u64(0);
+<<<<<<< HEAD
         let rcot = IdealRCOT::new(rng.random(), rng.random());
+=======
+        let rcot = IdealRCOT::new(rng.gen(), rng.gen());
+>>>>>>> b81b562 (feat: lazy ot (#186))
 
         let mut sender = RandomizeRCOTSender::new(rcot.clone());
         let mut receiver = RandomizeRCOTReceiver::new(rcot);

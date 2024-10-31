@@ -5,12 +5,21 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+<<<<<<< HEAD
 use mpz_common::future::{MaybeDone, Output, Sender, new_output};
 use mpz_core::Block;
 
 use crate::{
     TransferId,
     cot::{COTReceiver, COTReceiverOutput, COTSender, COTSenderOutput},
+=======
+use mpz_common::future::{new_output, MaybeDone, Output, Sender};
+use mpz_core::Block;
+
+use crate::{
+    cot::{COTReceiver, COTReceiverOutput, COTSender, COTSenderOutput},
+    TransferId,
+>>>>>>> b81b562 (feat: lazy ot (#186))
 };
 
 type Error = IdealCOTError;
@@ -89,6 +98,7 @@ impl IdealCOT {
             receiver_output.try_recv().unwrap().unwrap(),
         ))
     }
+<<<<<<< HEAD
 
     /// Returns `true` if the functionality wants to be flushed.
     pub fn wants_flush(&self) -> bool {
@@ -149,6 +159,70 @@ impl IdealCOT {
             });
         }
 
+=======
+
+    /// Returns `true` if the functionality wants to be flushed.
+    pub fn wants_flush(&self) -> bool {
+        let this = self.inner.lock().unwrap();
+        let sender_queue = this.sender_state.queue.len();
+        let receiver_queue = this.receiver_state.queue.len();
+
+        sender_queue > 0 && receiver_queue > 0 && sender_queue == receiver_queue
+    }
+
+    /// Flushes the functionality.
+    pub fn flush(&mut self) -> Result<()> {
+        let mut this = self.inner.lock().unwrap();
+        if this.sender_state.alloc != this.receiver_state.alloc {
+            return Err(Error::new(format!(
+                "sender and receiver alloc out of sync: {} != {}",
+                this.sender_state.alloc, this.receiver_state.alloc
+            )));
+        } else if this.keys.len() != this.choices.len() {
+            return Err(Error::new(format!(
+                "keys and choices length mismatch: {} != {}",
+                this.keys.len(),
+                this.choices.len()
+            )));
+        }
+
+        this.sender_state.alloc = 0;
+        this.receiver_state.alloc = 0;
+
+        let keys = mem::take(&mut this.keys);
+        let choices = mem::take(&mut this.choices);
+        let sender_queue = mem::take(&mut this.sender_state.queue);
+        let receiver_queue = mem::take(&mut this.receiver_state.queue);
+
+        let delta = this.delta;
+        let mut msgs = keys.into_iter().zip(choices).map(
+            move |(key, choice)| {
+                if choice {
+                    key ^ delta
+                } else {
+                    key
+                }
+            },
+        );
+
+        for ((sender_count, sender_output), (receiver_count, receiver_output)) in
+            sender_queue.into_iter().zip(receiver_queue.into_iter())
+        {
+            let sender_id = this.sender_state.transfer_id.next();
+            let receiver_id = this.receiver_state.transfer_id.next();
+
+            if sender_count != receiver_count {
+                return Err(Error::new(format!("number of messages and choices do not match ({sender_id}): {sender_count} != {receiver_count}")));
+            }
+
+            sender_output.send(COTSenderOutput { id: sender_id });
+            receiver_output.send(COTReceiverOutput {
+                id: receiver_id,
+                msgs: msgs.by_ref().take(receiver_count).collect(),
+            });
+        }
+
+>>>>>>> b81b562 (feat: lazy ot (#186))
         Ok(())
     }
 }
@@ -230,7 +304,11 @@ impl IdealCOTError {
 
 #[cfg(test)]
 mod tests {
+<<<<<<< HEAD
     use rand::{Rng, SeedableRng, rngs::StdRng};
+=======
+    use rand::{rngs::StdRng, Rng, SeedableRng};
+>>>>>>> b81b562 (feat: lazy ot (#186))
 
     use super::*;
 
@@ -243,8 +321,13 @@ mod tests {
         let mut ideal = IdealCOT::new(delta);
 
         let count = 128;
+<<<<<<< HEAD
         let choices = (0..count).map(|_| rng.random()).collect::<Vec<_>>();
         let keys = (0..count).map(|_| rng.random()).collect::<Vec<_>>();
+=======
+        let choices = (0..count).map(|_| rng.gen()).collect::<Vec<_>>();
+        let keys = (0..count).map(|_| rng.gen()).collect::<Vec<_>>();
+>>>>>>> b81b562 (feat: lazy ot (#186))
 
         let (
             COTSenderOutput { id: sender_id },

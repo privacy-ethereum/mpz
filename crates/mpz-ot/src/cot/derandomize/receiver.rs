@@ -2,7 +2,11 @@ use async_trait::async_trait;
 use mpz_common::{Context, ContextError, Flush};
 use mpz_core::Block;
 use mpz_ot_core::cot::{DerandCOTReceiver as Core, DerandCOTReceiverError as CoreError};
+<<<<<<< HEAD
 use serio::{SinkExt, stream::IoStreamExt};
+=======
+use serio::{stream::IoStreamExt, SinkExt};
+>>>>>>> b81b562 (feat: lazy ot (#186))
 
 use crate::{cot::COTReceiver, rcot::RCOTReceiver};
 
@@ -51,9 +55,16 @@ where
 }
 
 #[async_trait]
+<<<<<<< HEAD
 impl<T> Flush for DerandCOTReceiver<T>
 where
     T: RCOTReceiver<bool, Block> + Flush + Send,
+=======
+impl<Ctx, T> Flush<Ctx> for DerandCOTReceiver<T>
+where
+    Ctx: Context,
+    T: RCOTReceiver<bool, Block> + Flush<Ctx> + Send,
+>>>>>>> b81b562 (feat: lazy ot (#186))
 {
     type Error = Error;
 
@@ -61,7 +72,11 @@ where
         self.core.wants_adjust()
     }
 
+<<<<<<< HEAD
     async fn flush(&mut self, ctx: &mut Context) -> Result<(), Self::Error> {
+=======
+    async fn flush(&mut self, ctx: &mut Ctx) -> Result<(), Self::Error> {
+>>>>>>> b81b562 (feat: lazy ot (#186))
         if self.core.rcot().wants_flush() {
             self.core.rcot_mut().flush(ctx).await.map_err(Error::rcot)?;
         }

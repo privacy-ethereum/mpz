@@ -9,7 +9,11 @@ use crate::TransferId;
 pub struct RCOTSenderOutput<T> {
     /// Transfer id.
     pub id: TransferId,
+<<<<<<< HEAD
     /// Random keys corresponding to the choice bit value 0.
+=======
+    /// Random keys.
+>>>>>>> b81b562 (feat: lazy ot (#186))
     pub keys: Vec<T>,
 }
 
@@ -18,7 +22,11 @@ pub trait RCOTSender<T> {
     /// Error type.
     type Error: std::error::Error + Send + Sync + 'static;
     /// Future type.
+<<<<<<< HEAD
     type Future: Output<RCOTSenderOutput<T>>;
+=======
+    type Future: Output<Ok = RCOTSenderOutput<T>>;
+>>>>>>> b81b562 (feat: lazy ot (#186))
 
     /// Allocates `count` RCOTs for preprocessing.
     fn alloc(&mut self, count: usize) -> Result<(), Self::Error>;
@@ -60,7 +68,11 @@ pub trait RCOTReceiver<T, U> {
     /// Error type.
     type Error: std::error::Error + Send + Sync + 'static;
     /// Future type.
+<<<<<<< HEAD
     type Future: Output<RCOTReceiverOutput<T, U>>;
+=======
+    type Future: Output<Ok = RCOTReceiverOutput<T, U>>;
+>>>>>>> b81b562 (feat: lazy ot (#186))
 
     /// Allocates `count` RCOTs for preprocessing.
     fn alloc(&mut self, count: usize) -> Result<(), Self::Error>;

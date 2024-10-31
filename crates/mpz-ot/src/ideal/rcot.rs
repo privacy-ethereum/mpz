@@ -1,11 +1,15 @@
 //! Ideal functionality for random correlated OT.
 
 use async_trait::async_trait;
+<<<<<<< HEAD
 
 use mpz_common::{
     Context, Flush,
     ideal::{CallSync, call_sync},
 };
+=======
+use mpz_common::Flush;
+>>>>>>> b81b562 (feat: lazy ot (#186))
 use mpz_core::Block;
 use mpz_ot_core::{
     ideal::rcot::{IdealRCOT as Core, IdealRCOTError as CoreError},
@@ -15,6 +19,7 @@ use mpz_ot_core::{
 /// Returns a new ideal RCOT sender and receiver.
 pub fn ideal_rcot(seed: Block, delta: Block) -> (IdealRCOTSender, IdealRCOTReceiver) {
     let core = Core::new(seed, delta);
+<<<<<<< HEAD
     let (sync_0, sync_1) = call_sync();
     (
         IdealRCOTSender {
@@ -22,13 +27,21 @@ pub fn ideal_rcot(seed: Block, delta: Block) -> (IdealRCOTSender, IdealRCOTRecei
             sync: sync_0,
         },
         IdealRCOTReceiver { core, sync: sync_1 },
+=======
+    (
+        IdealRCOTSender { core: core.clone() },
+        IdealRCOTReceiver { core },
+>>>>>>> b81b562 (feat: lazy ot (#186))
     )
 }
 
 /// Ideal RCOT sender.
 pub struct IdealRCOTSender {
     core: Core,
+<<<<<<< HEAD
     sync: CallSync,
+=======
+>>>>>>> b81b562 (feat: lazy ot (#186))
 }
 
 impl RCOTSender<Block> for IdealRCOTSender {
@@ -57,19 +70,29 @@ impl RCOTSender<Block> for IdealRCOTSender {
 }
 
 #[async_trait]
+<<<<<<< HEAD
 impl Flush for IdealRCOTSender {
+=======
+impl<Ctx> Flush<Ctx> for IdealRCOTSender {
+>>>>>>> b81b562 (feat: lazy ot (#186))
     type Error = IdealRCOTError;
 
     fn wants_flush(&self) -> bool {
         self.core.wants_flush()
     }
 
+<<<<<<< HEAD
     async fn flush(&mut self, _ctx: &mut Context) -> Result<(), Self::Error> {
         if self.core.wants_flush() {
             self.sync
                 .call(|| self.core.flush().map_err(IdealRCOTError::from))
                 .await
                 .transpose()?;
+=======
+    async fn flush(&mut self, _ctx: &mut Ctx) -> Result<(), Self::Error> {
+        if self.core.wants_flush() {
+            self.core.flush().map_err(IdealRCOTError::from)?;
+>>>>>>> b81b562 (feat: lazy ot (#186))
         }
 
         Ok(())
@@ -79,7 +102,10 @@ impl Flush for IdealRCOTSender {
 /// Ideal RCOT receiver.
 pub struct IdealRCOTReceiver {
     core: Core,
+<<<<<<< HEAD
     sync: CallSync,
+=======
+>>>>>>> b81b562 (feat: lazy ot (#186))
 }
 
 impl RCOTReceiver<bool, Block> for IdealRCOTReceiver {
@@ -107,19 +133,29 @@ impl RCOTReceiver<bool, Block> for IdealRCOTReceiver {
 }
 
 #[async_trait]
+<<<<<<< HEAD
 impl Flush for IdealRCOTReceiver {
+=======
+impl<Ctx> Flush<Ctx> for IdealRCOTReceiver {
+>>>>>>> b81b562 (feat: lazy ot (#186))
     type Error = IdealRCOTError;
 
     fn wants_flush(&self) -> bool {
         self.core.wants_flush()
     }
 
+<<<<<<< HEAD
     async fn flush(&mut self, _ctx: &mut Context) -> Result<(), Self::Error> {
         if self.core.wants_flush() {
             self.sync
                 .call(|| self.core.flush().map_err(IdealRCOTError::from))
                 .await
                 .transpose()?;
+=======
+    async fn flush(&mut self, _ctx: &mut Ctx) -> Result<(), Self::Error> {
+        if self.core.wants_flush() {
+            self.core.flush().map_err(IdealRCOTError::from)?;
+>>>>>>> b81b562 (feat: lazy ot (#186))
         }
 
         Ok(())
@@ -133,7 +169,11 @@ pub struct IdealRCOTError(#[from] CoreError);
 
 #[cfg(test)]
 mod tests {
+<<<<<<< HEAD
     use rand::{Rng, SeedableRng, rngs::StdRng};
+=======
+    use rand::{rngs::StdRng, Rng, SeedableRng};
+>>>>>>> b81b562 (feat: lazy ot (#186))
 
     use super::*;
     use crate::test::test_rcot;
@@ -141,7 +181,12 @@ mod tests {
     #[tokio::test]
     async fn test_ideal_rcot() {
         let mut rng = StdRng::seed_from_u64(0);
+<<<<<<< HEAD
         let (sender, receiver) = ideal_rcot(rng.random(), rng.random());
         test_rcot(sender, receiver, 128, 8).await;
+=======
+        let (sender, receiver) = ideal_rcot(rng.gen(), rng.gen());
+        test_rcot(sender, receiver, 8).await;
+>>>>>>> b81b562 (feat: lazy ot (#186))
     }
 }

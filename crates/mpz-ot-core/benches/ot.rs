@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
 use itybity::ToBits;
 use mpz_core::{Block, lpn::LpnType};
@@ -6,6 +7,13 @@ use mpz_ot_core::{
     ferret::{self, FerretConfig},
     ideal::rcot::IdealRCOT,
     kos,
+=======
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use itybity::ToBits;
+use mpz_core::Block;
+use mpz_ot_core::{
+    chou_orlandi, kos,
+>>>>>>> b81b562 (feat: lazy ot (#186))
     ot::{OTReceiver, OTSender},
     rcot::{RCOTReceiver, RCOTSender},
 };
@@ -19,7 +27,11 @@ fn chou_orlandi(c: &mut Criterion) {
         group.bench_with_input(BenchmarkId::from_parameter(n), &n, |b, &n| {
             let msgs = vec![[Block::ONES; 2]; n];
             let mut rng = ChaCha12Rng::seed_from_u64(0);
+<<<<<<< HEAD
             let choices = (0..n).map(|_| rng.random()).collect::<Vec<bool>>();
+=======
+            let choices = (0..n).map(|_| rng.gen()).collect::<Vec<bool>>();
+>>>>>>> b81b562 (feat: lazy ot (#186))
             b.iter(|| {
                 let sender = chou_orlandi::Sender::default();
                 let receiver = chou_orlandi::Receiver::default();

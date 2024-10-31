@@ -1,6 +1,7 @@
 use std::{collections::VecDeque, mem};
 
 use crate::{
+<<<<<<< HEAD
     TransferId,
     chou_orlandi::{
         ReceiverError, hash_point,
@@ -11,6 +12,19 @@ use crate::{
 
 use mpz_common::future::{MaybeDone, Sender as OutputSender, new_output};
 use mpz_core::{Block, rand::Rand0_8CompatExt};
+=======
+    chou_orlandi::{
+        hash_point,
+        msgs::{ReceiverPayload, SenderPayload, SenderSetup},
+        ReceiverError,
+    },
+    ot::{OTReceiver, OTReceiverOutput},
+    TransferId,
+};
+
+use mpz_common::future::{new_output, MaybeDone, Sender as OutputSender};
+use mpz_core::Block;
+>>>>>>> b81b562 (feat: lazy ot (#186))
 
 use curve25519_dalek::{
     constants::RISTRETTO_BASEPOINT_TABLE,
@@ -106,7 +120,11 @@ impl Receiver<state::Setup> {
 
         let choices = mem::take(&mut self.choices);
         let private_keys = (0..choices.len())
+<<<<<<< HEAD
             .map(|_| Scalar::random(&mut rng.compat_by_ref()))
+=======
+            .map(|_| Scalar::random(rng))
+>>>>>>> b81b562 (feat: lazy ot (#186))
             .collect::<Vec<_>>();
 
         let (blinded_choices, new_keys) =
@@ -147,7 +165,15 @@ impl Receiver<state::Setup> {
                 .zip(payload)
                 .map(
                     |((c, key), [ct0, ct1])| {
+<<<<<<< HEAD
                         if c { key ^ ct1 } else { key ^ ct0 }
+=======
+                        if c {
+                            key ^ ct1
+                        } else {
+                            key ^ ct0
+                        }
+>>>>>>> b81b562 (feat: lazy ot (#186))
                     },
                 );
 

@@ -11,7 +11,11 @@ mod tests {
     use super::*;
     use crate::ideal::rcot::ideal_rcot;
     use mpz_core::Block;
+<<<<<<< HEAD
     use rand::{SeedableRng, rngs::StdRng};
+=======
+    use rand::{rngs::StdRng, SeedableRng};
+>>>>>>> b81b562 (feat: lazy ot (#186))
 
     #[tokio::test]
     async fn test_derandomize_cot() {
