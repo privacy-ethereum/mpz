@@ -1,146 +1,219 @@
-use std::pin::Pin;
+//! Multi-threaded executor.
+//!
+//! The multi-threaded executor runs each logical thread on its own system
+//! thread with a dedicated I/O channel.
+
+mod spawn;
+mod worker;
+
+pub use spawn::{Spawn, SpawnError, StdSpawn};
+
+use std::{fmt::Debug, sync::Arc};
 
 use async_trait::async_trait;
-use futures::{stream::FuturesOrdered, Future, StreamExt};
+use pollster::FutureExt as _;
 use scoped_futures::ScopedBoxFuture;
 use serio::IoDuplex;
 use uid_mux::FramedUidMux;
 
 use crate::{
     context::{ContextError, ErrorKind},
-    cpu::CpuBackend,
     Context, ThreadId,
 };
+use worker::{Handle, Worker};
 
-const MAX_THREADS: usize = 255;
+#[async_trait]
+trait SpawnCtx<Ctx>: Send + Sync {
+    async fn spawn_ctx(&self, id: ThreadId) -> Result<Handle<Ctx>, ContextError>;
+}
 
-/// A multi-threaded executor.
-#[derive(Debug)]
-pub struct MTExecutor<M> {
-    id: ThreadId,
-    mux: M,
+/// Config for [`MTExecutor`].
+#[derive(Debug, Clone)]
+pub struct MTConfig {
     max_concurrency: usize,
 }
 
-impl<M> MTExecutor<M>
+impl Default for MTConfig {
+    fn default() -> Self {
+        Self { max_concurrency: 8 }
+    }
+}
+
+/// A multi-threaded executor.
+#[derive(Debug)]
+pub struct MTExecutor<M, Io, S = StdSpawn> {
+    main_thread: Option<Handle<MTContext<Io>>>,
+    spawner: Spawner<M, S>,
+}
+
+impl<M> MTExecutor<M, M::Framed>
 where
-    M: FramedUidMux<ThreadId> + Clone + Send + 'static,
+    M: FramedUidMux<ThreadId> + Send + Sync + 'static,
+    M::Framed: Send + 'static,
     M::Error: Into<Box<dyn std::error::Error + Send + Sync + 'static>>,
 {
     /// Creates a new multi-threaded executor.
-    ///
-    /// # Arguments
-    ///
-    /// * `mux` - The multiplexer used by the executor.
-    /// * `concurrency` - The max degree of concurrency to use.
-    pub fn new(mux: M, max_concurrency: usize) -> Self {
+    pub fn new(mux: M, config: MTConfig) -> Self {
+        Self::new_with_spawner(mux, StdSpawn, config)
+    }
+}
+
+impl<M, S> MTExecutor<M, M::Framed, S>
+where
+    M: FramedUidMux<ThreadId> + Send + Sync + 'static,
+    M::Framed: IoDuplex + Send + 'static,
+    M::Error: Into<Box<dyn std::error::Error + Send + Sync + 'static>>,
+    S: Spawn + Send + Sync + 'static,
+{
+    /// Creates a new multi-threaded executor with a custom spawner.
+    pub fn new_with_spawner(mux: M, spawn: S, config: MTConfig) -> Self {
         Self {
-            id: ThreadId::default(),
-            mux,
-            max_concurrency,
+            main_thread: None,
+            spawner: Spawner::new(mux, spawn, config),
         }
     }
 
-    /// Returns a future that yields a new thread context.
-    pub fn new_thread(&mut self) -> NewThread<M, <M as FramedUidMux<ThreadId>>::Framed> {
-        let id = self.id.increment_in_place().ok_or_else(|| {
-            ContextError::new(
-                ErrorKind::Thread,
-                "exceeded maximum number of threads (255)",
-            )
-        });
+    /// Runs the provided job with the executor.
+    pub async fn run<F, R>(&mut self, f: F) -> Result<R, ContextError>
+    where
+        F: for<'a> FnOnce(&'a mut MTContext<M::Framed>) -> ScopedBoxFuture<'_, '_, R>
+            + Send
+            + 'static,
+        R: Send + 'static,
+    {
+        let main_thread = if let Some(main_thread) = self.main_thread.as_ref() {
+            main_thread
+        } else {
+            let main_thread = self.spawner.spawn_ctx(ThreadId::default()).await?;
+            self.main_thread = Some(main_thread);
+            self.main_thread.as_ref().unwrap()
+        };
 
-        let mux = self.mux.clone();
-        let concurrency = self.max_concurrency;
+        main_thread.send_with_return(|ctx| f(ctx).block_on())?.await
+    }
+}
 
-        NewThread {
-            fut: Box::pin(async move {
-                let id = id?;
-                let io = mux
-                    .open_framed(&id)
-                    .await
-                    .map_err(|e| ContextError::new(ErrorKind::Mux, e))?;
+#[derive(Debug)]
+struct Spawner<M, S> {
+    inner: Arc<Inner<M, S>>,
+}
 
-                Ok(MTContext::new(id, mux, io, concurrency))
+impl<M, S> Spawner<M, S> {
+    fn new(mux: M, spawn: S, config: MTConfig) -> Self {
+        Self {
+            inner: Arc::new(Inner {
+                mux,
+                spawn,
+                config: Arc::new(config),
             }),
         }
     }
 }
 
-pin_project_lite::pin_project! {
-    /// A future that yields a new thread context.
-    #[must_use = "futures do nothing unless you `.await` or poll them"]
-    pub struct NewThread<M, Io> {
-        #[pin]
-        fut: Pin<Box<dyn Future<Output = Result<MTContext<M, Io>, ContextError>> + Send>>,
+impl<M, S> Clone for Spawner<M, S> {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+        }
     }
 }
 
-impl<M, Io> Future for NewThread<M, Io> {
-    type Output = Result<MTContext<M, Io>, ContextError>;
+impl<M, S> Spawner<M, S>
+where
+    M: FramedUidMux<ThreadId> + Send + Sync + 'static,
+    M::Framed: Send + 'static,
+    M::Error: Into<Box<dyn std::error::Error + Send + Sync + 'static>>,
+    S: Spawn + Send + Sync + 'static,
+{
+    async fn spawn(&self, id: ThreadId) -> Result<MTContext<M::Framed>, ContextError> {
+        let io = self
+            .inner
+            .mux
+            .open_framed(&id)
+            .await
+            .map_err(|e| ContextError::new(ErrorKind::Mux, e))?;
 
-    fn poll(
-        self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Self::Output> {
-        self.project().fut.poll(cx)
+        Ok(MTContext {
+            id: id.clone(),
+            config: self.inner.config.clone(),
+            io,
+            spawner: Box::new(self.clone()),
+            child_id: id.fork(),
+            children: Vec::new(),
+        })
+    }
+}
+
+#[derive(Debug)]
+struct Inner<M, S> {
+    mux: M,
+    spawn: S,
+    config: Arc<MTConfig>,
+}
+
+#[async_trait]
+impl<M, S> SpawnCtx<MTContext<M::Framed>> for Spawner<M, S>
+where
+    M: FramedUidMux<ThreadId> + Send + Sync + 'static,
+    M::Framed: Send + 'static,
+    M::Error: Into<Box<dyn std::error::Error + Send + Sync + 'static>>,
+    S: Spawn + Send + Sync + 'static,
+{
+    async fn spawn_ctx(&self, id: ThreadId) -> Result<Handle<MTContext<M::Framed>>, ContextError> {
+        let ctx = self.spawn(id.clone()).await?;
+
+        let (worker, handle) = Worker::new(id, ctx);
+
+        self.inner
+            .spawn
+            .spawn(move || worker.run())
+            .map_err(|e| ContextError::new(ErrorKind::Thread, e))?;
+
+        Ok(handle)
     }
 }
 
 /// A thread context from a multi-threaded executor.
-#[derive(Debug)]
-pub struct MTContext<M, Io> {
+pub struct MTContext<Io> {
     id: ThreadId,
-    mux: M,
-    // Ideally "scoped futures" would exist, but they don't, so we use an
-    // `Option` to allow us to take the state out of the struct and send it
-    // to another thread in `Context::blocking`.
-    inner: Option<Inner<M, Io>>,
-    max_concurrency: usize,
-}
-
-#[derive(Debug)]
-struct Inner<M, Io> {
+    config: Arc<MTConfig>,
     io: Io,
-    // Child threads are created lazily, and are cached for reuse.
-    children: Children<M, Io>,
+    spawner: Box<dyn SpawnCtx<Self>>,
+    child_id: ThreadId,
+    children: Vec<Handle<Self>>,
 }
 
-impl<M, Io> MTContext<M, Io> {
-    fn new(id: ThreadId, mux: M, io: Io, max_concurrency: usize) -> Self {
-        let child_id = id.fork();
+impl<Io> MTContext<Io> {
+    /// Returns a child thread.
+    async fn get_child(&mut self) -> Result<&Handle<Self>, ContextError> {
+        if self.children.is_empty() {
+            let id = self.child_id.increment_in_place().ok_or_else(|| {
+                ContextError::new(ErrorKind::Thread, "thread ID overflow".to_string())
+            })?;
 
-        Self {
-            id,
-            mux,
-            inner: Some(Inner {
-                io,
-                children: Children::new(child_id, max_concurrency),
-            }),
-            max_concurrency,
+            let child = self.spawner.spawn_ctx(id).await?;
+            self.children.push(child);
         }
-    }
 
-    #[inline]
-    fn inner(&self) -> &Inner<M, Io> {
-        self.inner
-            .as_ref()
-            .expect("context is never left uninitialized")
+        Ok(self
+            .children
+            .first()
+            .expect("child thread should be available"))
     }
+}
 
-    #[inline]
-    fn inner_mut(&mut self) -> &mut Inner<M, Io> {
-        self.inner
-            .as_mut()
-            .expect("context is never left uninitialized")
+impl<Io> Debug for MTContext<Io> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MTContext")
+            .field("id", &self.id)
+            .field("config", &self.config)
+            .finish_non_exhaustive()
     }
 }
 
 #[async_trait]
-impl<M, Io> Context for MTContext<M, Io>
+impl<Io> Context for MTContext<Io>
 where
-    M: FramedUidMux<ThreadId, Framed = Io> + Clone + Send + Sync + 'static,
-    M::Error: Into<Box<dyn std::error::Error + Send + Sync + 'static>>,
     Io: IoDuplex + Send + Sync + Unpin + 'static,
 {
     type Io = Io;
@@ -150,63 +223,30 @@ where
     }
 
     fn max_concurrency(&self) -> usize {
-        self.inner().children.max_concurrency()
+        self.config.max_concurrency
     }
 
     fn io_mut(&mut self) -> &mut Self::Io {
-        &mut self.inner_mut().io
-    }
-
-    async fn blocking<F, R>(&mut self, f: F) -> Result<R, ContextError>
-    where
-        F: for<'a> FnOnce(&'a mut Self) -> ScopedBoxFuture<'static, 'a, R> + Send + 'static,
-        R: Send + 'static,
-    {
-        let mut ctx = Self {
-            id: self.id.clone(),
-            mux: self.mux.clone(),
-            inner: self.inner.take(),
-            max_concurrency: self.max_concurrency,
-        };
-
-        let (inner, output) = CpuBackend::blocking_async(async move {
-            let output = f(&mut ctx).await;
-            (ctx.inner, output)
-        })
-        .await;
-
-        self.inner = inner;
-
-        Ok(output)
+        &mut self.io
     }
 
     async fn join<'a, A, B, RA, RB>(&'a mut self, a: A, b: B) -> Result<(RA, RB), ContextError>
     where
-        A: for<'b> FnOnce(&'b mut Self) -> ScopedBoxFuture<'a, 'b, RA> + Send + 'a,
-        B: for<'b> FnOnce(&'b mut Self) -> ScopedBoxFuture<'a, 'b, RB> + Send + 'a,
-        RA: Send + 'a,
-        RB: Send + 'a,
+        A: for<'b> FnOnce(&'b mut Self) -> ScopedBoxFuture<'a, 'b, RA> + Send + 'static,
+        B: for<'b> FnOnce(&'b mut Self) -> ScopedBoxFuture<'a, 'b, RB> + Send + 'static,
+        RA: Send + 'static,
+        RB: Send + 'static,
     {
-        // We temporarily take the state to avoid borrowing issues.
-        let mut inner = self
-            .inner
-            .take()
-            .expect("context is never left uninitialized");
+        // Send job to child thread, it will start executing immediately.
+        let rb = self
+            .get_child()
+            .await?
+            .send_with_return(|ctx| b(ctx).block_on())?;
 
-        if inner.children.len() < 2 {
-            if let Err(e) = inner.children.alloc(&self.mux, 2).await {
-                self.inner = Some(inner);
-                return Err(e);
-            }
-        }
+        let ra = a(self).await;
+        let rb = rb.await?;
 
-        let [child_a, child_b] = inner.children.first_n_mut();
-
-        let output = futures::join!(a(child_a), b(child_b));
-
-        self.inner = Some(inner);
-
-        Ok(output)
+        Ok((ra, rb))
     }
 
     async fn try_join<'a, A, B, RA, RB, E>(
@@ -215,106 +255,24 @@ where
         b: B,
     ) -> Result<Result<(RA, RB), E>, ContextError>
     where
-        A: for<'b> FnOnce(&'b mut Self) -> ScopedBoxFuture<'a, 'b, Result<RA, E>> + Send + 'a,
-        B: for<'b> FnOnce(&'b mut Self) -> ScopedBoxFuture<'a, 'b, Result<RB, E>> + Send + 'a,
-        RA: Send + 'a,
-        RB: Send + 'a,
-        E: Send + 'a,
+        A: for<'b> FnOnce(&'b mut Self) -> ScopedBoxFuture<'a, 'b, Result<RA, E>> + Send + 'static,
+        B: for<'b> FnOnce(&'b mut Self) -> ScopedBoxFuture<'a, 'b, Result<RB, E>> + Send + 'static,
+        RA: Send + 'static,
+        RB: Send + 'static,
+        E: Send + 'static,
     {
-        // We temporarily take the state to avoid borrowing issues.
-        let mut inner = self
-            .inner
-            .take()
-            .expect("context is never left uninitialized");
+        // Send job to child thread, it will start executing immediately.
+        let rb = self
+            .get_child()
+            .await?
+            .send_with_return(|ctx| b(ctx).block_on())?;
 
-        if inner.children.len() < 2 {
-            if let Err(e) = inner.children.alloc(&self.mux, 2).await {
-                self.inner = Some(inner);
-                return Err(e);
-            }
-        }
+        let ra = match a(self).await {
+            Ok(ra) => ra,
+            Err(e) => return Ok(Err(e)),
+        };
 
-        let [child_a, child_b] = inner.children.first_n_mut();
-
-        let output = futures::try_join!(a(child_a), b(child_b));
-
-        self.inner = Some(inner);
-
-        Ok(output)
-    }
-}
-
-#[derive(Debug)]
-struct Children<M, Io> {
-    id: ThreadId,
-    slots: Vec<MTContext<M, Io>>,
-    max_concurrency: usize,
-}
-
-impl<M, Io> Children<M, Io> {
-    fn new(id: ThreadId, max_concurrency: usize) -> Self {
-        Self {
-            id,
-            slots: Vec::new(),
-            max_concurrency,
-        }
-    }
-
-    fn max_concurrency(&self) -> usize {
-        self.max_concurrency
-    }
-}
-
-impl<M, Io> Children<M, Io>
-where
-    M: FramedUidMux<ThreadId, Framed = Io> + Clone,
-    M::Error: Into<Box<dyn std::error::Error + Send + Sync + 'static>>,
-{
-    /// Returns the number of available child threads.
-    fn len(&self) -> usize {
-        self.slots.len()
-    }
-
-    /// Makes sure that there are at least `count` child threads available.
-    async fn alloc(&mut self, mux: &M, count: usize) -> Result<(), ContextError> {
-        if count > MAX_THREADS {
-            return Err(ContextError::new(
-                ErrorKind::Thread,
-                "exceeded maximum number of threads (255)",
-            ));
-        }
-
-        if self.slots.len() < count {
-            let count = count - self.slots.len();
-            let mut futs = FuturesOrdered::new();
-            for _ in 0..count {
-                let id = self
-                    .id
-                    .increment_in_place()
-                    .expect("number of threads were checked");
-
-                futs.push_back(async {
-                    let io = mux
-                        .open_framed(&id)
-                        .await
-                        .map_err(|e| ContextError::new(ErrorKind::Mux, e))?;
-
-                    Ok(MTContext::new(id, mux.clone(), io, self.max_concurrency))
-                });
-            }
-
-            while let Some(child) = futs.next().await.transpose()? {
-                self.slots.push(child);
-            }
-        }
-
-        Ok(())
-    }
-
-    fn first_n_mut<const N: usize>(&mut self) -> &mut [MTContext<M, Io>; N] {
-        self.slots
-            .first_chunk_mut()
-            .expect("number of threads were checked")
+        Ok(rb.await?.map(|rb| (ra, rb)))
     }
 }
 
@@ -322,103 +280,89 @@ where
 mod tests {
     use std::sync::Arc;
 
-    use serio::{stream::IoStreamExt, SinkExt};
+    use scoped_futures::ScopedFutureExt;
     use tokio::sync::Barrier;
 
-    use crate::{executor::test_mt_executor, scoped};
+    use crate::executor::test_mt_executor;
 
     use super::*;
 
-    #[derive(Debug, Default)]
-    struct LifetimeTest {
-        a: ThreadId,
-        b: ThreadId,
-    }
+    #[tokio::test]
+    async fn test_mt_executor_join() {
+        let (mut exec_a, _) = test_mt_executor(8, MTConfig::default());
+        let barrier = Arc::new(Barrier::new(2));
 
-    impl LifetimeTest {
-        // This test is to ensure that the compiler is satisfied with the lifetimes
-        // of the async closures passed to `join`.
-        async fn foo<Ctx: Context>(&mut self, ctx: &mut Ctx) {
-            let a = &mut self.a;
-            let b = &mut self.b;
+        let barrier_0 = barrier.clone();
+        let barrier_1 = barrier.clone();
 
-            ctx.join(
-                scoped!(|ctx| *a = ctx.id().clone()),
-                scoped!(|ctx| *b = ctx.id().clone()),
-            )
+        let (id_0, id_1) = exec_a
+            .run(|ctx| {
+                async {
+                    ctx.join(
+                        |ctx| {
+                            async move {
+                                barrier_0.wait().await;
+                                ctx.id().clone()
+                            }
+                            .scope_boxed()
+                        },
+                        |ctx| {
+                            async move {
+                                barrier_1.wait().await;
+                                ctx.id().clone()
+                            }
+                            .scope_boxed()
+                        },
+                    )
+                    .await
+                    .unwrap()
+                }
+                .scope_boxed()
+            })
             .await
             .unwrap();
 
-            // Make sure we can mutate the fields after borrowing them in the async closures.
-            self.a = ThreadId::default();
-            self.b = ThreadId::default();
-        }
+        assert_eq!(id_0.as_bytes(), &[0]);
+        assert_eq!(id_1.as_bytes(), &[0, 0]);
     }
 
     #[tokio::test]
-    async fn test_mt_executor_join() {
-        let (mut exec_a, mut exec_b) = test_mt_executor(8);
-
-        let (mut ctx_a, mut ctx_b) =
-            futures::try_join!(exec_a.new_thread(), exec_b.new_thread()).unwrap();
-
-        let mut test_a = LifetimeTest::default();
-        let mut test_b = LifetimeTest::default();
-
-        futures::join!(test_a.foo(&mut ctx_a), test_b.foo(&mut ctx_b));
-    }
-
-    #[tokio::test]
-    async fn test_mt_executor_blocking() {
-        let (mut exec_a, mut exec_b) = test_mt_executor(8);
-
-        let (mut ctx_a, mut ctx_b) =
-            futures::try_join!(exec_a.new_thread(), exec_b.new_thread()).unwrap();
-
-        let (_, received) = futures::try_join!(
-            ctx_a.blocking(scoped!(|ctx| ctx.io_mut().send(1u8).await.unwrap())),
-            ctx_b.blocking(scoped!(|ctx| async move {
-                ctx.io_mut().expect_next::<u8>().await.unwrap()
-            }))
-        )
-        .unwrap();
-
-        assert_eq!(received, 1u8);
-        assert!(ctx_a.inner.is_some());
-        assert!(ctx_b.inner.is_some());
-    }
-
-    #[tokio::test]
-    // Tests that the mt executor polls futures concurrently.
-    async fn test_mt_executor_concurrency() {
-        let (mut exec_a, _) = test_mt_executor(8);
+    async fn test_mt_executor_try_join() {
+        let (mut exec_a, _) = test_mt_executor(8, MTConfig::default());
         let barrier = Arc::new(Barrier::new(2));
 
-        let mut ctx = exec_a.new_thread().await.unwrap();
-
         let barrier_0 = barrier.clone();
         let barrier_1 = barrier.clone();
 
-        ctx.join(
-            scoped!(|_ctx| async move {
-                barrier_0.wait().await;
-            }),
-            scoped!(|_ctx| async move {
-                barrier_1.wait().await;
-            }),
-        )
-        .await
-        .unwrap();
+        let (id_0, id_1) = exec_a
+            .run(|ctx| {
+                async {
+                    ctx.try_join(
+                        |ctx| {
+                            async move {
+                                barrier_0.wait().await;
+                                Ok::<_, ()>(ctx.id().clone())
+                            }
+                            .scope_boxed()
+                        },
+                        |ctx| {
+                            async move {
+                                barrier_1.wait().await;
+                                Ok::<_, ()>(ctx.id().clone())
+                            }
+                            .scope_boxed()
+                        },
+                    )
+                    .await
+                    .unwrap()
+                    .unwrap()
+                }
+                .scope_boxed()
+            })
+            .await
+            .unwrap();
 
-        let barrier_0 = barrier.clone();
-        let barrier_1 = barrier.clone();
-
-        ctx.try_join(
-            scoped!(|_ctx| async move { Ok::<_, ()>(barrier_0.wait().await) }),
-            scoped!(|_ctx| async move { Ok::<_, ()>(barrier_1.wait().await) }),
-        )
-        .await
-        .unwrap()
-        .unwrap();
+        assert_eq!(id_0.as_bytes(), &[0]);
+        assert_eq!(id_1.as_bytes(), &[0, 0]);
     }
 }

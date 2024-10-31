@@ -6,7 +6,7 @@ edition = "2021"
 [features]
 default = []
 cpu = ["rayon"]
-executor = ["cpu"]
+executor = ["cpu", "dep:uid-mux"]
 sync = ["tokio/sync"]
 future = []
 test-utils = ["dep:uid-mux", "uid-mux/test-utils"]
@@ -29,6 +29,7 @@ pollster.workspace = true
 rayon = { workspace = true, optional = true }
 cfg-if.workspace = true
 tokio = { workspace = true, optional = true }
+crossbeam-channel = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = [
@@ -40,8 +41,3 @@ tokio-util = { workspace = true, features = ["compat"] }
 uid-mux = { workspace = true, features = ["test-utils"] }
 tracing-subscriber = { workspace = true, features = ["fmt"] }
 criterion.workspace = true
-
-[[bench]]
-name = "context"
-harness = false
-required-features = ["test-utils", "rayon"]
