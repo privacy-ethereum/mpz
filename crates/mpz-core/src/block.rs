@@ -5,7 +5,7 @@ use clmul::Clmul;
 use core::ops::{BitAnd, BitAndAssign, BitXor, BitXorAssign};
 use generic_array::{typenum::consts::U16, GenericArray};
 use itybity::{BitIterable, BitLength, GetBit, Lsb0, Msb0};
-use rand::{distributions::Standard, prelude::Distribution, CryptoRng, Rng};
+use rand::{distributions::Standard, prelude::Distribution, CryptoRng, Fill, Rng};
 use serde::{Deserialize, Serialize};
 
 /// A block of 128 bits
@@ -27,8 +27,14 @@ impl Block {
 
     /// Create a new block
     #[inline]
-    pub fn new(bytes: [u8; 16]) -> Self {
+    pub const fn new(bytes: [u8; 16]) -> Self {
         Self(bytes)
+    }
+
+    /// Returns the block encoded as bytes.
+    #[inline]
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.0
     }
 
     /// Returns the byte representation of the block
@@ -63,8 +69,9 @@ impl Block {
     }
 
     #[inline]
-    /// Reduces the polynomial represented in bits modulo the GCM polynomial x^128 + x^7 + x^2 + x + 1.
-    /// `x` and `y` are resp. upper and lower bits of the polynomial.
+    /// Reduces the polynomial represented in bits modulo the GCM polynomial
+    /// x^128 + x^7 + x^2 + x + 1. `x` and `y` are resp. upper and lower
+    /// bits of the polynomial.
     pub fn reduce_gcm(x: Self, y: Self) -> Self {
         let r = Clmul::reduce_gcm(Clmul::new(&x.0), Clmul::new(&y.0));
         Self::new(r.into())
@@ -77,7 +84,8 @@ impl Block {
         Block::reduce_gcm(a, b)
     }
 
-    /// Compute the inner product of two block vectors, without reducing the polynomial.
+    /// Compute the inner product of two block vectors, without reducing the
+    /// polynomial.
     #[inline]
     pub fn inn_prdt_no_red(a: &[Block], b: &[Block]) -> (Block, Block) {
         assert_eq!(a.len(), b.len());
@@ -104,14 +112,20 @@ impl Block {
 
     /// Sets the least significant bit of the block
     #[inline]
-    pub fn set_lsb(&mut self) {
-        self.0[0] |= 1;
+    pub fn set_lsb(&mut self, value: bool) {
+        self.0[0] = (self.0[0] & 0xfe) | value as u8;
+    }
+
+    /// XORs the least significant bit of the block with the given value.
+    #[inline]
+    pub fn xor_lsb(&mut self, bit: bool) {
+        self.0[0] ^= bit as u8;
     }
 
     /// Returns the least significant bit of the block
     #[inline]
-    pub fn lsb(&self) -> usize {
-        ((self.0[0] & 1) == 1) as usize
+    pub fn lsb(&self) -> bool {
+        (self.0[0] & 1) == 1
     }
 
     /// Let `x0` and `x1` be the lower and higher halves of `x`, respectively.
@@ -123,36 +137,36 @@ impl Block {
         bytemuck::cast([x[1], x[0]])
     }
 
-    /// Converts a block to a [`GenericArray<u8, U16>`](cipher::generic_array::GenericArray)
-    /// from the [`generic-array`](https://docs.rs/generic-array/latest/generic_array/) crate.
+    /// Converts a block to a [`GenericArray<u8,
+    /// U16>`](cipher::generic_array::GenericArray) from the [`generic-array`](https://docs.rs/generic-array/latest/generic_array/) crate.
     #[allow(dead_code)]
     pub(crate) fn as_generic_array(&self) -> &GenericArray<u8, U16> {
         (&self.0).into()
     }
 
-    /// Converts a mutable block to a mutable [`GenericArray<u8, U16>`](cipher::generic_array::GenericArray)
-    /// from the [`generic-array`](https://docs.rs/generic-array/latest/generic_array/) crate.
+    /// Converts a mutable block to a mutable [`GenericArray<u8,
+    /// U16>`](cipher::generic_array::GenericArray) from the [`generic-array`](https://docs.rs/generic-array/latest/generic_array/) crate.
     pub(crate) fn as_generic_array_mut(&mut self) -> &mut GenericArray<u8, U16> {
         (&mut self.0).into()
     }
 
-    /// Converts a slice of blocks to a slice of [`GenericArray<u8, U16>`](cipher::generic_array::GenericArray)
-    /// from the [`generic-array`](https://docs.rs/generic-array/latest/generic_array/) crate.
+    /// Converts a slice of blocks to a slice of [`GenericArray<u8,
+    /// U16>`](cipher::generic_array::GenericArray) from the [`generic-array`](https://docs.rs/generic-array/latest/generic_array/) crate.
     #[allow(dead_code)]
     pub(crate) fn as_generic_array_slice(slice: &[Self]) -> &[GenericArray<u8, U16>] {
         // # Safety
-        // This is always safe because `Block` and `GenericArray<u8, U16>` have the same memory layout.
-        // See https://github.com/fizyk20/generic-array/blob/37dc6aefc3ed5c423ad7402d4febf06a3e78a223/src/lib.rs#L838-L845
+        // This is always safe because `Block` and `GenericArray<u8, U16>` have the same
+        // memory layout. See https://github.com/fizyk20/generic-array/blob/37dc6aefc3ed5c423ad7402d4febf06a3e78a223/src/lib.rs#L838-L845
         // TODO: Use methods provided by `generic-array` once 1.0 is released.
         unsafe { std::mem::transmute(slice) }
     }
 
-    /// Converts a mutable slice of blocks to a mutable slice of [`GenericArray<u8, U16>`](cipher::generic_array::GenericArray)
-    /// from the [`generic-array`](https://docs.rs/generic-array/latest/generic_array/) crate.
+    /// Converts a mutable slice of blocks to a mutable slice of
+    /// [`GenericArray<u8, U16>`](cipher::generic_array::GenericArray) from the [`generic-array`](https://docs.rs/generic-array/latest/generic_array/) crate.
     pub(crate) fn as_generic_array_mut_slice(slice: &mut [Self]) -> &mut [GenericArray<u8, U16>] {
         // # Safety
-        // This is always safe because `Block` and `GenericArray<u8, U16>` have the same memory layout.
-        // See https://github.com/fizyk20/generic-array/blob/37dc6aefc3ed5c423ad7402d4febf06a3e78a223/src/lib.rs#L847-L854
+        // This is always safe because `Block` and `GenericArray<u8, U16>` have the same
+        // memory layout. See https://github.com/fizyk20/generic-array/blob/37dc6aefc3ed5c423ad7402d4febf06a3e78a223/src/lib.rs#L847-L854
         // TODO: Use methods provided by `generic-array` once 1.0 is released.
         unsafe { std::mem::transmute(slice) }
     }
@@ -261,6 +275,30 @@ impl BitXor for Block {
     }
 }
 
+impl BitXor<&Block> for Block {
+    type Output = Block;
+
+    fn bitxor(self, rhs: &Self) -> Self::Output {
+        Block(std::array::from_fn(|i| self.0[i] ^ rhs.0[i]))
+    }
+}
+
+impl BitXor<Block> for &Block {
+    type Output = Block;
+
+    fn bitxor(self, rhs: Block) -> Self::Output {
+        Block(std::array::from_fn(|i| self.0[i] ^ rhs.0[i]))
+    }
+}
+
+impl BitXor<&Block> for &Block {
+    type Output = Block;
+
+    fn bitxor(self, rhs: &Block) -> Self::Output {
+        Block(std::array::from_fn(|i| self.0[i] ^ rhs.0[i]))
+    }
+}
+
 impl BitXorAssign for Block {
     #[inline(always)]
     fn bitxor_assign(&mut self, rhs: Self) {
@@ -274,6 +312,30 @@ impl BitAnd for Block {
     #[inline]
     fn bitand(self, other: Self) -> Self::Output {
         Self(std::array::from_fn(|i| self.0[i] & other.0[i]))
+    }
+}
+
+impl BitAnd<&Block> for Block {
+    type Output = Block;
+
+    fn bitand(self, rhs: &Self) -> Self::Output {
+        Block(std::array::from_fn(|i| self.0[i] & rhs.0[i]))
+    }
+}
+
+impl BitAnd<Block> for &Block {
+    type Output = Block;
+
+    fn bitand(self, rhs: Block) -> Self::Output {
+        Block(std::array::from_fn(|i| self.0[i] & rhs.0[i]))
+    }
+}
+
+impl BitAnd<&Block> for &Block {
+    type Output = Block;
+
+    fn bitand(self, rhs: &Block) -> Self::Output {
+        Block(std::array::from_fn(|i| self.0[i] & rhs.0[i]))
     }
 }
 
@@ -305,44 +367,36 @@ mod tests {
 
     #[test]
     fn test_set_lsb() {
-        let zero = [0; 16];
-        let mut one = [0; 16];
-        one[0] = 1;
-        let mut three = [0; 16];
-        three[0] = 3;
+        let mut b = Block::ZERO;
+        b.set_lsb(true);
+        assert!(b.lsb());
 
-        let mut b = Block::new(zero);
-        b.set_lsb();
-        assert_eq!(Block::new(one), b);
-
-        // no-op when the bit is already set
-        let mut b = Block::new(three);
-        b.set_lsb();
-        assert_eq!(Block::new(three), b);
+        b.set_lsb(false);
+        assert!(!b.lsb());
     }
 
     #[test]
     fn test_lsb() {
         let a = Block::new([0; 16]);
-        assert_eq!(a.lsb(), 0);
+        assert_eq!(a.lsb(), false);
 
         let mut one = [0; 16];
         one[0] = 1;
 
         let a = Block::new(one);
-        assert_eq!(a.lsb(), 1);
+        assert_eq!(a.lsb(), true);
 
         let mut two = [0; 16];
         two[0] = 2;
 
         let a = Block::new(two);
-        assert_eq!(a.lsb(), 0);
+        assert_eq!(a.lsb(), false);
 
         let mut three = [0; 16];
         three[0] = 3;
 
         let a = Block::new(three);
-        assert_eq!(a.lsb(), 1);
+        assert_eq!(a.lsb(), true);
     }
 
     #[test]
