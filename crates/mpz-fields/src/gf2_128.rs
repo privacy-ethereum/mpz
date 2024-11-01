@@ -140,7 +140,7 @@ impl Field for Gf2_128 {
 
     /// Galois field inversion of 128-bit block.
     fn inverse(self) -> Option<Self> {
-        if self.0 == 0 {
+        if self == Self::zero() {
             return None;
         }
 
