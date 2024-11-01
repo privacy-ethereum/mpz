@@ -113,6 +113,7 @@ where
     ///
     /// * `input` - Input value, `b`.
     /// * `masks` - Chosen correlation masks.
+    /// * `corr` - Masked correlation from the sender.
     #[inline]
     pub(crate) fn new_ole_receiver(
         input: F,
