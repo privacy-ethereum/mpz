@@ -1,0 +1,20 @@
+[package]
+name = "mpz-memory-core"
+version = "0.1.0"
+edition = "2021"
+
+[lints]
+workspace = true
+
+[dependencies]
+mpz-core = { workspace = true }
+tlsn-utils = { workspace = true }
+blake3 = { workspace = true }
+thiserror = { workspace = true }
+rand = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+itybity = { workspace = true }
+futures = { workspace = true }
+
+[dev-dependencies]
+mpz-ot-core = { workspace = true }
