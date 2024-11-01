@@ -1,149 +1,191 @@
-//! Sender implementation.
+//! ROLE sender.
 
-use crate::{
-    core::{SenderAdjust, SenderShare, ShareAdjust},
-    msg::{BatchAdjust, MaskedCorrelations},
-    OLEError, TransferId,
-};
-use mpz_fields::Field;
 use std::collections::VecDeque;
 
-/// A sender for batched OLE.
+use hybrid_array::Array;
+use rand::SeedableRng;
+
+use mpz_common::future::{new_output, MaybeDone, Sender as OutputSender};
+use mpz_core::{prg::Prg, Block};
+use mpz_fields::Field;
+use mpz_ot_core::rot::{ROTSender, ROTSenderOutput};
+
+use crate::{OLEId, OLEShare, ROLESender, ROLESenderOutput, SenderMasks};
+
 #[derive(Debug)]
-pub struct OLESender<F> {
-    id: TransferId,
-    cache: VecDeque<SenderShare<F>>,
+struct Queued<F> {
+    count: usize,
+    sender: OutputSender<ROLESenderOutput<F>>,
 }
 
-impl<F: Field> Default for OLESender<F> {
-    fn default() -> Self {
-        OLESender {
-            id: TransferId::default(),
-            cache: VecDeque::default(),
+/// ROLE Sender wrapping a random OT sender.
+#[derive(Debug)]
+pub struct Sender<T, F> {
+    id: OLEId,
+    alloc: usize,
+    pending: usize,
+    queue: VecDeque<Queued<F>>,
+    rot: T,
+    prg: Prg,
+    role: Vec<OLEShare<F>>,
+}
+
+impl<T, F> Sender<T, F> {
+    /// Creates a new ROLE sender.
+    ///
+    /// # Arguments
+    ///
+    /// * `seed` - Random seed for the sender.
+    /// * `rot` - Random OT sender.
+    pub fn new(seed: Block, rot: T) -> Self {
+        Self {
+            id: OLEId::default(),
+            alloc: 0,
+            pending: 0,
+            queue: VecDeque::new(),
+            rot,
+            prg: Prg::from_seed(seed),
+            role: Vec::new(),
         }
+    }
+
+    /// Returns the random OT sender.
+    pub fn rot(&self) -> &T {
+        &self.rot
+    }
+
+    /// Returns a mutable reference to the random OT sender.
+    pub fn rot_mut(&mut self) -> &mut T {
+        &mut self.rot
+    }
+
+    /// Returns the random OT sender.
+    pub fn into_inner(self) -> T {
+        self.rot
     }
 }
 
-impl<F: Field> OLESender<F> {
-    /// Generates new OLEs and stores them internally.
-    ///
-    /// # Arguments
-    ///
-    /// * `input` - The sender's OLE input shares.
-    /// * `random` - Uniformly random field elements for the correlation.
-    ///
-    /// # Returns
-    ///
-    /// * [`MaskedCorrelations`], which are to be sent to the receiver.
-    pub fn preprocess(
-        &mut self,
-        input: Vec<F>,
-        random: Vec<[F; 2]>,
-    ) -> Result<MaskedCorrelations<F>, OLEError> {
-        let (shares, masked) = SenderShare::new_vec(input, random)?;
-        self.cache.extend(shares);
-
-        Ok(masked.into())
+impl<T, F> Sender<T, F>
+where
+    T: ROTSender<[F; 2]>,
+    F: Field,
+{
+    /// Returns `true` if the sender wants to send.
+    pub fn wants_send(&self) -> bool {
+        self.alloc > 0
     }
 
-    /// Returns OLEs from internal cache.
-    ///
-    /// For consumption of OLEs which have been stored by [`OLESender::preprocess`].
-    ///
-    /// # Arguments
-    ///
-    /// * `count` - The number of shares to return.
-    ///
-    /// # Returns
-    ///
-    /// * A vector of [`SenderShare`]s containing the OLE output for the sender.
-    pub fn consume(&mut self, count: usize) -> Option<Vec<SenderShare<F>>> {
-        if count > self.cache.len() {
-            return None;
+    /// Evaluates the OLEs as the sender.
+    pub fn send(&mut self) -> Result<SenderMasks<F>, SenderError> {
+        let count = self.alloc;
+        if self.pending > count {
+            return Err(SenderError(ErrorRepr::InsufficientOle {
+                count: self.pending,
+                available: count,
+            }));
         }
 
-        let shares = self.cache.drain(..count).collect();
-        Some(shares)
-    }
+        let ROTSenderOutput { keys: masks, .. } = self
+            .rot
+            .try_send_rot(count * F::BIT_SIZE)
+            .map_err(SenderError::ot)?;
 
-    /// Adjusts OLEs in the internal cache.
-    ///
-    /// # Arguments
-    ///
-    /// * `targets` - The new OLE sender inputs.
-    ///
-    /// # Returns
-    ///
-    /// * [`BatchSenderAdjust`] which needs to be converted by [`BatchSenderAdjust::finish_adjust`].
-    /// * [`BatchAdjust`] which needs to be sent to the receiver.
-    pub fn adjust(&mut self, targets: Vec<F>) -> Option<(BatchSenderAdjust<F>, BatchAdjust<F>)> {
-        let shares = self.consume(targets.len())?;
-        let (sender_adjust, adjustments) = shares
-            .into_iter()
-            .zip(targets)
-            .map(|(s, t)| {
-                let (share, adjust) = s.adjust(t);
-                (share, adjust.0)
+        let (shares, masks): (Vec<_>, Vec<_>) = masks
+            .chunks(F::BIT_SIZE)
+            .map(|masks| {
+                OLEShare::new_ole_sender(
+                    F::rand(&mut self.prg),
+                    Array::try_from(masks)
+                        .expect("slice should have length of bit size of field element"),
+                )
             })
             .unzip();
 
-        let id = self.id.next();
+        let mut i = 0;
+        for Queued { count, sender } in self.queue.drain(..) {
+            let shares = shares[i..i + count].to_vec();
+            i += count;
 
-        let sender_adjust = BatchSenderAdjust {
-            id,
-            adjust: sender_adjust,
-        };
-        let adjustments = BatchAdjust { id, adjustments };
+            sender.send(ROLESenderOutput {
+                id: self.id.next(),
+                shares,
+            });
+        }
 
-        Some((sender_adjust, adjustments))
-    }
+        self.role.extend_from_slice(&shares[i..]);
+        self.alloc = 0;
+        self.pending = 0;
 
-    /// Returns the number of preprocessed OLEs that are available.
-    pub fn cache_size(&self) -> usize {
-        self.cache.len()
+        Ok(SenderMasks { masks })
     }
 }
 
-/// Sender adjustments waiting for [`BatchAdjust`] from the receiver.
-pub struct BatchSenderAdjust<F> {
-    id: TransferId,
-    adjust: Vec<SenderAdjust<F>>,
+impl<T, F> ROLESender<F> for Sender<T, F>
+where
+    T: ROTSender<[F; 2]>,
+    F: Field,
+{
+    type Error = SenderError;
+    type Future = MaybeDone<ROLESenderOutput<F>>;
+
+    fn alloc(&mut self, count: usize) -> Result<(), Self::Error> {
+        self.rot
+            .alloc(count * F::BIT_SIZE)
+            .map_err(SenderError::ot)?;
+
+        self.alloc += count;
+
+        Ok(())
+    }
+
+    fn available(&self) -> usize {
+        self.role.len()
+    }
+
+    fn try_send_role(&mut self, count: usize) -> Result<ROLESenderOutput<F>, Self::Error> {
+        if count > self.role.len() {
+            return Err(SenderError(ErrorRepr::InsufficientOle {
+                count,
+                available: self.role.len(),
+            }));
+        }
+
+        let shares = self.role.drain(..count).collect();
+
+        Ok(ROLESenderOutput {
+            id: self.id.next(),
+            shares,
+        })
+    }
+
+    fn queue_send_role(&mut self, count: usize) -> Result<Self::Future, Self::Error> {
+        let (sender, recv) = new_output();
+
+        self.pending += count;
+        self.queue.push_back(Queued { count, sender });
+
+        Ok(recv)
+    }
 }
 
-impl<F: Field> BatchSenderAdjust<F> {
-    /// Completes the adjustment and returns the new shares.
-    ///
-    /// # Arguments
-    ///
-    /// * `batch_adjust` - The receiver's adjustments.
-    ///
-    /// # Returns
-    ///
-    /// * A vector of [`SenderShare`]s containing the new OLE outputs for the sender.
-    pub fn finish_adjust(
-        self,
-        batch_adjust: BatchAdjust<F>,
-    ) -> Result<Vec<SenderShare<F>>, OLEError> {
-        if self.id != batch_adjust.id {
-            return Err(OLEError::WrongId(batch_adjust.id, self.id));
-        }
+/// Error for [`Sender`].
+#[derive(Debug, thiserror::Error)]
+#[error(transparent)]
+pub struct SenderError(#[from] ErrorRepr);
 
-        let sender_adjust = self.adjust;
-        let adjustments = batch_adjust.adjustments;
-
-        if sender_adjust.len() != adjustments.len() {
-            return Err(OLEError::UnequalAdjustments(
-                adjustments.len(),
-                sender_adjust.len(),
-            ));
-        }
-
-        let shares = sender_adjust
-            .into_iter()
-            .zip(adjustments)
-            .map(|(s, a)| s.finish(ShareAdjust(a)))
-            .collect();
-
-        Ok(shares)
+impl SenderError {
+    fn ot<E>(err: E) -> Self
+    where
+        E: Into<Box<dyn std::error::Error + Send + Sync + 'static>>,
+    {
+        Self(ErrorRepr::Ot(err.into()))
     }
+}
+
+#[derive(Debug, thiserror::Error)]
+enum ErrorRepr {
+    #[error("ot error: {0}")]
+    Ot(Box<dyn std::error::Error + Send + Sync + 'static>),
+    #[error("insufficient OLE, wanted: {count}, available: {available}")]
+    InsufficientOle { count: usize, available: usize },
 }

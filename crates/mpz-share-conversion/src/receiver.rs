@@ -1,101 +1,154 @@
-use crate::{AdditiveToMultiplicative, MultiplicativeToAdditive, ShareConversionError};
 use async_trait::async_trait;
-use mpz_common::{Allocate, Context, Preprocess};
+use mpz_common::{Context, Flush};
 use mpz_fields::Field;
-use mpz_ole::{OLEError, OLEReceiver};
-use mpz_share_conversion_core::{a2m_convert_receiver, msgs::Masks, A2MMasks};
-use serio::{stream::IoStreamExt, Deserialize, Serialize};
-use std::marker::PhantomData;
+use mpz_ole::ROLEReceiver;
+use mpz_share_conversion_core::{
+    AdditiveToMultiplicative, MultiplicativeToAdditive, Receiver as Core,
+    ReceiverError as CoreError,
+};
+use serio::{stream::IoStreamExt, Deserialize, Serialize, SinkExt};
 
-/// Receiver for share conversion.
+/// Share conversion receiver.
 #[derive(Debug)]
 pub struct ShareConversionReceiver<T, F> {
-    ole_receiver: T,
-    _pd: PhantomData<F>,
-}
-
-impl<T: Clone, F> Clone for ShareConversionReceiver<T, F> {
-    fn clone(&self) -> Self {
-        Self {
-            ole_receiver: self.ole_receiver.clone(),
-            _pd: PhantomData,
-        }
-    }
+    core: Core<T, F>,
 }
 
 impl<T, F> ShareConversionReceiver<T, F> {
     /// Creates a new receiver.
-    pub fn new(ole_receiver: T) -> Self {
+    ///
+    /// # Arguments
+    ///
+    /// * `role` - ROLE receiver.
+    pub fn new(role: T) -> Self {
         Self {
-            ole_receiver,
-            _pd: PhantomData,
+            core: Core::new(role),
         }
     }
+
+    /// Returns the ROLE receiver.
+    pub fn into_inner(self) -> T {
+        self.core.into_inner()
+    }
 }
 
-impl<F, T> Allocate for ShareConversionReceiver<T, F>
+impl<T, F> AdditiveToMultiplicative<F> for ShareConversionReceiver<T, F>
 where
-    T: Allocate,
+    T: ROLEReceiver<F>,
     F: Field,
 {
-    fn alloc(&mut self, count: usize) {
-        self.ole_receiver.alloc(count);
+    type Error = ReceiverError;
+    type Future = <Core<T, F> as AdditiveToMultiplicative<F>>::Future;
+
+    fn alloc(&mut self, count: usize) -> Result<(), Self::Error> {
+        AdditiveToMultiplicative::alloc(&mut self.core, count).map_err(ReceiverError::from)
+    }
+
+    fn queue_to_multiplicative(&mut self, inputs: &[F]) -> Result<Self::Future, Self::Error> {
+        self.core
+            .queue_to_multiplicative(inputs)
+            .map_err(ReceiverError::from)
+    }
+}
+
+impl<T, F> MultiplicativeToAdditive<F> for ShareConversionReceiver<T, F>
+where
+    T: ROLEReceiver<F>,
+    F: Field,
+{
+    type Error = ReceiverError;
+    type Future = <Core<T, F> as MultiplicativeToAdditive<F>>::Future;
+
+    fn alloc(&mut self, count: usize) -> Result<(), Self::Error> {
+        MultiplicativeToAdditive::alloc(&mut self.core, count).map_err(ReceiverError::from)
+    }
+
+    fn queue_to_additive(&mut self, inputs: &[F]) -> Result<Self::Future, Self::Error> {
+        self.core
+            .queue_to_additive(inputs)
+            .map_err(ReceiverError::from)
     }
 }
 
 #[async_trait]
-impl<Ctx, F, T> Preprocess<Ctx> for ShareConversionReceiver<T, F>
+impl<Ctx, T, F> Flush<Ctx> for ShareConversionReceiver<T, F>
 where
-    T: Preprocess<Ctx, Error = OLEError> + Send,
-    F: Field + Serialize + Deserialize,
     Ctx: Context,
+    T: ROLEReceiver<F> + Flush<Ctx> + Send,
+    F: Field + Serialize + Deserialize,
 {
-    type Error = ShareConversionError;
+    type Error = ReceiverError;
 
-    async fn preprocess(&mut self, ctx: &mut Ctx) -> Result<(), ShareConversionError> {
-        self.ole_receiver
-            .preprocess(ctx)
-            .await
-            .map_err(ShareConversionError::from)
+    fn wants_flush(&self) -> bool {
+        self.core.wants_flush()
+    }
+
+    async fn flush(&mut self, ctx: &mut Ctx) -> Result<(), ReceiverError> {
+        if self.core.role().wants_flush() {
+            self.core
+                .role_mut()
+                .flush(ctx)
+                .await
+                .map_err(ReceiverError::role)?;
+        }
+
+        let wants_m2a = self.core.wants_m2a();
+        let wants_a2m = self.core.wants_a2m();
+
+        if wants_m2a {
+            ctx.io_mut().send(self.core.send_m2a()?).await?;
+        }
+
+        if wants_a2m {
+            ctx.io_mut().send(self.core.send_a2m()?).await?;
+        }
+
+        if wants_m2a {
+            let msg = ctx.io_mut().expect_next().await?;
+            self.core.recv_m2a(msg)?;
+        }
+
+        if wants_a2m {
+            let msg = ctx.io_mut().expect_next().await?;
+            self.core.recv_a2m(msg)?;
+        }
+
+        Ok(())
     }
 }
 
-#[async_trait]
-impl<Ctx, F, T> MultiplicativeToAdditive<Ctx, F> for ShareConversionReceiver<T, F>
-where
-    T: OLEReceiver<Ctx, F> + Send,
-    F: Field + Serialize + Deserialize,
-    Ctx: Context,
-{
-    async fn to_additive(
-        &mut self,
-        ctx: &mut Ctx,
-        inputs: Vec<F>,
-    ) -> Result<Vec<F>, ShareConversionError> {
-        self.ole_receiver
-            .receive(ctx, inputs)
-            .await
-            .map_err(ShareConversionError::from)
+/// Error for [`ShareConversionReceiver`].
+#[derive(Debug, thiserror::Error)]
+#[error(transparent)]
+pub struct ReceiverError(#[from] ErrorRepr);
+
+impl ReceiverError {
+    fn role<E>(err: E) -> Self
+    where
+        E: Into<Box<dyn std::error::Error + Send + Sync + 'static>>,
+    {
+        Self(ErrorRepr::Role(err.into()))
     }
 }
 
-#[async_trait]
-impl<Ctx, F, T> AdditiveToMultiplicative<Ctx, F> for ShareConversionReceiver<T, F>
-where
-    T: OLEReceiver<Ctx, F> + Send,
-    F: Field + Serialize + Deserialize,
-    Ctx: Context,
-{
-    async fn to_multiplicative(
-        &mut self,
-        ctx: &mut Ctx,
-        inputs: Vec<F>,
-    ) -> Result<Vec<F>, ShareConversionError> {
-        let ole_output = self.ole_receiver.receive(ctx, inputs).await?;
+#[derive(Debug, thiserror::Error)]
+enum ErrorRepr {
+    #[error("core error: {0}")]
+    Core(#[from] CoreError),
+    #[error("role error: {0}")]
+    Role(Box<dyn std::error::Error + Send + Sync + 'static>),
+    #[error("io error: {0}")]
+    Io(#[from] std::io::Error),
+}
 
-        let channel = ctx.io_mut();
-        let masks: A2MMasks<F> = channel.expect_next::<Masks<F>>().await?.into();
+impl From<CoreError> for ReceiverError {
+    fn from(value: CoreError) -> Self {
+        ReceiverError(ErrorRepr::Core(value))
+    }
+}
 
-        a2m_convert_receiver(masks, ole_output).map_err(ShareConversionError::from)
+impl From<std::io::Error> for ReceiverError {
+    fn from(value: std::io::Error) -> Self {
+        ReceiverError(ErrorRepr::Io(value))
     }
 }

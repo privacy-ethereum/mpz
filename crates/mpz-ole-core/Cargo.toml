@@ -6,13 +6,20 @@ edition = "2021"
 [lib]
 name = "mpz_ole_core"
 
+[features]
+default = []
+test-utils = []
+
 [dependencies]
 rand.workspace = true
 itybity.workspace = true
 thiserror.workspace = true
 serde = { workspace = true, features = ["derive"] }
-hybrid-array.workspace = true
+hybrid-array = { workspace = true, features = ["serde"] }
 
 mpz-fields.workspace = true
 mpz-core.workspace = true
 mpz-ot-core.workspace = true
+mpz-common = { workspace = true, default-features = false, features = [
+    "future",
+] }

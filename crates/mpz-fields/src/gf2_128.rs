@@ -4,7 +4,7 @@ use hybrid_array::Array;
 use itybity::{BitLength, FromBitIterator, GetBit, Lsb0, Msb0};
 use rand::{distributions::Standard, prelude::Distribution};
 use serde::{Deserialize, Serialize};
-use std::ops::{Add, Mul, Neg};
+use std::ops::{Add, Mul, Neg, Sub};
 
 use mpz_core::Block;
 use typenum::{U128, U16};
@@ -69,15 +69,28 @@ impl Add for Gf2_128 {
     }
 }
 
+impl Sub for Gf2_128 {
+    type Output = Self;
+
+    #[allow(clippy::suspicious_arithmetic_impl)]
+    fn sub(self, rhs: Self) -> Self::Output {
+        Self(self.0 ^ rhs.0)
+    }
+}
+
 impl Mul for Gf2_128 {
     type Output = Self;
 
-    /// Galois field multiplication of two 128-bit blocks reduced by the GCM polynomial.
+    /// Galois field multiplication of two 128-bit blocks reduced by the GCM
+    /// polynomial.
     fn mul(self, rhs: Self) -> Self::Output {
-        // See NIST SP 800-38D, Recommendation for Block Cipher Modes of Operation: Galois/Counter Mode (GCM) and GMAC.
+        // See NIST SP 800-38D, Recommendation for Block Cipher Modes of Operation:
+        // Galois/Counter Mode (GCM) and GMAC.
         //
-        // Note that the NIST specification uses a different representation of the polynomial, where the bits are
-        // reversed. This "bit reflection" is discussed in Intel® Carry-Less Multiplication Instruction and its Usage for Computing the GCM Mode.
+        // Note that the NIST specification uses a different representation of the
+        // polynomial, where the bits are reversed. This "bit reflection" is
+        // discussed in Intel® Carry-Less Multiplication Instruction and its Usage for
+        // Computing the GCM Mode.
         //
         // The irreducible polynomial is the same, ie `x^128 + x^7 + x^2 + x + 1`.
 
@@ -126,14 +139,19 @@ impl Field for Gf2_128 {
     }
 
     /// Galois field inversion of 128-bit block.
-    fn inverse(self) -> Self {
+    fn inverse(self) -> Option<Self> {
+        if self == Self::zero() {
+            return None;
+        }
+
         let mut a = self;
         let mut out = Self::one();
         for _ in 0..127 {
             a = a * a;
             out = out * a;
         }
-        out
+
+        Some(out)
     }
 
     fn to_le_bytes(&self) -> Vec<u8> {
@@ -212,7 +230,8 @@ mod tests {
         let c = Gf2_128::new(3);
         let d = Gf2_128::new(7);
 
-        // Test vector from Intel® Carry-Less Multiplication Instruction and its Usage for Computing the GCM Mode.
+        // Test vector from Intel® Carry-Less Multiplication Instruction and its Usage
+        // for Computing the GCM Mode.
         let e = Gf2_128::new(0x7b5b54657374566563746f725d53475d);
         let f = Gf2_128::new(0x48692853686179295b477565726f6e5d);
 

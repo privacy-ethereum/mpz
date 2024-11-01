@@ -1,6 +1,6 @@
 //! This module implements the prime field of P256.
 
-use std::ops::{Add, Mul, Neg};
+use std::ops::{Add, Mul, Neg, Sub};
 
 use ark_ff::{BigInt, BigInteger, Field as ArkField, FpConfig, MontBackend, One, Zero};
 use ark_secp256r1::{fq::Fq, FqConfig};
@@ -26,7 +26,8 @@ pub struct P256(pub(crate) Fq);
 opaque_debug::implement!(P256);
 
 impl P256 {
-    /// Creates a new field element, returning `None` if the value is not a valid element.
+    /// Creates a new field element, returning `None` if the value is not a
+    /// valid element.
     pub fn new(value: impl ToBigUint) -> Option<Self> {
         value.to_biguint().map(|input| P256(Fq::from(input)))
     }
@@ -80,6 +81,14 @@ impl Add for P256 {
     }
 }
 
+impl Sub for P256 {
+    type Output = Self;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        Self(self.0 - rhs.0)
+    }
+}
+
 impl Mul for P256 {
     type Output = Self;
 
@@ -118,8 +127,8 @@ impl Field for P256 {
         P256(out)
     }
 
-    fn inverse(self) -> Self {
-        P256(ArkField::inverse(&self.0).expect("Unable to invert field element"))
+    fn inverse(self) -> Option<Self> {
+        ArkField::inverse(&self.0).map(P256)
     }
 
     fn to_le_bytes(&self) -> Vec<u8> {
@@ -157,7 +166,8 @@ impl FromBitIterator for P256 {
     }
 }
 
-/// Helper type because [`SerializationError`] does not implement std::error::Error.
+/// Helper type because [`SerializationError`] does not implement
+/// std::error::Error.
 #[derive(Debug, Error)]
 #[error("{0}")]
 pub struct P256Error(SerializationError);

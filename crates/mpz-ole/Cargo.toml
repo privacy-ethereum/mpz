@@ -9,7 +9,8 @@ name = "mpz_ole"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-ideal = ["mpz-common/ideal"]
+default = []
+test-utils = ["mpz-ole-core/test-utils"]
 
 [dependencies]
 mpz-fields.workspace = true
@@ -33,5 +34,10 @@ tokio = { workspace = true, features = [
     "rt",
     "rt-multi-thread",
 ] }
-mpz-common = { workspace = true, features = ["test-utils", "ideal"] }
-mpz-ot =  { workspace = true, features = ["ideal"] }
+mpz-common = { workspace = true, features = [
+    "test-utils",
+    "ideal",
+    "executor",
+] }
+mpz-ot = { workspace = true, features = ["ideal"] }
+mpz-ole-core = { workspace = true, features = ["test-utils"] }

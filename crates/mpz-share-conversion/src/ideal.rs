@@ -1,157 +1,151 @@
-//! Ideal share conversion.
-
+use crate::{AdditiveToMultiplicative, MultiplicativeToAdditive};
 use async_trait::async_trait;
-
-use mpz_common::{
-    ideal::{ideal_f2p, Alice, Bob},
-    Allocate, Context, Preprocess,
-};
+use mpz_common::Flush;
+use mpz_core::Block;
 use mpz_fields::Field;
-use mpz_share_conversion_core::ideal::{IdealA2M, IdealM2A};
+use mpz_share_conversion_core::ideal::{
+    ideal_share_convert as core_ideal_share_convert, IdealShareConvertError,
+    IdealShareConvertReceiver as CoreReceiver, IdealShareConvertSender as CoreSender,
+};
 
-use crate::{AdditiveToMultiplicative, MultiplicativeToAdditive, ShareConversionError};
-
-#[derive(Debug, Default)]
-struct Inner {
-    m2a: IdealM2A,
-    a2m: IdealA2M,
+/// Create a pair of ideal share converters.
+pub fn ideal_share_convert<F>(
+    seed: Block,
+) -> (IdealShareConvertSender<F>, IdealShareConvertReceiver<F>) {
+    let (core_sender, core_receiver) = core_ideal_share_convert(seed);
+    (
+        IdealShareConvertSender(core_sender),
+        IdealShareConvertReceiver(core_receiver),
+    )
 }
 
+/// Ideal share conversion sender.
 #[derive(Debug)]
-enum Role {
-    Alice(Alice<Inner>),
-    Bob(Bob<Inner>),
+pub struct IdealShareConvertSender<F>(CoreSender<F>);
+
+impl<F> AdditiveToMultiplicative<F> for IdealShareConvertSender<F>
+where
+    F: Field,
+{
+    type Error = IdealShareConvertError;
+    type Future = <CoreSender<F> as AdditiveToMultiplicative<F>>::Future;
+
+    fn alloc(&mut self, count: usize) -> Result<(), Self::Error> {
+        AdditiveToMultiplicative::alloc(&mut self.0, count)
+    }
+
+    fn queue_to_multiplicative(&mut self, inputs: &[F]) -> Result<Self::Future, Self::Error> {
+        self.0.queue_to_multiplicative(inputs)
+    }
 }
 
-/// An ideal share converter.
-#[derive(Debug)]
-pub struct IdealShareConverter(Role);
+impl<F> MultiplicativeToAdditive<F> for IdealShareConvertSender<F>
+where
+    F: Field,
+{
+    type Error = IdealShareConvertError;
+    type Future = <CoreSender<F> as MultiplicativeToAdditive<F>>::Future;
 
-impl Allocate for IdealShareConverter {
-    fn alloc(&mut self, _: usize) {}
+    fn alloc(&mut self, count: usize) -> Result<(), Self::Error> {
+        MultiplicativeToAdditive::alloc(&mut self.0, count)
+    }
+
+    fn queue_to_additive(&mut self, inputs: &[F]) -> Result<Self::Future, Self::Error> {
+        self.0.queue_to_additive(inputs)
+    }
 }
 
 #[async_trait]
-impl<Ctx> Preprocess<Ctx> for IdealShareConverter
+impl<Ctx, F> Flush<Ctx> for IdealShareConvertSender<F>
 where
-    Ctx: Context,
+    F: Field,
 {
-    type Error = ShareConversionError;
+    type Error = IdealShareConvertError;
 
-    async fn preprocess(&mut self, _ctx: &mut Ctx) -> Result<(), ShareConversionError> {
+    fn wants_flush(&self) -> bool {
+        self.0.wants_flush()
+    }
+
+    async fn flush(&mut self, _ctx: &mut Ctx) -> Result<(), Self::Error> {
+        if self.0.wants_flush() {
+            self.0.flush()?;
+        }
+
         Ok(())
     }
 }
 
-#[async_trait]
-impl<Ctx: Context, F: Field> AdditiveToMultiplicative<Ctx, F> for IdealShareConverter {
-    async fn to_multiplicative(
-        &mut self,
-        ctx: &mut Ctx,
-        inputs: Vec<F>,
-    ) -> Result<Vec<F>, ShareConversionError> {
-        Ok(match &mut self.0 {
-            Role::Alice(alice) => {
-                alice
-                    .call(ctx, inputs, |inner, a, b: Vec<F>| inner.a2m.generate(a, b))
-                    .await
-            }
-            Role::Bob(bob) => {
-                bob.call(ctx, inputs, |inner, a: Vec<F>, b| inner.a2m.generate(a, b))
-                    .await
-            }
-        })
+/// Ideal share conversion receiver.
+#[derive(Debug)]
+pub struct IdealShareConvertReceiver<F>(CoreReceiver<F>);
+
+impl<F> AdditiveToMultiplicative<F> for IdealShareConvertReceiver<F>
+where
+    F: Field,
+{
+    type Error = IdealShareConvertError;
+    type Future = <CoreReceiver<F> as AdditiveToMultiplicative<F>>::Future;
+
+    fn alloc(&mut self, count: usize) -> Result<(), Self::Error> {
+        AdditiveToMultiplicative::alloc(&mut self.0, count)
+    }
+
+    fn queue_to_multiplicative(&mut self, inputs: &[F]) -> Result<Self::Future, Self::Error> {
+        self.0.queue_to_multiplicative(inputs)
+    }
+}
+
+impl<F> MultiplicativeToAdditive<F> for IdealShareConvertReceiver<F>
+where
+    F: Field,
+{
+    type Error = IdealShareConvertError;
+    type Future = <CoreReceiver<F> as MultiplicativeToAdditive<F>>::Future;
+
+    fn alloc(&mut self, count: usize) -> Result<(), Self::Error> {
+        MultiplicativeToAdditive::alloc(&mut self.0, count)
+    }
+
+    fn queue_to_additive(&mut self, inputs: &[F]) -> Result<Self::Future, Self::Error> {
+        self.0.queue_to_additive(inputs)
     }
 }
 
 #[async_trait]
-impl<Ctx: Context, F: Field> MultiplicativeToAdditive<Ctx, F> for IdealShareConverter {
-    async fn to_additive(
-        &mut self,
-        ctx: &mut Ctx,
-        inputs: Vec<F>,
-    ) -> Result<Vec<F>, ShareConversionError> {
-        Ok(match &mut self.0 {
-            Role::Alice(alice) => {
-                alice
-                    .call(ctx, inputs, |inner, a, b: Vec<F>| inner.m2a.generate(a, b))
-                    .await
-            }
-            Role::Bob(bob) => {
-                bob.call(ctx, inputs, |inner, a: Vec<F>, b| inner.m2a.generate(a, b))
-                    .await
-            }
-        })
+impl<Ctx, F> Flush<Ctx> for IdealShareConvertReceiver<F>
+where
+    F: Field,
+{
+    type Error = IdealShareConvertError;
+
+    fn wants_flush(&self) -> bool {
+        self.0.wants_flush()
     }
-}
 
-/// Creates a pair of ideal share converters.
-pub fn ideal_share_converter() -> (IdealShareConverter, IdealShareConverter) {
-    let (alice, bob) = ideal_f2p(Inner::default());
+    async fn flush(&mut self, _ctx: &mut Ctx) -> Result<(), Self::Error> {
+        if self.0.wants_flush() {
+            self.0.flush()?;
+        }
 
-    (
-        IdealShareConverter(Role::Alice(alice)),
-        IdealShareConverter(Role::Bob(bob)),
-    )
+        Ok(())
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::{ideal::ideal_share_converter, AdditiveToMultiplicative, MultiplicativeToAdditive};
-    use mpz_common::executor::test_st_executor;
-    use mpz_core::{prg::Prg, Block};
-    use mpz_fields::{p256::P256, UniformRand};
-    use rand::SeedableRng;
+    use super::*;
+    use crate::test::test_share_convert;
+    use mpz_fields::{gf2_128::Gf2_128, p256::P256};
 
     #[tokio::test]
-    async fn test_ideal_m2a() {
-        let count = 12;
-        let mut rng = Prg::from_seed(Block::ZERO);
-
-        let (mut sender, mut receiver) = ideal_share_converter();
-
-        let sender_input: Vec<P256> = (0..count).map(|_| P256::rand(&mut rng)).collect();
-        let receiver_input: Vec<P256> = (0..count).map(|_| P256::rand(&mut rng)).collect();
-
-        let (mut ctx_sender, mut ctx_receiver) = test_st_executor(10);
-
-        let (sender_output, receiver_output) = tokio::try_join!(
-            sender.to_additive(&mut ctx_sender, sender_input.clone()),
-            receiver.to_additive(&mut ctx_receiver, receiver_input.clone())
-        )
-        .unwrap();
-
-        sender_input
-            .iter()
-            .zip(receiver_input)
-            .zip(sender_output)
-            .zip(receiver_output)
-            .for_each(|(((&si, ri), so), ro)| assert_eq!(si * ri, so + ro));
+    async fn test_ideal_share_convert_p256() {
+        let (sender, receiver) = ideal_share_convert::<P256>(Block::ZERO);
+        test_share_convert(sender, receiver, 8).await;
     }
 
     #[tokio::test]
-    async fn test_ideal_a2m() {
-        let count = 12;
-        let mut rng = Prg::from_seed(Block::ZERO);
-
-        let (mut sender, mut receiver) = ideal_share_converter();
-
-        let sender_input: Vec<P256> = (0..count).map(|_| P256::rand(&mut rng)).collect();
-        let receiver_input: Vec<P256> = (0..count).map(|_| P256::rand(&mut rng)).collect();
-
-        let (mut ctx_sender, mut ctx_receiver) = test_st_executor(10);
-
-        let (sender_output, receiver_output) = tokio::try_join!(
-            sender.to_multiplicative(&mut ctx_sender, sender_input.clone()),
-            receiver.to_multiplicative(&mut ctx_receiver, receiver_input.clone())
-        )
-        .unwrap();
-
-        sender_input
-            .iter()
-            .zip(receiver_input)
-            .zip(sender_output)
-            .zip(receiver_output)
-            .for_each(|(((&si, ri), so), ro)| assert_eq!(si + ri, so * ro));
+    async fn test_ideal_share_convert_gf2_128() {
+        let (sender, receiver) = ideal_share_convert::<Gf2_128>(Block::ZERO);
+        test_share_convert(sender, receiver, 8).await;
     }
 }
