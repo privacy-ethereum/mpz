@@ -12,7 +12,7 @@ use mpz_share_conversion_core::{
 use rand::{rngs::StdRng, SeedableRng};
 
 /// Test share conversion.
-pub async fn test_share_convert<S, R, F>(mut sender: S, mut receiver: R, cycles: usize)
+pub(crate) async fn test_share_convert<S, R, F>(mut sender: S, mut receiver: R, cycles: usize)
 where
     S: ShareConvert<F> + Flush<TestSTExecutor>,
     R: ShareConvert<F> + Flush<TestSTExecutor>,

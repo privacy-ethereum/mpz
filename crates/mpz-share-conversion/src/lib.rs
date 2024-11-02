@@ -9,8 +9,8 @@
 pub mod ideal;
 mod receiver;
 mod sender;
-#[cfg(any(test, feature = "test-utils"))]
-pub mod test;
+#[cfg(test)]
+mod test;
 
 pub use mpz_share_conversion_core::{
     A2MOutput, AdditiveToMultiplicative, M2AOutput, MultiplicativeToAdditive, ShareConvert,
