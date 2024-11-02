@@ -1,3 +1,5 @@
+//! Ideal functionalities.
+
 use crate::{AdditiveToMultiplicative, MultiplicativeToAdditive};
 use async_trait::async_trait;
 use mpz_common::Flush;
