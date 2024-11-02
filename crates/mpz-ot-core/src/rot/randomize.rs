@@ -46,7 +46,7 @@ where
     T: RCOTSender<Block>,
 {
     type Error = T::Error;
-    type Future = Map<T::Future, FnSender>;
+    type Future = Map<T::Future, RCOTSenderOutput<Block>, FnSender>;
 
     fn alloc(&mut self, count: usize) -> Result<(), Self::Error> {
         self.rcot.alloc(count)
@@ -137,8 +137,11 @@ where
     T: RCOTReceiver<bool, Block>,
 {
     type Error = T::Error;
-    type Future =
-        Map<T::Future, fn(RCOTReceiverOutput<bool, Block>) -> ROTReceiverOutput<bool, Block>>;
+    type Future = Map<
+        T::Future,
+        RCOTReceiverOutput<bool, Block>,
+        fn(RCOTReceiverOutput<bool, Block>) -> ROTReceiverOutput<bool, Block>,
+    >;
 
     fn alloc(&mut self, count: usize) -> Result<(), Self::Error> {
         self.rcot.alloc(count)

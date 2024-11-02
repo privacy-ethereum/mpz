@@ -22,7 +22,7 @@ pub trait COTSender<T> {
     /// Error type.
     type Error: std::error::Error + Send + Sync + 'static;
     /// Future type.
-    type Future: Output<Ok = COTSenderOutput>;
+    type Future: Output<COTSenderOutput>;
 
     /// Allocates `count` COTs for preprocessing.
     fn alloc(&mut self, count: usize) -> Result<(), Self::Error>;
@@ -55,7 +55,7 @@ pub trait COTReceiver<T, U> {
     /// Error type.
     type Error: std::error::Error + Send + Sync + 'static;
     /// Future type.
-    type Future: Output<Ok = COTReceiverOutput<U>>;
+    type Future: Output<COTReceiverOutput<U>>;
 
     /// Allocates `count` COTs for preprocessing.
     fn alloc(&mut self, count: usize) -> Result<(), Self::Error>;

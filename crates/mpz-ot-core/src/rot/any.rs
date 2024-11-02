@@ -38,7 +38,11 @@ where
     Standard: Distribution<U>,
 {
     type Error = T::Error;
-    type Future = Map<T::Future, fn(ROTSenderOutput<[Block; 2]>) -> ROTSenderOutput<[U; 2]>>;
+    type Future = Map<
+        T::Future,
+        ROTSenderOutput<[Block; 2]>,
+        fn(ROTSenderOutput<[Block; 2]>) -> ROTSenderOutput<[U; 2]>,
+    >;
 
     fn alloc(&mut self, count: usize) -> Result<(), Self::Error> {
         self.rot.alloc(count)
@@ -110,7 +114,11 @@ where
     Standard: Distribution<U>,
 {
     type Error = T::Error;
-    type Future = Map<T::Future, fn(ROTReceiverOutput<bool, Block>) -> ROTReceiverOutput<bool, U>>;
+    type Future = Map<
+        T::Future,
+        ROTReceiverOutput<bool, Block>,
+        fn(ROTReceiverOutput<bool, Block>) -> ROTReceiverOutput<bool, U>,
+    >;
 
     fn alloc(&mut self, count: usize) -> Result<(), Self::Error> {
         self.rot.alloc(count)

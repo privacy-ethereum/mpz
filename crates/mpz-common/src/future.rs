@@ -2,6 +2,7 @@
 
 use std::{
     future::Future,
+    marker::PhantomData,
     mem,
     pin::Pin,
     task::{ready, Context, Poll},
@@ -20,28 +21,25 @@ pub fn new_output<T>() -> (Sender<T>, MaybeDone<T>) {
 ///
 /// This trait extends [`std::future::Future`] for values which can be received
 /// outside of a task context.
-pub trait Output: Future<Output = Result<Self::Ok, Canceled>> {
-    /// Success type.
-    type Ok;
-
+pub trait Output<T>: Future<Output = Result<T, Canceled>> {
     /// Attempts to receive the output outside of a task context, returning
     /// `None` if it is not ready.
-    fn try_recv(&mut self) -> Result<Option<Self::Ok>, Canceled>;
+    fn try_recv(&mut self) -> Result<Option<T>, Canceled>;
 }
 
 /// An extension trait for [`Output`].
-pub trait OutputExt: Output {
+pub trait OutputExt<T>: Output<T> {
     /// Maps the output value to a different type.
-    fn map<F, O>(self, f: F) -> Map<Self, F>
+    fn map<F, O>(self, f: F) -> Map<Self, T, F>
     where
         Self: Sized,
-        F: FnOnce(Self::Ok) -> O,
+        F: FnOnce(T) -> O,
     {
         Map::new(self, f)
     }
 }
 
-impl<T> OutputExt for T where T: Output {}
+impl<T, U> OutputExt<U> for T where T: Output<U> {}
 
 /// Output canceled error.
 #[derive(Debug, thiserror::Error)]
@@ -70,10 +68,8 @@ pub struct MaybeDone<T> {
     recv: oneshot::Receiver<T>,
 }
 
-impl<T> Output for MaybeDone<T> {
-    type Ok = T;
-
-    fn try_recv(&mut self) -> Result<Option<Self::Ok>, Canceled> {
+impl<T> Output<T> for MaybeDone<T> {
+    fn try_recv(&mut self) -> Result<Option<T>, Canceled> {
         match self.recv.try_recv() {
             Ok(Some(value)) => Ok(Some(value)),
             Ok(None) => Ok(None),
@@ -97,36 +93,38 @@ pin_project! {
     ///
     /// Returned by [`OutputExt::map`].
     #[derive(Debug)]
-    pub struct Map<I, F> {
+    pub struct Map<I, T, F> {
         #[pin]
-        inner: MapInner<I, F>,
+        inner: MapInner<I, T, F>,
     }
 }
 
-impl<I, F> Map<I, F> {
+impl<I, T, F> Map<I, T, F> {
     fn new(inner: I, f: F) -> Self {
         Self {
-            inner: MapInner::Incomplete { inner, f },
+            inner: MapInner::Incomplete {
+                inner,
+                f,
+                _pd: PhantomData,
+            },
         }
     }
 }
 
-impl<I, F, O> Output for Map<I, F>
+impl<I, T, F, O> Output<O> for Map<I, T, F>
 where
-    I: Output,
-    F: FnOnce(I::Ok) -> O,
+    I: Output<T>,
+    F: FnOnce(T) -> O,
 {
-    type Ok = O;
-
-    fn try_recv(&mut self) -> Result<Option<Self::Ok>, Canceled> {
+    fn try_recv(&mut self) -> Result<Option<O>, Canceled> {
         self.inner.try_recv()
     }
 }
 
-impl<I, F, O> Future for Map<I, F>
+impl<I, T, F, O> Future for Map<I, T, F>
 where
-    I: Output,
-    F: FnOnce(I::Ok) -> O,
+    I: Output<T>,
+    F: FnOnce(T) -> O,
 {
     type Output = Result<O, Canceled>;
 
@@ -143,36 +141,39 @@ pin_project! {
     #[project = MapProj]
     #[project_replace = MapProjReplace]
     #[must_use = "futures do nothing unless you `.await` or poll them"]
-    enum MapInner<I, F> {
+    enum MapInner<I, T, F> {
         Incomplete {
             #[pin]
             inner: I,
             f: F,
+            _pd: PhantomData<fn() -> T>,
         },
         Done,
     }
 }
 
-impl<I, F, O> Output for MapInner<I, F>
+impl<I, T, F, O> Output<O> for MapInner<I, T, F>
 where
-    I: Output,
-    F: FnOnce(I::Ok) -> O,
+    I: Output<T>,
+    F: FnOnce(T) -> O,
 {
-    type Ok = O;
-
-    fn try_recv(&mut self) -> Result<Option<Self::Ok>, Canceled> {
+    fn try_recv(&mut self) -> Result<Option<O>, Canceled> {
         let this = mem::replace(self, MapInner::Done);
         match this {
-            MapInner::Incomplete { mut inner, f } => inner.try_recv().map(|res| res.map(f)),
+            MapInner::Incomplete {
+                mut inner,
+                f,
+                _pd: PhantomData,
+            } => inner.try_recv().map(|res| res.map(f)),
             MapInner::Done => Err(Canceled { _private: () }),
         }
     }
 }
 
-impl<I, F, O> Future for MapInner<I, F>
+impl<I, T, F, O> Future for MapInner<I, T, F>
 where
-    I: Output,
-    F: FnOnce(I::Ok) -> O,
+    I: Output<T>,
+    F: FnOnce(T) -> O,
 {
     type Output = Result<O, Canceled>;
 
