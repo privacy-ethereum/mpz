@@ -9,7 +9,7 @@
 pub mod ideal;
 mod receiver;
 mod sender;
-#[cfg(any(test, feature = "test-utils"))]
+#[cfg(test)]
 pub mod test;
 
 pub use mpz_share_conversion_core::{
