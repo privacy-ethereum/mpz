@@ -10,7 +10,7 @@ pub mod ideal;
 mod receiver;
 mod sender;
 #[cfg(test)]
-pub mod test;
+mod test;
 
 pub use mpz_share_conversion_core::{
     A2MOutput, AdditiveToMultiplicative, M2AOutput, MultiplicativeToAdditive, ShareConvert,
