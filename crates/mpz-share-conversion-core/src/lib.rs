@@ -31,7 +31,7 @@ pub trait AdditiveToMultiplicative<F> {
     /// Error type.
     type Error: std::error::Error + Send + Sync + 'static;
     /// Future type.
-    type Future: Output<Ok = A2MOutput<F>>;
+    type Future: Output<A2MOutput<F>>;
 
     /// Allocates `count` A2M for preprocessing.
     fn alloc(&mut self, count: usize) -> Result<(), Self::Error>;
@@ -52,7 +52,7 @@ pub trait MultiplicativeToAdditive<F> {
     /// Error type.
     type Error: std::error::Error + Send + Sync + 'static;
     /// Future type.
-    type Future: Output<Ok = M2AOutput<F>>;
+    type Future: Output<M2AOutput<F>>;
 
     /// Allocates `count` M2A for preprocessing.
     fn alloc(&mut self, count: usize) -> Result<(), Self::Error>;

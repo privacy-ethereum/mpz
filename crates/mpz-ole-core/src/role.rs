@@ -16,7 +16,7 @@ pub trait ROLESender<F> {
     /// Error type.
     type Error: std::error::Error + Send + Sync + 'static;
     /// Future type.
-    type Future: Output<Ok = ROLESenderOutput<F>>;
+    type Future: Output<ROLESenderOutput<F>>;
 
     /// Allocates `count` ROLE for preprocessing.
     fn alloc(&mut self, count: usize) -> Result<(), Self::Error>;
@@ -45,7 +45,7 @@ pub trait ROLEReceiver<F> {
     /// Error type.
     type Error: std::error::Error + Send + Sync + 'static;
     /// Future type.
-    type Future: Output<Ok = ROLEReceiverOutput<F>>;
+    type Future: Output<ROLEReceiverOutput<F>>;
 
     /// Allocates `count` ROLE for preprocessing.
     fn alloc(&mut self, count: usize) -> Result<(), Self::Error>;

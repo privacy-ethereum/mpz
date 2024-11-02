@@ -24,7 +24,7 @@ pub trait ROTSender<T> {
     /// Error type.
     type Error: std::error::Error + Send + Sync + 'static;
     /// Future type.
-    type Future: Output<Ok = ROTSenderOutput<T>>;
+    type Future: Output<ROTSenderOutput<T>>;
 
     /// Allocates `count` ROTs for preprocessing.
     fn alloc(&mut self, count: usize) -> Result<(), Self::Error>;
@@ -63,7 +63,7 @@ pub trait ROTReceiver<T, U> {
     /// Error type.
     type Error: std::error::Error + Send + Sync + 'static;
     /// Future type.
-    type Future: Output<Ok = ROTReceiverOutput<T, U>>;
+    type Future: Output<ROTReceiverOutput<T, U>>;
 
     /// Allocates `count` ROTs for preprocessing.
     fn alloc(&mut self, count: usize) -> Result<(), Self::Error>;

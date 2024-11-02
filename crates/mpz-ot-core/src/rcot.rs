@@ -18,7 +18,7 @@ pub trait RCOTSender<T> {
     /// Error type.
     type Error: std::error::Error + Send + Sync + 'static;
     /// Future type.
-    type Future: Output<Ok = RCOTSenderOutput<T>>;
+    type Future: Output<RCOTSenderOutput<T>>;
 
     /// Allocates `count` RCOTs for preprocessing.
     fn alloc(&mut self, count: usize) -> Result<(), Self::Error>;
@@ -60,7 +60,7 @@ pub trait RCOTReceiver<T, U> {
     /// Error type.
     type Error: std::error::Error + Send + Sync + 'static;
     /// Future type.
-    type Future: Output<Ok = RCOTReceiverOutput<T, U>>;
+    type Future: Output<RCOTReceiverOutput<T, U>>;
 
     /// Allocates `count` RCOTs for preprocessing.
     fn alloc(&mut self, count: usize) -> Result<(), Self::Error>;
