@@ -5,7 +5,7 @@ use clmul::Clmul;
 use core::ops::{BitAnd, BitAndAssign, BitXor, BitXorAssign};
 use generic_array::{typenum::consts::U16, GenericArray};
 use itybity::{BitIterable, BitLength, GetBit, Lsb0, Msb0};
-use rand::{distributions::Standard, prelude::Distribution, CryptoRng, Fill, Rng};
+use rand::{distributions::Standard, prelude::Distribution, CryptoRng, Rng};
 use serde::{Deserialize, Serialize};
 
 /// A block of 128 bits
@@ -270,16 +270,18 @@ impl BitXor for Block {
     type Output = Self;
 
     #[inline]
-    fn bitxor(self, other: Self) -> Self::Output {
-        Self(std::array::from_fn(|i| self.0[i] ^ other.0[i]))
+    fn bitxor(mut self, rhs: Self) -> Self::Output {
+        self.bitxor_assign(rhs);
+        self
     }
 }
 
 impl BitXor<&Block> for Block {
     type Output = Block;
 
-    fn bitxor(self, rhs: &Self) -> Self::Output {
-        Block(std::array::from_fn(|i| self.0[i] ^ rhs.0[i]))
+    fn bitxor(mut self, rhs: &Self) -> Self::Output {
+        self.bitxor_assign(rhs);
+        self
     }
 }
 
@@ -287,7 +289,7 @@ impl BitXor<Block> for &Block {
     type Output = Block;
 
     fn bitxor(self, rhs: Block) -> Self::Output {
-        Block(std::array::from_fn(|i| self.0[i] ^ rhs.0[i]))
+        *self ^ rhs
     }
 }
 
@@ -295,14 +297,36 @@ impl BitXor<&Block> for &Block {
     type Output = Block;
 
     fn bitxor(self, rhs: &Block) -> Self::Output {
-        Block(std::array::from_fn(|i| self.0[i] ^ rhs.0[i]))
+        *self ^ rhs
+    }
+}
+
+impl BitXorAssign<&Block> for Block {
+    #[inline(always)]
+    fn bitxor_assign(&mut self, rhs: &Self) {
+        self.0[15] ^= rhs.0[15];
+        self.0[14] ^= rhs.0[14];
+        self.0[13] ^= rhs.0[13];
+        self.0[12] ^= rhs.0[12];
+        self.0[11] ^= rhs.0[11];
+        self.0[10] ^= rhs.0[10];
+        self.0[9] ^= rhs.0[9];
+        self.0[8] ^= rhs.0[8];
+        self.0[7] ^= rhs.0[7];
+        self.0[6] ^= rhs.0[6];
+        self.0[5] ^= rhs.0[5];
+        self.0[4] ^= rhs.0[4];
+        self.0[3] ^= rhs.0[3];
+        self.0[2] ^= rhs.0[2];
+        self.0[1] ^= rhs.0[1];
+        self.0[0] ^= rhs.0[0];
     }
 }
 
 impl BitXorAssign for Block {
     #[inline(always)]
     fn bitxor_assign(&mut self, rhs: Self) {
-        *self = *self ^ rhs;
+        self.bitxor_assign(&rhs);
     }
 }
 
@@ -310,16 +334,18 @@ impl BitAnd for Block {
     type Output = Self;
 
     #[inline]
-    fn bitand(self, other: Self) -> Self::Output {
-        Self(std::array::from_fn(|i| self.0[i] & other.0[i]))
+    fn bitand(mut self, rhs: Self) -> Self::Output {
+        self.bitand_assign(&rhs);
+        self
     }
 }
 
 impl BitAnd<&Block> for Block {
     type Output = Block;
 
-    fn bitand(self, rhs: &Self) -> Self::Output {
-        Block(std::array::from_fn(|i| self.0[i] & rhs.0[i]))
+    fn bitand(mut self, rhs: &Self) -> Self::Output {
+        self.bitand_assign(rhs);
+        self
     }
 }
 
@@ -327,7 +353,7 @@ impl BitAnd<Block> for &Block {
     type Output = Block;
 
     fn bitand(self, rhs: Block) -> Self::Output {
-        Block(std::array::from_fn(|i| self.0[i] & rhs.0[i]))
+        *self & &rhs
     }
 }
 
@@ -335,14 +361,29 @@ impl BitAnd<&Block> for &Block {
     type Output = Block;
 
     fn bitand(self, rhs: &Block) -> Self::Output {
-        Block(std::array::from_fn(|i| self.0[i] & rhs.0[i]))
+        *self & rhs
     }
 }
 
-impl BitAndAssign for Block {
+impl BitAndAssign<&Block> for Block {
     #[inline(always)]
-    fn bitand_assign(&mut self, rhs: Self) {
-        *self = *self & rhs
+    fn bitand_assign(&mut self, rhs: &Self) {
+        self.0[15] &= rhs.0[15];
+        self.0[14] &= rhs.0[14];
+        self.0[13] &= rhs.0[13];
+        self.0[12] &= rhs.0[12];
+        self.0[11] &= rhs.0[11];
+        self.0[10] &= rhs.0[10];
+        self.0[9] &= rhs.0[9];
+        self.0[8] &= rhs.0[8];
+        self.0[7] &= rhs.0[7];
+        self.0[6] &= rhs.0[6];
+        self.0[5] &= rhs.0[5];
+        self.0[4] &= rhs.0[4];
+        self.0[3] &= rhs.0[3];
+        self.0[2] &= rhs.0[2];
+        self.0[1] &= rhs.0[1];
+        self.0[0] &= rhs.0[0];
     }
 }
 

@@ -17,6 +17,7 @@ pub struct ContextError {
 }
 
 impl ContextError {
+    #[allow(dead_code)]
     pub(crate) fn new<E: Into<Box<dyn std::error::Error + Send + Sync>>>(
         kind: ErrorKind,
         source: E,
@@ -29,6 +30,7 @@ impl ContextError {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub(crate) enum ErrorKind {
     Mux,
     Thread,
@@ -57,6 +59,22 @@ pub trait Context: Send + Sync {
 
     /// Returns a mutable reference to the thread's I/O channel.
     fn io_mut(&mut self) -> &mut Self::Io;
+
+    /// Executes a collection of tasks provided with a context.
+    ///
+    /// If multi-threading is available, the tasks are load balanced across
+    /// threads. Otherwise, they are executed sequentially.
+    async fn map<'a, F, T, R, W>(
+        &'a mut self,
+        items: Vec<T>,
+        f: F,
+        weight: W,
+    ) -> Result<Vec<R>, ContextError>
+    where
+        F: for<'b> Fn(&'b mut Self, T) -> ScopedBoxFuture<'static, 'b, R> + Clone + Send + 'static,
+        T: Send + 'static,
+        R: Send + 'static,
+        W: Fn(&T) -> usize + Send + 'static;
 
     /// Forks the thread and executes the provided closures concurrently.
     ///

@@ -6,7 +6,6 @@ use mpz_ot_core::{
     ot::{OTSender, OTSenderOutput},
 };
 use serio::{stream::IoStreamExt, SinkExt};
-use utils_aio::non_blocking_backend::{Backend, NonBlockingBackend};
 
 type Error = SenderError;
 
@@ -108,9 +107,7 @@ where
         }
 
         let payload = ctx.io_mut().expect_next().await?;
-
-        let (payload, sender) =
-            Backend::spawn(|| sender.send(payload).map(|payload| (payload, sender))).await?;
+        let payload = sender.send(payload)?;
 
         ctx.io_mut().send(payload).await?;
 

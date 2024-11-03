@@ -23,9 +23,12 @@ impl GgmTree {
     /// # Arguments
     ///
     /// * `seed` - a seed.
-    /// * `tree` - the destination to write the GGM (binary tree) `tree`, with size `2^{depth}`.
-    /// * `k0` - XORs of all the left-node values in each level, with size `depth`.
-    /// * `k1`- XORs of all the right-node values in each level, with size `depth`.
+    /// * `tree` - the destination to write the GGM (binary tree) `tree`, with
+    ///   size `2^{depth}`.
+    /// * `k0` - XORs of all the left-node values in each level, with size
+    ///   `depth`.
+    /// * `k1`- XORs of all the right-node values in each level, with size
+    ///   `depth`.
     // This implementation is adapted from EMP Toolkit.
     pub fn gen(&self, seed: Block, tree: &mut [Block], k0: &mut [Block], k1: &mut [Block]) {
         assert_eq!(tree.len(), 1 << (self.depth));
@@ -65,11 +68,15 @@ impl GgmTree {
 
     /// Reconstruct the GGM tree except the value in a given position.
     ///
-    /// This reconstructs the GGM tree entirely except `tree[pos] == Block::ZERO`. The bit decomposition of `pos` is the complement of `alpha`. i.e., `pos[i] = 1 xor alpha[i]`.
+    /// This reconstructs the GGM tree entirely except `tree[pos] ==
+    /// Block::ZERO`. The bit decomposition of `pos` is the complement of
+    /// `alpha`. i.e., `pos[i] = 1 xor alpha[i]`.
     ///
     /// # Arguments
     ///
-    /// * `k` - a slice of blocks with length `depth`, the values of k are chosen via OT from k0 and k1. For the i-th value, if alpha[i] == 1, k[i] = k1[i]; else k[i] = k0[i].
+    /// * `k` - a slice of blocks with length `depth`, the values of k are
+    ///   chosen via OT from k0 and k1. For the i-th value, if `alpha[i] == 1,
+    ///   k[i] = k1[i]; else k[i] = k0[i]`.
     /// * `alpha` - a slice of bits with length `depth`.
     /// * `tree` - the destination to write the GGM tree.
     pub fn reconstruct(&self, tree: &mut [Block], k: &[Block], alpha: &[bool]) {
@@ -130,8 +137,7 @@ impl GgmTree {
 
 #[test]
 fn ggm_test() {
-    use crate::ggm_tree::GgmTree;
-    use crate::Block;
+    use crate::{ggm_tree::GgmTree, Block};
 
     let depth = 3;
     let mut tree = vec![Block::ZERO; 1 << depth];

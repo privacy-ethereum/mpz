@@ -21,7 +21,7 @@ pub trait Vm<T: MemoryType>: Memory<T, Error = <Self as Vm<T>>::Error> {
     fn call_raw(&mut self, call: Call) -> Result<Slice, <Self as Vm<T>>::Error>;
 }
 
-/// Extension trait for [`Callable`].
+/// Extension trait for [`Vm`].
 pub trait VmExt<T: MemoryType>: Vm<T> {
     /// Calls a function, returning the output.
     fn call<R>(&mut self, call: Call) -> Result<R, <Self as Vm<T>>::Error>

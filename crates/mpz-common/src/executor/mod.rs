@@ -25,7 +25,7 @@ mod test_utils {
     }
 
     /// Test multi-threaded executor.
-    pub type TestMTExecutor = MTExecutor<TestFramedMux, MemoryDuplex>;
+    pub type TestMTExecutor = MTExecutor<TestFramedMux>;
 
     /// Creates a pair of multi-threaded executors with multiplexed I/O
     /// channels.

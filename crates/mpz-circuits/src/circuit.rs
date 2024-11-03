@@ -9,6 +9,8 @@ use crate::{
 #[derive(Debug, thiserror::Error)]
 #[allow(missing_docs)]
 pub enum CircuitError {
+    #[error("Invalid number of wires: expected {0}, got {1}")]
+    InvalidWireCount(usize, usize),
     #[error("Invalid number of inputs: expected {0}, got {1}")]
     InvalidInputCount(usize, usize),
     #[error("Invalid number of outputs: expected {0}, got {1}")]
@@ -39,6 +41,16 @@ impl Circuit {
     /// Returns a reference to the outputs of the circuit.
     pub fn outputs(&self) -> &[BinaryRepr] {
         &self.outputs
+    }
+
+    /// Returns the input length of the circuit in bits.
+    pub fn input_len(&self) -> usize {
+        self.inputs.iter().map(|input| input.len()).sum()
+    }
+
+    /// Returns the output length of the circuit in bits.
+    pub fn output_len(&self) -> usize {
+        self.outputs.iter().map(|output| output.len()).sum()
     }
 
     /// Returns a reference to the gates of the circuit.
@@ -109,6 +121,39 @@ impl Circuit {
         self
     }
 
+    /// Evaluate the circuit using the provided wires.
+    ///
+    /// It is the callers responsibility to ensure the input wires are set.
+    pub fn evaluate_raw(&self, wires: &mut [bool]) -> Result<(), CircuitError> {
+        if wires.len() != self.feed_count {
+            return Err(CircuitError::InvalidWireCount(self.feed_count, wires.len()));
+        }
+
+        for gate in self.gates.iter() {
+            match gate {
+                Gate::Xor { x, y, z } => {
+                    let x = wires[x.id];
+                    let y = wires[y.id];
+
+                    wires[z.id] = x ^ y;
+                }
+                Gate::And { x, y, z } => {
+                    let x = wires[x.id];
+                    let y = wires[y.id];
+
+                    wires[z.id] = x & y;
+                }
+                Gate::Inv { x, z } => {
+                    let x = wires[x.id];
+
+                    wires[z.id] = !x;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     /// Evaluate the circuit with the given inputs.
     ///
     /// # Arguments
@@ -126,7 +171,7 @@ impl Circuit {
             ));
         }
 
-        let mut feeds: Vec<Option<bool>> = vec![None; self.feed_count];
+        let mut feeds: Vec<bool> = vec![false; self.feed_count];
 
         for (input, value) in self.inputs.iter().zip(values) {
             if input.value_type() != value.value_type() {
@@ -137,41 +182,18 @@ impl Circuit {
             }
 
             for (node, bit) in input.iter().zip(value.clone().into_iter_lsb0()) {
-                feeds[node.id] = Some(bit);
+                feeds[node.id] = bit;
             }
         }
 
-        for gate in self.gates.iter() {
-            match gate {
-                Gate::Xor { x, y, z } => {
-                    let x = feeds[x.id].expect("Feed should be set");
-                    let y = feeds[y.id].expect("Feed should be set");
-
-                    feeds[z.id] = Some(x ^ y);
-                }
-                Gate::And { x, y, z } => {
-                    let x = feeds[x.id].expect("Feed should be set");
-                    let y = feeds[y.id].expect("Feed should be set");
-
-                    feeds[z.id] = Some(x & y);
-                }
-                Gate::Inv { x, z } => {
-                    let x = feeds[x.id].expect("Feed should be set");
-
-                    feeds[z.id] = Some(!x);
-                }
-            }
-        }
+        self.evaluate_raw(&mut feeds)?;
 
         let outputs = self
             .outputs
             .iter()
             .cloned()
             .map(|output| {
-                let bits: Vec<bool> = output
-                    .iter()
-                    .map(|node| feeds[node.id].expect("Feed should be set"))
-                    .collect();
+                let bits: Vec<bool> = output.iter().map(|node| feeds[node.id]).collect();
 
                 output
                     .from_bin_repr(&bits)

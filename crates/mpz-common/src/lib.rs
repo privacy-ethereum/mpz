@@ -25,6 +25,8 @@ pub mod future;
 mod id;
 #[cfg(any(test, feature = "ideal"))]
 pub mod ideal;
+#[cfg(any(test, feature = "executor"))]
+pub(crate) mod load_balance;
 #[cfg(feature = "sync")]
 pub mod sync;
 

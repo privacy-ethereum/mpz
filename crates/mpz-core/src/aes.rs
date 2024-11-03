@@ -22,6 +22,13 @@ pub struct FixedKeyAes {
 }
 
 impl FixedKeyAes {
+    /// Create a fixed-key AES cipher with a given key.
+    pub fn new(key: [u8; 16]) -> Self {
+        Self {
+            aes: Aes128Enc::new(&key.into()),
+        }
+    }
+
     /// Tweakable circular correlation-robust hash function instantiated
     /// using fixed-key AES.
     ///
