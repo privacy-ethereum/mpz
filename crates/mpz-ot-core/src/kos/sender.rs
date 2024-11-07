@@ -55,7 +55,6 @@ impl Sender<state::Initialized> {
     ///
     /// * `config` - Sender's configuration.
     /// * `delta` - Global COT correlation.
-    /// * `base_ot` - Base OT.
     pub fn new(config: SenderConfig, delta: Block) -> Self {
         Sender {
             config,
@@ -74,7 +73,6 @@ impl Sender<state::Initialized> {
     ///
     /// # Arguments
     ///
-    /// * `delta` - The sender's base OT choice bits
     /// * `seeds` - The rng seeds chosen during base OT
     pub fn setup(self, seeds: [Block; CSP]) -> Sender<state::Extension> {
         Sender {

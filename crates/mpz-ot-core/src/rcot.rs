@@ -9,7 +9,7 @@ use crate::TransferId;
 pub struct RCOTSenderOutput<T> {
     /// Transfer id.
     pub id: TransferId,
-    /// Random keys.
+    /// Random keys corresponding to the choice bit value 0.
     pub keys: Vec<T>,
 }
 

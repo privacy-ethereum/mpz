@@ -4,7 +4,7 @@ use mpz_core::Block;
 use mpz_ot_core::rot::{AnyReceiver as Core, ROTReceiver, ROTReceiverOutput};
 use rand::{distributions::Standard, prelude::Distribution};
 
-/// A ROT receiver which recvs any type implementing `rand` traits.
+/// A ROT receiver which receives any type implementing `rand` traits.
 #[derive(Debug)]
 pub struct AnyReceiver<T> {
     core: Core<T>,
