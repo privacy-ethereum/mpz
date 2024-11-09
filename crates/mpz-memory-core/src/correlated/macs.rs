@@ -2,15 +2,26 @@ use std::ops::Add;
 
 use blake3::{Hash, Hasher};
 use mpz_core::{
+<<<<<<< HEAD
     Block,
     bitvec::{BitSlice, BitVec},
+=======
+    bitvec::{BitSlice, BitVec},
+    Block,
+>>>>>>> 50828d7 (feat: garble vm (#191))
 };
 use serde::{Deserialize, Serialize};
 
 use crate::{
+<<<<<<< HEAD
     RangeSet, Slice,
     correlated::{MAC_ONE, MAC_ZERO},
     store::{Store, StoreError},
+=======
+    correlated::{MAC_ONE, MAC_ZERO},
+    store::{Store, StoreError},
+    RangeSet, Slice,
+>>>>>>> 50828d7 (feat: garble vm (#191))
 };
 
 type Result<T> = core::result::Result<T, MacStoreError>;
@@ -232,7 +243,11 @@ impl MacStore {
             let slice = Slice::from_range_unchecked(range);
             self.macs.try_get(slice)?.iter().for_each(|mac| {
                 bits.push(mac.pointer());
+<<<<<<< HEAD
                 hasher.update(mac.as_bytes());
+=======
+                hasher.update(&mac.as_bytes());
+>>>>>>> 50828d7 (feat: garble vm (#191))
             });
         }
 
@@ -276,7 +291,11 @@ mod tests {
         let macs = vec![Mac::PUBLIC[0], Mac::PUBLIC[1]];
 
         let slice = store.alloc_with(&macs);
+<<<<<<< HEAD
         let data = BitVec::from_iter([true, false]);
+=======
+        let data = BitVec::<u32>::from_iter([true, false]);
+>>>>>>> 50828d7 (feat: garble vm (#191))
 
         store.adjust(slice, &data).unwrap();
 

@@ -233,6 +233,7 @@ pub struct ContextError {
 
 impl ContextError {
     #[allow(dead_code)]
+    #[allow(dead_code)]
     pub(crate) fn new<E: Into<Box<dyn std::error::Error + Send + Sync>>>(
         kind: ErrorKind,
         source: E,
@@ -245,6 +246,7 @@ impl ContextError {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 #[allow(dead_code)]
 pub(crate) enum ErrorKind {
     Mux,
@@ -260,11 +262,65 @@ impl fmt::Display for ErrorKind {
     }
 }
 
-impl From<SpawnError> for ContextError {
-    fn from(err: SpawnError) -> Self {
-        Self {
-            kind: ErrorKind::Thread,
-            source: Some(Box::new(err)),
-        }
-    }
+/// A thread context.
+#[async_trait]
+pub trait Context: Send + Sync {
+    /// I/O channel used by the thread.
+    type Io: IoSink + IoStream + Send + Unpin + 'static;
+
+    /// Returns the thread ID.
+    fn id(&self) -> &ThreadId;
+
+    /// Returns the maximum available concurrency.
+    fn max_concurrency(&self) -> usize;
+
+    /// Returns a mutable reference to the thread's I/O channel.
+    fn io_mut(&mut self) -> &mut Self::Io;
+
+    /// Executes a collection of tasks provided with a context.
+    ///
+    /// If multi-threading is available, the tasks are load balanced across
+    /// threads. Otherwise, they are executed sequentially.
+    async fn map<'a, F, T, R, W>(
+        &'a mut self,
+        items: Vec<T>,
+        f: F,
+        weight: W,
+    ) -> Result<Vec<R>, ContextError>
+    where
+        F: for<'b> Fn(&'b mut Self, T) -> ScopedBoxFuture<'static, 'b, R> + Clone + Send + 'static,
+        T: Send + 'static,
+        R: Send + 'static,
+        W: Fn(&T) -> usize + Send + 'static;
+
+    /// Forks the thread and executes the provided closures concurrently.
+    ///
+    /// Implementations may not be able to fork, in which case the closures are
+    /// executed sequentially.
+    async fn join<'a, A, B, RA, RB>(&'a mut self, a: A, b: B) -> Result<(RA, RB), ContextError>
+    where
+        A: for<'b> FnOnce(&'b mut Self) -> ScopedBoxFuture<'a, 'b, RA> + Send + 'static,
+        B: for<'b> FnOnce(&'b mut Self) -> ScopedBoxFuture<'a, 'b, RB> + Send + 'static,
+        RA: Send + 'static,
+        RB: Send + 'static;
+
+    /// Forks the thread and executes the provided closures concurrently,
+    /// returning an error if one of the closures fails.
+    ///
+    /// This method is short circuiting, meaning that it returns as soon as one
+    /// of the closures fails, potentially canceling the other.
+    ///
+    /// Implementations may not be able to fork, in which case the closures are
+    /// executed sequentially.
+    async fn try_join<'a, A, B, RA, RB, E>(
+        &'a mut self,
+        a: A,
+        b: B,
+    ) -> Result<Result<(RA, RB), E>, ContextError>
+    where
+        A: for<'b> FnOnce(&'b mut Self) -> ScopedBoxFuture<'a, 'b, Result<RA, E>> + Send + 'static,
+        B: for<'b> FnOnce(&'b mut Self) -> ScopedBoxFuture<'a, 'b, Result<RB, E>> + Send + 'static,
+        RA: Send + 'static,
+        RB: Send + 'static,
+        E: Send + 'static;
 }

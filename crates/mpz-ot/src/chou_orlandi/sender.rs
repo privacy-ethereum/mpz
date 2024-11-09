@@ -15,8 +15,11 @@ use mpz_ot_core::{
     ot::{OTSender, OTSenderOutput},
 };
 use serio::{stream::IoStreamExt, SinkExt};
+<<<<<<< HEAD
 use utils_aio::non_blocking_backend::{Backend, NonBlockingBackend};
 >>>>>>> b81b562 (feat: lazy ot (#186))
+=======
+>>>>>>> 50828d7 (feat: garble vm (#191))
 
 type Error = SenderError;
 
@@ -127,12 +130,16 @@ where
 
         let payload = ctx.io_mut().expect_next().await?;
 <<<<<<< HEAD
+<<<<<<< HEAD
         let payload = sender.send(payload)?;
 
 =======
 
         let (payload, sender) =
             Backend::spawn(|| sender.send(payload).map(|payload| (payload, sender))).await?;
+=======
+        let payload = sender.send(payload)?;
+>>>>>>> 50828d7 (feat: garble vm (#191))
 
 >>>>>>> b81b562 (feat: lazy ot (#186))
         ctx.io_mut().send(payload).await?;

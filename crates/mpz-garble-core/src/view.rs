@@ -1,4 +1,4 @@
-use mpz_memory_core::{Slice, View as ViewTrait, binary::Binary, view::VisibilityView};
+use mpz_memory_core::{binary::Binary, view::VisibilityView, Slice, View as ViewTrait};
 use serde::{Deserialize, Serialize};
 use utils::range::{Difference, Disjoint, Intersection, Subset};
 
@@ -38,12 +38,12 @@ struct DecodeView {
 
 #[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct FlushView {
-    /// Ranges for which the garbler is to send MACs.
+    /// Ranges for which the generator is to send MACs.
     pub(crate) macs: RangeSet,
-    /// Ranges for which the garbler is to send MACs using oblivious
+    /// Ranges for which the generator is to send MACs using oblivious
     /// transfer.
     pub(crate) ot: RangeSet,
-    /// Ranges for which the garbler is to send key bits for decoding.
+    /// Ranges for which the generator is to send key bits for decoding.
     pub(crate) decode_info: RangeSet,
     /// Ranges for which the evaluator is to prove MACs for decoding.
     pub(crate) decode: RangeSet,
@@ -69,7 +69,7 @@ impl FlushView {
 
 #[derive(Debug, Clone, Copy)]
 enum Role {
-    Garbler,
+    Generator,
     Evaluator,
 }
 
@@ -85,9 +85,9 @@ pub(crate) struct View {
 }
 
 impl View {
-    pub(crate) fn new_garbler() -> Self {
+    pub(crate) fn new_generator() -> Self {
         Self {
-            role: Role::Garbler,
+            role: Role::Generator,
             len: 0,
             input: InputView::default(),
             output: OutputView::default(),
@@ -216,7 +216,7 @@ impl View {
     }
 
     pub(crate) fn is_committed(&self, range: Range) -> bool {
-        range.is_subset(&self.input.complete) || range.is_subset(&self.output.complete)
+        range.is_subset(&self.input.complete)
     }
 
     pub(crate) fn commit(&mut self, range: Range) -> Result<()> {
@@ -240,12 +240,14 @@ impl View {
         let public = range.intersection(self.vis.public());
 
         // Assert visible data is assigned.
-        if !public.is_subset(&self.input.assigned) || !private.is_subset(&self.input.assigned) {
+        if !public.is_subset(&self.input.assigned) {
+            return Err(ErrorRepr::NotAssigned { range }.into());
+        } else if !private.is_subset(&self.input.assigned) {
             return Err(ErrorRepr::NotAssigned { range }.into());
         }
 
         match self.role {
-            Role::Garbler => {
+            Role::Generator => {
                 // Send MACs for visible data.
                 self.flush.macs |= public | private;
                 // Send MACs with OT for blind data.
@@ -276,9 +278,9 @@ impl View {
 
         // Transfer decode info.
         //
-        // Only send decode info for output data and garbler's inputs.
+        // Only send decode info for output data and generator's inputs.
         let decodable_input = match self.role {
-            Role::Garbler => input.intersection(self.vis.private()),
+            Role::Generator => input.intersection(self.vis.private()),
             Role::Evaluator => input.intersection(self.vis.blind()),
         };
 
@@ -288,7 +290,7 @@ impl View {
         //
         // Only prove MACs for output data and evaluator's inputs.
         let provable_input = match self.role {
-            Role::Garbler => input - self.vis.visible(),
+            Role::Generator => input - self.vis.visible(),
             Role::Evaluator => input.intersection(self.vis.private()),
         };
 
@@ -309,10 +311,7 @@ impl View {
         // Decode evaluator inputs if they are ready.
         self.flush.decode |= view.ot.intersection(&self.decode.all);
         // Decode outputs if they are ready.
-        self.flush.decode |= view
-            .decode_info
-            .intersection(&self.output.complete)
-            .difference(&self.decode.complete);
+        self.flush.decode |= view.decode_info.intersection(&self.output.complete);
     }
 }
 
@@ -365,13 +364,13 @@ mod tests {
 
     fn new(role: Role) -> View {
         match role {
-            Role::Garbler => View::new_garbler(),
+            Role::Generator => View::new_generator(),
             Role::Evaluator => View::new_evaluator(),
         }
     }
 
     #[rstest]
-    #[case::garbler(Role::Garbler)]
+    #[case::generator(Role::Generator)]
     #[case::evaluator(Role::Evaluator)]
     fn test_assign_blind(#[case] role: Role) {
         let mut view = new(role);
@@ -384,7 +383,7 @@ mod tests {
     }
 
     #[rstest]
-    #[case::garbler(Role::Garbler)]
+    #[case::generator(Role::Generator)]
     #[case::evaluator(Role::Evaluator)]
     fn test_assign_output(#[case] role: Role) {
         let mut view = new(role);
@@ -399,7 +398,7 @@ mod tests {
     }
 
     #[rstest]
-    #[case::garbler(Role::Garbler)]
+    #[case::generator(Role::Generator)]
     #[case::evaluator(Role::Evaluator)]
     fn test_commit_before_visibility(#[case] role: Role) {
         let mut view = new(role);
@@ -411,7 +410,7 @@ mod tests {
     }
 
     #[rstest]
-    #[case::garbler(Role::Garbler)]
+    #[case::generator(Role::Generator)]
     #[case::evaluator(Role::Evaluator)]
     fn test_commit_output(#[case] role: Role) {
         let mut view = new(role);
@@ -426,7 +425,7 @@ mod tests {
     }
 
     #[rstest]
-    #[case::garbler(Role::Garbler)]
+    #[case::generator(Role::Generator)]
     #[case::evaluator(Role::Evaluator)]
     fn test_public_commit_wants_flush(#[case] role: Role) {
         let mut view = new(role);
@@ -440,7 +439,7 @@ mod tests {
     }
 
     #[rstest]
-    #[case::garbler(Role::Garbler)]
+    #[case::generator(Role::Generator)]
     #[case::evaluator(Role::Evaluator)]
     fn test_private_commit_wants_flush(#[case] role: Role) {
         let mut view = new(role);
@@ -454,7 +453,7 @@ mod tests {
     }
 
     #[rstest]
-    #[case::garbler(Role::Garbler)]
+    #[case::generator(Role::Generator)]
     #[case::evaluator(Role::Evaluator)]
     fn test_blind_commit_wants_flush(#[case] role: Role) {
         let mut view = new(role);

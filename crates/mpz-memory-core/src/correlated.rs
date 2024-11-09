@@ -62,10 +62,17 @@ pub use keys::{Key, KeyStore, KeyStoreError};
 pub use macs::{Mac, MacStore, MacStoreError};
 
 use mpz_core::{
+<<<<<<< HEAD
     Block,
     aes::{FIXED_KEY, FixedKeyAes},
 };
 use rand::{CryptoRng, Rng, distr::StandardUniform, prelude::Distribution};
+=======
+    aes::{FixedKeyAes, FIXED_KEY},
+    Block,
+};
+use rand::{distributions::Standard, prelude::Distribution, CryptoRng, Rng};
+>>>>>>> 50828d7 (feat: garble vm (#191))
 use serde::{Deserialize, Serialize};
 
 /// AES cipher used for MAC commitments.
@@ -256,9 +263,15 @@ enum MacCommitmentErrorKind {
 
 #[cfg(test)]
 mod tests {
+<<<<<<< HEAD
     use mpz_core::{bitvec::BitVec, prg::Prg};
     use mpz_ot_core::{cot::COTReceiverOutput, ideal::cot::IdealCOT};
     use rand::{SeedableRng, rngs::StdRng};
+=======
+    use mpz_core::prg::Prg;
+    use mpz_ot_core::{cot::COTReceiverOutput, ideal::cot::IdealCOT};
+    use rand::{rngs::StdRng, SeedableRng};
+>>>>>>> 50828d7 (feat: garble vm (#191))
 
     use crate::Slice;
 

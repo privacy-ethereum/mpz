@@ -1,70 +1,59 @@
 use async_trait::async_trait;
-<<<<<<< HEAD
-use mpz_common::{Context, ContextError, Flush};
-use mpz_core::{Block, bitvec::BitVec};
-use mpz_garble_core::{
-    Mac,
-    store::{EvaluatorStore as Core, EvaluatorStoreError as CoreError},
-};
-use mpz_memory_core::{DecodeFuture, Memory, Slice, View, binary::Binary};
-use mpz_ot::cot::COTReceiver;
-use serio::{SinkExt, stream::IoStreamExt};
-=======
 use mpz_common::{scoped_futures::ScopedFutureExt, Context, ContextError, Flush};
 use mpz_core::{bitvec::BitVec, Block};
 use mpz_garble_core::{
-    store::{EvaluatorStore as Core, EvaluatorStoreError as CoreError},
-    Mac,
+    store::{GeneratorStore as Core, GeneratorStoreError as CoreError},
+    Delta, Key,
 };
 use mpz_memory_core::{binary::Binary, DecodeFuture, Memory, Slice, View};
-use mpz_ot::cot::COTReceiver;
+use mpz_ot::cot::COTSender;
 use serio::{stream::IoStreamExt, SinkExt};
->>>>>>> 50828d7 (feat: garble vm (#191))
 
-type Error = EvaluatorStoreError;
-type Result<T, E = Error> = core::result::Result<T, E>;
+type Error = GeneratorStoreError;
 
 #[derive(Debug)]
-pub(crate) struct EvaluatorStore<COT> {
+pub(crate) struct GeneratorStore<COT> {
     core: Core<COT>,
 }
 
-impl<COT> EvaluatorStore<COT> {
-    /// Creates a new evaluator store.
-    pub(crate) fn new(cot: COT) -> Self {
+impl<COT> GeneratorStore<COT> {
+    /// Creates a new generator store.
+    pub(crate) fn new(seed: [u8; 16], delta: Delta, cot: COT) -> Self {
         Self {
-            core: Core::new(cot),
+            core: Core::new(seed, delta, cot),
         }
+    }
+
+    pub(crate) fn delta(&self) -> &Delta {
+        self.core.delta()
     }
 
     pub(crate) fn is_committed(&self, slice: Slice) -> bool {
         self.core.is_committed(slice)
     }
 
-    pub(crate) fn try_get_macs(&self, slice: Slice) -> Result<&[Mac], Error> {
-        self.core.try_get_macs(slice).map_err(Error::from)
+    pub(crate) fn is_set_keys(&self, slice: Slice) -> bool {
+        self.core.is_set_keys(slice)
+    }
+
+    pub(crate) fn try_get_keys(&self, slice: Slice) -> Result<&[Key], Error> {
+        self.core.try_get_keys(slice).map_err(Error::from)
     }
 
     pub(crate) fn alloc_output(&mut self, size: usize) -> Slice {
         self.core.alloc_output(size)
     }
 
-    pub(crate) fn mark_output_preprocessed(&mut self, slice: Slice) -> Result<(), Error> {
-        self.core
-            .mark_output_preprocessed(slice)
-            .map_err(Error::from)
+    pub(crate) fn mark_output_complete(&mut self, slice: Slice) -> Result<(), Error> {
+        self.core.mark_output_complete(slice).map_err(Error::from)
     }
 
-    pub(crate) fn set_output(&mut self, slice: Slice, macs: &[Mac]) -> Result<(), Error> {
-        self.core.set_output(slice, macs).map_err(Error::from)
-    }
-
-    pub(crate) fn flush_decode(&mut self) -> Result<(), Error> {
-        self.core.flush_decode().map_err(Error::from)
+    pub(crate) fn set_output(&mut self, slice: Slice, keys: &[Key]) -> Result<(), Error> {
+        self.core.set_output(slice, keys).map_err(Error::from)
     }
 }
 
-impl<COT> Memory<Binary> for EvaluatorStore<COT> {
+impl<COT> Memory<Binary> for GeneratorStore<COT> {
     type Error = Error;
 
     fn alloc_raw(&mut self, size: usize) -> Result<Slice, Self::Error> {
@@ -88,9 +77,9 @@ impl<COT> Memory<Binary> for EvaluatorStore<COT> {
     }
 }
 
-impl<COT> View<Binary> for EvaluatorStore<COT>
+impl<COT> View<Binary> for GeneratorStore<COT>
 where
-    COT: COTReceiver<bool, Block>,
+    COT: COTSender<Block>,
 {
     type Error = Error;
 
@@ -108,17 +97,10 @@ where
 }
 
 #[async_trait]
-<<<<<<< HEAD
-impl<COT> Flush for EvaluatorStore<COT>
-where
-    COT: COTReceiver<bool, Block> + Flush + Send + 'static,
-=======
-impl<Ctx, COT> Flush<Ctx> for EvaluatorStore<COT>
+impl<Ctx, COT> Flush<Ctx> for GeneratorStore<COT>
 where
     Ctx: Context,
-    COT: COTReceiver<bool, Block> + Flush<Ctx> + Send + 'static,
->>>>>>> 50828d7 (feat: garble vm (#191))
-    COT::Future: Send + 'static,
+    COT: COTSender<Block> + Flush<Ctx> + Send + 'static,
 {
     type Error = Error;
 
@@ -126,24 +108,13 @@ where
         self.core.wants_flush()
     }
 
-<<<<<<< HEAD
-    async fn flush(&mut self, ctx: &mut Context) -> Result<(), Self::Error> {
-=======
     async fn flush(&mut self, ctx: &mut Ctx) -> Result<(), Self::Error> {
->>>>>>> 50828d7 (feat: garble vm (#191))
         while self.core.wants_flush() {
             let flush = self.core.send_flush()?;
             let mut cot = self.core.acquire_cot();
 
             let (flush, ()) = ctx
                 .try_join(
-<<<<<<< HEAD
-                    async |ctx| {
-                        ctx.io_mut().send(flush).await?;
-                        ctx.io_mut().expect_next().await.map_err(Error::from)
-                    },
-                    async move |ctx| cot.flush(ctx).await.map_err(Error::cot),
-=======
                     |ctx| {
                         async move {
                             ctx.io_mut().send(flush).await?;
@@ -152,7 +123,6 @@ where
                         .scope_boxed()
                     },
                     |ctx| async move { cot.flush(ctx).await.map_err(Error::cot) }.scope_boxed(),
->>>>>>> 50828d7 (feat: garble vm (#191))
                 )
                 .await??;
 
@@ -165,13 +135,9 @@ where
 
 #[derive(Debug, thiserror::Error)]
 #[error(transparent)]
-<<<<<<< HEAD
-pub(crate) struct EvaluatorStoreError(#[from] ErrorRepr);
-=======
-pub struct EvaluatorStoreError(#[from] ErrorRepr);
->>>>>>> 50828d7 (feat: garble vm (#191))
+pub struct GeneratorStoreError(#[from] ErrorRepr);
 
-impl EvaluatorStoreError {
+impl GeneratorStoreError {
     fn cot<E>(err: E) -> Self
     where
         E: Into<Box<dyn std::error::Error + Send + Sync + 'static>>,
@@ -192,20 +158,20 @@ enum ErrorRepr {
     Context(#[from] ContextError),
 }
 
-impl From<CoreError> for EvaluatorStoreError {
+impl From<CoreError> for GeneratorStoreError {
     fn from(value: CoreError) -> Self {
-        EvaluatorStoreError(ErrorRepr::Core(value))
+        GeneratorStoreError(ErrorRepr::Core(value))
     }
 }
 
-impl From<std::io::Error> for EvaluatorStoreError {
+impl From<std::io::Error> for GeneratorStoreError {
     fn from(value: std::io::Error) -> Self {
-        EvaluatorStoreError(ErrorRepr::Io(value))
+        GeneratorStoreError(ErrorRepr::Io(value))
     }
 }
 
-impl From<ContextError> for EvaluatorStoreError {
+impl From<ContextError> for GeneratorStoreError {
     fn from(value: ContextError) -> Self {
-        EvaluatorStoreError(ErrorRepr::Context(value))
+        GeneratorStoreError(ErrorRepr::Context(value))
     }
 }

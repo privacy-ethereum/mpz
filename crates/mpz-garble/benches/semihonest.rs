@@ -1,12 +1,12 @@
-use criterion::{Criterion, Throughput, black_box, criterion_group, criterion_main};
+use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
 
 use mpz_circuits::circuits::AES128;
-use mpz_common::context::{test_mt_context, test_st_context};
-use mpz_garble::protocol::semihonest::{Evaluator, Garbler};
-use mpz_memory_core::{Array, binary::*, correlated::Delta};
+use mpz_common::executor::{mt::MTConfig, test_mt_executor, test_st_executor};
+use mpz_garble::protocol::semihonest::{Evaluator, Generator};
+use mpz_memory_core::{binary::*, correlated::Delta, Array};
 use mpz_ot::ideal::cot::ideal_cot;
-use mpz_vm_core::{Call, prelude::*};
-use rand::{SeedableRng, rngs::StdRng};
+use mpz_vm_core::{prelude::*, Call};
+use rand::{rngs::StdRng, SeedableRng};
 
 fn criterion_benchmark(c: &mut Criterion) {
     let mut group = c.benchmark_group("semihonest");
@@ -18,39 +18,33 @@ fn criterion_benchmark(c: &mut Criterion) {
             let mut rng = StdRng::seed_from_u64(0);
             let delta = Delta::random(&mut rng);
 
-            let (mut ctx_a, mut ctx_b) = test_st_context(8);
+            let (mut ctx_a, mut ctx_b) = test_st_executor(8);
             let (cot_send, cot_recv) = ideal_cot(delta.into_inner());
 
-            let mut gb = Garbler::new(cot_send, [0u8; 16], delta);
+            let mut gen = Generator::new(cot_send, [0u8; 16], delta);
             let mut ev = Evaluator::new(cot_recv);
 
             let (gen_out, ev_out) = futures::join!(
                 async {
-                    let key: Array<U8, 16> = gb.alloc().unwrap();
-                    let msg: Array<U8, 16> = gb.alloc().unwrap();
+                    let key: Array<U8, 16> = gen.alloc().unwrap();
+                    let msg: Array<U8, 16> = gen.alloc().unwrap();
 
-                    gb.mark_private(key).unwrap();
-                    gb.mark_blind(msg).unwrap();
+                    gen.mark_private(key).unwrap();
+                    gen.mark_blind(msg).unwrap();
 
-                    let ciphertext: Array<U8, 16> = gb
-                        .call(
-                            Call::builder(AES128.clone())
-                                .arg(key)
-                                .arg(msg)
-                                .build()
-                                .unwrap(),
-                        )
+                    let ciphertext: Array<U8, 16> = gen
+                        .call(Call::new(AES128.clone()).arg(key).arg(msg).build().unwrap())
                         .unwrap();
 
-                    let ciphertext = gb.decode(ciphertext).unwrap();
+                    let ciphertext = gen.decode(ciphertext).unwrap();
 
-                    gb.assign(key, [0u8; 16]).unwrap();
-                    gb.commit(key).unwrap();
-                    gb.commit(msg).unwrap();
+                    gen.assign(key, [0u8; 16]).unwrap();
+                    gen.commit(key).unwrap();
+                    gen.commit(msg).unwrap();
 
-                    gb.flush(&mut ctx_a).await.unwrap();
-                    gb.execute(&mut ctx_a).await.unwrap();
-                    gb.flush(&mut ctx_a).await.unwrap();
+                    gen.flush(&mut ctx_a).await.unwrap();
+                    gen.execute(&mut ctx_a).await.unwrap();
+                    gen.flush(&mut ctx_a).await.unwrap();
 
                     ciphertext.await.unwrap()
                 },
@@ -62,13 +56,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                     ev.mark_private(msg).unwrap();
 
                     let ciphertext: Array<U8, 16> = ev
-                        .call(
-                            Call::builder(AES128.clone())
-                                .arg(key)
-                                .arg(msg)
-                                .build()
-                                .unwrap(),
-                        )
+                        .call(Call::new(AES128.clone()).arg(key).arg(msg).build().unwrap())
                         .unwrap();
 
                     let ciphertext = ev.decode(ciphertext).unwrap();
@@ -93,45 +81,39 @@ fn criterion_benchmark(c: &mut Criterion) {
     group.bench_function("aes/batched", |b| {
         b.to_async(&rt).iter(|| async {
             let mut rng = StdRng::seed_from_u64(0);
-            let (mut exec_gb, mut exec_ev) = test_mt_context(8);
-            let mut ctx_gb = exec_gb.new_context().await.unwrap();
-            let mut ctx_ev = exec_ev.new_context().await.unwrap();
+            let (mut exec_gen, mut exec_ev) = test_mt_executor(8, MTConfig::default());
+            let mut ctx_gen = exec_gen.new_thread().await.unwrap();
+            let mut ctx_ev = exec_ev.new_thread().await.unwrap();
 
             let delta = Delta::random(&mut rng);
             let (cot_send, cot_recv) = ideal_cot(delta.into_inner());
 
-            let mut gb = Garbler::new(cot_send, [0u8; 16], delta);
+            let mut gen = Generator::new(cot_send, [0u8; 16], delta);
             let mut ev = Evaluator::new(cot_recv);
 
             futures::join!(
                 async {
-                    let key: Array<U8, 16> = gb.alloc().unwrap();
+                    let key: Array<U8, 16> = gen.alloc().unwrap();
 
-                    gb.mark_private(key).unwrap();
-                    gb.assign(key, [0u8; 16]).unwrap();
-                    gb.commit(key).unwrap();
+                    gen.mark_private(key).unwrap();
+                    gen.assign(key, [0u8; 16]).unwrap();
+                    gen.commit(key).unwrap();
 
                     for _ in 0..256 {
-                        let msg: Array<U8, 16> = gb.alloc().unwrap();
-                        gb.mark_blind(msg).unwrap();
-                        gb.commit(msg).unwrap();
+                        let msg: Array<U8, 16> = gen.alloc().unwrap();
+                        gen.mark_blind(msg).unwrap();
+                        gen.commit(msg).unwrap();
 
-                        let ciphertext: Array<U8, 16> = gb
-                            .call(
-                                Call::builder(AES128.clone())
-                                    .arg(key)
-                                    .arg(msg)
-                                    .build()
-                                    .unwrap(),
-                            )
+                        let ciphertext: Array<U8, 16> = gen
+                            .call(Call::new(AES128.clone()).arg(key).arg(msg).build().unwrap())
                             .unwrap();
 
-                        let _ = gb.decode(ciphertext).unwrap();
+                        let _ = gen.decode(ciphertext).unwrap();
                     }
 
-                    gb.flush(&mut ctx_gb).await.unwrap();
-                    gb.execute(&mut ctx_gb).await.unwrap();
-                    gb.flush(&mut ctx_gb).await.unwrap();
+                    gen.flush(&mut ctx_gen).await.unwrap();
+                    gen.execute(&mut ctx_gen).await.unwrap();
+                    gen.flush(&mut ctx_gen).await.unwrap();
                 },
                 async {
                     let key: Array<U8, 16> = ev.alloc().unwrap();
@@ -145,13 +127,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                         ev.commit(msg).unwrap();
 
                         let ciphertext: Array<U8, 16> = ev
-                            .call(
-                                Call::builder(AES128.clone())
-                                    .arg(key)
-                                    .arg(msg)
-                                    .build()
-                                    .unwrap(),
-                            )
+                            .call(Call::new(AES128.clone()).arg(key).arg(msg).build().unwrap())
                             .unwrap();
 
                         let _ = ev.decode(ciphertext).unwrap();

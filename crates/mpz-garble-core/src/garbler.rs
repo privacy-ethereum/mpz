@@ -1,9 +1,19 @@
 use core::fmt;
 use std::ops::Range;
 
+<<<<<<< HEAD:crates/mpz-garble-core/src/garbler.rs
 use crate::{DEFAULT_BATCH_SIZE, EncryptedGateBatch, circuit::EncryptedGate};
 use mpz_circuits::{Circuit, Gate};
 use mpz_core::{
+=======
+use crate::{circuit::EncryptedGate, EncryptedGateBatch, DEFAULT_BATCH_SIZE};
+use mpz_circuits::{
+    types::{BinaryRepr, TypeError},
+    Circuit, CircuitError, Gate,
+};
+use mpz_core::{
+    aes::{FixedKeyAes, FIXED_KEY_AES},
+>>>>>>> 50828d7 (feat: garble vm (#191)):crates/mpz-garble-core/src/generator.rs
     Block,
     aes::{FIXED_KEY_AES, FixedKeyAes},
 };
@@ -42,7 +52,11 @@ pub(crate) fn and_gate(
 
     let [hx_0, hy_0, hx_1, hy_1] = h;
 
+<<<<<<< HEAD:crates/mpz-garble-core/src/garbler.rs
     // Garbled row of garbler half-gate
+=======
+    // Garbled row of generator half-gate
+>>>>>>> 50828d7 (feat: garble vm (#191)):crates/mpz-garble-core/src/generator.rs
     let t_g = hx_0 ^ hx_1 ^ (Block::SELECT_MASK[p_b as usize] & delta);
     let w_g = hx_0 ^ (Block::SELECT_MASK[p_a as usize] & t_g);
 
@@ -57,7 +71,11 @@ pub(crate) fn and_gate(
 
 /// Output of the garbler.
 #[derive(Debug)]
+<<<<<<< HEAD:crates/mpz-garble-core/src/garbler.rs
 pub struct GarblerOutput {
+=======
+pub struct GeneratorOutput {
+>>>>>>> 50828d7 (feat: garble vm (#191)):crates/mpz-garble-core/src/generator.rs
     /// Output keys of the circuit.
     pub outputs: Vec<Key>,
 }
@@ -81,6 +99,7 @@ impl Garbler {
         &'a mut self,
         circ: &'a Circuit,
         delta: Delta,
+<<<<<<< HEAD:crates/mpz-garble-core/src/garbler.rs
         inputs: &[Key],
     ) -> Result<EncryptedGateIter<'a, std::slice::Iter<'a, Gate>>, GarblerError> {
         if inputs.len() != circ.inputs().len() {
@@ -88,6 +107,15 @@ impl Garbler {
                 expected: circ.inputs().len(),
                 actual: inputs.len(),
             });
+=======
+        inputs: Vec<Key>,
+    ) -> Result<EncryptedGateIter<'_, std::slice::Iter<'_, Gate>>, GeneratorError> {
+        if inputs.len() != circ.input_len() {
+            return Err(CircuitError::InvalidInputCount(
+                circ.input_len(),
+                inputs.len(),
+            ))?;
+>>>>>>> 50828d7 (feat: garble vm (#191)):crates/mpz-garble-core/src/generator.rs
         }
 
         // Expand the buffer to fit the circuit
@@ -95,7 +123,16 @@ impl Garbler {
             self.buffer.resize(circ.feed_count(), Default::default());
         }
 
+<<<<<<< HEAD:crates/mpz-garble-core/src/garbler.rs
         self.buffer[..inputs.len()].copy_from_slice(Key::as_blocks(inputs));
+=======
+        let mut inputs = inputs.into_iter();
+        for input in circ.inputs() {
+            for (node, label) in input.iter().zip(inputs.by_ref()) {
+                self.buffer[node.id()] = label.into();
+            }
+        }
+>>>>>>> 50828d7 (feat: garble vm (#191)):crates/mpz-garble-core/src/generator.rs
 
         Ok(EncryptedGateIter::new(
             delta,
@@ -117,8 +154,13 @@ impl Garbler {
         &'a mut self,
         circ: &'a Circuit,
         delta: Delta,
+<<<<<<< HEAD:crates/mpz-garble-core/src/garbler.rs
         inputs: &[Key],
     ) -> Result<EncryptedGateBatchIter<'a, std::slice::Iter<'a, Gate>>, GarblerError> {
+=======
+        inputs: Vec<Key>,
+    ) -> Result<EncryptedGateBatchIter<'_, std::slice::Iter<'_, Gate>>, GeneratorError> {
+>>>>>>> 50828d7 (feat: garble vm (#191)):crates/mpz-garble-core/src/generator.rs
         self.generate(circ, delta, inputs)
             .map(EncryptedGateBatchIter)
     }
@@ -159,6 +201,10 @@ where
     fn new(
         delta: Delta,
         gates: I,
+<<<<<<< HEAD:crates/mpz-garble-core/src/garbler.rs
+=======
+        outputs: &'a [BinaryRepr],
+>>>>>>> 50828d7 (feat: garble vm (#191)):crates/mpz-garble-core/src/generator.rs
         labels: &'a mut [Block],
         and_count: usize,
         outputs: Range<usize>,
@@ -176,7 +222,11 @@ where
         }
     }
 
+<<<<<<< HEAD:crates/mpz-garble-core/src/garbler.rs
     /// Returns `true` if the garbler has more encrypted gates to generate.
+=======
+    /// Returns `true` if the generator has more encrypted gates to generate.
+>>>>>>> 50828d7 (feat: garble vm (#191)):crates/mpz-garble-core/src/generator.rs
     #[inline]
     pub fn has_gates(&self) -> bool {
         self.counter != self.and_count
@@ -184,7 +234,11 @@ where
 
     /// Returns the encoded outputs of the circuit, and the hash of the
     /// encrypted gates if present.
+<<<<<<< HEAD:crates/mpz-garble-core/src/garbler.rs
     pub fn finish(mut self) -> Result<GarblerOutput, GarblerError> {
+=======
+    pub fn finish(mut self) -> Result<GeneratorOutput, GeneratorError> {
+>>>>>>> 50828d7 (feat: garble vm (#191)):crates/mpz-garble-core/src/generator.rs
         if self.has_gates() {
             return Err(GarblerError::NotFinished);
         }
@@ -194,9 +248,19 @@ where
             assert_eq!(self.next(), None);
         }
 
+<<<<<<< HEAD:crates/mpz-garble-core/src/garbler.rs
         Ok(GarblerOutput {
             outputs: Key::from_blocks(self.labels[self.outputs].to_vec()),
         })
+=======
+        let outputs = self
+            .outputs
+            .iter()
+            .flat_map(|output| output.iter().map(|node| Key::from(self.labels[node.id()])))
+            .collect();
+
+        Ok(GeneratorOutput { outputs })
+>>>>>>> 50828d7 (feat: garble vm (#191)):crates/mpz-garble-core/src/generator.rs
     }
 }
 
@@ -249,6 +313,7 @@ where
                 } => {
                     let x_0 = self.labels[node_x.id()];
                     self.labels[node_z.id()] = x_0 ^ self.delta.as_block();
+<<<<<<< HEAD:crates/mpz-garble-core/src/garbler.rs
                 }
                 Gate::Id {
                     x: node_x,
@@ -256,6 +321,8 @@ where
                 } => {
                     let x_0 = self.labels[node_x.id()];
                     self.labels[node_z.id()] = x_0;
+=======
+>>>>>>> 50828d7 (feat: garble vm (#191)):crates/mpz-garble-core/src/generator.rs
                 }
             }
         }
@@ -274,14 +341,22 @@ impl<'a, I, const N: usize> EncryptedGateBatchIter<'a, I, N>
 where
     I: Iterator<Item = &'a Gate>,
 {
+<<<<<<< HEAD:crates/mpz-garble-core/src/garbler.rs
     /// Returns `true` if the garbler has more encrypted gates to generate.
+=======
+    /// Returns `true` if the generator has more encrypted gates to generate.
+>>>>>>> 50828d7 (feat: garble vm (#191)):crates/mpz-garble-core/src/generator.rs
     pub fn has_gates(&self) -> bool {
         self.0.has_gates()
     }
 
     /// Returns the encoded outputs of the circuit, and the hash of the
     /// encrypted gates if present.
+<<<<<<< HEAD:crates/mpz-garble-core/src/garbler.rs
     pub fn finish(self) -> Result<GarblerOutput, GarblerError> {
+=======
+    pub fn finish(self) -> Result<GeneratorOutput, GeneratorError> {
+>>>>>>> 50828d7 (feat: garble vm (#191)):crates/mpz-garble-core/src/generator.rs
         self.0.finish()
     }
 }

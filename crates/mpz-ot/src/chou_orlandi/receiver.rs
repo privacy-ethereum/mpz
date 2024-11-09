@@ -15,8 +15,11 @@ use serio::{SinkExt as _, stream::IoStreamExt as _};
 };
 
 use serio::{stream::IoStreamExt as _, SinkExt as _};
+<<<<<<< HEAD
 use utils_aio::non_blocking_backend::{Backend, NonBlockingBackend};
 >>>>>>> b81b562 (feat: lazy ot (#186))
+=======
+>>>>>>> 50828d7 (feat: garble vm (#191))
 
 type Error = ReceiverError;
 
@@ -152,12 +155,16 @@ where
             return Ok(());
         }
 
+<<<<<<< HEAD
         let (payload, mut receiver) = Backend::spawn(|| {
             let payload = receiver.choose();
             (payload, receiver)
         })
         .await;
 >>>>>>> b81b562 (feat: lazy ot (#186))
+=======
+        let payload = receiver.choose();
+>>>>>>> 50828d7 (feat: garble vm (#191))
 
         ctx.io_mut().send(payload).await?;
         let payload = ctx.io_mut().expect_next().await?;
