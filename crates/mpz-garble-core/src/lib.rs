@@ -43,7 +43,7 @@ mod tests {
         Aes128,
     };
     use itybity::{FromBitIterator, IntoBitIterator, ToBits};
-    use mpz_circuits::circuits::AES128;
+    use mpz_circuits::{circuits::AES128, CircuitBuilder};
     use mpz_core::{aes::FIXED_KEY_AES, Block};
     use rand::{rngs::StdRng, Rng, SeedableRng};
     use rand_chacha::ChaCha12Rng;
@@ -202,70 +202,64 @@ mod tests {
         }
     }
 
-    // // Tests garbling a circuit with no AND gates
-    // #[test]
-    // fn test_garble_no_and() {
-    //     let encoder = ChaChaEncoder::new([0; 32]);
+    // Tests garbling a circuit with no AND gates
+    #[test]
+    fn test_garble_no_and() {
+        let mut rng = StdRng::seed_from_u64(0);
 
-    //     let builder = CircuitBuilder::new();
-    //     let a = builder.add_input::<u8>();
-    //     let b = builder.add_input::<u8>();
-    //     let c = a ^ b;
-    //     builder.add_output(c);
-    //     let circ = builder.build().unwrap();
-    //     assert_eq!(circ.and_count(), 0);
+        let builder = CircuitBuilder::new();
+        let a = builder.add_input::<u8>();
+        let b = builder.add_input::<u8>();
+        let c = a ^ b;
+        builder.add_output(c);
+        let circ = builder.build().unwrap();
+        assert_eq!(circ.and_count(), 0);
 
-    //     let mut gen = Generator::default();
-    //     let mut ev = Evaluator::default();
+        let a = 1u8;
+        let b = 2u8;
+        let expected = a ^ b;
 
-    //     let a = 1u8;
-    //     let b = 2u8;
+        let delta = Delta::random(&mut rng);
+        let input_keys = (0..circ.input_len())
+            .map(|_| rng.gen())
+            .collect::<Vec<Key>>();
 
-    //     let full_inputs: Vec<EncodedValue<encoding_state::Full>> = circ
-    //         .inputs()
-    //         .iter()
-    //         .map(|input| encoder.encode_by_type(0, &input.value_type()))
-    //         .collect();
+        let input_macs = input_keys
+            .iter()
+            .zip(a.iter_lsb0().chain(b.iter_lsb0()))
+            .map(|(key, bit)| key.auth(bit, &delta))
+            .collect::<Vec<_>>();
 
-    //     let active_inputs: Vec<EncodedValue<encoding_state::Active>> = vec![
-    //         full_inputs[0].clone().select(a).unwrap(),
-    //         full_inputs[1].clone().select(b).unwrap(),
-    //     ];
+        let mut gen = Generator::default();
+        let mut ev = Evaluator::default();
 
-    //     let mut gen_iter = gen
-    //         .generate_batched(&circ, encoder.delta(), full_inputs)
-    //         .unwrap();
-    //     let mut ev_consumer = ev.evaluate_batched(&circ,
-    // active_inputs).unwrap();
+        let mut gen_iter = gen.generate_batched(&circ, delta, input_keys).unwrap();
+        let mut ev_consumer = ev.evaluate_batched(&circ, input_macs).unwrap();
 
-    //     gen_iter.enable_hasher();
-    //     ev_consumer.enable_hasher();
+        for batch in gen_iter.by_ref() {
+            ev_consumer.next(batch);
+        }
 
-    //     for batch in gen_iter.by_ref() {
-    //         ev_consumer.next(batch);
-    //     }
+        let GeneratorOutput {
+            outputs: output_keys,
+        } = gen_iter.finish().unwrap();
+        let EvaluatorOutput {
+            outputs: output_macs,
+        } = ev_consumer.finish().unwrap();
 
-    //     let GeneratorOutput {
-    //         outputs: full_outputs,
-    //         hash: gen_hash,
-    //     } = gen_iter.finish().unwrap();
-    //     let EvaluatorOutput {
-    //         outputs: active_outputs,
-    //         hash: ev_hash,
-    //     } = ev_consumer.finish().unwrap();
+        assert!(output_keys
+            .iter()
+            .zip(&output_macs)
+            .zip(expected.iter_lsb0())
+            .all(|((key, mac), bit)| &key.auth(bit, &delta) == mac));
 
-    //     let outputs: Vec<Value> = active_outputs
-    //         .iter()
-    //         .zip(full_outputs)
-    //         .map(|(active_output, full_output)| {
-    //             full_output.commit().verify(active_output).unwrap();
-    //             active_output.decode(&full_output.decoding()).unwrap()
-    //         })
-    //         .collect();
+        let output: u8 = u8::from_lsb0_iter(
+            output_macs
+                .into_iter()
+                .zip(output_keys)
+                .map(|(mac, key)| mac.pointer() ^ key.pointer()),
+        );
 
-    //     let actual: u8 = outputs[0].clone().try_into().unwrap();
-
-    //     assert_eq!(actual, a ^ b);
-    //     assert_eq!(gen_hash, ev_hash);
-    // }
+        assert_eq!(output, expected);
+    }
 }
