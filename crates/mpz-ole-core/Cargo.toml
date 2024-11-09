@@ -20,6 +20,4 @@ hybrid-array = { workspace = true, features = ["serde"] }
 mpz-fields.workspace = true
 mpz-core.workspace = true
 mpz-ot-core.workspace = true
-mpz-common = { workspace = true, default-features = false, features = [
-    "future",
-] }
+mpz-common = { workspace = true, features = ["future"] }

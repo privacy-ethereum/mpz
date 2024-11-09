@@ -1,4 +1,5 @@
 pub mod binary;
+pub mod correlated;
 mod decode;
 pub mod store;
 pub mod view;

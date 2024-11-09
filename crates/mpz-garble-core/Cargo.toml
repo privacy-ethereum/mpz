@@ -12,35 +12,46 @@ name = "mpz_garble_core"
 [profile.release]
 lto = true
 
+[features]
+default = ["rayon"]
+rayon = ["dep:rayon"]
+force-st = []
+
 [dependencies]
 mpz-core.workspace = true
 mpz-circuits.workspace = true
+mpz-ot-core = { workspace = true }
+mpz-common = { workspace = true, features = ["future"] }
+mpz-memory-core = { workspace = true }
+mpz-vm-core = { workspace = true }
+tlsn-utils = { workspace = true }
 
 aes = { workspace = true, features = [] }
 cipher.workspace = true
-blake3.workspace = true
+blake3 = { workspace = true, features = ["serde"] }
 rand.workspace = true
 rand_core.workspace = true
 rand_chacha.workspace = true
 regex = { workspace = true, optional = true }
 once_cell.workspace = true
 opaque-debug.workspace = true
-
+rayon = { workspace = true, optional = true }
 serde = { workspace = true, features = ["derive"] }
 serde_arrays.workspace = true
 thiserror.workspace = true
 derive_builder.workspace = true
 itybity.workspace = true
+bitvec = { workspace = true, features = ["serde"] }
+cfg-if = { workspace = true }
+tokio = { workspace = true, features = ["sync"] }
 
 [dev-dependencies]
+mpz-ot-core = { workspace = true, features = ["test-utils"] }
+
 rstest.workspace = true
 criterion.workspace = true
 pretty_assertions.workspace = true
 
 [[bench]]
 name = "garble"
-harness = false
-
-[[bench]]
-name = "encoder"
 harness = false

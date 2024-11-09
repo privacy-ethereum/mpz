@@ -7,10 +7,16 @@ type RangeSet = utils::range::RangeSet<usize>;
 type Result<T> = core::result::Result<T, StoreError>;
 
 /// A linear store.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct Store<T> {
     items: Vec<T>,
     set: RangeSet,
+}
+
+impl<T> Default for Store<T> {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl<T> Store<T> {
@@ -222,43 +228,43 @@ pub enum StoreError {
     AlreadySet(Slice),
 }
 
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-//     #[test]
-//     fn test_store() {
-//         let mut store = Store::new();
-//         let range = store.alloc(10);
+    #[test]
+    fn test_store() {
+        let mut store = Store::new();
+        let range = store.alloc(10);
 
-//         assert!(!store.is_set(range.clone()));
+        assert!(!store.is_set(range.clone()));
 
-//         let data = vec![1; 10];
-//         store.try_set(range.clone(), &data).unwrap();
+        let data = vec![1; 10];
+        store.try_set(range.clone(), &data).unwrap();
 
-//         assert!(store.is_set(range.clone()));
-//         assert_eq!(store.try_get(range.clone()).unwrap(), &data[..]);
+        assert!(store.is_set(range.clone()));
+        assert_eq!(store.try_get(range.clone()).unwrap(), &data[..]);
 
-//         let range2 = store.alloc(10);
-//         assert!(!store.is_set(range2.clone()));
-//     }
+        let range2 = store.alloc(10);
+        assert!(!store.is_set(range2.clone()));
+    }
 
-//     #[test]
-//     fn test_bit_store() {
-//         let mut store = BitStore::new();
-//         let range = store.alloc(10);
+    #[test]
+    fn test_bit_store() {
+        let mut store = BitStore::new();
+        let range = store.alloc(10);
 
-//         assert!(!store.is_set(range.clone()));
+        assert!(!store.is_set(range.clone()));
 
-//         let data = BitVec::from_iter([
-//             false, true, false, true, false, true, false, true, false, true,
-//         ]);
-//         store.try_set(range.clone(), &data).unwrap();
+        let data = BitVec::from_iter([
+            false, true, false, true, false, true, false, true, false, true,
+        ]);
+        store.try_set(range.clone(), &data).unwrap();
 
-//         assert!(store.is_set(range.clone()));
-//         assert_eq!(store.try_get_slice(range.clone()).unwrap(), &data);
+        assert!(store.is_set(range.clone()));
+        assert_eq!(store.try_get(range.clone()).unwrap(), &data);
 
-//         let range2 = store.alloc(10);
-//         assert!(!store.is_set(range2.clone()));
-//     }
-// }
+        let range2 = store.alloc(10);
+        assert!(!store.is_set(range2.clone()));
+    }
+}

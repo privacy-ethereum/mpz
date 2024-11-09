@@ -56,13 +56,32 @@
 mod keys;
 mod macs;
 
-use std::ops::BitXor;
+use std::{ops::BitXor, sync::LazyLock};
 
 pub use keys::{Key, KeyStore, KeyStoreError};
 pub use macs::{Mac, MacStore, MacStoreError};
 
-use mpz_core::Block;
+use mpz_core::{
+    aes::{FixedKeyAes, FIXED_KEY},
+    Block,
+};
 use rand::{distributions::Standard, prelude::Distribution, CryptoRng, Rng};
+use serde::{Deserialize, Serialize};
+
+/// AES cipher used for MAC commitments.
+///
+/// It uses a different key than in garbling to ensure domain separation.
+pub static COMMIT_CIPHER: LazyLock<FixedKeyAes> = LazyLock::new(|| {
+    // Arbitrary key.
+    const KEY: [u8; 16] = [
+        42, 13, 37, 99, 1, 55, 89, 144, 233, 11, 251, 8, 21, 177, 66, 3,
+    ];
+    assert_ne!(
+        FIXED_KEY, KEY,
+        "commit key must be different from garbling key"
+    );
+    FixedKeyAes::new(KEY)
+});
 
 /// Block for public 0 MAC.
 pub(crate) const MAC_ZERO: Block = Block::new([
@@ -185,10 +204,60 @@ impl BitXor<&Delta> for &Block {
     }
 }
 
+/// Commitment to a values MACs.
+///
+/// This is a hash of the MAC for each truth value of a bit.
+#[derive(Debug, Default, Clone, Copy, Serialize, Deserialize)]
+pub struct MacCommitment(pub(crate) [Block; 2]);
+
+impl MacCommitment {
+    pub fn check(
+        &self,
+        id: u64,
+        value: bool,
+        mac: &Mac,
+        hasher: &FixedKeyAes,
+    ) -> Result<(), MacCommitmentError> {
+        let [low, high] = &self.0;
+        let select = &self.0[value as usize];
+
+        // Commitments must be different.
+        if low == high {
+            return Err(MacCommitmentError {
+                id,
+                kind: MacCommitmentErrorKind::Duplicate,
+            });
+        }
+
+        let expected = hasher.tccr(Block::from((id as u128).to_be_bytes()), *mac.as_block());
+        if &expected != select {
+            return Err(MacCommitmentError {
+                id,
+                kind: MacCommitmentErrorKind::Invalid,
+            });
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("invalid MAC commitment for id {id}, kind: {kind:?}")]
+pub struct MacCommitmentError {
+    id: u64,
+    kind: MacCommitmentErrorKind,
+}
+
+#[derive(Debug)]
+enum MacCommitmentErrorKind {
+    Duplicate,
+    Invalid,
+}
+
 #[cfg(test)]
 mod tests {
     use mpz_core::prg::Prg;
-    use mpz_ot_core::{ideal::cot::IdealCOT, COTReceiverOutput};
+    use mpz_ot_core::{cot::COTReceiverOutput, ideal::cot::IdealCOT};
     use rand::{rngs::StdRng, SeedableRng};
 
     use crate::Slice;
@@ -199,10 +268,9 @@ mod tests {
 
     #[test]
     fn test_correlated_store() {
-        let mut cot = IdealCOT::default();
         let mut rng = StdRng::seed_from_u64(0);
         let delta = Delta::random(&mut rng);
-        cot.set_delta(delta.into_inner());
+        let mut cot = IdealCOT::new(delta.into_inner());
 
         let mut keys = KeyStore::new(delta);
         let mut macs = MacStore::default();
@@ -225,10 +293,10 @@ mod tests {
             .collect::<Vec<_>>();
         let keys_b = keys.oblivious_transfer(ref_b_keys).unwrap().to_vec();
 
-        let (_, COTReceiverOutput { msgs: macs_b, .. }) = cot.correlated(
-            Key::into_blocks(keys_b.clone()),
-            val_b.iter().by_vals().collect(),
-        );
+        let choices: Vec<_> = val_b.iter().by_vals().collect();
+        let (_, COTReceiverOutput { msgs: macs_b, .. }) = cot
+            .transfer(&choices, &Key::into_blocks(keys_b.clone()))
+            .unwrap();
 
         let macs_b = Mac::from_blocks(macs_b);
 
