@@ -6,9 +6,10 @@
 mod spawn;
 mod worker;
 
+use futures::{stream::FuturesUnordered, StreamExt};
 pub use spawn::{Spawn, SpawnError, StdSpawn};
 
-use std::{fmt::Debug, sync::Arc};
+use std::{fmt::Debug, future::Future, pin::Pin, sync::Arc};
 
 use async_trait::async_trait;
 use pollster::FutureExt as _;
@@ -18,6 +19,7 @@ use uid_mux::FramedUidMux;
 
 use crate::{
     context::{ContextError, ErrorKind},
+    load_balance::distribute_by_weight,
     Context, ThreadId,
 };
 use worker::{Handle, Worker};
@@ -41,12 +43,12 @@ impl Default for MTConfig {
 
 /// A multi-threaded executor.
 #[derive(Debug)]
-pub struct MTExecutor<M, Io, S = StdSpawn> {
-    main_thread: Option<Handle<MTContext<Io>>>,
+pub struct MTExecutor<M, S = StdSpawn> {
+    id: ThreadId,
     spawner: Spawner<M, S>,
 }
 
-impl<M> MTExecutor<M, M::Framed>
+impl<M> MTExecutor<M>
 where
     M: FramedUidMux<ThreadId> + Send + Sync + 'static,
     M::Framed: Send + 'static,
@@ -58,7 +60,7 @@ where
     }
 }
 
-impl<M, S> MTExecutor<M, M::Framed, S>
+impl<M, S> MTExecutor<M, S>
 where
     M: FramedUidMux<ThreadId> + Send + Sync + 'static,
     M::Framed: IoDuplex + Send + 'static,
@@ -68,28 +70,48 @@ where
     /// Creates a new multi-threaded executor with a custom spawner.
     pub fn new_with_spawner(mux: M, spawn: S, config: MTConfig) -> Self {
         Self {
-            main_thread: None,
+            id: ThreadId::default(),
             spawner: Spawner::new(mux, spawn, config),
         }
     }
 
-    /// Runs the provided job with the executor.
-    pub async fn run<F, R>(&mut self, f: F) -> Result<R, ContextError>
-    where
-        F: for<'a> FnOnce(&'a mut MTContext<M::Framed>) -> ScopedBoxFuture<'_, '_, R>
-            + Send
-            + 'static,
-        R: Send + 'static,
-    {
-        let main_thread = if let Some(main_thread) = self.main_thread.as_ref() {
-            main_thread
-        } else {
-            let main_thread = self.spawner.spawn_ctx(ThreadId::default()).await?;
-            self.main_thread = Some(main_thread);
-            self.main_thread.as_ref().unwrap()
-        };
+    /// Returns a future that yields a new thread context.
+    pub fn new_thread(&mut self) -> NewThread<<M as FramedUidMux<ThreadId>>::Framed> {
+        let id = self.id.increment_in_place().ok_or_else(|| {
+            ContextError::new(
+                ErrorKind::Thread,
+                "exceeded maximum number of threads (255)",
+            )
+        });
 
-        main_thread.send_with_return(|ctx| f(ctx).block_on())?.await
+        let spawner = self.spawner.clone();
+
+        NewThread {
+            fut: Box::pin(async move {
+                let id = id?;
+                spawner.spawn(id).await
+            }),
+        }
+    }
+}
+
+pin_project_lite::pin_project! {
+    /// A future that yields a new thread context.
+    #[must_use = "futures do nothing unless you `.await` or poll them"]
+    pub struct NewThread<Io> {
+        #[pin]
+        fut: Pin<Box<dyn Future<Output = Result<MTContext<Io>, ContextError>> + Send>>,
+    }
+}
+
+impl<Io> Future for NewThread<Io> {
+    type Output = Result<MTContext<Io>, ContextError>;
+
+    fn poll(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Self::Output> {
+        self.project().fut.poll(cx)
     }
 }
 
@@ -200,6 +222,27 @@ impl<Io> MTContext<Io> {
             .first()
             .expect("child thread should be available"))
     }
+
+    async fn get_children(&mut self, count: usize) -> Result<&[Handle<Self>], ContextError> {
+        if count > self.config.max_concurrency {
+            return Err(ContextError::new(
+                ErrorKind::Thread,
+                "requested concurrency exceeds maximum".to_string(),
+            ));
+        } else if self.children.len() < count {
+            let diff = count - self.children.len();
+            for _ in 0..diff {
+                let id = self.child_id.increment_in_place().ok_or_else(|| {
+                    ContextError::new(ErrorKind::Thread, "thread ID overflow".to_string())
+                })?;
+
+                let child = self.spawner.spawn_ctx(id).await?;
+                self.children.push(child);
+            }
+        }
+
+        Ok(&self.children)
+    }
 }
 
 impl<Io> Debug for MTContext<Io> {
@@ -228,6 +271,66 @@ where
 
     fn io_mut(&mut self) -> &mut Self::Io {
         &mut self.io
+    }
+
+    async fn map<'a, F, T, R, W>(
+        &'a mut self,
+        items: Vec<T>,
+        f: F,
+        weight: W,
+    ) -> Result<Vec<R>, ContextError>
+    where
+        F: for<'b> Fn(&'b mut Self, T) -> ScopedBoxFuture<'static, 'b, R> + Clone + Send + 'static,
+        T: Send + 'static,
+        R: Send + 'static,
+        W: Fn(&T) -> usize + Send + 'static,
+    {
+        let item_count = items.len();
+        let concurrency = self.config.max_concurrency.min(item_count);
+
+        // If concurrency is 1, execute with this context.
+        if concurrency == 1 {
+            let mut outputs = Vec::with_capacity(item_count);
+            for item in items {
+                outputs.push(f(self, item).await);
+            }
+            return Ok(outputs);
+        }
+
+        let children = self.get_children(concurrency - 1).await?;
+
+        let items = items.into_iter().enumerate().collect::<Vec<_>>();
+        let mut lanes = distribute_by_weight(items, |item| weight(&item.1), concurrency);
+        let self_lane = lanes.pop().expect("should be at least 1 lane");
+
+        let mut queue = FuturesUnordered::new();
+        for (lane, child) in lanes.into_iter().zip(children) {
+            let f = f.clone();
+            let task = child.send_with_return(move |ctx| {
+                async move {
+                    let mut outputs = Vec::with_capacity(lane.len());
+                    for (i, item) in lane {
+                        outputs.push((i, f(ctx, item).await));
+                    }
+                    outputs
+                }
+                .block_on()
+            })?;
+            queue.push(task);
+        }
+
+        let mut outputs = Vec::with_capacity(item_count);
+        for (i, item) in self_lane {
+            outputs.push((i, f(self, item).await));
+        }
+
+        while let Some(lane) = queue.next().await {
+            outputs.extend(lane?);
+        }
+
+        outputs.sort_by_key(|(i, _)| *i);
+
+        Ok(outputs.into_iter().map(|(_, output)| output).collect())
     }
 
     async fn join<'a, A, B, RA, RB>(&'a mut self, a: A, b: B) -> Result<(RA, RB), ContextError>
@@ -290,35 +393,30 @@ mod tests {
     #[tokio::test]
     async fn test_mt_executor_join() {
         let (mut exec_a, _) = test_mt_executor(8, MTConfig::default());
-        let barrier = Arc::new(Barrier::new(2));
 
+        let mut ctx = exec_a.new_thread().await.unwrap();
+
+        let barrier = Arc::new(Barrier::new(2));
         let barrier_0 = barrier.clone();
         let barrier_1 = barrier.clone();
 
-        let (id_0, id_1) = exec_a
-            .run(|ctx| {
-                async {
-                    ctx.join(
-                        |ctx| {
-                            async move {
-                                barrier_0.wait().await;
-                                ctx.id().clone()
-                            }
-                            .scope_boxed()
-                        },
-                        |ctx| {
-                            async move {
-                                barrier_1.wait().await;
-                                ctx.id().clone()
-                            }
-                            .scope_boxed()
-                        },
-                    )
-                    .await
-                    .unwrap()
-                }
-                .scope_boxed()
-            })
+        let (id_0, id_1) = ctx
+            .join(
+                |ctx| {
+                    async move {
+                        barrier_0.wait().await;
+                        ctx.id().clone()
+                    }
+                    .scope_boxed()
+                },
+                |ctx| {
+                    async move {
+                        barrier_1.wait().await;
+                        ctx.id().clone()
+                    }
+                    .scope_boxed()
+                },
+            )
             .await
             .unwrap();
 
@@ -329,37 +427,32 @@ mod tests {
     #[tokio::test]
     async fn test_mt_executor_try_join() {
         let (mut exec_a, _) = test_mt_executor(8, MTConfig::default());
-        let barrier = Arc::new(Barrier::new(2));
 
+        let mut ctx = exec_a.new_thread().await.unwrap();
+
+        let barrier = Arc::new(Barrier::new(2));
         let barrier_0 = barrier.clone();
         let barrier_1 = barrier.clone();
 
-        let (id_0, id_1) = exec_a
-            .run(|ctx| {
-                async {
-                    ctx.try_join(
-                        |ctx| {
-                            async move {
-                                barrier_0.wait().await;
-                                Ok::<_, ()>(ctx.id().clone())
-                            }
-                            .scope_boxed()
-                        },
-                        |ctx| {
-                            async move {
-                                barrier_1.wait().await;
-                                Ok::<_, ()>(ctx.id().clone())
-                            }
-                            .scope_boxed()
-                        },
-                    )
-                    .await
-                    .unwrap()
-                    .unwrap()
-                }
-                .scope_boxed()
-            })
+        let (id_0, id_1) = ctx
+            .try_join(
+                |ctx| {
+                    async move {
+                        barrier_0.wait().await;
+                        Ok::<_, ()>(ctx.id().clone())
+                    }
+                    .scope_boxed()
+                },
+                |ctx| {
+                    async move {
+                        barrier_1.wait().await;
+                        Ok::<_, ()>(ctx.id().clone())
+                    }
+                    .scope_boxed()
+                },
+            )
             .await
+            .unwrap()
             .unwrap();
 
         assert_eq!(id_0.as_bytes(), &[0]);

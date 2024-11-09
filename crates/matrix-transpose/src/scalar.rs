@@ -1,8 +1,8 @@
 /// Unsafe matrix transpose
 ///
-/// This function transposes a matrix of generic elements. This function is an implementation of
-/// the byte-level transpose in
-/// https://docs.rs/oblivious-transfer/latest/oblivious_transfer/extension/fn.transpose128.html
+/// This function transposes a matrix of generic elements. This function is an
+/// implementation of the byte-level transpose in
+/// <https://docs.rs/oblivious-transfer/latest/oblivious_transfer/extension/fn.transpose128.html>
 ///
 /// # Safety
 ///

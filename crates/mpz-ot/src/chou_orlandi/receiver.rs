@@ -8,7 +8,6 @@ use mpz_ot_core::{
 };
 
 use serio::{stream::IoStreamExt as _, SinkExt as _};
-use utils_aio::non_blocking_backend::{Backend, NonBlockingBackend};
 
 type Error = ReceiverError;
 
@@ -108,11 +107,7 @@ where
             return Ok(());
         }
 
-        let (payload, mut receiver) = Backend::spawn(|| {
-            let payload = receiver.choose();
-            (payload, receiver)
-        })
-        .await;
+        let payload = receiver.choose();
 
         ctx.io_mut().send(payload).await?;
         let payload = ctx.io_mut().expect_next().await?;

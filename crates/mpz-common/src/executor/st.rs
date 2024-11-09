@@ -53,6 +53,25 @@ where
         &mut self.io
     }
 
+    async fn map<'a, F, T, R, W>(
+        &'a mut self,
+        items: Vec<T>,
+        f: F,
+        _weight: W,
+    ) -> Result<Vec<R>, ContextError>
+    where
+        F: for<'b> Fn(&'b mut Self, T) -> ScopedBoxFuture<'static, 'b, R> + Clone + Send + 'static,
+        T: Send + 'static,
+        R: Send + 'static,
+        W: Fn(&T) -> usize + Send + 'static,
+    {
+        let mut results = Vec::with_capacity(items.len());
+        for item in items {
+            results.push(f(self, item).await);
+        }
+        Ok(results)
+    }
+
     async fn join<'a, A, B, RA, RB>(&'a mut self, a: A, b: B) -> Result<(RA, RB), ContextError>
     where
         A: for<'b> FnOnce(&'b mut Self) -> ScopedBoxFuture<'a, 'b, RA> + Send + 'static,

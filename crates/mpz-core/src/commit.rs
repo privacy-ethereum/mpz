@@ -1,5 +1,5 @@
 //! This module provides a hash commitment scheme for types which implement
-//! [`CanonicalSerialize`](crate::serialize::CanonicalSerialize)
+//! [`CanonicalSerialize`].
 
 use crate::{
     hash::{Hash, SecureHash},
@@ -84,7 +84,8 @@ where
     }
 }
 
-/// A trait for committing to arbitrary data which implements [`CanonicalSerialize`](crate::serialize::CanonicalSerialize)
+/// A trait for committing to arbitrary data which implements
+/// [`CanonicalSerialize`].
 pub trait HashCommit
 where
     Self: CanonicalSerialize + Sized,
