@@ -80,7 +80,7 @@ impl<BaseOT> RCOTReceiver<bool, Block> for Receiver<BaseOT> {
                 receiver.try_recv_rcot(count).map_err(Error::from)
             }
             State::Extension(receiver) => receiver.try_recv_rcot(count).map_err(Error::from),
-            State::Error => Err(Error::state("can not send, receiver in error state")),
+            State::Error => Err(Error::state("cannot send, receiver in error state")),
         }
     }
 
@@ -129,7 +129,7 @@ where
                 receiver
             }
             State::Extension(receiver) => receiver,
-            State::Error => return Err(Error::state("can not flush, receiver in error state")),
+            State::Error => return Err(Error::state("cannot flush, receiver in error state")),
         };
 
         if !receiver.wants_extend() {

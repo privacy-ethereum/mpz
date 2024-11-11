@@ -61,7 +61,7 @@ impl<BaseOT> RCOTSender<Block> for Sender<BaseOT> {
         match &mut self.state {
             State::Initialized { sender, .. } => sender.alloc(count).map_err(Error::from),
             State::Extension(sender) => sender.alloc(count).map_err(Error::from),
-            State::Error => Err(Error::state("can not allocate, sender in error state")),
+            State::Error => Err(Error::state("cannot allocate, sender in error state")),
         }
     }
 
@@ -84,7 +84,7 @@ impl<BaseOT> RCOTSender<Block> for Sender<BaseOT> {
         match &mut self.state {
             State::Initialized { sender, .. } => sender.try_send_rcot(count).map_err(Error::from),
             State::Extension(sender) => sender.try_send_rcot(count).map_err(Error::from),
-            State::Error => Err(Error::state("can not send, sender in error state")),
+            State::Error => Err(Error::state("cannot send, sender in error state")),
         }
     }
 
@@ -92,7 +92,7 @@ impl<BaseOT> RCOTSender<Block> for Sender<BaseOT> {
         match &mut self.state {
             State::Initialized { sender, .. } => sender.queue_send_rcot(count).map_err(Error::from),
             State::Extension(sender) => sender.queue_send_rcot(count).map_err(Error::from),
-            State::Error => Err(Error::state("can not queue, sender in error state")),
+            State::Error => Err(Error::state("cannot queue, sender in error state")),
         }
     }
 }

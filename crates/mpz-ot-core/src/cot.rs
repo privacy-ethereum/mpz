@@ -37,7 +37,7 @@ pub trait COTSender<T> {
     ///
     /// # Arguments
     ///
-    /// * `keys` - Keys to send.
+    /// * `keys` - Keys corresponding to the choice bit value 0 to send.
     fn queue_send_cot(&mut self, keys: &[T]) -> Result<Self::Future, Self::Error>;
 }
 

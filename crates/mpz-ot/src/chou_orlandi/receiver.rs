@@ -99,7 +99,7 @@ where
                 receiver.setup(payload)
             }
             State::Setup(receiver) => receiver,
-            State::Error => return Err(Error::state("can not flush, receiver is in error state")),
+            State::Error => return Err(Error::state("cannot flush, receiver is in error state")),
         };
 
         if !receiver.wants_flush() {

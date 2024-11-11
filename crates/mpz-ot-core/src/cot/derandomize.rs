@@ -28,6 +28,7 @@ struct QueuedSend {
 #[derive(Debug)]
 pub struct DerandCOTSender<T> {
     rcot: T,
+    /// Keys corresponding to the value 0 of the choice bits which need to be derandomized.
     adjust: Vec<Block>,
     queue: VecDeque<QueuedSend>,
 }
@@ -165,6 +166,7 @@ struct QueuedReceive {
 #[derive(Debug)]
 pub struct DerandCOTReceiver<T> {
     rcot: T,
+    /// Choice bits from RCOT which need to be derandomized.
     derandomize: BitVec,
     queue: VecDeque<QueuedReceive>,
 }

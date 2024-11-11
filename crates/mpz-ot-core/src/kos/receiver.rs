@@ -167,7 +167,7 @@ impl Receiver<state::Extension> {
         Ok(Extend { count, us })
     }
 
-    /// Performs the correlation check for all outstanding OTS.
+    /// Performs the correlation check for all outstanding OTs.
     ///
     /// See section 3.1 of the paper for more details.
     ///
@@ -283,7 +283,7 @@ impl RCOTReceiver<bool, Block> for Receiver<state::Initialized> {
         _count: usize,
     ) -> Result<RCOTReceiverOutput<bool, Block>, Self::Error> {
         return Err(ReceiverError::InvalidState(
-            "receiver has not been setup yet".to_string(),
+            "receiver has not been set up yet".to_string(),
         ));
     }
 
