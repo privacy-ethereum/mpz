@@ -1,7 +1,5 @@
 //! Share conversion receiver.
 
-//! Share conversion sender.
-
 use std::{collections::VecDeque, marker::PhantomData};
 
 use mpz_common::future::{new_output, MaybeDone, Sender as OutputSender};

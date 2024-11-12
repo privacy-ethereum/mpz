@@ -51,7 +51,7 @@ impl<F> Default for ReceiverState<F> {
     }
 }
 
-/// Ideal COT functionality.
+/// Ideal ROLE functionality.
 #[derive(Debug, Clone)]
 pub struct IdealROLE<F> {
     inner: Arc<Mutex<Inner<F>>>,
@@ -89,7 +89,7 @@ where
         }
     }
 
-    /// Transfers correlated OTs.
+    /// Performs ROLEs.
     pub fn transfer(
         &mut self,
         count: usize,
