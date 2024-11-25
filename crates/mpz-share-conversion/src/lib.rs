@@ -1,5 +1,6 @@
 //! This crate provides additive-to-multiplicative (A2M) and
-//! multiplicative-to-additive (M2A) share conversion protocols.
+//! multiplicative-to-additive (M2A) share conversion protocols,
+//! both with semi-honest security.
 
 #![deny(missing_docs, unreachable_pub, unused_must_use)]
 #![deny(unsafe_code)]

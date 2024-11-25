@@ -1,4 +1,4 @@
-//! Receiver implementation.
+//! ROLE receiver.
 
 use std::collections::VecDeque;
 
@@ -21,6 +21,7 @@ struct Queued<F> {
 pub struct Receiver<T, F> {
     id: OLEId,
     alloc: usize,
+    /// The total count of ROLEs in the `queue`.
     pending: usize,
     queue: VecDeque<Queued<F>>,
     rot: T,
@@ -121,6 +122,7 @@ where
             });
         }
 
+        // Store the rest of the ROLEs which were not queued.
         self.role.extend_from_slice(&shares[i..]);
         self.alloc = 0;
         self.pending = 0;

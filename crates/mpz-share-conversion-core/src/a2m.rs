@@ -6,8 +6,8 @@
 //! share of A. So both parties start with `x` and `y` and want to end up with
 //! `a` and `b`, where `A = x + y = a * b`.
 //!
-//! This module implements the A2M protocol from <https://eprint.iacr.org/2023/964>, page 40,
-//! figure 16, 4.
+//! This module implements the A2M protocol from
+//! - [ref1]: <https://eprint.iacr.org/2023/964>, page 40, figure 16, 4.
 
 use mpz_fields::Field;
 use mpz_ole_core::{OLEShare, Offset};
@@ -23,8 +23,11 @@ pub(crate) struct A2MMasked<F>(F);
 /// their input.
 #[derive(Debug)]
 pub(crate) struct A2MSenderDerand<F> {
+    /// An additive share. h_P in ref1.
     input: F,
+    /// A ROLE output which will be adjusted.
     add: F,
+    /// A ROLE input. (h̃_P)⁻¹ in ref1.
     mul: F,
 }
 
@@ -53,8 +56,11 @@ where
 /// A2M Sender sends masked share to the receiver.
 #[derive(Debug)]
 pub(crate) struct A2MSenderAdjust<F> {
+    /// An additive share. h_P in ref1.
     input: F,
+    /// An OLEe output. s_P in ref1.
     add: F,
+    /// An OLEe input. (h̃_P)⁻¹ in ref1.
     mul: F,
 }
 
@@ -78,8 +84,11 @@ where
 /// We start with a ROLE and derandomize the receiver's input.
 #[derive(Debug)]
 pub(crate) struct A2MReceiverDerand<F> {
+    /// An additive share. h_V in ref1.
     input: F,
+    /// A ROLE output. s_V in ref1.
     add: F,
+    /// A ROLE input.
     mul: F,
 }
 
@@ -97,8 +106,10 @@ where
 
     /// Sends the offset to the sender.
     pub(crate) fn offset(self) -> (A2MReceiverAdjust<F>, Offset<F>) {
+        // Adjust OLEe input to be equal to h_V (in ref1).
         let offset = self.input - self.mul;
 
+        // The sender makes no adjustment to the receiver's OLEe output.
         (A2MReceiverAdjust { add: self.add }, Offset(offset))
     }
 }
@@ -113,7 +124,7 @@ impl<F> A2MReceiverAdjust<F>
 where
     F: Field,
 {
-    /// Receives the masked share, returning the multiplicative share.
+    /// Receives the masked share (`d` in ref1), returning the multiplicative share.
     pub(crate) fn receive(self, masked: A2MMasked<F>) -> F {
         self.add + masked.0
     }

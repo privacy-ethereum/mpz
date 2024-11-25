@@ -9,10 +9,8 @@
 //! - The functionality computes `y = ab + x` and returns `y` to the receiver.
 //!
 //! It's often easier to frame OLE as producing an additive sharing of a
-//! product.
-//!
-//! Where the sender knows `(a, x)` and the receiver knows `(b, y)` such that
-//! `ab = x + y`. This representation is used in [`OLEShare`].
+//! product, where the sender knows `(a, x)` and the receiver knows `(b, y)` such
+//! that `ab = x + y`. This representation is used in [`OLEShare`].
 
 #![deny(missing_docs, unreachable_pub, unused_must_use)]
 #![deny(unsafe_code)]
@@ -39,7 +37,7 @@ use serde::{Deserialize, Serialize};
 
 /// An OLE identifier.
 ///
-/// Multiple OLEs may be batched together under the same transfer ID.
+/// Multiple OLEs may be batched together under the same ID.
 #[derive(
     Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
 )]
