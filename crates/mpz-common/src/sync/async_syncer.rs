@@ -132,7 +132,7 @@ impl<'a, Fut> Wait<'a, Fut> {
     }
 }
 
-impl<'a, Fut> Future for Wait<'a, Fut>
+impl<Fut> Future for Wait<'_, Fut>
 where
     Fut: Future,
 {

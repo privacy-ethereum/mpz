@@ -64,7 +64,7 @@ impl<const D: usize> LpnEncoder<D> {
 
     #[inline]
     fn compute_one_row(&self, y: &mut [Block], x: &[Block], pos: usize, prp: &Prp) {
-        let block_size = (D + 4 - 1) / 4;
+        let block_size = D.div_ceil(4);
         let mut index = (0..block_size)
             .map(|i| Block::from(bytemuck::cast::<_, [u8; 16]>([pos as u64, i as u64])))
             .collect::<Vec<Block>>();

@@ -96,7 +96,7 @@ impl Generator {
         circ: &'a Circuit,
         delta: Delta,
         inputs: Vec<EncodedValue<state::Full>>,
-    ) -> Result<EncryptedGateIter<'_, std::slice::Iter<'_, Gate>>, GeneratorError> {
+    ) -> Result<EncryptedGateIter<'a, std::slice::Iter<'a, Gate>>, GeneratorError> {
         if inputs.len() != circ.inputs().len() {
             return Err(CircuitError::InvalidInputCount(
                 circ.inputs().len(),
@@ -143,7 +143,7 @@ impl Generator {
         circ: &'a Circuit,
         delta: Delta,
         inputs: Vec<EncodedValue<state::Full>>,
-    ) -> Result<EncryptedGateBatchIter<'_, std::slice::Iter<'_, Gate>>, GeneratorError> {
+    ) -> Result<EncryptedGateBatchIter<'a, std::slice::Iter<'a, Gate>>, GeneratorError> {
         self.generate(circ, delta, inputs)
             .map(EncryptedGateBatchIter)
     }
@@ -173,7 +173,7 @@ pub struct EncryptedGateIter<'a, I> {
     complete: bool,
 }
 
-impl<'a, I> fmt::Debug for EncryptedGateIter<'a, I> {
+impl<I> fmt::Debug for EncryptedGateIter<'_, I> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "EncryptedGateIter {{ .. }}")
     }

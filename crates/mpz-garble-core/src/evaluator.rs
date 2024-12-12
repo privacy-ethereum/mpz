@@ -85,7 +85,7 @@ impl Evaluator {
         &'a mut self,
         circ: &'a Circuit,
         inputs: Vec<EncodedValue<state::Active>>,
-    ) -> Result<EncryptedGateConsumer<'_, std::slice::Iter<'_, Gate>>, EvaluatorError> {
+    ) -> Result<EncryptedGateConsumer<'a, std::slice::Iter<'a, Gate>>, EvaluatorError> {
         if inputs.len() != circ.inputs().len() {
             return Err(CircuitError::InvalidInputCount(
                 circ.inputs().len(),
@@ -129,7 +129,7 @@ impl Evaluator {
         &'a mut self,
         circ: &'a Circuit,
         inputs: Vec<EncodedValue<state::Active>>,
-    ) -> Result<EncryptedGateBatchConsumer<'_, std::slice::Iter<'_, Gate>>, EvaluatorError> {
+    ) -> Result<EncryptedGateBatchConsumer<'a, std::slice::Iter<'a, Gate>>, EvaluatorError> {
         self.evaluate(circ, inputs).map(EncryptedGateBatchConsumer)
     }
 }
@@ -156,7 +156,7 @@ pub struct EncryptedGateConsumer<'a, I: Iterator> {
     complete: bool,
 }
 
-impl<'a, I: Iterator> fmt::Debug for EncryptedGateConsumer<'a, I> {
+impl<I: Iterator> fmt::Debug for EncryptedGateConsumer<'_, I> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "EncryptedGateConsumer {{ .. }}")
     }

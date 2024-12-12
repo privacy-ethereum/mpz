@@ -50,7 +50,7 @@ impl Sender<state::PreExtension> {
         }
 
         // The range of each interval.
-        let k = (n + t - 1) / t;
+        let k = n.div_ceil(t);
 
         let queries_length = if n % t == 0 {
             vec![k as usize; t as usize]

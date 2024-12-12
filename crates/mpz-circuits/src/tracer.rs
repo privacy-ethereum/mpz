@@ -55,7 +55,7 @@ where
     }
 }
 
-impl<'a> Tracer<'a, Bit> {
+impl Tracer<'_, Bit> {
     /// Returns the single node associated with the bit.
     pub fn node(&self) -> Node<Feed> {
         self.to_inner().nodes()[0]

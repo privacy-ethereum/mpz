@@ -146,7 +146,7 @@ impl<'a, F> Wait<'a, F> {
     }
 }
 
-impl<'a, F, R> Future for Wait<'a, F>
+impl<F, R> Future for Wait<'_, F>
 where
     F: FnOnce() -> R + Unpin,
     R: Unpin,
