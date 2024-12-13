@@ -207,10 +207,6 @@ impl View {
 
         self.output.preprocessed |= &range;
         self.output.complete |= &range;
-
-        // If we want to use the output as input for another circuit
-        self.input.complete |= &range;
-
         // If marked for decoding, transfer decode info.
         self.flush.decode_info |= range.intersection(&self.decode.all) - &self.decode.decode_info;
         // If decoding info transferred, prove MACs.
@@ -220,7 +216,7 @@ impl View {
     }
 
     pub(crate) fn is_committed(&self, range: Range) -> bool {
-        range.is_subset(&self.input.complete)
+        range.is_subset(&self.input.complete) || range.is_subset(&self.output.complete)
     }
 
     pub(crate) fn commit(&mut self, range: Range) -> Result<()> {
