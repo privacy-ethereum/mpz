@@ -57,6 +57,7 @@ impl<COT> Evaluator<COT> {
                     idx_outputs |= output.to_range();
                     true
                 } else {
+                    idx_outputs |= output.to_range();
                     false
                 }
             })

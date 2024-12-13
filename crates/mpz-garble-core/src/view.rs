@@ -216,7 +216,7 @@ impl View {
     }
 
     pub(crate) fn is_committed(&self, range: Range) -> bool {
-        range.is_subset(&self.input.complete)
+        range.is_subset(&self.input.complete) || range.is_subset(&self.output.complete)
     }
 
     pub(crate) fn commit(&mut self, range: Range) -> Result<()> {
