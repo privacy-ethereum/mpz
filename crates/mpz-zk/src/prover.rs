@@ -235,11 +235,7 @@ where
     }
 
     fn mark_blind_raw(&mut self, slice: Slice) -> Result<()> {
-        let res = self.store.mark_blind_raw(slice);
-
-        debug_assert!(res.is_err());
-
-        Ok(())
+        self.store.mark_blind_raw(slice).map_err(Error::from)
     }
 }
 

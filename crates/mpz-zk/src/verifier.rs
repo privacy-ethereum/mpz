@@ -218,11 +218,7 @@ where
     }
 
     fn mark_private_raw(&mut self, slice: Slice) -> Result<()> {
-        let res = self.store.mark_private_raw(slice).map_err(Error::from);
-
-        debug_assert!(res.is_err());
-
-        res
+        self.store.mark_private_raw(slice).map_err(Error::from)
     }
 
     fn mark_blind_raw(&mut self, slice: Slice) -> Result<()> {
