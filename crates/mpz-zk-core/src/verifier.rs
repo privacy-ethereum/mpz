@@ -34,9 +34,17 @@ impl Verifier {
         gate_keys: &[Key],
     ) -> Result<VerifierExecute> {
         if input_keys.len() != circ.input_len() {
-            todo!()
+            return Err(ErrorRepr::InputKeyCount {
+                expected: circ.input_len(),
+                actual: input_keys.len(),
+            }
+            .into());
         } else if gate_keys.len() != circ.and_count() {
-            todo!()
+            return Err(ErrorRepr::GateKeyCount {
+                expected: circ.and_count(),
+                actual: gate_keys.len(),
+            }
+            .into());
         }
 
         let check_idx = self.check.lock().unwrap().reserve(circ.and_count());
@@ -62,7 +70,7 @@ impl Verifier {
     /// Executes the consistency check.
     pub fn check(&mut self, svole_keys: &[Block], uv: UV) -> Result<()> {
         if Arc::strong_count(&self.check) > 1 {
-            todo!()
+            return Err(ErrorRepr::Inprogress.into());
         }
 
         self.check
@@ -154,7 +162,7 @@ impl VerifierExecute {
 
     pub fn finish(self) -> Result<Vec<Key>> {
         if self.counter < self.and_count {
-            todo!()
+            return Err(ErrorRepr::Incomplete.into());
         }
 
         let outputs = self
@@ -255,6 +263,14 @@ pub struct VerifierError(#[from] ErrorRepr);
 
 #[derive(Debug, thiserror::Error)]
 enum ErrorRepr {
+    #[error("invalid input key count: expected {expected}, got {actual}")]
+    InputKeyCount { expected: usize, actual: usize },
+    #[error("invalid gate key count: expected {expected}, got {actual}")]
+    GateKeyCount { expected: usize, actual: usize },
+    #[error("execution is incomplete")]
+    Incomplete,
+    #[error("cannot run consistency check while execution is in progress")]
+    Inprogress,
     #[error(transparent)]
     Check(CheckError),
 }

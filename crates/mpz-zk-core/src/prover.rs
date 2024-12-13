@@ -22,11 +22,23 @@ impl Prover {
         gate_macs: &'a [Mac],
     ) -> Result<ProverExecute> {
         if input_macs.len() != circ.input_len() {
-            todo!()
+            return Err(ErrorRepr::InputMacCount {
+                expected: circ.input_len(),
+                actual: input_macs.len(),
+            }
+            .into());
         } else if gate_masks.len() != circ.and_count() {
-            todo!()
+            return Err(ErrorRepr::GateMaskCount {
+                expected: circ.and_count(),
+                actual: gate_masks.len(),
+            }
+            .into());
         } else if gate_macs.len() != circ.and_count() {
-            todo!()
+            return Err(ErrorRepr::GateMacCount {
+                expected: circ.and_count(),
+                actual: gate_macs.len(),
+            }
+            .into());
         }
 
         let check_idx = self.check.lock().unwrap().reserve(circ.and_count());
@@ -57,7 +69,7 @@ impl Prover {
     /// Executes the consistency check.
     pub fn check(&mut self, svole_choices: &[bool], svole_ev: &[Block]) -> Result<UV> {
         if Arc::strong_count(&self.check) > 1 {
-            todo!()
+            return Err(ErrorRepr::Inprogress.into());
         }
 
         self.check
@@ -144,7 +156,7 @@ impl ProverExecute {
 
     pub fn finish(self) -> Result<Vec<Mac>> {
         if self.counter != self.and_count {
-            assert_eq!(self.counter, self.and_count);
+            return Err(ErrorRepr::Incomplete.into());
         }
 
         let outputs = self
@@ -237,6 +249,16 @@ pub struct ProverError(#[from] ErrorRepr);
 
 #[derive(Debug, thiserror::Error)]
 enum ErrorRepr {
+    #[error("incorrect number of input MACs: expected {expected}, actual {actual}")]
+    InputMacCount { expected: usize, actual: usize },
+    #[error("incorrect number of gate masks: expected {expected}, actual {actual}")]
+    GateMaskCount { expected: usize, actual: usize },
+    #[error("incorrect number of gate MACs: expected {expected}, actual {actual}")]
+    GateMacCount { expected: usize, actual: usize },
+    #[error("execution is incomplete")]
+    Incomplete,
+    #[error("cannot run consistency check while execution is in progress")]
+    Inprogress,
     #[error(transparent)]
     Check(CheckError),
 }
