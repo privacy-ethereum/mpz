@@ -4,7 +4,7 @@ use bytemuck::{Pod, Zeroable};
 use clmul::Clmul;
 use core::ops::{BitAnd, BitAndAssign, BitXor, BitXorAssign};
 use generic_array::{typenum::consts::U16, GenericArray};
-use itybity::{BitIterable, BitLength, GetBit, Lsb0, Msb0};
+use itybity::{BitIterable, BitLength, FromBitIterator, GetBit, Lsb0, Msb0};
 use rand::{distributions::Standard, prelude::Distribution, CryptoRng, Rng};
 use serde::{Deserialize, Serialize};
 
@@ -24,6 +24,16 @@ impl Block {
     pub const ONES: Self = Self([0xff; 16]);
     /// A length 2 array of zero and one blocks
     pub const SELECT_MASK: [Self; 2] = [Self::ZERO, Self::ONES];
+    /// A length 128 vector where each block has a single bit set to 1.
+    pub const MONOMIAL: [Block; 128] = {
+        let mut v = [Block::ZERO; 128];
+        let mut i = 0;
+        while i < 128 {
+            v[i].0[i / 8] = 1 << (i % 8);
+            i += 1;
+        }
+        v
+    };
 
     /// Create a new block
     #[inline]
@@ -201,6 +211,16 @@ impl GetBit<Msb0> for Block {
 }
 
 impl BitIterable for Block {}
+
+impl FromBitIterator for Block {
+    fn from_lsb0_iter(iter: impl IntoIterator<Item = bool>) -> Self {
+        Block(<[u8; 16]>::from_lsb0_iter(iter))
+    }
+
+    fn from_msb0_iter(iter: impl IntoIterator<Item = bool>) -> Self {
+        Block(<[u8; 16]>::from_msb0_iter(iter))
+    }
+}
 
 impl From<[u8; 16]> for Block {
     #[inline]
@@ -494,5 +514,12 @@ mod tests {
         }
         let expected_sigma = Block::from(x);
         assert_eq!(bx, expected_sigma);
+    }
+
+    #[test]
+    fn test_monomial_vector() {
+        for i in 0..128 {
+            assert_eq!(u128::from_le_bytes(Block::MONOMIAL[i].0), 1 << i);
+        }
     }
 }

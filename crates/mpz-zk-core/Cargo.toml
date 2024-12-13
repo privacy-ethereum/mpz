@@ -1,0 +1,37 @@
+[package]
+name = "mpz-zk-core"
+version = "0.1.0"
+edition = "2021"
+
+[lints]
+workspace = true
+
+[features]
+default = ["rayon"]
+rayon = ["dep:rayon", "mpz-core/rayon"]
+force-st = []
+
+[dependencies]
+mpz-core = { workspace = true }
+mpz-circuits = { workspace = true }
+mpz-memory-core = { workspace = true }
+mpz-vm-core = { workspace = true }
+tlsn-utils = { workspace = true }
+
+thiserror = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+blake3 = { workspace = true, features = ["serde"] }
+cfg-if = { workspace = true }
+rayon = { workspace = true, optional = true }
+itybity = { workspace = true }
+
+[dev-dependencies]
+mpz-ot-core = { workspace = true, features = ["test-utils"] }
+rand = { workspace = true }
+criterion = { workspace = true }
+aes = { workspace = true }
+rstest = { workspace = true }
+
+[[bench]]
+name = "zk"
+harness = false

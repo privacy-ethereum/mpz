@@ -19,6 +19,8 @@ members = [
     "crates/mpz-ole",
     "crates/mpz-memory-core",
     "crates/mpz-vm-core",
+    "crates/mpz-zk-core",
+    "crates/mpz-zk",
 ]
 resolver = "2"
 
@@ -45,6 +47,8 @@ mpz-ole = { path = "crates/mpz-ole" }
 mpz-ole-core = { path = "crates/mpz-ole-core" }
 mpz-memory-core = { path = "crates/mpz-memory-core" }
 mpz-vm-core = { path = "crates/mpz-vm-core" }
+mpz-zk-core = { path = "crates/mpz-zk-core" }
+mpz-zk = { path = "crates/mpz-zk" }
 clmul = { path = "crates/clmul" }
 matrix-transpose = { path = "crates/matrix-transpose" }
 
