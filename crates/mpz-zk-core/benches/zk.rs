@@ -19,8 +19,19 @@ fn criterion_benchmark(c: &mut Criterion) {
 
         rcot.alloc(AES128.input_len());
         rcot.flush().unwrap();
-        let (RCOTSenderOutput { keys, .. }, RCOTReceiverOutput { msgs: macs, .. }) =
-            rcot.transfer(AES128.input_len()).unwrap();
+        let (
+            RCOTSenderOutput { mut keys, .. },
+            RCOTReceiverOutput {
+                msgs: mut macs,
+                choices,
+                ..
+            },
+        ) = rcot.transfer(AES128.input_len()).unwrap();
+        keys.iter_mut().for_each(|key| key.set_lsb(false));
+        macs.iter_mut()
+            .zip(choices)
+            .for_each(|(mac, choice)| mac.set_lsb(choice));
+
         let input_keys = Key::from_blocks(keys);
         let input_macs = Mac::from_blocks(macs);
 
