@@ -1,0 +1,44 @@
+[package]
+name = "mpz-zk"
+version = "0.1.0"
+edition = "2021"
+
+[lints]
+workspace = true
+
+[features]
+default = ["rayon"]
+rayon = ["mpz-zk-core/rayon", "mpz-common/rayon"]
+
+[dependencies]
+mpz-vm-core = { workspace = true }
+mpz-zk-core = { workspace = true }
+mpz-ot = { workspace = true }
+mpz-core = { workspace = true }
+mpz-common = { workspace = true }
+futures = { workspace = true }
+thiserror = { workspace = true }
+async-trait = { workspace = true }
+serio = { workspace = true }
+tlsn-utils = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = [
+    "net",
+    "macros",
+    "rt",
+    "rt-multi-thread",
+] }
+rand = { workspace = true }
+mpz-circuits = { workspace = true }
+mpz-common = { workspace = true, features = [
+    "test-utils",
+    "ideal",
+    "executor",
+] }
+mpz-ot = { workspace = true, features = ["ideal"] }
+criterion = { workspace = true }
+
+[[bench]]
+name = "zk"
+harness = false
