@@ -104,7 +104,7 @@ impl Check {
                     .map(|(macs, chi)| compute_terms(macs, chi))
                     .reduce(
                         || (Block::ZERO, Block::ZERO),
-                        |(u_0, v_0), (u_1, v_1)| (u_0 ^ u_1, v_0 ^ v_1),
+                        |(u_acc, v_acc), (u, v)| (u_acc ^ u, v_acc ^ v),
                     );
             } else {
                 let (mut u, mut v) = macs
@@ -113,7 +113,7 @@ impl Check {
                     .map(|(macs, chi)| compute_terms(macs, chi))
                     .fold(
                         (Block::ZERO, Block::ZERO),
-                        |(u_0, v_0), (u_1, v_1)| (u_0 ^ u_1, v_0 ^ v_1),
+                        |(u_acc, v_acc), (u, v)| (u_acc ^ u, v_acc ^ v),
                     );
             }
         }
@@ -162,7 +162,7 @@ impl Check {
                     .map(|(keys, chi)| compute_term(keys, chi, delta))
                     .reduce(
                         || Block::ZERO,
-                        |w_0, w_1| w_0 ^ w_1,
+                        |w_acc, w| w_acc ^ w,
                     );
             } else {
                 let mut w = keys
@@ -171,7 +171,7 @@ impl Check {
                     .map(|(keys, chi)| compute_term(keys, chi, delta))
                     .fold(
                         Block::ZERO,
-                        |w_0, w_1| w_0 ^ w_1,
+                        |w_acc, w| w_acc ^ w,
                     );
             }
         }
