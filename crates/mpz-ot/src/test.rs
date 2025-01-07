@@ -1,3 +1,5 @@
+//! Test utilities.
+
 use mpz_common::{
     executor::{test_st_executor, TestSTExecutor},
     Flush,

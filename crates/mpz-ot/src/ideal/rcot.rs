@@ -1,7 +1,11 @@
 //! Ideal functionality for random correlated OT.
 
 use async_trait::async_trait;
-use mpz_common::Flush;
+
+use mpz_common::{
+    ideal::{call_sync, CallSync},
+    Flush,
+};
 use mpz_core::Block;
 use mpz_ot_core::{
     ideal::rcot::{IdealRCOT as Core, IdealRCOTError as CoreError},
@@ -11,15 +15,20 @@ use mpz_ot_core::{
 /// Returns a new ideal RCOT sender and receiver.
 pub fn ideal_rcot(seed: Block, delta: Block) -> (IdealRCOTSender, IdealRCOTReceiver) {
     let core = Core::new(seed, delta);
+    let (sync_0, sync_1) = call_sync();
     (
-        IdealRCOTSender { core: core.clone() },
-        IdealRCOTReceiver { core },
+        IdealRCOTSender {
+            core: core.clone(),
+            sync: sync_0,
+        },
+        IdealRCOTReceiver { core, sync: sync_1 },
     )
 }
 
 /// Ideal RCOT sender.
 pub struct IdealRCOTSender {
     core: Core,
+    sync: CallSync,
 }
 
 impl RCOTSender<Block> for IdealRCOTSender {
@@ -57,7 +66,10 @@ impl<Ctx> Flush<Ctx> for IdealRCOTSender {
 
     async fn flush(&mut self, _ctx: &mut Ctx) -> Result<(), Self::Error> {
         if self.core.wants_flush() {
-            self.core.flush().map_err(IdealRCOTError::from)?;
+            self.sync
+                .call(|| self.core.flush().map_err(IdealRCOTError::from))
+                .await
+                .transpose()?;
         }
 
         Ok(())
@@ -67,6 +79,7 @@ impl<Ctx> Flush<Ctx> for IdealRCOTSender {
 /// Ideal RCOT receiver.
 pub struct IdealRCOTReceiver {
     core: Core,
+    sync: CallSync,
 }
 
 impl RCOTReceiver<bool, Block> for IdealRCOTReceiver {
@@ -103,7 +116,10 @@ impl<Ctx> Flush<Ctx> for IdealRCOTReceiver {
 
     async fn flush(&mut self, _ctx: &mut Ctx) -> Result<(), Self::Error> {
         if self.core.wants_flush() {
-            self.core.flush().map_err(IdealRCOTError::from)?;
+            self.sync
+                .call(|| self.core.flush().map_err(IdealRCOTError::from))
+                .await
+                .transpose()?;
         }
 
         Ok(())
