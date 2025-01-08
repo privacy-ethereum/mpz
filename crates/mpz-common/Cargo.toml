@@ -10,7 +10,7 @@ executor = ["cpu", "dep:uid-mux"]
 sync = ["tokio/sync"]
 future = []
 test-utils = ["dep:uid-mux", "uid-mux/test-utils"]
-ideal = []
+ideal = ["tokio/sync"]
 rayon = ["dep:rayon"]
 force-st = []
 

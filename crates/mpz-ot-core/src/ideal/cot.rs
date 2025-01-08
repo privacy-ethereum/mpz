@@ -96,7 +96,7 @@ impl IdealCOT {
         let sender_queue = this.sender_state.queue.len();
         let receiver_queue = this.receiver_state.queue.len();
 
-        sender_queue > 0 && receiver_queue > 0 && sender_queue == receiver_queue
+        sender_queue > 0 || receiver_queue > 0
     }
 
     /// Flushes the functionality.

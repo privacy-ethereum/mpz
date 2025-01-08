@@ -128,12 +128,8 @@ where
         let receiver_a2m_queue = self.receiver_state.a2m_queue.len();
         let receiver_m2a_queue = self.receiver_state.m2a_queue.len();
 
-        let wants_a2m = sender_a2m_queue > 0
-            && receiver_a2m_queue > 0
-            && sender_a2m_queue == receiver_a2m_queue;
-        let wants_m2a = sender_m2a_queue > 0
-            && receiver_m2a_queue > 0
-            && sender_m2a_queue == receiver_m2a_queue;
+        let wants_a2m = sender_a2m_queue > 0 || receiver_a2m_queue > 0;
+        let wants_m2a = sender_m2a_queue > 0 || receiver_m2a_queue > 0;
 
         wants_a2m || wants_m2a
     }

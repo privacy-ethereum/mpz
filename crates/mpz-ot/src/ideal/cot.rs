@@ -1,7 +1,11 @@
 //! Ideal functionality for correlated OT.
 
 use async_trait::async_trait;
-use mpz_common::Flush;
+
+use mpz_common::{
+    ideal::{call_sync, CallSync},
+    Flush,
+};
 use mpz_core::Block;
 use mpz_ot_core::{
     cot::{COTReceiver, COTSender},
@@ -11,15 +15,20 @@ use mpz_ot_core::{
 /// Returns a new ideal COT sender and receiver.
 pub fn ideal_cot(delta: Block) -> (IdealCOTSender, IdealCOTReceiver) {
     let core = Core::new(delta);
+    let (sync_0, sync_1) = call_sync();
     (
-        IdealCOTSender { core: core.clone() },
-        IdealCOTReceiver { core },
+        IdealCOTSender {
+            core: core.clone(),
+            sync: sync_0,
+        },
+        IdealCOTReceiver { core, sync: sync_1 },
     )
 }
 
 /// Ideal COT sender.
 pub struct IdealCOTSender {
     core: Core,
+    sync: CallSync,
 }
 
 impl COTSender<Block> for IdealCOTSender {
@@ -53,7 +62,10 @@ impl<Ctx> Flush<Ctx> for IdealCOTSender {
 
     async fn flush(&mut self, _ctx: &mut Ctx) -> Result<(), Self::Error> {
         if self.core.wants_flush() {
-            self.core.flush().map_err(IdealCOTError::from)?;
+            self.sync
+                .call(|| self.core.flush().map_err(IdealCOTError::from))
+                .await
+                .transpose()?;
         }
 
         Ok(())
@@ -63,6 +75,7 @@ impl<Ctx> Flush<Ctx> for IdealCOTSender {
 /// Ideal COT receiver.
 pub struct IdealCOTReceiver {
     core: Core,
+    sync: CallSync,
 }
 
 impl COTReceiver<bool, Block> for IdealCOTReceiver {
@@ -92,7 +105,10 @@ impl<Ctx> Flush<Ctx> for IdealCOTReceiver {
 
     async fn flush(&mut self, _ctx: &mut Ctx) -> Result<(), Self::Error> {
         if self.core.wants_flush() {
-            self.core.flush().map_err(IdealCOTError::from)?;
+            self.sync
+                .call(|| self.core.flush().map_err(IdealCOTError::from))
+                .await
+                .transpose()?;
         }
 
         Ok(())

@@ -1,8 +1,11 @@
 //! Ideal functionalities.
 
-use crate::{AdditiveToMultiplicative, MultiplicativeToAdditive};
 use async_trait::async_trait;
-use mpz_common::Flush;
+
+use mpz_common::{
+    ideal::{call_sync, CallSync},
+    Flush,
+};
 use mpz_core::Block;
 use mpz_fields::Field;
 use mpz_share_conversion_core::ideal::{
@@ -10,20 +13,32 @@ use mpz_share_conversion_core::ideal::{
     IdealShareConvertReceiver as CoreReceiver, IdealShareConvertSender as CoreSender,
 };
 
+use crate::{AdditiveToMultiplicative, MultiplicativeToAdditive};
+
 /// Create a pair of ideal share converters.
 pub fn ideal_share_convert<F>(
     seed: Block,
 ) -> (IdealShareConvertSender<F>, IdealShareConvertReceiver<F>) {
     let (core_sender, core_receiver) = core_ideal_share_convert(seed);
+    let (sync_0, sync_1) = call_sync();
     (
-        IdealShareConvertSender(core_sender),
-        IdealShareConvertReceiver(core_receiver),
+        IdealShareConvertSender {
+            core: core_sender,
+            sync: sync_0,
+        },
+        IdealShareConvertReceiver {
+            core: core_receiver,
+            sync: sync_1,
+        },
     )
 }
 
 /// Ideal share conversion sender.
 #[derive(Debug)]
-pub struct IdealShareConvertSender<F>(CoreSender<F>);
+pub struct IdealShareConvertSender<F> {
+    core: CoreSender<F>,
+    sync: CallSync,
+}
 
 impl<F> AdditiveToMultiplicative<F> for IdealShareConvertSender<F>
 where
@@ -33,11 +48,11 @@ where
     type Future = <CoreSender<F> as AdditiveToMultiplicative<F>>::Future;
 
     fn alloc(&mut self, count: usize) -> Result<(), Self::Error> {
-        AdditiveToMultiplicative::alloc(&mut self.0, count)
+        AdditiveToMultiplicative::alloc(&mut self.core, count)
     }
 
     fn queue_to_multiplicative(&mut self, inputs: &[F]) -> Result<Self::Future, Self::Error> {
-        self.0.queue_to_multiplicative(inputs)
+        self.core.queue_to_multiplicative(inputs)
     }
 }
 
@@ -49,11 +64,11 @@ where
     type Future = <CoreSender<F> as MultiplicativeToAdditive<F>>::Future;
 
     fn alloc(&mut self, count: usize) -> Result<(), Self::Error> {
-        MultiplicativeToAdditive::alloc(&mut self.0, count)
+        MultiplicativeToAdditive::alloc(&mut self.core, count)
     }
 
     fn queue_to_additive(&mut self, inputs: &[F]) -> Result<Self::Future, Self::Error> {
-        self.0.queue_to_additive(inputs)
+        self.core.queue_to_additive(inputs)
     }
 }
 
@@ -65,12 +80,15 @@ where
     type Error = IdealShareConvertError;
 
     fn wants_flush(&self) -> bool {
-        self.0.wants_flush()
+        self.core.wants_flush()
     }
 
     async fn flush(&mut self, _ctx: &mut Ctx) -> Result<(), Self::Error> {
-        if self.0.wants_flush() {
-            self.0.flush()?;
+        if self.core.wants_flush() {
+            self.sync
+                .call(|| self.core.flush().map_err(IdealShareConvertError::from))
+                .await
+                .transpose()?;
         }
 
         Ok(())
@@ -79,7 +97,10 @@ where
 
 /// Ideal share conversion receiver.
 #[derive(Debug)]
-pub struct IdealShareConvertReceiver<F>(CoreReceiver<F>);
+pub struct IdealShareConvertReceiver<F> {
+    core: CoreReceiver<F>,
+    sync: CallSync,
+}
 
 impl<F> AdditiveToMultiplicative<F> for IdealShareConvertReceiver<F>
 where
@@ -89,11 +110,11 @@ where
     type Future = <CoreReceiver<F> as AdditiveToMultiplicative<F>>::Future;
 
     fn alloc(&mut self, count: usize) -> Result<(), Self::Error> {
-        AdditiveToMultiplicative::alloc(&mut self.0, count)
+        AdditiveToMultiplicative::alloc(&mut self.core, count)
     }
 
     fn queue_to_multiplicative(&mut self, inputs: &[F]) -> Result<Self::Future, Self::Error> {
-        self.0.queue_to_multiplicative(inputs)
+        self.core.queue_to_multiplicative(inputs)
     }
 }
 
@@ -105,11 +126,11 @@ where
     type Future = <CoreReceiver<F> as MultiplicativeToAdditive<F>>::Future;
 
     fn alloc(&mut self, count: usize) -> Result<(), Self::Error> {
-        MultiplicativeToAdditive::alloc(&mut self.0, count)
+        MultiplicativeToAdditive::alloc(&mut self.core, count)
     }
 
     fn queue_to_additive(&mut self, inputs: &[F]) -> Result<Self::Future, Self::Error> {
-        self.0.queue_to_additive(inputs)
+        self.core.queue_to_additive(inputs)
     }
 }
 
@@ -121,12 +142,15 @@ where
     type Error = IdealShareConvertError;
 
     fn wants_flush(&self) -> bool {
-        self.0.wants_flush()
+        self.core.wants_flush()
     }
 
     async fn flush(&mut self, _ctx: &mut Ctx) -> Result<(), Self::Error> {
-        if self.0.wants_flush() {
-            self.0.flush()?;
+        if self.core.wants_flush() {
+            self.sync
+                .call(|| self.core.flush().map_err(IdealShareConvertError::from))
+                .await
+                .transpose()?;
         }
 
         Ok(())

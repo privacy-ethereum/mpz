@@ -1,37 +1,40 @@
 //! Ideal ROLE.
 
 use async_trait::async_trait;
-use mpz_common::{Context, Flush};
-use mpz_core::Block;
+use rand::{rngs::StdRng, Rng, SeedableRng};
+
+use mpz_common::{
+    ideal::{call_sync, CallSync},
+    Context, Flush,
+};
 use mpz_fields::Field;
 use mpz_ole_core::{
     ideal::{IdealROLE as Core, IdealROLEError},
     ROLEReceiver, ROLESender, ROLESenderOutput,
 };
 
-/// Ideal ROLE.
-#[derive(Debug, Clone)]
-pub struct IdealROLE<F> {
+/// Returns a new ideal ROLE sender and receiver.
+pub fn ideal_role<F: Field>() -> (IdealROLESender<F>, IdealROLEReceiver<F>) {
+    let mut rng = StdRng::seed_from_u64(0);
+    let core = Core::new(rng.gen());
+    let (sync_0, sync_1) = call_sync();
+    (
+        IdealROLESender {
+            core: core.clone(),
+            sync: sync_0,
+        },
+        IdealROLEReceiver { core, sync: sync_1 },
+    )
+}
+
+/// Ideal ROLE sender.
+#[derive(Debug)]
+pub struct IdealROLESender<F> {
     core: Core<F>,
+    sync: CallSync,
 }
 
-impl<F> IdealROLE<F>
-where
-    F: Field,
-{
-    /// Create a new ideal ROLE.
-    ///
-    /// # Arguments
-    ///
-    /// * `seed` - PRG seed.
-    pub fn new(seed: Block) -> Self {
-        Self {
-            core: Core::new(seed),
-        }
-    }
-}
-
-impl<F> ROLESender<F> for IdealROLE<F>
+impl<F> ROLESender<F> for IdealROLESender<F>
 where
     F: Field,
 {
@@ -55,7 +58,38 @@ where
     }
 }
 
-impl<F> ROLEReceiver<F> for IdealROLE<F>
+#[async_trait]
+impl<Ctx, F> Flush<Ctx> for IdealROLESender<F>
+where
+    Ctx: Context,
+    F: Field,
+{
+    type Error = IdealROLEError;
+
+    fn wants_flush(&self) -> bool {
+        self.core.wants_flush()
+    }
+
+    async fn flush(&mut self, _ctx: &mut Ctx) -> Result<(), Self::Error> {
+        if self.core.wants_flush() {
+            self.sync
+                .call(|| self.core.flush().map_err(IdealROLEError::from))
+                .await
+                .transpose()?;
+        }
+
+        Ok(())
+    }
+}
+
+/// Ideal ROLE Receiver.
+#[derive(Debug)]
+pub struct IdealROLEReceiver<F> {
+    core: Core<F>,
+    sync: CallSync,
+}
+
+impl<F> ROLEReceiver<F> for IdealROLEReceiver<F>
 where
     F: Field,
 {
@@ -83,7 +117,7 @@ where
 }
 
 #[async_trait]
-impl<Ctx, F> Flush<Ctx> for IdealROLE<F>
+impl<Ctx, F> Flush<Ctx> for IdealROLEReceiver<F>
 where
     Ctx: Context,
     F: Field,
@@ -96,7 +130,10 @@ where
 
     async fn flush(&mut self, _ctx: &mut Ctx) -> Result<(), Self::Error> {
         if self.core.wants_flush() {
-            self.core.flush()?;
+            self.sync
+                .call(|| self.core.flush().map_err(IdealROLEError::from))
+                .await
+                .transpose()?;
         }
 
         Ok(())

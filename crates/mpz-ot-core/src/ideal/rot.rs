@@ -81,7 +81,7 @@ impl IdealROT {
         let sender_count = this.sender_state.alloc;
         let receiver_count = this.receiver_state.alloc;
 
-        sender_count > 0 && receiver_count > 0 && sender_count == receiver_count
+        sender_count > 0 || receiver_count > 0
     }
 
     /// Flushes the functionality.

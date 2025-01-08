@@ -28,7 +28,11 @@ rand.workspace = true
 [dev-dependencies]
 mpz-share-conversion-core = { workspace = true, features = ["test-utils"] }
 mpz-ole = { workspace = true, features = ["test-utils"] }
-mpz-common = { workspace = true, features = ["executor", "test-utils"] }
+mpz-common = { workspace = true, features = [
+    "executor",
+    "test-utils",
+    "ideal",
+] }
 mpz-core.workspace = true
 tokio = { workspace = true, features = [
     "net",
