@@ -88,36 +88,27 @@ impl MPCOTSender<Initialized> {
                 )
             }
             Initialized::Regular => {
-                // The range of each interval.
-                let k = (len + count - 1) / count;
-
-                let spcot_lengths = if len % count == 0 {
-                    vec![k; count]
-                } else {
-                    let mut tmp = vec![k; count - 1];
-                    tmp.push(len % k);
-                    if tmp.iter().sum::<usize>() != len {
-                        return Err(ErrorRepr::Params {
-                            count,
-                            len,
-                            reason: "parameters are not regular".to_string(),
-                        }
-                        .into());
-                    } else {
-                        tmp
+                let k = len / count;
+                if len % count != 0 {
+                    return Err(ErrorRepr::Params {
+                        count,
+                        len,
+                        reason: "len should be a multiple of count".to_string(),
                     }
-                };
+                    .into());
+                } else if !k.is_power_of_two() {
+                    return Err(ErrorRepr::Params {
+                        count,
+                        len,
+                        reason: "regular interval length must be a power of two".to_string(),
+                    }
+                    .into());
+                }
 
-                let spcot_log2_lengths = spcot_lengths
-                    .iter()
-                    .map(|len| {
-                        len.checked_next_power_of_two()
-                            .expect("len should be less than usize::MAX / 2 - 1")
-                            .ilog2() as usize
-                    })
-                    .collect();
+                let log2_len = k.ilog2() as usize;
+                let spcot_log2_lengths = (0..count).map(|_| log2_len).collect();
 
-                (Extension::Regular { spcot_lengths }, spcot_log2_lengths)
+                (Extension::Regular { len }, spcot_log2_lengths)
             }
         };
 
@@ -159,8 +150,7 @@ impl MPCOTSender<Extension> {
 
                 Ok(res)
             }
-            Extension::Regular { spcot_lengths } => {
-                let len = spcot_lengths.iter().sum::<usize>();
+            Extension::Regular { len } => {
                 if vs.len() != len {
                     return Err(ErrorRepr::SPCOTLength {
                         expected: len,
@@ -224,7 +214,7 @@ pub(crate) mod state {
             spcot_lengths: Vec<usize>,
         },
         Regular {
-            spcot_lengths: Vec<usize>,
+            len: usize,
         },
     }
 

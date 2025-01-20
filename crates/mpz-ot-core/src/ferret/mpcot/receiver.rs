@@ -52,8 +52,9 @@ impl MPCOTReceiver<state::Initialized> {
     ) -> Result<(MPCOTReceiver<state::Extension>, Vec<usize>, Vec<usize>)> {
         if idxs.len() > len {
             return Err(ErrorRepr::Params {
-                idxs: idxs.len(),
+                count: idxs.len(),
                 len: len as usize,
+                reason: "indices cannot exceed vector length".to_string(),
             }
             .into());
         }
@@ -98,30 +99,22 @@ impl MPCOTReceiver<state::Initialized> {
             }
             Initialized::Regular => {
                 let count = idxs.len();
-
-                // The range of each interval.
-                let k = (len + count - 1) / count;
-
-                let spcot_lengths = if len % count == 0 {
-                    vec![k as usize; count as usize]
-                } else {
-                    let mut tmp = vec![k as usize; (count - 1) as usize];
-                    tmp.push((len % k) as usize);
-                    if tmp.iter().sum::<usize>() != len as usize {
-                        todo!()
-                    } else {
-                        tmp
+                let k = len / count;
+                if len % count != 0 {
+                    return Err(ErrorRepr::Params {
+                        count,
+                        len,
+                        reason: "len should be a multiple of count".to_string(),
                     }
-                };
-
-                let spcot_log2_lengths = spcot_lengths
-                    .iter()
-                    .map(|len| {
-                        len.checked_next_power_of_two()
-                            .expect("len should be less than usize::MAX / 2 - 1")
-                            .ilog2() as usize
-                    })
-                    .collect();
+                    .into());
+                } else if !k.is_power_of_two() {
+                    return Err(ErrorRepr::Params {
+                        count,
+                        len,
+                        reason: "regular interval length must be a power of two".to_string(),
+                    }
+                    .into());
+                }
 
                 if !idxs
                     .iter()
@@ -131,6 +124,8 @@ impl MPCOTReceiver<state::Initialized> {
                     return Err(ErrorRepr::NotRegular.into());
                 }
 
+                let log2_len = k.ilog2() as usize;
+                let spcot_log2_lengths = (0..count).map(|_| log2_len).collect();
                 let idxs = idxs.iter().map(|&idx| idx % k).collect();
 
                 (Extension::Regular { len }, spcot_log2_lengths, idxs)
@@ -196,8 +191,12 @@ pub(crate) struct MPCOTReceiverError(#[from] ErrorRepr);
 #[derive(Debug, thiserror::Error)]
 #[error("MPCOT sender error: {0}")]
 enum ErrorRepr {
-    #[error("invalid parameters, idxs.len(): {idxs} > len: {len}")]
-    Params { idxs: usize, len: usize },
+    #[error("invalid parameters, count: {count}, len: {len}: {reason}")]
+    Params {
+        count: usize,
+        len: usize,
+        reason: String,
+    },
     #[error("input indices are not regular")]
     NotRegular,
     #[error("invalid length of SPCOT vector, expected: {expected}, actual: {actual}")]
