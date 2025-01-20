@@ -54,13 +54,20 @@ impl<COT> Generator<COT> {
     // Marks the outputs of preprocessed calls as executed.
     fn mark_executed(&mut self) -> Result<()> {
         let mut store = self.store.try_lock().unwrap();
-        let outputs = self
-            .preprocessed
-            .filter_drain(|(inputs, _)| inputs.iter().all(|input| store.is_committed(*input)))
-            .map(|(_, output)| output)
-            .collect::<Vec<_>>();
-        for output in outputs {
-            store.mark_output_complete(output)?;
+        loop {
+            let outputs = self
+                .preprocessed
+                .filter_drain(|(inputs, _)| inputs.iter().all(|input| store.is_committed(*input)))
+                .map(|(_, output)| output)
+                .collect::<Vec<_>>();
+
+            if outputs.is_empty() {
+                break;
+            }
+
+            for output in outputs {
+                store.mark_output_complete(output)?;
+            }
         }
 
         Ok(())

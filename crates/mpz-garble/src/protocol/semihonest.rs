@@ -114,11 +114,22 @@ mod tests {
                 gen.mark_private(key).unwrap();
                 gen.mark_blind(msg).unwrap();
 
-                let ciphertext: Array<U8, 16> = gen
+                let output: Array<U8, 16> = gen
                     .call(Call::new(AES128.clone()).arg(key).arg(msg).build().unwrap())
                     .unwrap();
 
-                let ciphertext = gen.decode(ciphertext).unwrap();
+                // Chain the AES calls.
+                let ciphertext: Array<U8, 16> = gen
+                    .call(
+                        Call::new(AES128.clone())
+                            .arg(key)
+                            .arg(output)
+                            .build()
+                            .unwrap(),
+                    )
+                    .unwrap();
+
+                let mut ciphertext = gen.decode(ciphertext).unwrap();
 
                 gen.preprocess(&mut ctx_a).await.unwrap();
 
@@ -130,7 +141,7 @@ mod tests {
                 gen.execute(&mut ctx_a).await.unwrap();
                 gen.flush(&mut ctx_a).await.unwrap();
 
-                ciphertext.await.unwrap()
+                ciphertext.try_recv().unwrap().unwrap()
             },
             async {
                 let key: Array<U8, 16> = ev.alloc().unwrap();
@@ -139,11 +150,22 @@ mod tests {
                 ev.mark_blind(key).unwrap();
                 ev.mark_private(msg).unwrap();
 
-                let ciphertext: Array<U8, 16> = ev
+                let output: Array<U8, 16> = ev
                     .call(Call::new(AES128.clone()).arg(key).arg(msg).build().unwrap())
                     .unwrap();
 
-                let ciphertext = ev.decode(ciphertext).unwrap();
+                // Chain the AES calls.
+                let ciphertext: Array<U8, 16> = ev
+                    .call(
+                        Call::new(AES128.clone())
+                            .arg(key)
+                            .arg(output)
+                            .build()
+                            .unwrap(),
+                    )
+                    .unwrap();
+
+                let mut ciphertext = ev.decode(ciphertext).unwrap();
 
                 ev.preprocess(&mut ctx_b).await.unwrap();
 
@@ -155,7 +177,7 @@ mod tests {
                 ev.execute(&mut ctx_b).await.unwrap();
                 ev.flush(&mut ctx_b).await.unwrap();
 
-                ciphertext.await.unwrap()
+                ciphertext.try_recv().unwrap().unwrap()
             }
         );
 

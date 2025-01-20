@@ -74,38 +74,46 @@ impl<COT> Evaluator<COT> {
 
     fn execute_preprocessed(&mut self) -> Result<()> {
         let mut store = self.store.try_lock().unwrap();
-        let (calls, outputs): (Vec<_>, Vec<_>) = self
-            .preprocessed
-            .extract_if(|_, (call, _)| call.inputs().iter().all(|input| store.is_committed(*input)))
-            .map(|(output, (call, garbled_circuit))| {
-                let (circ, inputs) = call.into_parts();
-                let mut input_macs = Vec::with_capacity(circ.input_len());
-                for input in inputs {
-                    input_macs.extend_from_slice(
-                        store
-                            .try_get_macs(input)
-                            .expect("committed MACs should be set"),
-                    );
-                }
+        loop {
+            let (calls, outputs): (Vec<_>, Vec<_>) = self
+                .preprocessed
+                .extract_if(|_, (call, _)| {
+                    call.inputs().iter().all(|input| store.is_committed(*input))
+                })
+                .map(|(output, (call, garbled_circuit))| {
+                    let (circ, inputs) = call.into_parts();
+                    let mut input_macs = Vec::with_capacity(circ.input_len());
+                    for input in inputs {
+                        input_macs.extend_from_slice(
+                            store
+                                .try_get_macs(input)
+                                .expect("committed MACs should be set"),
+                        );
+                    }
 
-                ((circ, input_macs, garbled_circuit), output)
-            })
-            .unzip();
+                    ((circ, input_macs, garbled_circuit), output)
+                })
+                .unzip();
 
-        for (
-            EvaluatorOutput {
-                outputs: output_macs,
-            },
-            output,
-        ) in evaluate_garbled_circuits(calls)
-            .map_err(crate::evaluator::EvaluatorError::from)?
-            .into_iter()
-            .zip(outputs)
-        {
-            store.set_output(output, &output_macs)?;
+            if calls.is_empty() {
+                break;
+            }
+
+            for (
+                EvaluatorOutput {
+                    outputs: output_macs,
+                },
+                output,
+            ) in evaluate_garbled_circuits(calls)
+                .map_err(crate::evaluator::EvaluatorError::from)?
+                .into_iter()
+                .zip(outputs)
+            {
+                store.set_output(output, &output_macs)?;
+            }
+
+            store.flush_decode()?;
         }
-
-        store.flush_decode()?;
 
         Ok(())
     }
