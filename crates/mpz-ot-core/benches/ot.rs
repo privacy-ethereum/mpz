@@ -1,8 +1,11 @@
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use itybity::ToBits;
-use mpz_core::Block;
+use mpz_core::{lpn::LpnType, Block};
 use mpz_ot_core::{
-    chou_orlandi, kos,
+    chou_orlandi,
+    ferret::{self, FerretConfig},
+    ideal::rcot::IdealRCOT,
+    kos,
     ot::{OTReceiver, OTSender},
     rcot::{RCOTReceiver, RCOTSender},
 };
@@ -12,6 +15,7 @@ use rand_chacha::ChaCha12Rng;
 fn chou_orlandi(c: &mut Criterion) {
     let mut group = c.benchmark_group("chou_orlandi");
     for n in [128, 256, 1024] {
+        group.throughput(Throughput::Elements(n as u64));
         group.bench_with_input(BenchmarkId::from_parameter(n), &n, |b, &n| {
             let msgs = vec![[Block::ONES; 2]; n];
             let mut rng = ChaCha12Rng::seed_from_u64(0);
@@ -39,6 +43,7 @@ fn chou_orlandi(c: &mut Criterion) {
 fn kos(c: &mut Criterion) {
     let mut group = c.benchmark_group("kos");
     for n in [1024, 262144] {
+        group.throughput(Throughput::Elements(n as u64));
         group.bench_with_input(BenchmarkId::from_parameter(n), &n, |b, &n| {
             let mut rng = ChaCha12Rng::seed_from_u64(0);
             let delta = Block::random(&mut rng);
@@ -77,6 +82,55 @@ fn kos(c: &mut Criterion) {
     }
 }
 
+fn ferret(c: &mut Criterion) {
+    let mut group = c.benchmark_group("ferret");
+    for ty in [LpnType::Uniform, LpnType::Regular] {
+        let ty_str = match ty {
+            LpnType::Uniform => "uniform",
+            LpnType::Regular => "regular",
+        };
+
+        for n in [262144, 1_000_000] {
+            group.throughput(Throughput::Elements(n as u64));
+            group.bench_with_input(BenchmarkId::new(ty_str, n), &n, |b, &n| {
+                let mut rng = ChaCha12Rng::seed_from_u64(0);
+                let delta = Block::random(&mut rng);
+
+                let mut builder = FerretConfig::builder();
+                builder.lpn_type(ty);
+                let config = builder.build().unwrap();
+
+                b.iter(|| {
+                    let cot = IdealRCOT::new(rng.gen(), delta);
+                    let mut sender = ferret::Sender::new(rng.gen(), config.clone(), cot.clone());
+                    let mut receiver = ferret::Receiver::new(rng.gen(), config.clone(), cot);
+
+                    let init = receiver.initialize().unwrap();
+                    sender.initialize(init).unwrap();
+                    sender.alloc_bootstrap().unwrap();
+                    receiver.alloc_bootstrap().unwrap();
+                    sender.acquire_cot().flush().unwrap();
+                    receiver.acquire_cot().flush().unwrap();
+                    sender.alloc(n).unwrap();
+                    receiver.alloc(n).unwrap();
+
+                    while sender.wants_extend() && receiver.wants_extend() {
+                        sender.start_extend().unwrap();
+                        let msg = receiver.start_extend().unwrap();
+                        let msg = sender.extend(msg).unwrap();
+                        let msg = receiver.extend(msg).unwrap();
+                        let msg = sender.check(msg).unwrap();
+                        receiver.finish_extend(msg).unwrap();
+                        sender.finish_extend().unwrap();
+                    }
+
+                    black_box((sender, receiver));
+                })
+            });
+        }
+    }
+}
+
 criterion_group! {
     name = chou_orlandi_benches;
     config = Criterion::default().sample_size(50);
@@ -89,4 +143,10 @@ criterion_group! {
     targets = kos
 }
 
-criterion_main!(chou_orlandi_benches, kos_benches);
+criterion_group! {
+    name = ferret_benches;
+    config = Criterion::default().sample_size(10);
+    targets = ferret
+}
+
+criterion_main!(chou_orlandi_benches, kos_benches, ferret_benches);

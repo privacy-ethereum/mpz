@@ -1,10 +1,10 @@
-//! Correlated random oblivious transfer extension protocol with leakage based on
-//! [`KOS15`](https://eprint.iacr.org/archive/2015/546/1433798896.pdf).
+//! Correlated random oblivious transfer extension protocol with leakage based
+//! on [`KOS15`](https://eprint.iacr.org/archive/2015/546/1433798896.pdf).
 //!
 //! # Warning
 //!
-//! The user of this protocol must carefully consider if the leakage introduced in this protocol
-//! is acceptable for their specific application.
+//! The user of this protocol must carefully consider if the leakage introduced
+//! in this protocol is acceptable for their specific application.
 
 mod receiver;
 mod sender;
@@ -34,6 +34,6 @@ mod tests {
         let sender = Sender::new(SenderConfig::default(), delta, base_receiver);
         let receiver = Receiver::new(ReceiverConfig::default(), base_sender);
 
-        test_rcot(sender, receiver, 1).await;
+        test_rcot(sender, receiver, 128, 1).await;
     }
 }

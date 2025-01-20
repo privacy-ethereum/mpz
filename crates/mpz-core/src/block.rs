@@ -7,6 +7,10 @@ use generic_array::{typenum::consts::U16, GenericArray};
 use itybity::{BitIterable, BitLength, FromBitIterator, GetBit, Lsb0, Msb0};
 use rand::{distributions::Standard, prelude::Distribution, CryptoRng, Rng};
 use serde::{Deserialize, Serialize};
+use std::{
+    fmt::{Debug, Display},
+    slice::from_raw_parts,
+};
 
 /// A block of 128 bits
 #[repr(transparent)]
@@ -147,6 +151,28 @@ impl Block {
         bytemuck::cast([x[1], x[0]])
     }
 
+    /// Converts a slice of blocks to a slice of bytes.
+    pub fn as_flattened_bytes(slice: &[Self]) -> &[u8] {
+        // This is equivalent to `<[[u8; 16]]>::as_flattened`
+
+        // SAFETY: `slice.len() * Block::LEN` cannot overflow because `slice` is
+        // already in the address space.
+        let len = unsafe { slice.len().unchecked_mul(Self::LEN) };
+        // SAFETY: `[u8]` is layout-identical to `[u8; 16]` of which block is a newtype.
+        unsafe { from_raw_parts(slice.as_ptr().cast(), len) }
+    }
+
+    /// Converts a slice of block arrays to a slice of bytes.
+    pub fn array_as_flattened_bytes<const N: usize>(slice: &[[Self; N]]) -> &[u8] {
+        // This is equivalent to `<[[u8; 16 * N]]>::as_flattened`
+
+        // SAFETY: `slice.len() * N * Block::LEN` cannot overflow because `slice` is
+        // already in the address space.
+        let len = unsafe { slice.len().unchecked_mul(N * Self::LEN) };
+        // SAFETY: `[u8]` is layout-identical to `[u8; 16]` of which block is a newtype.
+        unsafe { from_raw_parts(slice.as_ptr().cast(), len) }
+    }
+
     /// Converts a block to a [`GenericArray<u8,
     /// U16>`](cipher::generic_array::GenericArray) from the [`generic-array`](https://docs.rs/generic-array/latest/generic_array/) crate.
     #[allow(dead_code)]
@@ -179,6 +205,17 @@ impl Block {
         // memory layout. See https://github.com/fizyk20/generic-array/blob/37dc6aefc3ed5c423ad7402d4febf06a3e78a223/src/lib.rs#L847-L854
         // TODO: Use methods provided by `generic-array` once 1.0 is released.
         unsafe { std::mem::transmute(slice) }
+    }
+}
+
+impl Display for Block {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Block(")?;
+        for byte in self.0.iter() {
+            write!(f, "{:02x}", byte)?;
+        }
+        f.write_str(")")?;
+        Ok(())
     }
 }
 

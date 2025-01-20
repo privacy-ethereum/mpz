@@ -109,8 +109,8 @@ impl FixedKeyAes {
             .for_each(|(a, b)| *a ^= *b);
     }
 
-    /// Circular correlation-robust hash function instantiated using fixed-key AES
-    /// (cf.<https://eprint.iacr.org/2019/074>, §7.3).
+    /// Circular correlation-robust hash function instantiated using fixed-key
+    /// AES (cf.<https://eprint.iacr.org/2019/074>, §7.3).
     ///
     /// `π(σ(x)) ⊕ σ(x)`, where `π` is instantiated using fixed-key AES
     ///
@@ -120,8 +120,8 @@ impl FixedKeyAes {
         self.cr(Block::sigma(block))
     }
 
-    /// Circular correlation-robust hash function instantiated using fixed-key AES
-    /// (cf.<https://eprint.iacr.org/2019/074>, §7.3).
+    /// Circular correlation-robust hash function instantiated using fixed-key
+    /// AES (cf.<https://eprint.iacr.org/2019/074>, §7.3).
     ///
     /// `π(σ(x)) ⊕ σ(x)`, where `π` is instantiated using fixed-key AES
     ///
@@ -159,6 +159,11 @@ impl AesEncryptor {
         blk
     }
 
+    /// Encrypt a block in-place.
+    pub fn encrypt_block_inplace(&self, blk: &mut Block) {
+        self.0.encrypt_block(blk.as_generic_array_mut());
+    }
+
     /// Encrypt many blocks in-place.
     #[inline(always)]
     pub fn encrypt_many_blocks<const N: usize>(&self, blks: &mut [Block; N]) {
@@ -177,7 +182,8 @@ impl AesEncryptor {
     ///
     /// Each batch of NM blocks is encrypted by a corresponding AES key.
     ///
-    /// **Only the first NK * NM blocks of blks are handled, the rest are ignored.**
+    /// **Only the first NK * NM blocks of blks are handled, the rest are
+    /// ignored.**
     ///
     /// # Arguments
     ///
