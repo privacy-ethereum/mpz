@@ -1,8 +1,8 @@
 mod prover;
 mod verifier;
 
-pub use prover::{Prover, ProverError};
-pub use verifier::{Verifier, VerifierError};
+pub use prover::Prover;
+pub use verifier::Verifier;
 
 #[cfg(test)]
 mod tests {

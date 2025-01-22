@@ -16,15 +16,9 @@ use mpz_core::{bitvec::BitVec, Block};
 use mpz_garble_core::{evaluate_garbled_circuits, EvaluatorOutput, GarbledCircuit};
 use mpz_memory_core::{binary::Binary, DecodeFuture, Memory, Slice, View};
 use mpz_ot::cot::COTReceiver;
-use mpz_vm_core::{Call, Callable, Execute};
+use mpz_vm_core::{Call, Callable, Execute, Result, VmError};
 
-use crate::{
-    evaluator::receive_garbled_circuit,
-    store::{EvaluatorStore, EvaluatorStoreError},
-};
-
-type Result<T, E = EvaluatorError> = core::result::Result<T, E>;
-type Error = EvaluatorError;
+use crate::{evaluator::receive_garbled_circuit, store::EvaluatorStore};
 
 /// Semi-honest evaluator.
 #[derive(Debug)]
@@ -105,14 +99,16 @@ impl<COT> Evaluator<COT> {
                 },
                 output,
             ) in evaluate_garbled_circuits(calls)
-                .map_err(crate::evaluator::EvaluatorError::from)?
+                .map_err(VmError::execute)?
                 .into_iter()
                 .zip(outputs)
             {
-                store.set_output(output, &output_macs)?;
+                store
+                    .set_output(output, &output_macs)
+                    .map_err(VmError::memory)?;
             }
 
-            store.flush_decode()?;
+            store.flush_decode().map_err(VmError::memory)?;
         }
 
         Ok(())
@@ -120,14 +116,14 @@ impl<COT> Evaluator<COT> {
 }
 
 impl<COT> Memory<Binary> for Evaluator<COT> {
-    type Error = Error;
+    type Error = VmError;
 
     fn alloc_raw(&mut self, size: usize) -> Result<Slice> {
         self.store
             .try_lock()
             .unwrap()
             .alloc_raw(size)
-            .map_err(Error::from)
+            .map_err(VmError::memory)
     }
 
     fn assign_raw(&mut self, slice: Slice, value: BitVec) -> Result<()> {
@@ -135,7 +131,7 @@ impl<COT> Memory<Binary> for Evaluator<COT> {
             .try_lock()
             .unwrap()
             .assign_raw(slice, value)
-            .map_err(Error::from)
+            .map_err(VmError::memory)
     }
 
     fn commit_raw(&mut self, slice: Slice) -> Result<()> {
@@ -143,7 +139,7 @@ impl<COT> Memory<Binary> for Evaluator<COT> {
             .try_lock()
             .unwrap()
             .commit_raw(slice)
-            .map_err(Error::from)
+            .map_err(VmError::memory)
     }
 
     fn get_raw(&self, slice: Slice) -> Result<Option<BitVec>> {
@@ -151,7 +147,7 @@ impl<COT> Memory<Binary> for Evaluator<COT> {
             .try_lock()
             .unwrap()
             .get_raw(slice)
-            .map_err(Error::from)
+            .map_err(VmError::memory)
     }
 
     fn decode_raw(&mut self, slice: Slice) -> Result<DecodeFuture<BitVec>> {
@@ -159,7 +155,7 @@ impl<COT> Memory<Binary> for Evaluator<COT> {
             .try_lock()
             .unwrap()
             .decode_raw(slice)
-            .map_err(Error::from)
+            .map_err(VmError::memory)
     }
 }
 
@@ -167,14 +163,14 @@ impl<COT> View<Binary> for Evaluator<COT>
 where
     COT: COTReceiver<bool, Block>,
 {
-    type Error = Error;
+    type Error = VmError;
 
     fn mark_public_raw(&mut self, slice: Slice) -> Result<()> {
         self.store
             .try_lock()
             .unwrap()
             .mark_public_raw(slice)
-            .map_err(Error::from)
+            .map_err(VmError::view)
     }
 
     fn mark_private_raw(&mut self, slice: Slice) -> Result<()> {
@@ -182,7 +178,7 @@ where
             .try_lock()
             .unwrap()
             .mark_private_raw(slice)
-            .map_err(Error::from)
+            .map_err(VmError::view)
     }
 
     fn mark_blind_raw(&mut self, slice: Slice) -> Result<()> {
@@ -190,17 +186,12 @@ where
             .try_lock()
             .unwrap()
             .mark_blind_raw(slice)
-            .map_err(Error::from)
+            .map_err(VmError::view)
     }
 }
 
 impl<COT> Callable<Binary> for Evaluator<COT> {
-    type Error = Error;
-
-    fn call_raw(
-        &mut self,
-        call: Call,
-    ) -> std::result::Result<Slice, <Self as Callable<Binary>>::Error> {
+    fn call_raw(&mut self, call: Call) -> Result<Slice> {
         let output = self
             .store
             .try_lock()
@@ -218,12 +209,10 @@ where
     COT: COTReceiver<bool, Block> + Flush<Ctx> + Send + 'static,
     COT::Future: Send + 'static,
 {
-    type Error = Error;
-
     async fn flush(&mut self, ctx: &mut Ctx) -> Result<()> {
         let mut store = self.store.try_lock().unwrap();
         if store.wants_flush() {
-            store.flush(ctx).await?;
+            store.flush(ctx).await.map_err(VmError::memory)?;
         }
 
         Ok(())
@@ -232,8 +221,10 @@ where
     async fn preprocess(&mut self, ctx: &mut Ctx) -> Result<()> {
         let f = scope_closure(|ctx, (call, output): (Call, Slice)| {
             async move {
-                let garbled_circuit = receive_garbled_circuit(ctx, call.circ()).await?;
-                Ok::<_, Error>((call, output, garbled_circuit))
+                let garbled_circuit = receive_garbled_circuit(ctx, call.circ())
+                    .await
+                    .map_err(VmError::execute)?;
+                Ok::<_, VmError>((call, output, garbled_circuit))
             }
             .scope_boxed()
         });
@@ -247,14 +238,17 @@ where
 
             let outputs = ctx
                 .map(calls, f, |(call, _)| call.circ().and_count())
-                .await?;
+                .await
+                .map_err(VmError::execute)?;
 
             let mut store = self.store.try_lock().unwrap();
             for output in outputs {
                 let (call, output, garbled_circuit) = output?;
 
                 self.preprocessed.insert(output, (call, garbled_circuit));
-                store.mark_output_preprocessed(output)?;
+                store
+                    .mark_output_preprocessed(output)
+                    .map_err(VmError::memory)?;
             }
         }
 
@@ -280,12 +274,17 @@ where
 
             let outputs = ctx
                 .map(calls, f.clone(), |(call, _)| call.circ().and_count())
-                .await?;
+                .await
+                .map_err(VmError::execute)?;
 
-            outputs.into_iter().collect::<Result<(), Error>>()?;
+            outputs.into_iter().collect::<Result<()>>()?;
         }
 
-        self.store.try_lock().unwrap().flush_decode()?;
+        self.store
+            .try_lock()
+            .unwrap()
+            .flush_decode()
+            .map_err(VmError::memory)?;
 
         Ok(())
     }
@@ -294,7 +293,7 @@ where
 // This is required to help the compiler infer the correct lifetimes.
 fn scope_closure<Ctx, F, R>(f: F) -> F
 where
-    F: for<'a> Fn(&'a mut Ctx, (Call, Slice)) -> ScopedBoxFuture<'static, 'a, Result<R, Error>>
+    F: for<'a> Fn(&'a mut Ctx, (Call, Slice)) -> ScopedBoxFuture<'static, 'a, Result<R>>
         + Clone
         + Send
         + 'static,
@@ -314,57 +313,19 @@ async fn evaluate<Ctx: Context, COT>(
     {
         let lock = store.lock().await;
         for input in inputs {
-            input_macs.extend_from_slice(lock.try_get_macs(input)?);
+            input_macs.extend_from_slice(lock.try_get_macs(input).map_err(VmError::memory)?);
         }
     }
 
     let EvaluatorOutput {
         outputs: output_macs,
-    } = crate::evaluator::evaluate(ctx, circ, input_macs).await?;
+    } = crate::evaluator::evaluate(ctx, circ, input_macs)
+        .await
+        .map_err(VmError::execute)?;
 
     let mut lock = store.lock().await;
-    lock.set_output(output, &output_macs)?;
+    lock.set_output(output, &output_macs)
+        .map_err(VmError::memory)?;
 
     Ok(())
-}
-
-/// Error for [`Evaluator`].
-#[derive(Debug, thiserror::Error)]
-#[error(transparent)]
-pub struct EvaluatorError(#[from] ErrorRepr);
-
-#[derive(Debug, thiserror::Error)]
-enum ErrorRepr {
-    #[error(transparent)]
-    Store(#[from] EvaluatorStoreError),
-    #[error(transparent)]
-    Evaluator(#[from] crate::evaluator::EvaluatorError),
-    #[error(transparent)]
-    Io(#[from] std::io::Error),
-    #[error(transparent)]
-    Context(#[from] mpz_common::ContextError),
-}
-
-impl From<EvaluatorStoreError> for EvaluatorError {
-    fn from(value: EvaluatorStoreError) -> Self {
-        EvaluatorError(ErrorRepr::Store(value))
-    }
-}
-
-impl From<std::io::Error> for EvaluatorError {
-    fn from(value: std::io::Error) -> Self {
-        EvaluatorError(ErrorRepr::Io(value))
-    }
-}
-
-impl From<mpz_common::ContextError> for EvaluatorError {
-    fn from(value: mpz_common::ContextError) -> Self {
-        EvaluatorError(ErrorRepr::Context(value))
-    }
-}
-
-impl From<crate::evaluator::EvaluatorError> for EvaluatorError {
-    fn from(value: crate::evaluator::EvaluatorError) -> Self {
-        EvaluatorError(ErrorRepr::Evaluator(value))
-    }
 }

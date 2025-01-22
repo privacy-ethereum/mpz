@@ -61,7 +61,7 @@ pub async fn evaluate<Ctx: Context>(
 /// Garbled circuit evaluator error.
 #[derive(Debug, thiserror::Error)]
 #[error(transparent)]
-pub struct EvaluatorError(#[from] ErrorRepr);
+pub(crate) struct EvaluatorError(#[from] ErrorRepr);
 
 #[derive(Debug, thiserror::Error)]
 enum ErrorRepr {

@@ -3,8 +3,8 @@
 mod evaluator;
 mod generator;
 
-pub use evaluator::{Evaluator, EvaluatorError};
-pub use generator::{Generator, GeneratorError};
+pub use evaluator::Evaluator;
+pub use generator::Generator;
 
 #[cfg(test)]
 mod tests {

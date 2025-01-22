@@ -1,7 +1,10 @@
 mod call;
+mod error;
 
 pub use call::{Call, CallBuilder, CallError};
+pub use error::VmError;
 pub use mpz_memory_core as memory;
+pub type Result<T> = core::result::Result<T, VmError>;
 
 pub mod prelude {
     pub use crate::{CallableExt, Execute};
@@ -14,36 +17,27 @@ use mpz_memory_core::{Memory, MemoryType, Repr, Slice, View};
 
 /// A virtual machine.
 pub trait Vm<T: MemoryType>:
-    Callable<T, Error = <Self as Vm<T>>::Error>
-    + Memory<T, Error = <Self as Vm<T>>::Error>
-    + View<T, Error = <Self as Vm<T>>::Error>
+    Callable<T> + Memory<T, Error = VmError> + View<T, Error = VmError>
 {
-    /// Error type for the virtual machine.
-    type Error: std::error::Error + Send + Sync + 'static;
 }
 
-impl<T, U, E> Vm<U> for T
+impl<T, U> Vm<U> for T
 where
-    T: ?Sized + Callable<U, Error = E> + Memory<U, Error = E> + View<U, Error = E>,
+    T: ?Sized + Callable<U> + Memory<U, Error = VmError> + View<U, Error = VmError>,
     U: MemoryType,
-    E: std::error::Error + Send + Sync + 'static,
 {
-    type Error = E;
 }
 
 /// Interface for calling functions.
-pub trait Callable<T: MemoryType>: Memory<T, Error = <Self as Callable<T>>::Error> {
-    /// Error type for calling functions.
-    type Error: std::error::Error + Send + Sync + 'static;
-
+pub trait Callable<T: MemoryType> {
     /// Calls a function, returning the output.
-    fn call_raw(&mut self, call: Call) -> Result<Slice, <Self as Callable<T>>::Error>;
+    fn call_raw(&mut self, call: Call) -> Result<Slice>;
 }
 
 /// Extension trait for [`Callable`].
 pub trait CallableExt<T: MemoryType>: Callable<T> {
     /// Calls a function, returning the output.
-    fn call<R>(&mut self, call: Call) -> Result<R, <Self as Callable<T>>::Error>
+    fn call<R>(&mut self, call: Call) -> Result<R>
     where
         R: Repr<T>,
     {
@@ -60,16 +54,28 @@ where
 
 #[async_trait]
 pub trait Execute<Ctx> {
-    type Error: std::error::Error + Send + Sync + 'static;
-
     /// Flushes all memory operations.
     ///
     /// This ensures all memory operations are completed.
-    async fn flush(&mut self, ctx: &mut Ctx) -> Result<(), Self::Error>;
+    async fn flush(&mut self, ctx: &mut Ctx) -> Result<()>;
 
     /// Preprocesses the callstack.
-    async fn preprocess(&mut self, ctx: &mut Ctx) -> Result<(), Self::Error>;
+    async fn preprocess(&mut self, ctx: &mut Ctx) -> Result<()>;
 
     /// Executes the callstack.
-    async fn execute(&mut self, ctx: &mut Ctx) -> Result<(), Self::Error>;
+    async fn execute(&mut self, ctx: &mut Ctx) -> Result<()>;
+}
+
+#[cfg(test)]
+mod tests {
+    use mpz_memory_core::binary::Binary;
+
+    use super::*;
+
+    #[test]
+    fn test_dyn_vm() {
+        fn is_vm<T: ?Sized + Vm<Binary>>() {}
+
+        is_vm::<dyn Vm<Binary>>();
+    }
 }
