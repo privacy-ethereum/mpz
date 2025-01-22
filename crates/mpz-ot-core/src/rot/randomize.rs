@@ -7,7 +7,7 @@ use crate::{
 };
 
 // We have to Box the closure because it's not name-able in the associated type.
-type FnSender = Box<dyn FnOnce(RCOTSenderOutput<Block>) -> ROTSenderOutput<[Block; 2]>>;
+type FnSender = Box<dyn FnOnce(RCOTSenderOutput<Block>) -> ROTSenderOutput<[Block; 2]> + Send>;
 
 /// ROT sender which randomizes the output of an RCOT sender.
 #[derive(Debug)]

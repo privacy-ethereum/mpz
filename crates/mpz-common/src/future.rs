@@ -21,7 +21,7 @@ pub fn new_output<T>() -> (Sender<T>, MaybeDone<T>) {
 ///
 /// This trait extends [`std::future::Future`] for values which can be received
 /// outside of a task context.
-pub trait Output<T>: Future<Output = Result<T, Canceled>> {
+pub trait Output<T>: Future<Output = Result<T, Canceled>> + Send {
     /// Attempts to receive the output outside of a task context, returning
     /// `None` if it is not ready.
     fn try_recv(&mut self) -> Result<Option<T>, Canceled>;
@@ -68,7 +68,10 @@ pub struct MaybeDone<T> {
     recv: oneshot::Receiver<T>,
 }
 
-impl<T> Output<T> for MaybeDone<T> {
+impl<T> Output<T> for MaybeDone<T>
+where
+    T: Send,
+{
     fn try_recv(&mut self) -> Result<Option<T>, Canceled> {
         match self.recv.try_recv() {
             Ok(Some(value)) => Ok(Some(value)),
@@ -114,7 +117,7 @@ impl<I, T, F> Map<I, T, F> {
 impl<I, T, F, O> Output<O> for Map<I, T, F>
 where
     I: Output<T>,
-    F: FnOnce(T) -> O,
+    F: FnOnce(T) -> O + Send,
 {
     fn try_recv(&mut self) -> Result<Option<O>, Canceled> {
         self.inner.try_recv()
@@ -155,7 +158,7 @@ pin_project! {
 impl<I, T, F, O> Output<O> for MapInner<I, T, F>
 where
     I: Output<T>,
-    F: FnOnce(T) -> O,
+    F: FnOnce(T) -> O + Send,
 {
     fn try_recv(&mut self) -> Result<Option<O>, Canceled> {
         let this = mem::replace(self, MapInner::Done);
