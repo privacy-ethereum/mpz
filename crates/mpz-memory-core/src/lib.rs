@@ -100,7 +100,7 @@ pub trait MemoryExt<T: MemoryType>: Memory<T> {
     }
 }
 
-impl<T: MemoryType, M> MemoryExt<T> for M where M: Memory<T> {}
+impl<T: MemoryType, M> MemoryExt<T> for M where M: ?Sized + Memory<T> {}
 
 /// Two-party memory view.
 pub trait View<T: MemoryType> {
@@ -145,7 +145,7 @@ pub trait ViewExt<T: MemoryType>: View<T> {
 
 impl<M, T> ViewExt<T> for M
 where
-    M: View<T>,
+    M: ?Sized + View<T>,
     T: MemoryType,
 {
 }

@@ -47,7 +47,7 @@ pub trait CallableExt<T: MemoryType>: Callable<T> {
 
 impl<T, M> CallableExt<M> for T
 where
-    T: Callable<M>,
+    T: ?Sized + Callable<M>,
     M: MemoryType,
 {
 }
