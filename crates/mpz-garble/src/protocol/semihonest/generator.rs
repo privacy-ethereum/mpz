@@ -12,7 +12,7 @@ use mpz_core::{bitvec::BitVec, Block};
 use mpz_garble_core::GeneratorOutput;
 use mpz_memory_core::{binary::Binary, correlated::Delta, DecodeFuture, Memory, Slice, View};
 use mpz_ot::cot::COTSender;
-use mpz_vm_core::{Call, Execute, Vm};
+use mpz_vm_core::{Call, Callable, Execute};
 
 use crate::store::{GeneratorStore, GeneratorStoreError};
 
@@ -149,7 +149,7 @@ where
     }
 }
 
-impl<COT> Vm<Binary> for Generator<COT> {
+impl<COT> Callable<Binary> for Generator<COT> {
     type Error = GeneratorError;
 
     fn call_raw(&mut self, call: Call) -> Result<Slice> {

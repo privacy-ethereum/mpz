@@ -8,15 +8,26 @@ pub use verifier::{Verifier, VerifierError};
 mod tests {
     use mpz_circuits::circuits::AES128;
     use mpz_common::executor::test_st_executor;
-    use mpz_ot::ideal::rcot::ideal_rcot;
+    use mpz_ot::ideal::rcot::{ideal_rcot, IdealRCOTReceiver, IdealRCOTSender};
     use mpz_vm_core::{
-        memory::{binary::U8, correlated::Delta, Array},
+        memory::{
+            binary::{Binary, U8},
+            correlated::Delta,
+            Array,
+        },
         prelude::*,
-        Call,
+        Call, Vm,
     };
     use rand::{rngs::StdRng, Rng, SeedableRng};
 
     use super::*;
+
+    #[test]
+    fn test_zk_is_vm() {
+        fn is_vm<T: Vm<Binary>>() {}
+        is_vm::<Prover<IdealRCOTReceiver>>();
+        is_vm::<Verifier<IdealRCOTSender>>();
+    }
 
     #[tokio::test]
     async fn test_zk() {

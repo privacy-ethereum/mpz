@@ -8,7 +8,7 @@ use mpz_vm_core::{
         correlated::{Delta, Key},
         DecodeFuture, Memory, Slice, View,
     },
-    Call, Execute, Vm,
+    Call, Execute, Callable,
 };
 use mpz_zk_core::{
     store::{VerifierStore, VerifierStoreError},
@@ -157,7 +157,7 @@ where
     }
 }
 
-impl<OT> Vm<Binary> for Verifier<OT>
+impl<OT> Callable<Binary> for Verifier<OT>
 where
     OT: RCOTSender<Block>,
 {

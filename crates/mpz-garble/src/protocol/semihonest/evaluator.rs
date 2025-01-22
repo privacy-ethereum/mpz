@@ -16,7 +16,7 @@ use mpz_core::{bitvec::BitVec, Block};
 use mpz_garble_core::{evaluate_garbled_circuits, EvaluatorOutput, GarbledCircuit};
 use mpz_memory_core::{binary::Binary, DecodeFuture, Memory, Slice, View};
 use mpz_ot::cot::COTReceiver;
-use mpz_vm_core::{Call, Execute, Vm};
+use mpz_vm_core::{Call, Callable, Execute};
 
 use crate::{
     evaluator::receive_garbled_circuit,
@@ -194,10 +194,13 @@ where
     }
 }
 
-impl<COT> Vm<Binary> for Evaluator<COT> {
+impl<COT> Callable<Binary> for Evaluator<COT> {
     type Error = Error;
 
-    fn call_raw(&mut self, call: Call) -> std::result::Result<Slice, <Self as Vm<Binary>>::Error> {
+    fn call_raw(
+        &mut self,
+        call: Call,
+    ) -> std::result::Result<Slice, <Self as Callable<Binary>>::Error> {
         let output = self
             .store
             .try_lock()
