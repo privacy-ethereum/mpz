@@ -12,12 +12,9 @@ use mpz_core::{bitvec::BitVec, Block};
 use mpz_garble_core::GeneratorOutput;
 use mpz_memory_core::{binary::Binary, correlated::Delta, DecodeFuture, Memory, Slice, View};
 use mpz_ot::cot::COTSender;
-use mpz_vm_core::{Call, Callable, Execute};
+use mpz_vm_core::{Call, Callable, Execute, Result, VmError};
 
-use crate::store::{GeneratorStore, GeneratorStoreError};
-
-type Result<T, E = GeneratorError> = core::result::Result<T, E>;
-type Error = GeneratorError;
+use crate::store::GeneratorStore;
 
 /// Semi-honest generator.
 #[derive(Debug)]
@@ -66,7 +63,9 @@ impl<COT> Generator<COT> {
             }
 
             for output in outputs {
-                store.mark_output_complete(output)?;
+                store
+                    .mark_output_complete(output)
+                    .map_err(VmError::memory)?;
             }
         }
 
@@ -75,14 +74,14 @@ impl<COT> Generator<COT> {
 }
 
 impl<COT> Memory<Binary> for Generator<COT> {
-    type Error = Error;
+    type Error = VmError;
 
     fn alloc_raw(&mut self, size: usize) -> Result<Slice> {
         self.store
             .try_lock()
             .unwrap()
             .alloc_raw(size)
-            .map_err(Error::from)
+            .map_err(VmError::memory)
     }
 
     fn assign_raw(&mut self, slice: Slice, value: BitVec) -> Result<()> {
@@ -90,7 +89,7 @@ impl<COT> Memory<Binary> for Generator<COT> {
             .try_lock()
             .unwrap()
             .assign_raw(slice, value)
-            .map_err(Error::from)
+            .map_err(VmError::memory)
     }
 
     fn commit_raw(&mut self, slice: Slice) -> Result<()> {
@@ -98,7 +97,7 @@ impl<COT> Memory<Binary> for Generator<COT> {
             .try_lock()
             .unwrap()
             .commit_raw(slice)
-            .map_err(Error::from)
+            .map_err(VmError::memory)
     }
 
     fn get_raw(&self, slice: Slice) -> Result<Option<BitVec>> {
@@ -106,7 +105,7 @@ impl<COT> Memory<Binary> for Generator<COT> {
             .try_lock()
             .unwrap()
             .get_raw(slice)
-            .map_err(Error::from)
+            .map_err(VmError::memory)
     }
 
     fn decode_raw(&mut self, slice: Slice) -> Result<DecodeFuture<BitVec>> {
@@ -114,7 +113,7 @@ impl<COT> Memory<Binary> for Generator<COT> {
             .try_lock()
             .unwrap()
             .decode_raw(slice)
-            .map_err(Error::from)
+            .map_err(VmError::memory)
     }
 }
 
@@ -122,14 +121,14 @@ impl<COT> View<Binary> for Generator<COT>
 where
     COT: COTSender<Block>,
 {
-    type Error = Error;
+    type Error = VmError;
 
     fn mark_public_raw(&mut self, slice: Slice) -> Result<()> {
         self.store
             .try_lock()
             .unwrap()
             .mark_public_raw(slice)
-            .map_err(Error::from)
+            .map_err(VmError::view)
     }
 
     fn mark_private_raw(&mut self, slice: Slice) -> Result<()> {
@@ -137,7 +136,7 @@ where
             .try_lock()
             .unwrap()
             .mark_private_raw(slice)
-            .map_err(Error::from)
+            .map_err(VmError::view)
     }
 
     fn mark_blind_raw(&mut self, slice: Slice) -> Result<()> {
@@ -145,13 +144,11 @@ where
             .try_lock()
             .unwrap()
             .mark_blind_raw(slice)
-            .map_err(Error::from)
+            .map_err(VmError::view)
     }
 }
 
 impl<COT> Callable<Binary> for Generator<COT> {
-    type Error = GeneratorError;
-
     fn call_raw(&mut self, call: Call) -> Result<Slice> {
         let slice = self
             .store
@@ -169,12 +166,10 @@ where
     Ctx: Context + 'static,
     COT: COTSender<Block> + Flush<Ctx> + Send + 'static,
 {
-    type Error = Error;
-
     async fn flush(&mut self, ctx: &mut Ctx) -> Result<()> {
         let mut store = self.store.try_lock().unwrap();
         if store.wants_flush() {
-            store.flush(ctx).await?;
+            store.flush(ctx).await.map_err(VmError::memory)?;
         }
 
         Ok(())
@@ -201,9 +196,10 @@ where
 
             let outputs = ctx
                 .map(calls, f.clone(), |(call, _)| call.circ().and_count())
-                .await?;
+                .await
+                .map_err(VmError::execute)?;
 
-            outputs.into_iter().collect::<Result<(), Error>>()?;
+            outputs.into_iter().collect::<Result<()>>()?;
         }
 
         Ok(())
@@ -225,9 +221,10 @@ where
 
             let outputs = ctx
                 .map(calls, f.clone(), |(call, _)| call.circ().and_count())
-                .await?;
+                .await
+                .map_err(VmError::execute)?;
 
-            outputs.into_iter().collect::<Result<(), Error>>()?;
+            outputs.into_iter().collect::<Result<()>>()?;
         }
 
         self.mark_executed()?;
@@ -259,68 +256,30 @@ async fn generate<Ctx: Context, COT>(
     call: Call,
     output: Slice,
     mode: Mode,
-) -> Result<(), Error> {
+) -> Result<()> {
     let (circ, inputs) = call.into_parts();
 
     let mut input_keys = Vec::with_capacity(circ.input_len());
     {
         let lock = store.lock().await;
         for input in inputs {
-            input_keys.extend_from_slice(lock.try_get_keys(input)?);
+            input_keys.extend_from_slice(lock.try_get_keys(input).map_err(VmError::memory)?);
         }
     }
 
     let GeneratorOutput {
         outputs: output_keys,
-    } = crate::generator::generate(ctx, circ, delta, input_keys).await?;
+    } = crate::generator::generate(ctx, circ, delta, input_keys)
+        .await
+        .map_err(VmError::execute)?;
 
     let mut lock = store.lock().await;
-    lock.set_output(output, &output_keys)?;
+    lock.set_output(output, &output_keys)
+        .map_err(VmError::memory)?;
 
     if let Mode::Execute = mode {
-        lock.mark_output_complete(output)?;
+        lock.mark_output_complete(output).map_err(VmError::memory)?;
     }
 
     Ok(())
-}
-
-/// Error for [`Generator`].
-#[derive(Debug, thiserror::Error)]
-#[error(transparent)]
-pub struct GeneratorError(#[from] ErrorRepr);
-
-#[derive(Debug, thiserror::Error)]
-enum ErrorRepr {
-    #[error("store error: {0}")]
-    Store(#[from] GeneratorStoreError),
-    #[error("generator error: {0}")]
-    Generator(#[from] crate::generator::GeneratorError),
-    #[error("io error: {0}")]
-    Io(#[from] std::io::Error),
-    #[error("context error: {0}")]
-    Context(#[from] mpz_common::ContextError),
-}
-
-impl From<GeneratorStoreError> for GeneratorError {
-    fn from(value: GeneratorStoreError) -> Self {
-        GeneratorError(ErrorRepr::Store(value))
-    }
-}
-
-impl From<crate::generator::GeneratorError> for GeneratorError {
-    fn from(value: crate::generator::GeneratorError) -> Self {
-        GeneratorError(ErrorRepr::Generator(value))
-    }
-}
-
-impl From<std::io::Error> for GeneratorError {
-    fn from(value: std::io::Error) -> Self {
-        GeneratorError(ErrorRepr::Io(value))
-    }
-}
-
-impl From<mpz_common::ContextError> for GeneratorError {
-    fn from(value: mpz_common::ContextError) -> Self {
-        GeneratorError(ErrorRepr::Context(value))
-    }
 }

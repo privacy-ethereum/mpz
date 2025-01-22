@@ -135,7 +135,7 @@ where
 
 #[derive(Debug, thiserror::Error)]
 #[error(transparent)]
-pub struct GeneratorStoreError(#[from] ErrorRepr);
+pub(crate) struct GeneratorStoreError(#[from] ErrorRepr);
 
 impl GeneratorStoreError {
     fn cot<E>(err: E) -> Self

@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use mpz_common::{scoped_futures::ScopedFutureExt, Context, ContextError, Flush};
+use mpz_common::{scoped_futures::ScopedFutureExt, Context, Flush};
 use mpz_core::{bitvec::BitVec, Block};
 use mpz_ot::rcot::{RCOTSender, RCOTSenderOutput};
 use mpz_vm_core::{
@@ -8,17 +8,11 @@ use mpz_vm_core::{
         correlated::{Delta, Key},
         DecodeFuture, Memory, Slice, View,
     },
-    Call, Execute, Callable,
+    Call, Callable, Execute, Result, VmError,
 };
-use mpz_zk_core::{
-    store::{VerifierStore, VerifierStoreError},
-    Verifier as Core, VerifierError as CoreError,
-};
+use mpz_zk_core::{store::VerifierStore, Verifier as Core};
 use serio::{stream::IoStreamExt, SinkExt};
 use utils::filter_drain::FilterDrain;
-
-type Error = VerifierError;
-type Result<T, E = Error> = core::result::Result<T, E>;
 
 #[derive(Debug)]
 pub struct Verifier<OT> {
@@ -44,28 +38,26 @@ where
     Ctx: Context,
     OT: RCOTSender<Block> + Flush<Ctx> + Send + 'static,
 {
-    type Error = Error;
-
     async fn flush(&mut self, ctx: &mut Ctx) -> Result<()> {
         if self.ot.wants_flush() {
-            self.ot.flush(ctx).await.map_err(Error::ot)?;
+            self.ot.flush(ctx).await.map_err(VmError::execute)?;
         }
 
         if self.store.wants_keys() {
             let RCOTSenderOutput { keys, .. } = self
                 .ot
                 .try_send_rcot(self.store.key_count())
-                .map_err(Error::ot)?;
+                .map_err(VmError::execute)?;
             let keys = Key::from_blocks(keys);
 
-            self.store.set_keys(&keys)?;
+            self.store.set_keys(&keys).map_err(VmError::memory)?;
         }
 
         while self.store.wants_flush() {
-            let flush = self.store.send_flush()?;
+            let flush = self.store.send_flush().map_err(VmError::memory)?;
             ctx.io_mut().send(flush).await?;
             let flush = ctx.io_mut().expect_next().await?;
-            self.store.receive_flush(flush)?;
+            self.store.receive_flush(flush).map_err(VmError::memory)?;
         }
 
         Ok(())
@@ -107,10 +99,15 @@ where
             for (circ, input_keys, output) in ready_calls {
                 let RCOTSenderOutput {
                     keys: gate_keys, ..
-                } = self.ot.try_send_rcot(circ.and_count()).map_err(Error::ot)?;
+                } = self
+                    .ot
+                    .try_send_rcot(circ.and_count())
+                    .map_err(VmError::execute)?;
                 let gate_keys = Key::from_blocks(gate_keys);
 
-                let execute = verifier.execute(circ, &input_keys, &gate_keys)?;
+                let execute = verifier
+                    .execute(circ, &input_keys, &gate_keys)
+                    .map_err(VmError::execute)?;
                 tasks.push((execute, output));
             }
 
@@ -127,7 +124,7 @@ where
                                 }
                             }
 
-                            let output_keys = execute.finish()?;
+                            let output_keys = execute.finish().map_err(VmError::execute)?;
 
                             Ok((output, output_keys))
                         }
@@ -135,22 +132,25 @@ where
                     },
                     |(execute, _)| execute.and_count(),
                 )
-                .await?
+                .await
+                .map_err(VmError::execute)?
                 .into_iter()
-                .collect::<Result<Vec<_>, VerifierError>>()?;
+                .collect::<Result<Vec<_>>>()?;
 
             for (output, output_keys) in outputs {
-                self.store.set_output_keys(output, &output_keys)?;
+                self.store
+                    .set_output_keys(output, &output_keys)
+                    .map_err(VmError::memory)?;
             }
         }
 
         if verifier.wants_check() {
             let RCOTSenderOutput {
                 keys: svole_keys, ..
-            } = self.ot.try_send_rcot(128).map_err(Error::ot)?;
+            } = self.ot.try_send_rcot(128).map_err(VmError::execute)?;
 
             let uv = ctx.io_mut().expect_next().await?;
-            verifier.check(&svole_keys, uv)?;
+            verifier.check(&svole_keys, uv).map_err(VmError::execute)?;
         }
 
         Ok(())
@@ -161,8 +161,6 @@ impl<OT> Callable<Binary> for Verifier<OT>
 where
     OT: RCOTSender<Block>,
 {
-    type Error = Error;
-
     fn call_raw(&mut self, call: Call) -> Result<Slice> {
         let output = self.store.alloc_output(call.circ().output_len());
 
@@ -173,7 +171,7 @@ where
             count += 128
         }
 
-        self.ot.alloc(count).map_err(Error::ot)?;
+        self.ot.alloc(count).map_err(VmError::execute)?;
         self.callstack.push((call, output));
 
         Ok(output)
@@ -184,26 +182,26 @@ impl<OT> Memory<Binary> for Verifier<OT>
 where
     OT: RCOTSender<Block>,
 {
-    type Error = Error;
+    type Error = VmError;
 
     fn alloc_raw(&mut self, size: usize) -> Result<Slice> {
-        self.store.alloc_raw(size).map_err(Error::from)
+        self.store.alloc_raw(size).map_err(VmError::memory)
     }
 
     fn assign_raw(&mut self, slice: Slice, data: BitVec) -> Result<()> {
-        self.store.assign_raw(slice, data).map_err(Error::from)
+        self.store.assign_raw(slice, data).map_err(VmError::memory)
     }
 
     fn commit_raw(&mut self, slice: Slice) -> Result<()> {
-        self.store.commit_raw(slice).map_err(Error::from)
+        self.store.commit_raw(slice).map_err(VmError::memory)
     }
 
     fn get_raw(&self, slice: Slice) -> Result<Option<BitVec>> {
-        self.store.get_raw(slice).map_err(Error::from)
+        self.store.get_raw(slice).map_err(VmError::memory)
     }
 
     fn decode_raw(&mut self, slice: Slice) -> Result<DecodeFuture<BitVec>> {
-        self.store.decode_raw(slice).map_err(Error::from)
+        self.store.decode_raw(slice).map_err(VmError::memory)
     }
 }
 
@@ -211,71 +209,20 @@ impl<OT> View<Binary> for Verifier<OT>
 where
     OT: RCOTSender<Block>,
 {
-    type Error = Error;
+    type Error = VmError;
 
     fn mark_public_raw(&mut self, slice: Slice) -> Result<()> {
-        self.store.mark_public_raw(slice).map_err(Error::from)
+        self.store.mark_public_raw(slice).map_err(VmError::view)
     }
 
     fn mark_private_raw(&mut self, slice: Slice) -> Result<()> {
-        self.store.mark_private_raw(slice).map_err(Error::from)
+        self.store.mark_private_raw(slice).map_err(VmError::view)
     }
 
     fn mark_blind_raw(&mut self, slice: Slice) -> Result<()> {
-        self.store.mark_blind_raw(slice)?;
-        self.ot.alloc(slice.len()).map_err(Error::ot)?;
+        self.store.mark_blind_raw(slice).map_err(VmError::view)?;
+        self.ot.alloc(slice.len()).map_err(VmError::view)?;
 
         Ok(())
-    }
-}
-
-#[derive(Debug, thiserror::Error)]
-#[error(transparent)]
-pub struct VerifierError(#[from] ErrorRepr);
-
-impl VerifierError {
-    fn ot<E>(err: E) -> Self
-    where
-        E: Into<Box<dyn std::error::Error + Send + Sync + 'static>>,
-    {
-        Self(ErrorRepr::Ot(err.into()))
-    }
-}
-
-#[derive(Debug, thiserror::Error)]
-enum ErrorRepr {
-    #[error(transparent)]
-    Core(#[from] CoreError),
-    #[error(transparent)]
-    Store(#[from] VerifierStoreError),
-    #[error(transparent)]
-    Io(#[from] std::io::Error),
-    #[error(transparent)]
-    Context(#[from] ContextError),
-    #[error("oblivious transfer error: {0}")]
-    Ot(Box<dyn std::error::Error + Send + Sync + 'static>),
-}
-
-impl From<CoreError> for VerifierError {
-    fn from(err: CoreError) -> Self {
-        Self(ErrorRepr::Core(err))
-    }
-}
-
-impl From<VerifierStoreError> for VerifierError {
-    fn from(err: VerifierStoreError) -> Self {
-        Self(ErrorRepr::Store(err))
-    }
-}
-
-impl From<std::io::Error> for VerifierError {
-    fn from(err: std::io::Error) -> Self {
-        Self(ErrorRepr::Io(err))
-    }
-}
-
-impl From<ContextError> for VerifierError {
-    fn from(err: ContextError) -> Self {
-        Self(ErrorRepr::Context(err))
     }
 }

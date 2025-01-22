@@ -135,7 +135,7 @@ where
 
 #[derive(Debug, thiserror::Error)]
 #[error(transparent)]
-pub struct EvaluatorStoreError(#[from] ErrorRepr);
+pub(crate) struct EvaluatorStoreError(#[from] ErrorRepr);
 
 impl EvaluatorStoreError {
     fn cot<E>(err: E) -> Self

@@ -42,7 +42,7 @@ pub async fn generate<Ctx: Context>(
 /// Garbled circuit generator error.
 #[derive(Debug, thiserror::Error)]
 #[error(transparent)]
-pub struct GeneratorError(#[from] ErrorRepr);
+pub(crate) struct GeneratorError(#[from] ErrorRepr);
 
 #[derive(Debug, thiserror::Error)]
 enum ErrorRepr {
