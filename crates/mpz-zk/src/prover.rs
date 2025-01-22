@@ -4,7 +4,7 @@ use mpz_core::{bitvec::BitVec, Block};
 use mpz_ot::rcot::{RCOTReceiver, RCOTReceiverOutput};
 use mpz_vm_core::{
     memory::{binary::Binary, correlated::Mac, DecodeFuture, Memory, Slice, View},
-    Call, Execute, Vm,
+    Call, Execute, Callable,
 };
 use mpz_zk_core::{
     store::{ProverStore, ProverStoreError},
@@ -166,7 +166,7 @@ where
     }
 }
 
-impl<OT> Vm<Binary> for Prover<OT>
+impl<OT> Callable<Binary> for Prover<OT>
 where
     OT: RCOTReceiver<bool, Block>,
 {

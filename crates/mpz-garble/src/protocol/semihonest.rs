@@ -10,12 +10,23 @@ pub use generator::{Generator, GeneratorError};
 mod tests {
     use mpz_circuits::circuits::AES128;
     use mpz_common::executor::test_st_executor;
-    use mpz_memory_core::{binary::U8, correlated::Delta, Array, MemoryExt, ViewExt};
-    use mpz_ot::ideal::cot::ideal_cot;
-    use mpz_vm_core::{Call, Execute, VmExt};
+    use mpz_memory_core::{
+        binary::{Binary, U8},
+        correlated::Delta,
+        Array, MemoryExt, ViewExt,
+    };
+    use mpz_ot::ideal::cot::{ideal_cot, IdealCOTReceiver, IdealCOTSender};
+    use mpz_vm_core::{Call, CallableExt, Execute, Vm};
     use rand::{rngs::StdRng, SeedableRng};
 
     use super::*;
+
+    #[test]
+    fn test_semihonest_is_vm() {
+        fn is_vm<T: Vm<Binary>>() {}
+        is_vm::<Generator<IdealCOTSender>>();
+        is_vm::<Evaluator<IdealCOTReceiver>>();
+    }
 
     #[tokio::test]
     async fn test_semihonest() {
