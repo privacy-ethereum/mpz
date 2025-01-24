@@ -17,25 +17,32 @@ impl SpawnError {
     }
 }
 
-/// Thread spawner.
-pub trait Spawn {
-    /// Spawns a new thread, executing the provided function.
-    fn spawn<F>(&self, f: F) -> Result<(), SpawnError>
-    where
-        F: FnOnce() + Send + 'static;
+#[doc(hidden)]
+pub trait Spawn: Send + 'static {
+    /// Spawns a new thread.
+    fn spawn(&mut self, f: Box<dyn FnOnce() + Send>) -> Result<(), SpawnError>;
 }
 
-/// `std` thread spawner.
+#[doc(hidden)]
 pub struct StdSpawn;
 
 impl Spawn for StdSpawn {
-    fn spawn<F>(&self, f: F) -> Result<(), SpawnError>
-    where
-        F: FnOnce() + Send + 'static,
-    {
+    fn spawn(&mut self, f: Box<dyn FnOnce() + Send>) -> Result<(), SpawnError> {
         std::thread::Builder::new()
             .spawn(f)
             .map(|_| ())
             .map_err(SpawnError::new)
+    }
+}
+
+#[doc(hidden)]
+pub struct CustomSpawn<F>(pub F);
+
+impl<F> Spawn for CustomSpawn<F>
+where
+    F: FnMut(Box<dyn FnOnce() + Send>) -> Result<(), SpawnError> + Send + 'static,
+{
+    fn spawn(&mut self, f: Box<dyn FnOnce() + Send>) -> Result<(), SpawnError> {
+        (self.0)(f)
     }
 }

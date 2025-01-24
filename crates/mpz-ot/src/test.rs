@@ -1,9 +1,6 @@
 //! Test utilities.
 
-use mpz_common::{
-    executor::{test_st_executor, TestSTExecutor},
-    Flush,
-};
+use mpz_common::{context::test_st_context, Flush};
 use mpz_core::Block;
 use mpz_ot_core::{
     cot::{COTReceiver, COTSender},
@@ -17,10 +14,10 @@ use rand::{rngs::StdRng, Rng, SeedableRng};
 /// Tests OT functionality.
 pub async fn test_ot<S, R>(mut sender: S, mut receiver: R, cycles: usize)
 where
-    S: OTSender<Block> + Flush<TestSTExecutor>,
-    R: OTReceiver<bool, Block> + Flush<TestSTExecutor>,
+    S: OTSender<Block> + Flush,
+    R: OTReceiver<bool, Block> + Flush,
 {
-    let (mut sender_ctx, mut receiver_ctx) = test_st_executor(8);
+    let (mut sender_ctx, mut receiver_ctx) = test_st_context(8);
 
     let mut rng = StdRng::seed_from_u64(0);
     let msgs = (0..128).map(|_| [rng.gen(), rng.gen()]).collect::<Vec<_>>();
@@ -50,10 +47,10 @@ where
 /// Tests RCOT functionality.
 pub async fn test_rcot<S, R>(mut sender: S, mut receiver: R, cycles: usize)
 where
-    S: RCOTSender<Block> + Flush<TestSTExecutor>,
-    R: RCOTReceiver<bool, Block> + Flush<TestSTExecutor>,
+    S: RCOTSender<Block> + Flush,
+    R: RCOTReceiver<bool, Block> + Flush,
 {
-    let (mut sender_ctx, mut receiver_ctx) = test_st_executor(8);
+    let (mut sender_ctx, mut receiver_ctx) = test_st_context(8);
 
     let count = 128;
     for _ in 0..cycles {
@@ -90,10 +87,10 @@ where
 /// Tests COT functionality.
 pub async fn test_cot<S, R>(mut sender: S, mut receiver: R, cycles: usize)
 where
-    S: COTSender<Block> + Flush<TestSTExecutor>,
-    R: COTReceiver<bool, Block> + Flush<TestSTExecutor>,
+    S: COTSender<Block> + Flush,
+    R: COTReceiver<bool, Block> + Flush,
 {
-    let (mut sender_ctx, mut receiver_ctx) = test_st_executor(8);
+    let (mut sender_ctx, mut receiver_ctx) = test_st_context(8);
 
     let mut rng = StdRng::seed_from_u64(0);
     let keys = (0..128).map(|_| rng.gen()).collect::<Vec<_>>();
@@ -123,11 +120,11 @@ where
 /// Tests ROT functionality.
 pub async fn test_rot<S, R, T>(mut sender: S, mut receiver: R, cycles: usize)
 where
-    S: ROTSender<[T; 2]> + Flush<TestSTExecutor>,
-    R: ROTReceiver<bool, T> + Flush<TestSTExecutor>,
+    S: ROTSender<[T; 2]> + Flush,
+    R: ROTReceiver<bool, T> + Flush,
     T: Copy + PartialEq,
 {
-    let (mut sender_ctx, mut receiver_ctx) = test_st_executor(8);
+    let (mut sender_ctx, mut receiver_ctx) = test_st_context(8);
 
     let count = 128;
 

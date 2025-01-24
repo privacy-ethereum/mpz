@@ -51,10 +51,9 @@ where
 }
 
 #[async_trait]
-impl<Ctx, T> Flush<Ctx> for RandomizeRCOTSender<T>
+impl<T> Flush for RandomizeRCOTSender<T>
 where
-    Ctx: Context,
-    T: Flush<Ctx> + Send,
+    T: Flush + Send,
 {
     type Error = T::Error;
 
@@ -62,7 +61,7 @@ where
         self.core.rcot().wants_flush()
     }
 
-    async fn flush(&mut self, ctx: &mut Ctx) -> Result<(), Self::Error> {
+    async fn flush(&mut self, ctx: &mut Context) -> Result<(), Self::Error> {
         self.core.rcot_mut().flush(ctx).await
     }
 }

@@ -33,12 +33,12 @@ impl<OT> Verifier<OT> {
 }
 
 #[async_trait]
-impl<Ctx, OT> Execute<Ctx> for Verifier<OT>
+impl< OT> Execute for Verifier<OT>
 where
-    Ctx: Context,
-    OT: RCOTSender<Block> + Flush<Ctx> + Send + 'static,
+    
+    OT: RCOTSender<Block> + Flush + Send + 'static,
 {
-    async fn flush(&mut self, ctx: &mut Ctx) -> Result<()> {
+    async fn flush(&mut self, ctx: &mut Context) -> Result<()> {
         if self.ot.wants_flush() {
             self.ot.flush(ctx).await.map_err(VmError::execute)?;
         }
@@ -63,11 +63,11 @@ where
         Ok(())
     }
 
-    async fn preprocess(&mut self, _ctx: &mut Ctx) -> Result<()> {
+    async fn preprocess(&mut self, _ctx: &mut Context) -> Result<()> {
         Ok(())
     }
 
-    async fn execute(&mut self, ctx: &mut Ctx) -> Result<()> {
+    async fn execute(&mut self, ctx: &mut Context) -> Result<()> {
         let mut verifier = Core::new(*self.store.delta());
         while !self.callstack.is_empty() {
             let ready_calls: Vec<_> = self

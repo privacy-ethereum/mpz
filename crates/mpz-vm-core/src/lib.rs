@@ -3,6 +3,7 @@ mod error;
 
 pub use call::{Call, CallBuilder, CallError};
 pub use error::VmError;
+use mpz_common::Context;
 pub use mpz_memory_core as memory;
 pub type Result<T> = core::result::Result<T, VmError>;
 
@@ -53,17 +54,17 @@ where
 }
 
 #[async_trait]
-pub trait Execute<Ctx> {
+pub trait Execute {
     /// Flushes all memory operations.
     ///
     /// This ensures all memory operations are completed.
-    async fn flush(&mut self, ctx: &mut Ctx) -> Result<()>;
+    async fn flush(&mut self, ctx: &mut Context) -> Result<()>;
 
     /// Preprocesses the callstack.
-    async fn preprocess(&mut self, ctx: &mut Ctx) -> Result<()>;
+    async fn preprocess(&mut self, ctx: &mut Context) -> Result<()>;
 
     /// Executes the callstack.
-    async fn execute(&mut self, ctx: &mut Ctx) -> Result<()>;
+    async fn execute(&mut self, ctx: &mut Context) -> Result<()>;
 }
 
 #[cfg(test)]

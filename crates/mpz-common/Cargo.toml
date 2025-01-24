@@ -19,6 +19,7 @@ mpz-core.workspace = true
 
 futures.workspace = true
 async-trait.workspace = true
+bytes = { workspace = true }
 pin-project-lite.workspace = true
 scoped-futures.workspace = true
 thiserror.workspace = true
@@ -29,6 +30,7 @@ pollster.workspace = true
 rayon = { workspace = true, optional = true }
 cfg-if.workspace = true
 tokio = { workspace = true, optional = true }
+tokio-util = { workspace = true }
 crossbeam-channel = { workspace = true }
 
 [dev-dependencies]
@@ -36,8 +38,15 @@ tokio = { workspace = true, features = [
     "io-util",
     "macros",
     "rt-multi-thread",
+    "net",
 ] }
 tokio-util = { workspace = true, features = ["compat"] }
 uid-mux = { workspace = true, features = ["test-utils"] }
 tracing-subscriber = { workspace = true, features = ["fmt"] }
-criterion.workspace = true
+criterion = { workspace = true, features = ["async_tokio"] }
+rstest = { workspace = true }
+
+[[bench]]
+name = "io"
+path = "benches/io.rs"
+harness = false

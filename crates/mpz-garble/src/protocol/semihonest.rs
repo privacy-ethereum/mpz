@@ -9,7 +9,7 @@ pub use generator::Generator;
 #[cfg(test)]
 mod tests {
     use mpz_circuits::circuits::AES128;
-    use mpz_common::executor::test_st_executor;
+    use mpz_common::context::test_st_context;
     use mpz_memory_core::{
         binary::{Binary, U8},
         correlated::Delta,
@@ -33,7 +33,7 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(0);
         let delta = Delta::random(&mut rng);
 
-        let (mut ctx_a, mut ctx_b) = test_st_executor(8);
+        let (mut ctx_a, mut ctx_b) = test_st_context(8);
         let (cot_send, cot_recv) = ideal_cot(delta.into_inner());
 
         let mut gen = Generator::new(cot_send, [0u8; 16], delta);
@@ -96,7 +96,7 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(0);
         let delta = Delta::random(&mut rng);
 
-        let (mut ctx_a, mut ctx_b) = test_st_executor(8);
+        let (mut ctx_a, mut ctx_b) = test_st_context(8);
         let (cot_send, cot_recv) = ideal_cot(delta.into_inner());
 
         let mut gen = Generator::new(cot_send, [0u8; 16], delta);
@@ -111,7 +111,7 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(0);
         let delta = Delta::random(&mut rng);
 
-        let (mut ctx_a, mut ctx_b) = test_st_executor(8);
+        let (mut ctx_a, mut ctx_b) = test_st_context(8);
         let (cot_send, cot_recv) = ideal_cot(delta.into_inner());
 
         let mut gen = Generator::new(cot_send, [0u8; 16], delta);

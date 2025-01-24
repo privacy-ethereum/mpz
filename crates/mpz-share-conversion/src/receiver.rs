@@ -71,10 +71,10 @@ where
 }
 
 #[async_trait]
-impl<Ctx, T, F> Flush<Ctx> for ShareConversionReceiver<T, F>
+impl< T, F> Flush for ShareConversionReceiver<T, F>
 where
-    Ctx: Context,
-    T: ROLEReceiver<F> + Flush<Ctx> + Send,
+    
+    T: ROLEReceiver<F> + Flush + Send,
     F: Field + Serialize + Deserialize,
 {
     type Error = ReceiverError;
@@ -83,7 +83,7 @@ where
         self.core.wants_flush()
     }
 
-    async fn flush(&mut self, ctx: &mut Ctx) -> Result<(), ReceiverError> {
+    async fn flush(&mut self, ctx: &mut Context) -> Result<(), ReceiverError> {
         if self.core.role().wants_flush() {
             self.core
                 .role_mut()

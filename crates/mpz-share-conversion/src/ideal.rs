@@ -4,7 +4,7 @@ use async_trait::async_trait;
 
 use mpz_common::{
     ideal::{call_sync, CallSync},
-    Flush,
+    Context, Flush,
 };
 use mpz_core::Block;
 use mpz_fields::Field;
@@ -73,7 +73,7 @@ where
 }
 
 #[async_trait]
-impl<Ctx, F> Flush<Ctx> for IdealShareConvertSender<F>
+impl<F> Flush for IdealShareConvertSender<F>
 where
     F: Field,
 {
@@ -83,7 +83,7 @@ where
         self.core.wants_flush()
     }
 
-    async fn flush(&mut self, _ctx: &mut Ctx) -> Result<(), Self::Error> {
+    async fn flush(&mut self, _ctx: &mut Context) -> Result<(), Self::Error> {
         if self.core.wants_flush() {
             self.sync
                 .call(|| self.core.flush().map_err(IdealShareConvertError::from))
@@ -135,7 +135,7 @@ where
 }
 
 #[async_trait]
-impl<Ctx, F> Flush<Ctx> for IdealShareConvertReceiver<F>
+impl<F> Flush for IdealShareConvertReceiver<F>
 where
     F: Field,
 {
@@ -145,7 +145,7 @@ where
         self.core.wants_flush()
     }
 
-    async fn flush(&mut self, _ctx: &mut Ctx) -> Result<(), Self::Error> {
+    async fn flush(&mut self, _ctx: &mut Context) -> Result<(), Self::Error> {
         if self.core.wants_flush() {
             self.sync
                 .call(|| self.core.flush().map_err(IdealShareConvertError::from))

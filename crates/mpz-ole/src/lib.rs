@@ -16,7 +16,7 @@ pub use sender::{Sender, SenderError};
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mpz_common::{executor::test_st_executor, Flush};
+    use mpz_common::{context::test_st_context, Flush};
     use mpz_core::Block;
     use mpz_fields::p256::P256;
     use mpz_ole_core::test::assert_ole;
@@ -29,7 +29,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_role() {
-        let (mut ctx_sender, mut ctx_receiver) = test_st_executor(8);
+        let (mut ctx_sender, mut ctx_receiver) = test_st_context(8);
         let mut rng = StdRng::seed_from_u64(0);
         let (rot_sender, rot_receiver) = ideal_rot(Block::random(&mut rng));
 

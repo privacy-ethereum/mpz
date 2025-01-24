@@ -76,10 +76,7 @@ impl OTSender<Block> for Sender {
 }
 
 #[async_trait]
-impl<Ctx> Flush<Ctx> for Sender
-where
-    Ctx: Context,
-{
+impl Flush for Sender {
     type Error = Error;
 
     fn wants_flush(&self) -> bool {
@@ -90,7 +87,7 @@ where
         }
     }
 
-    async fn flush(&mut self, ctx: &mut Ctx) -> Result<(), Self::Error> {
+    async fn flush(&mut self, ctx: &mut Context) -> Result<(), Self::Error> {
         let mut sender = match self.state.take() {
             State::Initialized(sender) => {
                 let (setup, sender) = sender.setup();
