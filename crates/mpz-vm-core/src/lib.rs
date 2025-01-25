@@ -18,13 +18,13 @@ use mpz_memory_core::{Memory, MemoryType, Repr, Slice, View};
 
 /// A virtual machine.
 pub trait Vm<T: MemoryType>:
-    Callable<T> + Memory<T, Error = VmError> + View<T, Error = VmError>
+    Callable<T> + Memory<T, Error = VmError> + View<T, Error = VmError> + Execute
 {
 }
 
 impl<T, U> Vm<U> for T
 where
-    T: ?Sized + Callable<U> + Memory<U, Error = VmError> + View<U, Error = VmError>,
+    T: ?Sized + Callable<U> + Memory<U, Error = VmError> + View<U, Error = VmError> + Execute,
     U: MemoryType,
 {
 }
