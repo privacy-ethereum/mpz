@@ -30,7 +30,7 @@ pub use auth_eval::{
 pub use garbler::{
     EncryptedGateBatchIter, EncryptedGateIter, Garbler, GarblerError, GarblerOutput,
 };
-pub use auth_gen::{AuthGenerator, AuthGeneratorOutput, AuthGeneratorError};
+pub use auth_gen::{AuthGenerator, AuthGeneratorError};
 
 pub use fpre::Fpre;
 pub use mpz_memory_core::correlated::{Delta, Key, Mac};
@@ -226,8 +226,7 @@ mod tests {
         fpre.generate(); // fill the auth_bits & auth_triples
 
         // 3) Extract fpre_gen & fpre_eval
-        let fpre_gen = fpre.to_generator();
-        let fpre_eval = fpre.to_evaluator();
+        let (fpre_gen, fpre_eval) = fpre.into_gen_eval();
 
         // 4) Build an AuthGenerator and AuthEvaluator referencing the same circuit
         let mut auth_gen = AuthGenerator::new(&circ, fpre_gen);
@@ -254,8 +253,8 @@ mod tests {
         let (eval_px, eval_py) = auth_eval.prepare_px_py();
         let (gen_px, gen_py) = auth_gen.prepare_px_py();
 
-        let eval_gates = auth_eval.garble_and_gates(&gen_px, &gen_py).unwrap();
-        let gen_gates = auth_gen.garble_and_gates(cipher, &eval_px, &eval_py).unwrap();
+        let eval_gates = auth_eval.garble_and_gates(gen_px, gen_py).unwrap();
+        let gen_gates = auth_gen.garble_and_gates(cipher, eval_px, eval_py).unwrap();
 
         let input_macs = auth_gen.collect_input_macs();
         // let r = input_macs.iter().map(|mac| mac.pointer()).collect::<Vec<_>>();
@@ -414,3 +413,9 @@ mod tests {
         assert_eq!(output, expected);
     }
 }
+
+// Next steps:
+// 1) Error handling
+// 2) Input processing -- differentiate between Alice and Bob's inputs -- right now Bob picks all inputs
+// 3) Output processing -- allow Alice to learn output as well, optimize by masking to sec param
+// 4) Hash tweaks
