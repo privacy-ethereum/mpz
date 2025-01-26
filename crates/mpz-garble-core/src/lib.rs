@@ -8,19 +8,31 @@
 
 pub(crate) mod circuit;
 mod evaluator;
+mod auth_eval;
 mod generator;
+mod auth_gen;
+mod fpre;
 pub mod store;
 pub(crate) mod view;
 
-pub use circuit::{EncryptedGate, EncryptedGateBatch, GarbledCircuit};
-pub use evaluator::{
-    evaluate_garbled_circuits, EncryptedGateBatchConsumer, EncryptedGateConsumer, Evaluator,
-    EvaluatorError, EvaluatorOutput,
+pub use circuit::{AuthEncryptedGate, AuthEncryptedGateBatch, EncryptedGate, EncryptedGateBatch, GarbledCircuit, sigma};
+
+// use mpz_circuits::{
+//     Circuit, Gate,
+// };
+
+pub use evaluator::{evaluate_garbled_circuits, EncryptedGateBatchConsumer, EncryptedGateConsumer, Evaluator,
+    EvaluatorError, EvaluatorOutput,};
+pub use auth_eval::{
+     AuthEvaluator, AuthEvaluatorOutput, AuthEvaluatorError, AndGateTable
 };
+
 pub use garbler::{
     EncryptedGateBatchIter, EncryptedGateIter, Garbler, GarblerError, GarblerOutput,
 };
-pub use mpz_memory_core::correlated::{Delta, Key, Mac};
+pub use auth_gen::{AuthGenerator, AuthGeneratorOutput, AuthGeneratorError};
+
+pub use fpre::Fpre;
 pub use mpz_memory_core::correlated::{Delta, Key, Mac};
 
 const KB: usize = 1024;
@@ -119,8 +131,8 @@ mod tests {
         let mut gb = Garbler::default();
         let mut ev = Evaluator::default();
 
-        let mut gen_iter = gen.generate_batched(&AES128, delta, input_keys).unwrap();
-        let mut ev_consumer = ev.evaluate_batched(&AES128, input_macs).unwrap();
+        let mut gen_iter: EncryptedGateBatchIter<'_, std::slice::Iter<'_, mpz_circuits::Gate>, 128> = gen.generate_batched(&AES128, delta, input_keys).unwrap();
+        let mut ev_consumer: EncryptedGateBatchConsumer<'_, std::slice::Iter<'_, mpz_circuits::Gate>, 128> = ev.evaluate_batched(&AES128, input_macs).unwrap();
 
         for batch in gb_iter.by_ref() {
             ev_consumer.next(batch);
@@ -150,6 +162,131 @@ mod tests {
         assert_eq!(output, expected);
     }
 
+    // // This small utility collects the `z` wire ID for each AND gate in topological order
+    // fn collect_and_wires(circ: &Circuit) -> Vec<usize> {
+    //     let mut wires = Vec::new();
+    //     for gate in circ.gates() {
+    //         if let Gate::And { x, y, z } = gate {
+    //             wires.push(z.id());
+    //         }
+    //     }
+    //     wires
+    // }
+
+    #[test]
+    fn test_auth_garble() {
+
+        let mut rng = StdRng::seed_from_u64(0);
+        
+        let cipher = &(*FIXED_KEY_AES);
+        let circ = &AES128;
+
+        // // Only XOR gates circuit
+        // let builder = CircuitBuilder::new();
+        // let a = builder.add_input::<u8>();
+        // let b = builder.add_input::<u8>();
+        // let c = a ^ b;
+        // builder.add_output(c);
+        // let circ = builder.build().unwrap();
+        // assert_eq!(circ.and_count(), 0);
+
+        // // Single AND gate circuit
+        // let builder = CircuitBuilder::new();
+        // let a = builder.add_input::<bool>();
+        // let b = builder.add_input::<bool>();
+        // let c = a & b;
+        // builder.add_output(c);
+        // let circ = builder.build().unwrap();
+        // assert_eq!(circ.and_count(), 1);
+
+        // let a = false;
+        // let b = false;
+        // let c = a & b;
+
+        // // // We'll do a small single-process test to encrypt `msg` with `key`.
+        let key = [69u8; 16]; // AES key
+        let msg = [42u8; 16]; // plaintext
+        // The "expected" result by doing real AES
+        let expected: [u8; 16] = {
+            let cipher = Aes128::new_from_slice(&key).unwrap();
+            let mut block = msg.into();
+            cipher.encrypt_block(&mut block);
+            block.into()
+        };
+
+
+        // let a = 1u8;
+        // let b = 2u8;
+        // let expected = a ^ b;
+        
+        // 2) Create an Fpre with enough wires for AES-128
+        let num_input_wires = circ.input_len(); // e.g. 256 bits
+        let num_and_gates = circ.and_count();   // e.g. some # of AND gates
+        let mut fpre = Fpre::new(0xDEAD_BEEF, num_input_wires, num_and_gates);
+        fpre.generate(); // fill the auth_bits & auth_triples
+
+        // 3) Extract fpre_gen & fpre_eval
+        let fpre_gen = fpre.to_generator();
+        let fpre_eval = fpre.to_evaluator();
+
+        // 4) Build an AuthGenerator and AuthEvaluator referencing the same circuit
+        let mut auth_gen = AuthGenerator::new(&circ, fpre_gen);
+        let mut auth_eval = AuthEvaluator::new(&circ, fpre_eval);
+
+        let eval_inputs = key.iter_lsb0()
+            .chain(msg.iter_lsb0())
+            .collect::<Vec<_>>();
+
+        // println!("eval_inputs = {:?}", eval_inputs);
+
+        let zero_labels = (0..circ.input_len())
+            .map(|_| rng.gen())
+            .collect::<Vec<Block>>();
+
+        // 6) Initialize generator & evaluator with these input wire keys (toy approach)
+        auth_gen.initialize(zero_labels).unwrap();
+        auth_eval.initialize().unwrap();
+
+        // // 7) Evaluate free gates (XOR/NOT)
+        auth_gen.evaluate_free_gates();
+        auth_eval.garble_free_gates();
+
+        let (eval_px, eval_py) = auth_eval.prepare_px_py();
+        let (gen_px, gen_py) = auth_gen.prepare_px_py();
+
+        let eval_gates = auth_eval.garble_and_gates(&gen_px, &gen_py).unwrap();
+        let gen_gates = auth_gen.garble_and_gates(cipher, &eval_px, &eval_py).unwrap();
+
+        let input_macs = auth_gen.collect_input_macs();
+        // let r = input_macs.iter().map(|mac| mac.pointer()).collect::<Vec<_>>();
+        // println!("r = {:?}", r);
+        // let s = circ
+        //     .inputs()
+        //     .iter()
+        //     .flat_map(|input_group| {
+        //         input_group.iter().map(|node| {
+        //             auth_eval.auth_bits[node.id()].bit()
+        //         })
+        //     })
+        //     .collect::<Vec<_>>();
+        // println!("s = {:?}", s);
+        let masked_inputs = auth_eval.collect_masked_inputs(eval_inputs, input_macs).unwrap();
+        // println!("masked_inputs = {:?}", masked_inputs);
+        let eval_labels = auth_gen.collect_input_labels(masked_inputs);
+        // let xor = eval_labels.iter().zip(zero_labels_copy.iter()).map(|(a, b)| a ^ b).collect::<Vec<_>>();
+        // println!("xor = {:?}", xor);
+        auth_eval.set_input_labels(eval_labels);
+        auth_eval.evaluate(eval_gates, gen_gates, cipher).unwrap(); // TODO
+
+        let output_macs = auth_gen.collect_output_macs();
+        let output_bits = auth_eval.finalize_outputs(output_macs).unwrap();
+
+        let output: Vec<u8> = Vec::from_lsb0_iter(output_bits);
+        // let output = output_bits[0];
+
+        assert_eq!(output, expected, "Final ciphertext mismatch");
+    }
+    
     #[test]
     fn test_garble_preprocessed() {
         let mut rng = StdRng::seed_from_u64(0);
