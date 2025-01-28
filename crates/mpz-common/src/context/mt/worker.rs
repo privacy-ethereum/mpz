@@ -3,20 +3,20 @@ use std::future::Future;
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use futures::{channel::oneshot, TryFutureExt};
 
-use crate::{context::ErrorKind, ContextError, ThreadId};
+use crate::{context::ErrorKind, Context, ContextError, ThreadId};
 
-type Job<Ctx> = Box<dyn FnOnce(&mut Ctx) + Send>;
+type Job = Box<dyn FnOnce(&mut Context) + Send>;
 
-pub(crate) struct Handle<Ctx> {
+pub(crate) struct Handle {
     id: ThreadId,
-    sender: Sender<Job<Ctx>>,
+    sender: Sender<Job>,
 }
 
-impl<Ctx> Handle<Ctx> {
+impl Handle {
     /// Sends a job to the worker.
     pub(crate) fn send<F>(&self, job: F) -> Result<(), ContextError>
     where
-        F: FnOnce(&mut Ctx) + Send + 'static,
+        F: FnOnce(&mut Context) + Send + 'static,
     {
         self.sender.send(Box::new(job)).map_err(|_| {
             ContextError::new(
@@ -33,7 +33,7 @@ impl<Ctx> Handle<Ctx> {
         job: F,
     ) -> Result<impl Future<Output = Result<R, ContextError>>, ContextError>
     where
-        F: FnOnce(&mut Ctx) -> R + Send + 'static,
+        F: FnOnce(&mut Context) -> R + Send + 'static,
         R: Send + 'static,
     {
         let (sender, receive) = oneshot::channel();
@@ -53,19 +53,19 @@ impl<Ctx> Handle<Ctx> {
     }
 }
 
-impl<Ctx> std::fmt::Debug for Handle<Ctx> {
+impl std::fmt::Debug for Handle {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Handle").field("id", &self.id).finish()
     }
 }
 
-pub(crate) struct Worker<Ctx> {
-    ctx: Ctx,
-    queue: Receiver<Job<Ctx>>,
+pub(crate) struct Worker {
+    ctx: Context,
+    queue: Receiver<Job>,
 }
 
-impl<Ctx> Worker<Ctx> {
-    pub(crate) fn new(id: ThreadId, ctx: Ctx) -> (Self, Handle<Ctx>) {
+impl Worker {
+    pub(crate) fn new(id: ThreadId, ctx: Context) -> (Self, Handle) {
         let (sender, receiver) = unbounded();
         let worker = Self {
             ctx,

@@ -58,10 +58,10 @@ where
 }
 
 #[async_trait]
-impl<Ctx, T, F> Flush<Ctx> for Sender<T, F>
+impl< T, F> Flush for Sender<T, F>
 where
-    Ctx: Context,
-    T: ROTSender<[F; 2]> + Flush<Ctx> + Send,
+    
+    T: ROTSender<[F; 2]> + Flush + Send,
     F: Field + Serialize,
 {
     type Error = SenderError;
@@ -70,7 +70,7 @@ where
         self.core.wants_send()
     }
 
-    async fn flush(&mut self, ctx: &mut Ctx) -> Result<(), Self::Error> {
+    async fn flush(&mut self, ctx: &mut Context) -> Result<(), Self::Error> {
         if self.core.rot().wants_flush() {
             self.core
                 .rot_mut()

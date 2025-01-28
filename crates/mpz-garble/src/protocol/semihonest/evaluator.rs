@@ -203,13 +203,12 @@ impl<COT> Callable<Binary> for Evaluator<COT> {
 }
 
 #[async_trait]
-impl<Ctx, COT> Execute<Ctx> for Evaluator<COT>
+impl<COT> Execute for Evaluator<COT>
 where
-    Ctx: Context + 'static,
-    COT: COTReceiver<bool, Block> + Flush<Ctx> + Send + 'static,
+    COT: COTReceiver<bool, Block> + Flush + Send + 'static,
     COT::Future: Send + 'static,
 {
-    async fn flush(&mut self, ctx: &mut Ctx) -> Result<()> {
+    async fn flush(&mut self, ctx: &mut Context) -> Result<()> {
         let mut store = self.store.try_lock().unwrap();
         if store.wants_flush() {
             store.flush(ctx).await.map_err(VmError::memory)?;
@@ -218,7 +217,7 @@ where
         Ok(())
     }
 
-    async fn preprocess(&mut self, ctx: &mut Ctx) -> Result<()> {
+    async fn preprocess(&mut self, ctx: &mut Context) -> Result<()> {
         let f = scope_closure(|ctx, (call, output): (Call, Slice)| {
             async move {
                 let garbled_circuit = receive_garbled_circuit(ctx, call.circ())
@@ -255,7 +254,7 @@ where
         Ok(())
     }
 
-    async fn execute(&mut self, ctx: &mut Ctx) -> Result<()> {
+    async fn execute(&mut self, ctx: &mut Context) -> Result<()> {
         if !self.preprocessed.is_empty() {
             self.execute_preprocessed()?;
         }
@@ -301,8 +300,8 @@ where
     f
 }
 
-async fn evaluate<Ctx: Context, COT>(
-    ctx: &mut Ctx,
+async fn evaluate<COT>(
+    ctx: &mut Context,
     store: Arc<Mutex<EvaluatorStore<COT>>>,
     call: Call,
     output: Slice,

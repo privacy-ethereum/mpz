@@ -15,18 +15,17 @@
     clippy::all
 )]
 
-mod context;
+pub mod context;
 #[cfg(any(test, feature = "cpu"))]
 pub mod cpu;
-#[cfg(any(test, feature = "executor"))]
-pub mod executor;
 #[cfg(any(test, feature = "future"))]
 pub mod future;
 mod id;
 #[cfg(any(test, feature = "ideal"))]
 pub mod ideal;
-#[cfg(any(test, feature = "executor"))]
+pub mod io;
 pub(crate) mod load_balance;
+mod mux;
 #[cfg(feature = "sync")]
 pub mod sync;
 
@@ -39,7 +38,7 @@ use async_trait::async_trait;
 
 /// A functionality that can be flushed.
 #[async_trait]
-pub trait Flush<Ctx> {
+pub trait Flush {
     /// Error type.
     type Error: std::error::Error + Send + Sync + 'static;
 
@@ -47,5 +46,5 @@ pub trait Flush<Ctx> {
     fn wants_flush(&self) -> bool;
 
     /// Flushes the functionality.
-    async fn flush(&mut self, ctx: &mut Ctx) -> Result<(), Self::Error>;
+    async fn flush(&mut self, ctx: &mut Context) -> Result<(), Self::Error>;
 }

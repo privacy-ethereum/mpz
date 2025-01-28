@@ -96,10 +96,10 @@ where
 }
 
 #[async_trait]
-impl<Ctx, COT> Flush<Ctx> for EvaluatorStore<COT>
+impl< COT> Flush for EvaluatorStore<COT>
 where
-    Ctx: Context,
-    COT: COTReceiver<bool, Block> + Flush<Ctx> + Send + 'static,
+    
+    COT: COTReceiver<bool, Block> + Flush + Send + 'static,
     COT::Future: Send + 'static,
 {
     type Error = Error;
@@ -108,7 +108,7 @@ where
         self.core.wants_flush()
     }
 
-    async fn flush(&mut self, ctx: &mut Ctx) -> Result<(), Self::Error> {
+    async fn flush(&mut self, ctx: &mut Context) -> Result<(), Self::Error> {
         while self.core.wants_flush() {
             let flush = self.core.send_flush()?;
             let mut cot = self.core.acquire_cot();

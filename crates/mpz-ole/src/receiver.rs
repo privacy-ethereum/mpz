@@ -60,10 +60,10 @@ where
 }
 
 #[async_trait]
-impl<Ctx, T, F> Flush<Ctx> for Receiver<T, F>
+impl< T, F> Flush for Receiver<T, F>
 where
-    Ctx: Context,
-    T: ROTReceiver<bool, F> + Flush<Ctx> + Send,
+    
+    T: ROTReceiver<bool, F> + Flush + Send,
     F: Field + Deserialize,
 {
     type Error = ReceiverError;
@@ -72,7 +72,7 @@ where
         self.core.wants_recv()
     }
 
-    async fn flush(&mut self, ctx: &mut Ctx) -> Result<(), Self::Error> {
+    async fn flush(&mut self, ctx: &mut Context) -> Result<(), Self::Error> {
         if self.core.rot().wants_flush() {
             self.core
                 .rot_mut()

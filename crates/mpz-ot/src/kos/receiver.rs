@@ -96,10 +96,10 @@ impl<BaseOT> RCOTReceiver<bool, Block> for Receiver<BaseOT> {
 }
 
 #[async_trait]
-impl<Ctx, BaseOT> Flush<Ctx> for Receiver<BaseOT>
+impl< BaseOT> Flush for Receiver<BaseOT>
 where
-    Ctx: Context,
-    BaseOT: OTSender<Block> + Flush<Ctx> + Send,
+    
+    BaseOT: OTSender<Block> + Flush + Send,
 {
     type Error = Error;
 
@@ -111,7 +111,7 @@ where
         }
     }
 
-    async fn flush(&mut self, ctx: &mut Ctx) -> Result<(), Self::Error> {
+    async fn flush(&mut self, ctx: &mut Context) -> Result<(), Self::Error> {
         let mut receiver = match self.state.take() {
             State::Initialized {
                 mut base_ot,

@@ -29,12 +29,12 @@ impl<OT> Prover<OT> {
 }
 
 #[async_trait]
-impl<Ctx, OT> Execute<Ctx> for Prover<OT>
+impl< OT> Execute for Prover<OT>
 where
-    Ctx: Context,
-    OT: RCOTReceiver<bool, Block> + Flush<Ctx> + Send + 'static,
+    
+    OT: RCOTReceiver<bool, Block> + Flush + Send + 'static,
 {
-    async fn flush(&mut self, ctx: &mut Ctx) -> Result<()> {
+    async fn flush(&mut self, ctx: &mut Context) -> Result<()> {
         if self.ot.wants_flush() {
             self.ot.flush(ctx).await.map_err(VmError::execute)?;
         }
@@ -66,11 +66,11 @@ where
         Ok(())
     }
 
-    async fn preprocess(&mut self, _ctx: &mut Ctx) -> Result<()> {
+    async fn preprocess(&mut self, _ctx: &mut Context) -> Result<()> {
         Ok(())
     }
 
-    async fn execute(&mut self, ctx: &mut Ctx) -> Result<()> {
+    async fn execute(&mut self, ctx: &mut Context) -> Result<()> {
         let mut prover = Core::default();
         while !self.callstack.is_empty() {
             let ready_calls: Vec<_> = self
