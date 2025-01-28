@@ -1,14 +1,16 @@
 mod call;
+mod decode;
 mod error;
 
 pub use call::{Call, CallBuilder, CallError};
+pub use decode::DecodeExt;
 pub use error::VmError;
 use mpz_common::Context;
 pub use mpz_memory_core as memory;
 pub type Result<T> = core::result::Result<T, VmError>;
 
 pub mod prelude {
-    pub use crate::{CallableExt, Execute};
+    pub use crate::{CallableExt, DecodeExt, Execute};
     pub use mpz_memory_core::{Array, MemoryExt, Slice, ViewExt};
 }
 
