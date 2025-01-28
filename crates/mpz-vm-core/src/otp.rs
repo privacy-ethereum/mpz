@@ -1,78 +1,68 @@
 use std::sync::Arc;
 
 use mpz_circuits::{Circuit, CircuitBuilder};
-use mpz_memory_core::{
-    DecodeFutureTyped, Memory, MemoryExt, MemoryType, Repr, StaticSize, View, ViewExt,
-};
+use mpz_memory_core::{Memory, MemoryExt, MemoryType, Repr, View, ViewExt};
 
 use crate::{Call, Callable, CallableExt, VmError};
 
-/// Extension trait for decoding.
-pub trait DecodeExt<T: MemoryType>:
+/// Extension trait for applying one-time pads.
+pub trait OneTimePad<T: MemoryType>:
     Memory<T, Error = VmError> + View<T, Error = VmError> + Callable<T>
 {
-    /// Decodes the value privately.
-    ///
-    /// Returns a future which will resolve to the masked value when it is
-    /// ready.
+    /// Masks the value with the provided one-time pad.
     ///
     /// # Arguments
     ///
-    /// * `value` - The value to decode.
+    /// * `value` - The value to mask.
     /// * `otp` - The one-time pad to mask the value.
-    fn decode_private<R>(
-        &mut self,
-        value: R,
-        otp: R::Clear,
-    ) -> Result<DecodeFutureTyped<T::Raw, R::Clear>, VmError>
+    fn mask_private<R>(&mut self, value: R, otp: R::Clear) -> Result<R, VmError>
     where
-        R: Repr<T> + StaticSize<T> + Copy,
+        R: Repr<T> + Copy,
     {
-        let otp_ref = self.alloc::<R>()?;
+        let size = value.to_raw().len();
+        let otp_ref = R::from_raw(self.alloc_raw(size)?);
         self.mark_private(otp_ref)?;
         self.assign(otp_ref, otp)?;
         self.commit(otp_ref)?;
 
         let masked: R = self.call(
-            Call::new(build_otp(R::SIZE))
+            Call::new(build_otp(size))
                 .arg(value)
                 .arg(otp_ref)
                 .build()
                 .expect("call should be valid"),
         )?;
 
-        self.decode(masked)
+        Ok(masked)
     }
 
-    /// Decodes the value blindly.
-    ///
-    /// Returns a future which will resolve to the masked value when it is
-    /// ready.
+    /// Masks the value blinded.
     ///
     /// # Arguments
     ///
-    /// * `value` - The value to decode.
-    fn decode_blind<R>(&mut self, value: R) -> Result<DecodeFutureTyped<T::Raw, R::Clear>, VmError>
+    /// * `value` - The value to mask.
+    fn mask_blind<R>(&mut self, value: R) -> Result<R, VmError>
     where
-        R: Repr<T> + StaticSize<T> + Copy,
+        R: Repr<T> + Copy,
     {
-        let otp_ref = self.alloc::<R>()?;
+        let size = value.to_raw().len();
+        let otp_ref = R::from_raw(self.alloc_raw(size)?);
         self.mark_blind(otp_ref)?;
         self.commit(otp_ref)?;
 
         let masked: R = self.call(
-            Call::new(build_otp(R::SIZE))
+            Call::new(build_otp(size))
                 .arg(value)
                 .arg(otp_ref)
                 .build()
                 .expect("call should be valid"),
         )?;
 
-        self.decode(masked)
+        Ok(masked)
     }
 }
 
-impl<T, U> DecodeExt<U> for T
+impl<T, U> OneTimePad<U> for T
 where
     T: Memory<U, Error = VmError> + View<U, Error = VmError> + Callable<U>,
     U: MemoryType,
@@ -92,4 +82,26 @@ fn build_otp(size: usize) -> Arc<Circuit> {
     let circ = builder.build().expect("circuit should be valid");
 
     Arc::new(circ)
+}
+
+#[cfg(test)]
+mod tests {
+    use mpz_memory_core::{
+        binary::{Binary, U8},
+        Vector,
+    };
+
+    use super::*;
+
+    #[test]
+    #[allow(dead_code)]
+    fn test_otp() {
+        fn single<Vm: OneTimePad<Binary>>(vm: &mut Vm, value: U8) {
+            vm.mask_private(value, 0u8).unwrap();
+        }
+
+        fn vec<Vm: OneTimePad<Binary>>(vm: &mut Vm, value: Vector<U8>) {
+            vm.mask_private(value, vec![0u8; 2]).unwrap();
+        }
+    }
 }
