@@ -102,7 +102,7 @@ uid-mux = { git = "https://github.com/tlsnotary/tlsn-utils", rev = "43995c5" }
 # testing
 rstest = "0.12"
 pretty_assertions = "1"
-criterion = "0.3"
+criterion = "0.5"
 
 # config
 cfg-if = "1"

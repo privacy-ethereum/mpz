@@ -6,20 +6,22 @@ use crate::{context::Context, sync::Syncer};
 
 use super::SyncError;
 
-/// A mutex which synchronizes exclusive access to a resource across logical threads.
+/// A mutex which synchronizes exclusive access to a resource across logical
+/// threads.
 ///
-/// There are two configurations for a mutex, either as a leader or as a follower.
+/// There are two configurations for a mutex, either as a leader or as a
+/// follower.
 ///
 /// **Leader**
 ///
-/// A leader mutex is the authority on the order in which threads can acquire a lock. When a
-/// thread acquires a lock, it broadcasts a message to all follower mutexes, which then enforce
-/// that this order is preserved.
+/// A leader mutex is the authority on the order in which threads can acquire a
+/// lock. When a thread acquires a lock, it broadcasts a message to all follower
+/// mutexes, which then enforce that this order is preserved.
 ///
 /// **Follower**
 ///
-/// A follower mutex waits for messages from the leader mutex to inform it of the order in which
-/// threads can acquire a lock.
+/// A follower mutex waits for messages from the leader mutex to inform it of
+/// the order in which threads can acquire a lock.
 #[derive(Debug)]
 pub struct Mutex<T> {
     inner: StdMutex<T>,
@@ -52,7 +54,7 @@ impl<T> Mutex<T> {
     }
 
     /// Returns a lock on the mutex.
-    pub async fn lock<Ctx: Context>(&self, ctx: &mut Ctx) -> Result<MutexGuard<'_, T>, MutexError> {
+    pub async fn lock(&self, ctx: &mut Context) -> Result<MutexGuard<'_, T>, MutexError> {
         self.syncer
             .sync(ctx.io_mut(), || self.inner.lock())
             .await?
@@ -87,7 +89,7 @@ mod tests {
         let leader_mutex = Arc::new(Mutex::new_leader(()));
         let follower_mutex = Arc::new(Mutex::new_follower(()));
 
-        let (mut ctx_a, mut ctx_b) = crate::executor::test_st_executor(8);
+        let (mut ctx_a, mut ctx_b) = crate::context::test_st_context(8);
 
         futures::executor::block_on(async {
             futures::join!(

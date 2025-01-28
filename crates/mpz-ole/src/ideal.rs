@@ -59,9 +59,9 @@ where
 }
 
 #[async_trait]
-impl<Ctx, F> Flush<Ctx> for IdealROLESender<F>
+impl< F> Flush for IdealROLESender<F>
 where
-    Ctx: Context,
+    
     F: Field,
 {
     type Error = IdealROLEError;
@@ -70,7 +70,7 @@ where
         self.core.wants_flush()
     }
 
-    async fn flush(&mut self, _ctx: &mut Ctx) -> Result<(), Self::Error> {
+    async fn flush(&mut self, _ctx: &mut Context) -> Result<(), Self::Error> {
         if self.core.wants_flush() {
             self.sync
                 .call(|| self.core.flush().map_err(IdealROLEError::from))
@@ -117,9 +117,9 @@ where
 }
 
 #[async_trait]
-impl<Ctx, F> Flush<Ctx> for IdealROLEReceiver<F>
+impl< F> Flush for IdealROLEReceiver<F>
 where
-    Ctx: Context,
+    
     F: Field,
 {
     type Error = IdealROLEError;
@@ -128,7 +128,7 @@ where
         self.core.wants_flush()
     }
 
-    async fn flush(&mut self, _ctx: &mut Ctx) -> Result<(), Self::Error> {
+    async fn flush(&mut self, _ctx: &mut Context) -> Result<(), Self::Error> {
         if self.core.wants_flush() {
             self.sync
                 .call(|| self.core.flush().map_err(IdealROLEError::from))

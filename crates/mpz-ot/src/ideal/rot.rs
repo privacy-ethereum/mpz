@@ -4,7 +4,7 @@ use async_trait::async_trait;
 
 use mpz_common::{
     ideal::{call_sync, CallSync},
-    Flush,
+    Context, Flush,
 };
 use mpz_core::Block;
 use mpz_ot_core::{
@@ -53,14 +53,14 @@ impl ROTSender<[Block; 2]> for IdealROTSender {
 }
 
 #[async_trait]
-impl<Ctx> Flush<Ctx> for IdealROTSender {
+impl Flush for IdealROTSender {
     type Error = IdealROTError;
 
     fn wants_flush(&self) -> bool {
         self.core.wants_flush()
     }
 
-    async fn flush(&mut self, _ctx: &mut Ctx) -> Result<(), Self::Error> {
+    async fn flush(&mut self, _ctx: &mut Context) -> Result<(), Self::Error> {
         if self.core.wants_flush() {
             self.sync
                 .call(|| self.core.flush().map_err(IdealROTError::from))
@@ -103,14 +103,14 @@ impl ROTReceiver<bool, Block> for IdealROTReceiver {
 }
 
 #[async_trait]
-impl<Ctx> Flush<Ctx> for IdealROTReceiver {
+impl Flush for IdealROTReceiver {
     type Error = IdealROTError;
 
     fn wants_flush(&self) -> bool {
         self.core.wants_flush()
     }
 
-    async fn flush(&mut self, _ctx: &mut Ctx) -> Result<(), Self::Error> {
+    async fn flush(&mut self, _ctx: &mut Context) -> Result<(), Self::Error> {
         if self.core.wants_flush() {
             self.sync
                 .call(|| self.core.flush().map_err(IdealROTError::from))

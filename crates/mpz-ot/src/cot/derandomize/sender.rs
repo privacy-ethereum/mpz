@@ -55,10 +55,10 @@ where
 }
 
 #[async_trait]
-impl<Ctx, T> Flush<Ctx> for DerandCOTSender<T>
+impl< T> Flush for DerandCOTSender<T>
 where
-    Ctx: Context,
-    T: RCOTSender<Block> + Flush<Ctx> + Send,
+    
+    T: RCOTSender<Block> + Flush + Send,
 {
     type Error = Error;
 
@@ -66,7 +66,7 @@ where
         self.core.wants_adjust()
     }
 
-    async fn flush(&mut self, ctx: &mut Ctx) -> Result<(), Self::Error> {
+    async fn flush(&mut self, ctx: &mut Context) -> Result<(), Self::Error> {
         if self.core.rcot().wants_flush() {
             self.core.rcot_mut().flush(ctx).await.map_err(Error::rcot)?;
         }

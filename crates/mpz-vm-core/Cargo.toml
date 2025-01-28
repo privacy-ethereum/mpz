@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 mpz-circuits = { workspace = true }
 mpz-memory-core = { workspace = true }
+mpz-common = { workspace = true }
 tlsn-utils = { workspace = true }
 thiserror = { workspace = true }
 futures = { workspace = true }

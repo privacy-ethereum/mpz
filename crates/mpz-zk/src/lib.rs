@@ -7,7 +7,7 @@ pub use verifier::Verifier;
 #[cfg(test)]
 mod tests {
     use mpz_circuits::circuits::AES128;
-    use mpz_common::executor::test_st_executor;
+    use mpz_common::context::test_st_context;
     use mpz_ot::ideal::rcot::{ideal_rcot, IdealRCOTReceiver, IdealRCOTSender};
     use mpz_vm_core::{
         memory::{
@@ -33,7 +33,7 @@ mod tests {
     async fn test_zk() {
         let mut rng = StdRng::seed_from_u64(0);
         let delta = Delta::random(&mut rng);
-        let (mut ctx_p, mut ctx_v) = test_st_executor(8);
+        let (mut ctx_p, mut ctx_v) = test_st_context(8);
 
         let (ot_send, ot_recv) = ideal_rcot(rng.gen(), delta.into_inner());
 

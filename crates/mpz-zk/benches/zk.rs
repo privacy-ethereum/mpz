@@ -1,7 +1,7 @@
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use futures::executor::block_on;
 use mpz_circuits::circuits::AES128;
-use mpz_common::executor::{mt::MTConfig, test_mt_executor};
+use mpz_common::context::test_mt_context;
 use mpz_ot::ideal::rcot::ideal_rcot;
 use mpz_vm_core::{
     memory::{binary::U8, correlated::Delta, Array},
@@ -20,9 +20,9 @@ fn criterion_benchmark(c: &mut Criterion) {
         let mut rng = StdRng::seed_from_u64(0);
         let delta = Delta::random(&mut rng);
 
-        let (mut exec_p, mut exec_v) = test_mt_executor(8, MTConfig::default());
-        let mut ctx_p = block_on(exec_p.new_thread()).unwrap();
-        let mut ctx_v = block_on(exec_v.new_thread()).unwrap();
+        let (mut exec_p, mut exec_v) = test_mt_context(8);
+        let mut ctx_p = block_on(exec_p.new_context()).unwrap();
+        let mut ctx_v = block_on(exec_v.new_context()).unwrap();
 
         b.iter(|| {
             block_on(async {

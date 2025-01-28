@@ -4,7 +4,7 @@ use async_trait::async_trait;
 
 use mpz_common::{
     ideal::{call_sync, CallSync},
-    Flush,
+    Context, Flush,
 };
 use mpz_core::Block;
 use mpz_ot_core::{
@@ -53,14 +53,14 @@ impl COTSender<Block> for IdealCOTSender {
 }
 
 #[async_trait]
-impl<Ctx> Flush<Ctx> for IdealCOTSender {
+impl Flush for IdealCOTSender {
     type Error = IdealCOTError;
 
     fn wants_flush(&self) -> bool {
         self.core.wants_flush()
     }
 
-    async fn flush(&mut self, _ctx: &mut Ctx) -> Result<(), Self::Error> {
+    async fn flush(&mut self, _ctx: &mut Context) -> Result<(), Self::Error> {
         if self.core.wants_flush() {
             self.sync
                 .call(|| self.core.flush().map_err(IdealCOTError::from))
@@ -96,14 +96,14 @@ impl COTReceiver<bool, Block> for IdealCOTReceiver {
 }
 
 #[async_trait]
-impl<Ctx> Flush<Ctx> for IdealCOTReceiver {
+impl Flush for IdealCOTReceiver {
     type Error = IdealCOTError;
 
     fn wants_flush(&self) -> bool {
         self.core.wants_flush()
     }
 
-    async fn flush(&mut self, _ctx: &mut Ctx) -> Result<(), Self::Error> {
+    async fn flush(&mut self, _ctx: &mut Context) -> Result<(), Self::Error> {
         if self.core.wants_flush() {
             self.sync
                 .call(|| self.core.flush().map_err(IdealCOTError::from))

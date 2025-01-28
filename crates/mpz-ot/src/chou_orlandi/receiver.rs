@@ -78,10 +78,7 @@ impl OTReceiver<bool, Block> for Receiver {
 }
 
 #[async_trait]
-impl<Ctx> Flush<Ctx> for Receiver
-where
-    Ctx: Context,
-{
+impl Flush for Receiver {
     type Error = Error;
 
     fn wants_flush(&self) -> bool {
@@ -92,7 +89,7 @@ where
         }
     }
 
-    async fn flush(&mut self, ctx: &mut Ctx) -> Result<(), Self::Error> {
+    async fn flush(&mut self, ctx: &mut Context) -> Result<(), Self::Error> {
         let mut receiver = match self.state.take() {
             State::Initialized(receiver) => {
                 let payload = ctx.io_mut().expect_next().await?;

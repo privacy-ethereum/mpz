@@ -161,12 +161,11 @@ impl<COT> Callable<Binary> for Generator<COT> {
 }
 
 #[async_trait]
-impl<Ctx, COT> Execute<Ctx> for Generator<COT>
+impl<COT> Execute for Generator<COT>
 where
-    Ctx: Context + 'static,
-    COT: COTSender<Block> + Flush<Ctx> + Send + 'static,
+    COT: COTSender<Block> + Flush + Send + 'static,
 {
-    async fn flush(&mut self, ctx: &mut Ctx) -> Result<()> {
+    async fn flush(&mut self, ctx: &mut Context) -> Result<()> {
         let mut store = self.store.try_lock().unwrap();
         if store.wants_flush() {
             store.flush(ctx).await.map_err(VmError::memory)?;
@@ -175,10 +174,10 @@ where
         Ok(())
     }
 
-    async fn preprocess(&mut self, ctx: &mut Ctx) -> Result<()> {
+    async fn preprocess(&mut self, ctx: &mut Context) -> Result<()> {
         let delta = *self.store.try_lock().unwrap().delta();
         let store = self.store.clone();
-        let f = scope_closure(move |ctx: &mut Ctx, (call, output): (Call, Slice)| {
+        let f = scope_closure(move |ctx: &mut Context, (call, output): (Call, Slice)| {
             generate(ctx, store.clone(), delta, call, output, Mode::Preprocess).scope_boxed()
         });
 
@@ -205,10 +204,10 @@ where
         Ok(())
     }
 
-    async fn execute(&mut self, ctx: &mut Ctx) -> Result<()> {
+    async fn execute(&mut self, ctx: &mut Context) -> Result<()> {
         let delta = *self.store.try_lock().unwrap().delta();
         let store = self.store.clone();
-        let f = scope_closure(move |ctx: &mut Ctx, (call, output): (Call, Slice)| {
+        let f = scope_closure(move |ctx: &mut Context, (call, output): (Call, Slice)| {
             generate(ctx, store.clone(), delta, call, output, Mode::Execute).scope_boxed()
         });
 
@@ -249,8 +248,8 @@ enum Mode {
     Execute,
 }
 
-async fn generate<Ctx: Context, COT>(
-    ctx: &mut Ctx,
+async fn generate<COT>(
+    ctx: &mut Context,
     store: Arc<Mutex<GeneratorStore<COT>>>,
     delta: Delta,
     call: Call,

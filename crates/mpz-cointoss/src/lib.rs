@@ -5,14 +5,14 @@
 //! ```
 //! use rand::{thread_rng, Rng};
 //! use mpz_core::Block;
-//! use mpz_common::executor::test_st_executor;
+//! use mpz_common::context::test_st_context;
 //! use mpz_cointoss::{cointoss_receiver, cointoss_sender};
 //! # use mpz_cointoss::CointossError;
 //! # use futures::executor::block_on;
 //!
 //! # fn main() {
 //! # block_on(async {
-//! let (mut ctx_sender, mut ctx_receiver) = test_st_executor(8);
+//! let (mut ctx_sender, mut ctx_receiver) = test_st_context(8);
 //! let sender_seeds = (0..8).map(|_| Block::random(&mut thread_rng())).collect();
 //! let receiver_seeds = (0..8).map(|_| Block::random(&mut thread_rng())).collect();
 //!
@@ -75,7 +75,7 @@ impl Sender {
     /// Sends the coin-toss commitment.
     pub async fn commit(
         self,
-        ctx: &mut impl Context,
+        ctx: &mut Context,
     ) -> Result<Sender<sender_state::Committed>, CointossError> {
         let (inner, commitment) = self.inner.send();
         ctx.io_mut().send(commitment).await?;
@@ -83,7 +83,7 @@ impl Sender {
     }
 
     /// Executes the coin-toss protocol to completion.
-    pub async fn execute(self, ctx: &mut impl Context) -> Result<Vec<Block>, CointossError> {
+    pub async fn execute(self, ctx: &mut Context) -> Result<Vec<Block>, CointossError> {
         let (seeds, sender) = self.commit(ctx).await?.receive(ctx).await?;
         sender.finalize(ctx).await?;
         Ok(seeds)
@@ -91,10 +91,11 @@ impl Sender {
 }
 
 impl Sender<sender_state::Committed> {
-    /// Receives the receiver's payload and computes the output of the coin-toss.
+    /// Receives the receiver's payload and computes the output of the
+    /// coin-toss.
     pub async fn receive(
         self,
-        ctx: &mut impl Context,
+        ctx: &mut Context,
     ) -> Result<(Vec<Block>, Sender<sender_state::Received>), CointossError> {
         let payload = ctx.io_mut().expect_next().await?;
         let (seeds, sender) = self.inner.receive(payload)?;
@@ -104,7 +105,7 @@ impl Sender<sender_state::Committed> {
 
 impl Sender<sender_state::Received> {
     /// Finalizes the coin-toss, decommitting the sender's seeds.
-    pub async fn finalize(self, ctx: &mut impl Context) -> Result<(), CointossError> {
+    pub async fn finalize(self, ctx: &mut Context) -> Result<(), CointossError> {
         ctx.io_mut().send(self.inner.finalize()).await?;
         Ok(())
     }
@@ -127,7 +128,7 @@ impl Receiver {
     /// Reveals the receiver's seeds after receiving the sender's commitment.
     pub async fn receive(
         self,
-        ctx: &mut impl Context,
+        ctx: &mut Context,
     ) -> Result<Receiver<receiver_state::Received>, CointossError> {
         let commitment = ctx.io_mut().expect_next().await?;
         let (inner, payload) = self.inner.reveal(commitment)?;
@@ -136,14 +137,14 @@ impl Receiver {
     }
 
     /// Executes the coin-toss protocol to completion.
-    pub async fn execute(self, ctx: &mut impl Context) -> Result<Vec<Block>, CointossError> {
+    pub async fn execute(self, ctx: &mut Context) -> Result<Vec<Block>, CointossError> {
         self.receive(ctx).await?.finalize(ctx).await
     }
 }
 
 impl Receiver<receiver_state::Received> {
     /// Finalizes the coin-toss, returning the random seeds.
-    pub async fn finalize(self, ctx: &mut impl Context) -> Result<Vec<Block>, CointossError> {
+    pub async fn finalize(self, ctx: &mut Context) -> Result<Vec<Block>, CointossError> {
         let payload = ctx.io_mut().expect_next().await?;
         let seeds = self.inner.finalize(payload)?;
         Ok(seeds)
@@ -157,7 +158,7 @@ impl Receiver<receiver_state::Received> {
 /// * `ctx` - The thread context.
 /// * `seeds` - The seeds to use for the coin-toss.
 pub async fn cointoss_sender(
-    ctx: &mut impl Context,
+    ctx: &mut Context,
     seeds: Vec<Block>,
 ) -> Result<Vec<Block>, CointossError> {
     Sender::new(seeds).execute(ctx).await
@@ -170,7 +171,7 @@ pub async fn cointoss_sender(
 /// * `ctx` - The thread context.
 /// * `seeds` - The seeds to use for the coin-toss.
 pub async fn cointoss_receiver(
-    ctx: &mut impl Context,
+    ctx: &mut Context,
     seeds: Vec<Block>,
 ) -> Result<Vec<Block>, CointossError> {
     Receiver::new(seeds).execute(ctx).await
@@ -181,11 +182,11 @@ mod tests {
     use super::*;
 
     use futures::executor::block_on;
-    use mpz_common::executor::test_st_executor;
+    use mpz_common::context::test_st_context;
 
     #[test]
     fn test_cointoss() {
-        let (mut ctx_a, mut ctx_b) = test_st_executor(8);
+        let (mut ctx_a, mut ctx_b) = test_st_context(8);
         block_on(async {
             futures::try_join!(
                 cointoss_sender(&mut ctx_a, vec![Block::ZERO, Block::ONES]),

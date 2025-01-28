@@ -22,8 +22,8 @@ use serio::SinkExt;
 /// * `inputs` - The inputs of the circuit.
 /// * `hash` - Whether to hash the circuit.
 #[tracing::instrument(fields(thread = %ctx.id()), skip_all)]
-pub async fn generate<Ctx: Context>(
-    ctx: &mut Ctx,
+pub async fn generate(
+    ctx: &mut Context,
     circ: Arc<Circuit>,
     delta: Delta,
     inputs: Vec<Key>,
