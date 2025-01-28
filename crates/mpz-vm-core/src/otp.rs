@@ -64,7 +64,7 @@ pub trait OneTimePad<T: MemoryType>:
 
 impl<T, U> OneTimePad<U> for T
 where
-    T: Memory<U, Error = VmError> + View<U, Error = VmError> + Callable<U>,
+    T: ?Sized + Memory<U, Error = VmError> + View<U, Error = VmError> + Callable<U>,
     U: MemoryType,
 {
 }
