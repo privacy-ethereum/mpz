@@ -26,13 +26,14 @@ pub enum AuthEvaluatorError {
     NotFinished,
     #[error("MAC verification failed at gate {0}")]
     MacCheckFailed(usize), 
-}
-
-/// Output of the evaluator.
-#[derive(Debug)]
-pub struct AuthEvaluatorOutput {
-    /// Output MACs of the circuit.
-    pub outputs: Vec<Mac>,
+    #[error("expected {expected} auth bits, got {actual}")]
+    InvalidAuthBitCount { expected: usize, actual: usize },
+    #[error("expected {expected} AND gates, got {actual}")]
+    InvalidPxPyCount { expected: usize, actual: usize },
+    #[error("expected {expected} input MACs, got {actual}")]
+    InvalidInputMacCount { expected: usize, actual: usize },
+    #[error("expected {expected} output MACs, got {actual}")]
+    InvalidOutputMacCount { expected: usize, actual: usize },
 }
 
 /// A table of MACs and keys for an AND gate.
@@ -107,13 +108,30 @@ impl<'a> AuthEvaluator<'a> {
     pub fn initialize(
         &mut self
     ) -> Result<(), AuthEvaluatorError> {
+
+        if self.circ.input_len() + self.circ.and_count() != self.fpre.wire_shares.len() {
+            return Err(AuthEvaluatorError::InvalidAuthBitCount {
+                expected: self.circ.input_len() + self.circ.and_count(),
+                actual: self.fpre.wire_shares.len(),
+            });
+        }
+
         let mut count = 0;
         if self.circ.feed_count() > self.auth_bits.len() {
             self.auth_bits.resize(self.circ.feed_count(), Default::default());
         }
+
         for input in self.circ.inputs() {
             for node in input.iter() {
                 self.auth_bits[node.id()] = self.fpre.wire_shares[count].clone();
+                count += 1;
+            }
+        }
+
+        // Fill auth bits for output wires of AND gates as well
+        for gate in self.circ.gates() {
+            if let Gate::And { x: _, y: _, z } = gate {
+                self.auth_bits[z.id()] = self.fpre.wire_shares[count].clone();
                 count += 1;
             }
         }
@@ -165,6 +183,15 @@ impl<'a> AuthEvaluator<'a> {
         px_vec: Vec<bool>,
         py_vec: Vec<bool>,
     ) -> Result<Vec<AndGateTable>, AuthEvaluatorError> {
+
+
+        if px_vec.len() != self.circ.and_count() || py_vec.len() != self.circ.and_count() {
+            return Err(AuthEvaluatorError::InvalidPxPyCount {
+                expected: self.circ.and_count(),
+                actual: px_vec.len().min(py_vec.len()),
+            });
+        }
+
         let mut tables = Vec::new();
         let mut and_count = 0;
 
@@ -229,6 +256,14 @@ impl<'a> AuthEvaluator<'a> {
 
     /// Verifies input MACs, returning `masked_inputs`.
     pub fn collect_masked_inputs(&mut self, inputs: Vec<bool>, input_macs: Vec<Mac>) -> Result<Vec<bool>, AuthEvaluatorError> {
+        let total_inputs = self.circ.input_len();
+        if input_macs.len() != total_inputs || inputs.len() != total_inputs {
+            return Err(AuthEvaluatorError::InvalidInputMacCount {
+                expected: total_inputs,
+                actual: input_macs.len().min(inputs.len()),
+            });
+        }
+
         let mut masked_inputs = Vec::new();
         let mut idx = 0;
         for input in self.circ.inputs() {
@@ -347,10 +382,11 @@ impl<'a> AuthEvaluator<'a> {
             .flat_map(|group| group.iter().map(|node| node.id()))
             .collect::<Vec<_>>();
 
-        if wire_ids.len() != gen_output_macs.len() {
-            return Err(AuthEvaluatorError::CircuitError(
-                CircuitError::InvalidInputCount(gen_output_macs.len(), wire_ids.len()),
-            ));
+        if gen_output_macs.len() != self.circ.output_len() {
+            return Err(AuthEvaluatorError::InvalidOutputMacCount {
+                expected: self.circ.output_len(),
+                actual: gen_output_macs.len(),
+            });
         }
 
         let final_bits = wire_ids.iter().enumerate()

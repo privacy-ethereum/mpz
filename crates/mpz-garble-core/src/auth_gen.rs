@@ -22,6 +22,12 @@ pub enum AuthGeneratorError {
     CircuitError(#[from] CircuitError),
     #[error("generator not finished")]
     NotFinished,
+    #[error("expected {expected} input labels, got {actual}")]
+    InvalidLabelCount { expected: usize, actual: usize },
+    #[error("expected {expected} auth bits, got {actual}")]
+    InvalidAuthBitCount { expected: usize, actual: usize },
+    #[error("expected {expected} AND gates, got {actual}")]
+    InvalidPxPyCount { expected: usize, actual: usize },
 }
 
 /// Authenticated garbled circuit generator.
@@ -54,6 +60,21 @@ impl<'a> AuthGenerator<'a> {
         &mut self,
         zero_labels: Vec<Block>,
     ) -> Result<(), AuthGeneratorError> {
+
+        if self.circ.input_len() != zero_labels.len() {
+            return Err(AuthGeneratorError::InvalidLabelCount {
+                expected: self.circ.input_len(),
+                actual: zero_labels.len(),
+            });
+        }
+
+        if self.circ.input_len() + self.circ.and_count() != self.fpre.wire_shares.len() {
+            return Err(AuthGeneratorError::InvalidAuthBitCount {
+                expected: self.circ.input_len() + self.circ.and_count(),
+                actual: self.fpre.wire_shares.len(),
+            });
+        }
+
         if self.circ.feed_count() > self.labels.len() {
             self.labels.resize(self.circ.feed_count(), Default::default());
         }
@@ -68,6 +89,14 @@ impl<'a> AuthGenerator<'a> {
             for (node, label) in input.iter().zip(zero_labels_iter.by_ref()) {
                 self.labels[node.id()] = label;
                 self.auth_bits[node.id()] = self.fpre.wire_shares[count].clone();
+                count += 1;
+            }
+        }
+
+        // Fill auth bits for output wires of AND gates as well
+        for gate in self.circ.gates() {
+            if let Gate::And { x: _, y: _, z } = gate {
+                self.auth_bits[z.id()] = self.fpre.wire_shares[count].clone();
                 count += 1;
             }
         }
@@ -144,6 +173,13 @@ impl<'a> AuthGenerator<'a> {
         let mut and_gates = Vec::new();
         let mut and_count = 0;
 
+        if px_vec.len() != self.circ.and_count() || py_vec.len() != self.circ.and_count() {
+            return Err(AuthGeneratorError::InvalidPxPyCount {
+                expected: self.circ.and_count(),
+                actual: px_vec.len().min(py_vec.len()),
+            });
+        }
+        
         // Delta with lsb set to 0 to not flip the pointer bit
         let mut zdelta_mask: Block = Block::ONES;
         zdelta_mask.set_lsb(false);

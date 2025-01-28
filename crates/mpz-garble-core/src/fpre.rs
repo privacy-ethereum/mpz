@@ -10,6 +10,17 @@ use rand_chacha::ChaCha12Rng;
 
 use mpz_memory_core::correlated::{Delta, Key, Mac};
 
+#[derive(Debug, thiserror::Error)]
+#[allow(missing_docs)]
+pub enum FpreError {
+    #[error("fpre not yet generated")]
+    NotGenerated,
+    #[error("invalid wire shares: have {0}, expected {1}")]
+    InvalidWireCount(usize, usize),
+    #[error("invalid triple shares: have {0}, expected {1}")]
+    InvalidTripleCount(usize, usize),
+}
+
 /// (key, mac) pair with bit = mac.pointer()
 #[derive(Debug, Clone, Default, Copy)]
 pub struct AuthBitShare {
