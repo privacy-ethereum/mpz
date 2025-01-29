@@ -12,7 +12,7 @@ use mpz_core::{
 
 
 use mpz_memory_core::correlated:: Key;
-use crate::fpre::{FpreEval, AuthBitShare};
+use crate::{fpre::{FpreEval, AuthBitShare}, Party};
 
 /// Errors that can occur during garbled circuit evaluation.
 #[derive(Debug, thiserror::Error)]
@@ -64,7 +64,9 @@ pub struct AuthEvaluator<'a> {
     /// A parallel buffer of AuthBitShares for each wire
     pub masked_values: Vec<bool>,
     /// The circuit to garble
-    pub circ: &'a Circuit
+    pub circ: &'a Circuit,
+    /// The input owners for the circuit
+    pub input_owners: Vec<Party>,
 }
 
 /// Performs the gate "hashing" step for evaluator.
@@ -94,13 +96,14 @@ fn gate_eval(
 
 impl<'a> AuthEvaluator<'a> {
     /// Creates a new `AuthEvaluator` from an [`FpreEval`](crate::fpre::FpreEval) and circuit
-    pub fn new(circ: &'a Circuit, fpre: FpreEval) -> Self {
+    pub fn new(circ: &'a Circuit, fpre: FpreEval, input_owners: Vec<Party>) -> Self {
         Self {
             fpre,
             labels: Vec::new(),
             auth_bits: Vec::new(),
             masked_values: Vec::new(),
-            circ
+            circ,
+            input_owners,
         }
     }
 
@@ -254,13 +257,36 @@ impl<'a> AuthEvaluator<'a> {
         Ok(tables)
     }
 
+    /// Returns the MAC for each input wire.
+    pub fn collect_input_macs(
+        &self,
+    ) -> Vec<Mac> {
+        let mut macs = Vec::new();
+        for input_group in self.circ.inputs() {
+            for node in input_group.iter() {
+                // If this node is Evaluator’s, collect the MAC
+                if self.input_owners[node.id()] == Party::Generator {
+                    macs.push(self.auth_bits[node.id()].mac);
+                }
+            }
+        }
+        macs
+    }
+
     /// Verifies input MACs, returning `masked_inputs`.
-    pub fn collect_masked_inputs(&mut self, inputs: Vec<bool>, input_macs: Vec<Mac>) -> Result<Vec<bool>, AuthEvaluatorError> {
-        let total_inputs = self.circ.input_len();
-        if input_macs.len() != total_inputs || inputs.len() != total_inputs {
+    pub fn collect_masked_inputs(&mut self, eval_inputs: Vec<bool>, eval_input_macs: Vec<Mac>) -> Result<Vec<bool>, AuthEvaluatorError> {
+        
+        let delta_b = self.fpre.delta_b.into_inner();
+        
+        // count instances of Party::Evaluator in self.input_owners
+        let num_eval_inputs = self.input_owners
+            .iter()
+            .filter(|&p| *p == Party::Evaluator)
+            .count();
+        if eval_input_macs.len() != num_eval_inputs || eval_inputs.len() != num_eval_inputs {
             return Err(AuthEvaluatorError::InvalidInputMacCount {
-                expected: total_inputs,
-                actual: input_macs.len().min(inputs.len()),
+                expected: num_eval_inputs,
+                actual: eval_input_macs.len().min(eval_inputs.len()),
             });
         }
 
@@ -268,34 +294,25 @@ impl<'a> AuthEvaluator<'a> {
         let mut idx = 0;
         for input in self.circ.inputs() {
             for node in input.iter() {
-                let delta_b = self.fpre.delta_b.into_inner();
-                let mut mac = input_macs[idx].as_block().clone(); 
-                let key = self.auth_bits[node.id()].key.as_block().clone();
-                
-                let mac_lsb = mac.lsb();
+                if self.input_owners[node.id()] == Party::Evaluator {                
+                    let mut mac = eval_input_macs[idx].as_block().clone(); 
+                    let key = self.auth_bits[node.id()].key.as_block().clone();
+                    
+                    let mac_lsb = mac.lsb();
 
-                if mac_lsb {
-                    mac = mac ^ delta_b;
+                    if mac_lsb {
+                        mac = mac ^ delta_b;
+                    }
+
+                    if key != mac {
+                        return Err(AuthEvaluatorError::MacCheckFailed(idx));
+                    }
+
+                    let masked_input = self.auth_bits[node.id()].bit()^eval_inputs[idx]^mac_lsb;
+                    masked_inputs.push(masked_input);
+                    // self.masked_values[node.id()] = masked_input;
+                    idx += 1;
                 }
-
-                if key != mac {
-                    return Err(AuthEvaluatorError::MacCheckFailed(idx));
-                }
-
-                let masked_input = self.auth_bits[node.id()].bit()^inputs[idx]^mac_lsb;
-                masked_inputs.push(masked_input);
-                idx += 1;
-            }
-        }
-
-        // Put them into self.masked_values
-        if self.circ.feed_count() > self.masked_values.len() {
-            self.masked_values.resize(self.circ.feed_count(), Default::default());
-        }
-        let mut masked_iter = masked_inputs.iter().copied();  // Create an iterator over references
-        for input in self.circ.inputs() {
-            for (node, masked_value) in input.iter().zip(masked_iter.by_ref()) {
-                self.masked_values[node.id()] = masked_value;
             }
         }
 
@@ -311,6 +328,20 @@ impl<'a> AuthEvaluator<'a> {
         for node in self.circ.inputs().iter() {
             for node in node.iter() {
                 self.labels[node.id()] = input_labels[idx];
+                idx += 1;
+            }
+        }
+    }
+
+    /// Set the masked values for the evaluator.
+    pub fn set_masked_values(&mut self, masked_inputs: Vec<bool>) -> () {
+        let mut idx = 0;
+        if self.circ.feed_count() > self.masked_values.len() {
+            self.masked_values.resize(self.circ.feed_count(), Default::default());
+        }
+        for node in self.circ.inputs().iter() {
+            for node in node.iter() {
+                self.masked_values[node.id()] = masked_inputs[idx];
                 idx += 1;
             }
         }

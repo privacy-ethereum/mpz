@@ -1,6 +1,7 @@
 use crate::{
     circuit::AuthEncryptedGate,
     fpre::{FpreGen, AuthBitShare},
+    Party
 };
 use mpz_circuits::{
     types::TypeError,
@@ -22,12 +23,18 @@ pub enum AuthGeneratorError {
     CircuitError(#[from] CircuitError),
     #[error("generator not finished")]
     NotFinished,
+    #[error("MAC verification failed at gate {0}")]
+    MacCheckFailed(usize), 
     #[error("expected {expected} input labels, got {actual}")]
     InvalidLabelCount { expected: usize, actual: usize },
     #[error("expected {expected} auth bits, got {actual}")]
     InvalidAuthBitCount { expected: usize, actual: usize },
     #[error("expected {expected} AND gates, got {actual}")]
     InvalidPxPyCount { expected: usize, actual: usize },
+    #[error("expected {expected} input MACs, got {actual}")]
+    InvalidInputMacCount { expected: usize, actual: usize },
+    // #[error("expected {expected} output MACs, got {actual}")]
+    // InvalidOutputMacCount { expected: usize, actual: usize },
 }
 
 /// Authenticated garbled circuit generator.
@@ -41,16 +48,19 @@ pub struct AuthGenerator<'a> {
     pub auth_bits: Vec<AuthBitShare>,
     /// Reference to the circuit to be garbled.
     pub circ: &'a Circuit,
+    /// The input owners for the circuit
+    pub input_owners: Vec<Party>,
 }
 
 impl<'a> AuthGenerator<'a> {
     /// Creates a new `AuthGenerator` from FpreGen and circuit.
-    pub fn new(circ: &'a Circuit, fpre: FpreGen) -> Self {
+    pub fn new(circ: &'a Circuit, fpre: FpreGen, input_owners: Vec<Party>) -> Self {
         Self {
             fpre,
             labels: Vec::new(),
             auth_bits: Vec::new(),
-            circ
+            circ,
+            input_owners,
         }
     }
 
@@ -264,18 +274,69 @@ impl<'a> AuthGenerator<'a> {
     }
 
     /// Returns the MAC for each input wire.
-    pub fn collect_input_macs(&self) -> Vec<Mac> {
+    pub fn collect_input_macs(
+        &self,
+    ) -> Vec<Mac> {
         let mut macs = Vec::new();
-        for input in self.circ.inputs() {
-            for node in input.iter() {
-                macs.push(self.auth_bits[node.id()].mac);
+        for input_group in self.circ.inputs() {
+            for node in input_group.iter() {
+                // If this node is Evaluator’s, collect the MAC
+                if self.input_owners[node.id()] == Party::Evaluator {
+                    macs.push(self.auth_bits[node.id()].mac);
+                }
             }
         }
         macs
     }
 
-    /// Collect the input labels corresponding to masked_inputsfor the evaluator.
-    pub fn collect_input_labels(&self, masked_inputs: Vec<bool>) -> Vec<Block> {
+
+    /// Verifies input MACs, returning `masked_inputs`.
+    pub fn collect_masked_inputs(&mut self, gen_inputs: Vec<bool>, gen_input_macs: Vec<Mac>) -> Result<Vec<bool>, AuthGeneratorError> {
+        
+        let delta_a = self.fpre.delta_a.into_inner();
+        
+        // count instances of Party::Evaluator in self.input_owners
+        let num_gen_inputs = self.input_owners
+            .iter()
+            .filter(|&p| *p == Party::Generator)
+            .count();
+        if gen_input_macs.len() != num_gen_inputs || gen_inputs.len() != num_gen_inputs {
+            return Err(AuthGeneratorError::InvalidInputMacCount {
+                expected: num_gen_inputs,
+                actual: gen_input_macs.len().min(gen_inputs.len()),
+            });
+        }
+
+        let mut masked_inputs = Vec::new();
+        let mut idx = 0;
+        for input in self.circ.inputs() {
+            for node in input.iter() {
+                if self.input_owners[node.id()] == Party::Generator {                
+                    let mut mac = gen_input_macs[idx].as_block().clone(); 
+                    let key = self.auth_bits[node.id()].key.as_block().clone();
+                    
+                    let mac_lsb = mac.lsb();
+
+                    if mac_lsb {
+                        mac = mac ^ delta_a;
+                    }
+
+                    if key != mac {
+                        return Err(AuthGeneratorError::MacCheckFailed(idx));
+                    }
+
+                    let masked_input = self.auth_bits[node.id()].bit()^gen_inputs[idx]^mac_lsb;
+                    masked_inputs.push(masked_input);
+                    idx += 1;
+                }
+            }
+        }
+
+        Ok(masked_inputs) 
+    }
+
+    /// Collect the input labels corresponding to masked_inputs for the evaluator and generator.
+    pub fn collect_input_labels(&self, masked_inputs: &Vec<bool>) -> Vec<Block> {
         let mut labels = Vec::new();
         let mut idx = 0;
         let delta_a = self.fpre.delta_a.into_inner();

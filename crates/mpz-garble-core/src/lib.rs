@@ -17,10 +17,6 @@ pub(crate) mod view;
 
 pub use circuit::{AuthEncryptedGate, AuthEncryptedGateBatch, EncryptedGate, EncryptedGateBatch, GarbledCircuit, sigma};
 
-// use mpz_circuits::{
-//     Circuit, Gate,
-// };
-
 pub use evaluator::{evaluate_garbled_circuits, EncryptedGateBatchConsumer, EncryptedGateConsumer, Evaluator,
     EvaluatorError, EvaluatorOutput,};
 pub use auth_eval::{
@@ -40,6 +36,13 @@ const BYTES_PER_GATE: usize = 32;
 
 /// Maximum size of a batch in bytes.
 const MAX_BATCH_SIZE: usize = 4 * KB;
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+#[allow(missing_docs)]
+pub enum Party {
+    Generator,
+    Evaluator,
+}
 
 /// Default amount of encrypted gates per batch.
 ///
@@ -214,7 +217,6 @@ mod tests {
             block.into()
         };
 
-
         // let a = 1u8;
         // let b = 2u8;
         // let expected = a ^ b;
@@ -228,13 +230,35 @@ mod tests {
         // 3) Extract fpre_gen & fpre_eval
         let (fpre_gen, fpre_eval) = fpre.into_gen_eval();
 
-        // 4) Build an AuthGenerator and AuthEvaluator referencing the same circuit
-        let mut auth_gen = AuthGenerator::new(&circ, fpre_gen);
-        let mut auth_eval = AuthEvaluator::new(&circ, fpre_eval);
+        let mut input_owners = Vec::new();
+        for input in circ.inputs() {
+            for node in input.iter() {
+                let id = node.id();
+                if id < circ.input_len()/4 {
+                    input_owners.push(Party::Evaluator);
+                } else if id < circ.input_len()/2 {
+                    input_owners.push(Party::Generator);
+                } else if id < 3*circ.input_len()/4 {
+                    input_owners.push(Party::Evaluator);
+                } else {
+                    input_owners.push(Party::Generator);
+                }
+            }
+        }
 
-        let eval_inputs = key.iter_lsb0()
-            .chain(msg.iter_lsb0())
-            .collect::<Vec<_>>();
+
+        let key1 = [69u8; 8];
+        let key2 = [69u8; 8];
+        let msg1 = [42u8; 8];
+        let msg2 = [42u8; 8];
+        let eval_inputs = key1.iter_lsb0().chain(msg1.iter_lsb0()).collect::<Vec<_>>();
+        let gen_inputs = key2.iter_lsb0().chain(msg2.iter_lsb0()).collect::<Vec<_>>();
+        // let eval_inputs = key.iter_lsb0()
+        //     .chain(msg.iter_lsb0())
+        //     .collect::<Vec<_>>();
+        // 4) Build an AuthGenerator and AuthEvaluator referencing the same circuit
+        let mut auth_gen = AuthGenerator::new(&circ, fpre_gen, input_owners.clone());
+        let mut auth_eval = AuthEvaluator::new(&circ, fpre_eval, input_owners.clone());
 
         // println!("eval_inputs = {:?}", eval_inputs);
 
@@ -256,7 +280,8 @@ mod tests {
         let eval_gates = auth_eval.garble_and_gates(gen_px, gen_py).unwrap();
         let gen_gates = auth_gen.garble_and_gates(cipher, eval_px, eval_py).unwrap();
 
-        let input_macs = auth_gen.collect_input_macs();
+        let gen_input_macs = auth_eval.collect_input_macs();
+        let eval_input_macs = auth_gen.collect_input_macs();
         // let r = input_macs.iter().map(|mac| mac.pointer()).collect::<Vec<_>>();
         // println!("r = {:?}", r);
         // let s = circ
@@ -269,13 +294,32 @@ mod tests {
         //     })
         //     .collect::<Vec<_>>();
         // println!("s = {:?}", s);
-        let masked_inputs = auth_eval.collect_masked_inputs(eval_inputs, input_macs).unwrap();
+        let eval_masked_inputs = auth_eval.collect_masked_inputs(eval_inputs, eval_input_macs).unwrap();
         // println!("masked_inputs = {:?}", masked_inputs);
-        let eval_labels = auth_gen.collect_input_labels(masked_inputs);
+        let gen_masked_inputs = auth_gen.collect_masked_inputs(gen_inputs, gen_input_macs).unwrap();
+
+        let mut masked_inputs = Vec::new();
+
+        let mut gen_idx = 0;
+        let mut eval_idx = 0;
+        for inputs in circ.inputs() {
+            for node in inputs.iter() {
+                if input_owners[node.id()] == Party::Evaluator {
+                    masked_inputs.push(eval_masked_inputs[eval_idx]);
+                    eval_idx += 1;
+                } else {
+                    masked_inputs.push(gen_masked_inputs[gen_idx]);
+                    gen_idx += 1;
+                }
+            }
+        }
+
+        let labels = auth_gen.collect_input_labels(&masked_inputs);
         // let xor = eval_labels.iter().zip(zero_labels_copy.iter()).map(|(a, b)| a ^ b).collect::<Vec<_>>();
         // println!("xor = {:?}", xor);
-        auth_eval.set_input_labels(eval_labels);
-        auth_eval.evaluate(eval_gates, gen_gates, cipher).unwrap(); // TODO
+        auth_eval.set_input_labels(labels);
+        auth_eval.set_masked_values(masked_inputs);
+        auth_eval.evaluate(eval_gates, gen_gates, cipher).unwrap();
 
         let output_macs = auth_gen.collect_output_macs();
         let output_bits = auth_eval.finalize_outputs(output_macs).unwrap();
@@ -415,9 +459,6 @@ mod tests {
 }
 
 // Next steps:
-// 1) Input processing -- differentiate between Alice and Bob's inputs -- right now Bob picks all inputs
-// 2) Robust testing with different circuits
-// ---
-// 3) Output processing -- allow Gen to learn output as well, optimize by masking to sec param
-// 4) Hash tweaks
-
+// 1) Robust testing with different circuits and different input ownership
+// 2) Output processing -- allow Gen to learn output as well, optimize by masking to sec param
+// 3) Hash tweaks
