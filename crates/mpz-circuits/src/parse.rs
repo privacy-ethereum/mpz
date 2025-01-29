@@ -25,7 +25,7 @@ pub enum ParseError {
 impl Circuit {
     /// Parses a circuit in Bristol-fashion format from a file.
     ///
-    /// See `https://homes.esat.kuleuven.be/~nsmart/MPC/` for more information.
+    /// See `https://nigelsmart.github.io/MPC-Circuits/` for more information.
     ///
     /// # Arguments
     ///
