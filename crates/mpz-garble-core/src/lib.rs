@@ -31,6 +31,8 @@ pub use auth_gen::{AuthGenerator, AuthGeneratorError};
 pub use fpre::{Fpre, FpreError};
 pub use mpz_memory_core::correlated::{Delta, Key, Mac};
 
+pub use mpz_circuits::Circuit;
+
 const KB: usize = 1024;
 const BYTES_PER_GATE: usize = 32;
 
@@ -165,171 +167,6 @@ mod tests {
         assert_eq!(output, expected);
     }
 
-    // // This small utility collects the `z` wire ID for each AND gate in topological order
-    // fn collect_and_wires(circ: &Circuit) -> Vec<usize> {
-    //     let mut wires = Vec::new();
-    //     for gate in circ.gates() {
-    //         if let Gate::And { x, y, z } = gate {
-    //             wires.push(z.id());
-    //         }
-    //     }
-    //     wires
-    // }
-
-    #[test]
-    fn test_auth_garble() {
-
-        let mut rng = StdRng::seed_from_u64(0);
-        
-        let cipher = &(*FIXED_KEY_AES);
-        let circ = &AES128;
-
-        // // Only XOR gates circuit
-        // let builder = CircuitBuilder::new();
-        // let a = builder.add_input::<u8>();
-        // let b = builder.add_input::<u8>();
-        // let c = a ^ b;
-        // builder.add_output(c);
-        // let circ = builder.build().unwrap();
-        // assert_eq!(circ.and_count(), 0);
-
-        // // Single AND gate circuit
-        // let builder = CircuitBuilder::new();
-        // let a = builder.add_input::<bool>();
-        // let b = builder.add_input::<bool>();
-        // let c = a & b;
-        // builder.add_output(c);
-        // let circ = builder.build().unwrap();
-        // assert_eq!(circ.and_count(), 1);
-
-        // let a = false;
-        // let b = false;
-        // let c = a & b;
-
-        // // // We'll do a small single-process test to encrypt `msg` with `key`.
-        let key = [69u8; 16]; // AES key
-        let msg = [42u8; 16]; // plaintext
-        // The "expected" result by doing real AES
-        let expected: [u8; 16] = {
-            let cipher = Aes128::new_from_slice(&key).unwrap();
-            let mut block = msg.into();
-            cipher.encrypt_block(&mut block);
-            block.into()
-        };
-
-        // let a = 1u8;
-        // let b = 2u8;
-        // let expected = a ^ b;
-        
-        // 2) Create an Fpre with enough wires for AES-128
-        let num_input_wires = circ.input_len(); // e.g. 256 bits
-        let num_and_gates = circ.and_count();   // e.g. some # of AND gates
-        let mut fpre = Fpre::new(0xDEAD_BEEF, num_input_wires, num_and_gates);
-        fpre.generate(); // fill the auth_bits & auth_triples
-
-        // 3) Extract fpre_gen & fpre_eval
-        let (fpre_gen, fpre_eval) = fpre.into_gen_eval();
-
-        let mut input_owners = Vec::new();
-        for input in circ.inputs() {
-            for node in input.iter() {
-                let id = node.id();
-                if id < circ.input_len()/4 {
-                    input_owners.push(Party::Evaluator);
-                } else if id < circ.input_len()/2 {
-                    input_owners.push(Party::Generator);
-                } else if id < 3*circ.input_len()/4 {
-                    input_owners.push(Party::Evaluator);
-                } else {
-                    input_owners.push(Party::Generator);
-                }
-            }
-        }
-
-
-        let key1 = [69u8; 8];
-        let key2 = [69u8; 8];
-        let msg1 = [42u8; 8];
-        let msg2 = [42u8; 8];
-        let eval_inputs = key1.iter_lsb0().chain(msg1.iter_lsb0()).collect::<Vec<_>>();
-        let gen_inputs = key2.iter_lsb0().chain(msg2.iter_lsb0()).collect::<Vec<_>>();
-        // let eval_inputs = key.iter_lsb0()
-        //     .chain(msg.iter_lsb0())
-        //     .collect::<Vec<_>>();
-        // 4) Build an AuthGenerator and AuthEvaluator referencing the same circuit
-        let mut auth_gen = AuthGenerator::new(&circ, fpre_gen, input_owners.clone());
-        let mut auth_eval = AuthEvaluator::new(&circ, fpre_eval, input_owners.clone());
-
-        // println!("eval_inputs = {:?}", eval_inputs);
-
-        let zero_labels = (0..circ.input_len())
-            .map(|_| rng.gen())
-            .collect::<Vec<Block>>();
-
-        // 6) Initialize generator & evaluator with these input wire keys (toy approach)
-        auth_gen.initialize(zero_labels).unwrap();
-        auth_eval.initialize().unwrap();
-
-        // // 7) Evaluate free gates (XOR/NOT)
-        auth_gen.evaluate_free_gates();
-        auth_eval.garble_free_gates();
-
-        let (eval_px, eval_py) = auth_eval.prepare_px_py();
-        let (gen_px, gen_py) = auth_gen.prepare_px_py();
-
-        let eval_gates = auth_eval.garble_and_gates(gen_px, gen_py).unwrap();
-        let gen_gates = auth_gen.garble_and_gates(cipher, eval_px, eval_py).unwrap();
-
-        let gen_input_macs = auth_eval.collect_input_macs();
-        let eval_input_macs = auth_gen.collect_input_macs();
-        // let r = input_macs.iter().map(|mac| mac.pointer()).collect::<Vec<_>>();
-        // println!("r = {:?}", r);
-        // let s = circ
-        //     .inputs()
-        //     .iter()
-        //     .flat_map(|input_group| {
-        //         input_group.iter().map(|node| {
-        //             auth_eval.auth_bits[node.id()].bit()
-        //         })
-        //     })
-        //     .collect::<Vec<_>>();
-        // println!("s = {:?}", s);
-        let eval_masked_inputs = auth_eval.collect_masked_inputs(eval_inputs, eval_input_macs).unwrap();
-        // println!("masked_inputs = {:?}", masked_inputs);
-        let gen_masked_inputs = auth_gen.collect_masked_inputs(gen_inputs, gen_input_macs).unwrap();
-
-        let mut masked_inputs = Vec::new();
-
-        let mut gen_idx = 0;
-        let mut eval_idx = 0;
-        for inputs in circ.inputs() {
-            for node in inputs.iter() {
-                if input_owners[node.id()] == Party::Evaluator {
-                    masked_inputs.push(eval_masked_inputs[eval_idx]);
-                    eval_idx += 1;
-                } else {
-                    masked_inputs.push(gen_masked_inputs[gen_idx]);
-                    gen_idx += 1;
-                }
-            }
-        }
-
-        let labels = auth_gen.collect_input_labels(&masked_inputs);
-        // let xor = eval_labels.iter().zip(zero_labels_copy.iter()).map(|(a, b)| a ^ b).collect::<Vec<_>>();
-        // println!("xor = {:?}", xor);
-        auth_eval.set_input_labels(labels);
-        auth_eval.set_masked_values(masked_inputs);
-        auth_eval.evaluate(eval_gates, gen_gates, cipher).unwrap();
-
-        let output_macs = auth_gen.collect_output_macs();
-        let output_bits = auth_eval.finalize_outputs(output_macs).unwrap();
-
-        let output: Vec<u8> = Vec::from_lsb0_iter(output_bits);
-        // let output = output_bits[0];
-
-        assert_eq!(output, expected, "Final ciphertext mismatch");
-    }
-    
     #[test]
     fn test_garble_preprocessed() {
         let mut rng = StdRng::seed_from_u64(0);
@@ -456,10 +293,247 @@ mod tests {
 
         assert_eq!(output, expected);
     }
+
+    // Helper function to test auth garbling
+    fn auth_garble(circ: &Circuit, input: Vec<bool>, input_owners: Vec<Party>) -> Vec<bool> { 
+        if input.len() != input_owners.len() {
+            panic!("Input length does not match input owners length");
+        }
+
+        let mut rng = StdRng::seed_from_u64(0);    
+        let cipher = &(*FIXED_KEY_AES);
+        
+        // Insecure generation of Fpre
+        let num_input_wires = circ.input_len();
+        let num_and_gates = circ.and_count();
+        let mut fpre = Fpre::new(0xDEAD_BEEF, num_input_wires, num_and_gates);
+        fpre.generate(); // fill with random auth_bits & auth_triples
+
+        let (fpre_gen, fpre_eval) = fpre.into_gen_eval();
+
+        // Set inputs based on input ownership in order of node id  
+        let mut eval_inputs: Vec<bool> = Vec::new();
+        let mut gen_inputs: Vec<bool> = Vec::new();
+
+        let mut idx = 0;
+
+        for input_group in circ.inputs() {
+            for node in input_group.iter() {
+                if input_owners[node.id()] == Party::Evaluator {
+                    eval_inputs.push(input[idx]);
+                } else {
+                    gen_inputs.push(input[idx]);
+                }
+                idx += 1;
+            }
+        }
+
+        // Initialize AuthGenerator and AuthEvaluator
+        let mut auth_gen = AuthGenerator::new(&circ, fpre_gen, input_owners.clone());
+        let mut auth_eval = AuthEvaluator::new(&circ, fpre_eval, input_owners.clone());
+
+        let zero_labels = (0..circ.input_len())
+            .map(|_| rng.gen())
+            .collect::<Vec<Block>>();
+
+        auth_gen.initialize(zero_labels).unwrap();
+        auth_eval.initialize().unwrap();
+
+        // Evaluate free gates (XOR/NOT) before preparing derandomization bits
+        auth_gen.evaluate_free_gates();
+        auth_eval.garble_free_gates();
+
+        // Prepare derandomization bits for AND gates
+        let (eval_px, eval_py) = auth_eval.prepare_px_py();
+        let (gen_px, gen_py) = auth_gen.prepare_px_py();
+
+        // Garble AND gates
+        let eval_gates = auth_eval.garble_and_gates(gen_px, gen_py).unwrap();
+        let gen_gates = auth_gen.garble_and_gates(cipher, eval_px, eval_py).unwrap();
+
+        // Input processing
+        let gen_input_macs = auth_eval.collect_input_macs();
+        let eval_input_macs = auth_gen.collect_input_macs();
+
+        let eval_masked_inputs = auth_eval.collect_masked_inputs(eval_inputs, eval_input_macs).unwrap();
+        let gen_masked_inputs = auth_gen.collect_masked_inputs(gen_inputs, gen_input_macs).unwrap();
+
+        // Combine gen and eval masked inputs in order of node id
+        let mut masked_inputs = Vec::new();
+        let mut gen_idx = 0;
+        let mut eval_idx = 0;
+        for inputs in circ.inputs() {
+            for node in inputs.iter() {
+                if input_owners[node.id()] == Party::Evaluator {
+                    masked_inputs.push(eval_masked_inputs[eval_idx]);
+                    eval_idx += 1;
+                } else {
+                    masked_inputs.push(gen_masked_inputs[gen_idx]);
+                    gen_idx += 1;
+                }
+            }
+        }
+
+        // Gen provides Eval with input labels corresponding to masked inputs
+        let labels = auth_gen.collect_input_labels(&masked_inputs);
+        auth_eval.set_input_labels(labels);
+        auth_eval.set_masked_values(masked_inputs);
+
+        // Evaluate garbled circuit
+        auth_eval.evaluate(eval_gates, gen_gates, cipher).unwrap();
+
+        // Collect output macs and finalize outputs
+        let output_macs = auth_gen.collect_output_macs();
+        let output_bits = auth_eval.finalize_outputs(output_macs).unwrap();
+        return output_bits;
+    }
+
+    // Test auth garbling AES circuit
+    #[test]
+    fn test_auth_garble_aes(){
+        let circ = &AES128;
+
+        let key = [69u8; 16]; // AES key
+        let msg = [42u8; 16]; // plaintext
+        
+        let expected: [u8; 16] = {
+            let cipher = Aes128::new_from_slice(&key).unwrap();
+            let mut block = msg.into();
+            cipher.encrypt_block(&mut block);
+            block.into()
+        };
+
+        let input = key.iter_lsb0().chain(msg.iter_lsb0()).collect::<Vec<_>>();
+
+        let mut input_owners = Vec::new();
+        for input in circ.inputs() {
+            for node in input.iter() {
+                let id = node.id();
+                if id < circ.input_len()/2 {
+                    input_owners.push(Party::Evaluator);
+                } else {
+                    input_owners.push(Party::Generator);
+                }
+            }
+        }
+
+        let output_bits = auth_garble(circ, input, input_owners);
+        let output: Vec<u8> = Vec::from_lsb0_iter(output_bits);
+        assert_eq!(output, expected, "Output mismatch");
+    }
+    
+    // Test auth garbling with non-contigious input ownership
+    #[test]
+    fn test_auth_garble_intertwined_inputs() {
+        let circ = &AES128;
+
+        let key = [69u8; 16]; // AES key
+        let msg = [42u8; 16]; // plaintext
+        
+        let expected: [u8; 16] = {
+            let cipher = Aes128::new_from_slice(&key).unwrap();
+            let mut block = msg.into();
+            cipher.encrypt_block(&mut block);
+            block.into()
+        };
+
+        let input = key.iter_lsb0().chain(msg.iter_lsb0()).collect::<Vec<_>>();
+
+        let mut input_owners = Vec::new();
+        for input in circ.inputs() {
+            for node in input.iter() {
+                let id = node.id();
+                if id < circ.input_len()/4 {
+                    input_owners.push(Party::Evaluator);
+                } else if id < circ.input_len()/2 {
+                    input_owners.push(Party::Generator);
+                } else if id < 3*circ.input_len()/4 {
+                    input_owners.push(Party::Evaluator);
+                } else {
+                    input_owners.push(Party::Generator);
+                }
+            }
+        }
+
+        let output_bits = auth_garble(circ, input, input_owners);
+        let output: Vec<u8> = Vec::from_lsb0_iter(output_bits);
+        assert_eq!(output, expected, "Output mismatch");
+    }
+
+    // Test auth garbling with only XOR gates
+    #[test]
+    fn test_auth_garble_xor() {
+        // Only XOR gates circuit
+        let builder = CircuitBuilder::new();
+        let a = builder.add_input::<u8>();
+        let b = builder.add_input::<u8>();
+        let c = a ^ b;
+        builder.add_output(c);
+        let circ = builder.build().unwrap();
+        assert_eq!(circ.and_count(), 0);
+
+        let a = 1u8;
+        let b = 3u8;
+        let expected = a ^ b;
+
+        let input = a.iter_lsb0().chain(b.iter_lsb0()).collect::<Vec<_>>();
+
+        let mut input_owners = Vec::new();
+        for input in circ.inputs() {
+            for node in input.iter() {
+                let id = node.id();
+                if id < circ.input_len()/2 {
+                    input_owners.push(Party::Evaluator);
+                } else {
+                    input_owners.push(Party::Generator);
+                }
+            }
+        }
+
+        let output_bits = auth_garble(&circ, input, input_owners);
+        let output = u8::from_lsb0_iter(output_bits);
+        assert_eq!(output, expected, "Output mismatch");
+    }
+    
+    // Test auth garbling with a single AND gate
+    #[test]
+    fn test_auth_garble_and() {
+        // Single AND gate circuit
+        let builder = CircuitBuilder::new();
+        let a = builder.add_input::<bool>();
+        let b = builder.add_input::<bool>();
+        let c = a & b;
+        builder.add_output(c);
+        let circ = builder.build().unwrap();
+        assert_eq!(circ.and_count(), 1);
+
+        let a = true;
+        let b = false;
+        let expected = a & b;
+
+        let input = vec![a, b];
+
+        let mut input_owners = Vec::new();
+        for input in circ.inputs() {
+            for node in input.iter() {
+                let id = node.id();
+                if id < circ.input_len()/2 {
+                    input_owners.push(Party::Evaluator);
+                } else {
+                    input_owners.push(Party::Generator);
+                }
+            }
+        }
+
+        let output_bits = auth_garble(&circ, input, input_owners);
+        let output = output_bits[0];
+        assert_eq!(output, expected, "Output mismatch");
+    }
+    
 }
 
 // Next steps:
-// 1) Write multiple tests, including one that's simple to understand and others for robustness
-// ---
-// 2) Output processing -- allow Gen to learn output as well, optimize by masking to sec param
-// 3) Hash tweaks
+// 1) Output processing -- allow Gen to learn output as well, optimize by masking to sec param
+// 2) Hash tweaks
+// 3) Test with circuit whose input ids that are not contiguous
+// 4) Propagate errors across functions
