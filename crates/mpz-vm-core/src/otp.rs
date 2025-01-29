@@ -73,11 +73,15 @@ where
 fn build_otp(size: usize) -> Arc<Circuit> {
     let builder = CircuitBuilder::new();
 
-    for _ in 0..size {
-        let input = builder.add_input::<bool>();
-        let otp = builder.add_input::<bool>();
-        builder.add_output(input ^ otp);
-    }
+    let input = builder.add_vec_input::<bool>(size);
+    let otp = builder.add_vec_input::<bool>(size);
+    let output: Vec<_> = input
+        .into_iter()
+        .zip(otp)
+        .map(|(a, b)| (a ^ b).to_inner())
+        .collect();
+
+    builder.add_output(output);
 
     let circ = builder.build().expect("circuit should be valid");
 
