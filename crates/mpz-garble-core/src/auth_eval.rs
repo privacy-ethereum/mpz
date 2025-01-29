@@ -65,7 +65,7 @@ pub struct AuthEvaluator<'a> {
     pub masked_values: Vec<bool>,
     /// The circuit to garble
     pub circ: &'a Circuit,
-    /// The input owners for the circuit
+    /// The input owners for the circuit (Generator or Evaluator)
     pub input_owners: Vec<Party>,
 }
 
@@ -78,16 +78,15 @@ fn gate_eval(
     enc_gate: AuthEncryptedGate,
     index: usize,
 ) -> (Block, Block) {
-    // 1) Evaluate sigma(...) on x and y
+    // Evaluate sigma(...) on x and y
     let a = sigma(lx, cipher);
     let b = sigma(sigma(ly, cipher), cipher);
 
-    // 2) Combine them into h
     let mut h = [Block::default(); 2];
     h[0] = a ^ b;
     h[1] = h[0];
 
-    // 3) Merge with the row data from `enc_gate`
+    // 3) Use to decrypt the appropriate row from `enc_gate`
     let gate_mac = enc_gate.0[index][0] ^ h[0];
     let gate_key = enc_gate.0[index][1] ^ h[1];
 
@@ -95,7 +94,7 @@ fn gate_eval(
 }
 
 impl<'a> AuthEvaluator<'a> {
-    /// Creates a new `AuthEvaluator` from an [`FpreEval`](crate::fpre::FpreEval) and circuit
+    /// Creates a new `AuthEvaluator` from FpreEval and circuit
     pub fn new(circ: &'a Circuit, fpre: FpreEval, input_owners: Vec<Party>) -> Self {
         Self {
             fpre,
@@ -107,12 +106,13 @@ impl<'a> AuthEvaluator<'a> {
         }
     }
 
-    /// Initializes wire shares for the evaluator’s input wires.
+    /// Initializes evaluator's auth bits using fpre
     pub fn initialize(
         &mut self
     ) -> Result<(), AuthEvaluatorError> {
 
-        if self.circ.input_len() + self.circ.and_count() != self.fpre.wire_shares.len() {
+        // Check if fpre has enough auth bits
+        if self.circ.input_len() + self.circ.and_count() > self.fpre.wire_shares.len() {
             return Err(AuthEvaluatorError::InvalidAuthBitCount {
                 expected: self.circ.input_len() + self.circ.and_count(),
                 actual: self.fpre.wire_shares.len(),
@@ -124,9 +124,10 @@ impl<'a> AuthEvaluator<'a> {
             self.auth_bits.resize(self.circ.feed_count(), Default::default());
         }
 
+        // Fill auth bits for input wires
         for input in self.circ.inputs() {
             for node in input.iter() {
-                self.auth_bits[node.id()] = self.fpre.wire_shares[count].clone();
+                self.auth_bits[node.id()] = self.fpre.wire_shares[count];
                 count += 1;
             }
         }
@@ -134,7 +135,7 @@ impl<'a> AuthEvaluator<'a> {
         // Fill auth bits for output wires of AND gates as well
         for gate in self.circ.gates() {
             if let Gate::And { x: _, y: _, z } = gate {
-                self.auth_bits[z.id()] = self.fpre.wire_shares[count].clone();
+                self.auth_bits[z.id()] = self.fpre.wire_shares[count];
                 count += 1;
             }
         }
@@ -142,7 +143,7 @@ impl<'a> AuthEvaluator<'a> {
         Ok(())
     }
 
-    /// Handles free gates (XOR/NOT), skipping AND gates.
+    /// Handles free gates (XOR/NOT), skipping AND gates. Needed to derandomize AND gates.
     pub fn garble_free_gates(&mut self) {
         for gate in self.circ.gates() {
             match gate {
@@ -180,15 +181,15 @@ impl<'a> AuthEvaluator<'a> {
         (px, py)
     }
 
-    /// Produces partial AND gate tables for evaluator.
+    /// Generates evaluator's AND gate table shares.
     pub fn garble_and_gates(
         &mut self,
         px_vec: Vec<bool>,
         py_vec: Vec<bool>,
     ) -> Result<Vec<AndGateTable>, AuthEvaluatorError> {
 
-
-        if px_vec.len() != self.circ.and_count() || py_vec.len() != self.circ.and_count() {
+        // Check if px_vec and py_vec have enough derandomization bits
+        if px_vec.len().min(py_vec.len()) < self.circ.and_count() {
             return Err(AuthEvaluatorError::InvalidPxPyCount {
                 expected: self.circ.and_count(),
                 actual: px_vec.len().min(py_vec.len()),
@@ -216,6 +217,7 @@ impl<'a> AuthEvaluator<'a> {
 
                 and_count += 1;
 
+                // (sigma_mac, sigma_key) will correspond to AND of input wires (x & y)
                 let mut sigma_mac = triple.z.mac;
                 let mut sigma_key = triple.z.key;
 
@@ -232,9 +234,11 @@ impl<'a> AuthEvaluator<'a> {
                     sigma_mac = sigma_mac + Mac::from(one); 
                 }
 
-                let z_mac = self.auth_bits[z.id()].mac; // existing mac for wire z
-                let z_key = self.auth_bits[z.id()].key; // existing key for wire z
+                 // preprocessed (mac, key) for wire z
+                let z_mac = self.auth_bits[z.id()].mac;
+                let z_key = self.auth_bits[z.id()].key;
 
+                // AND gate table shares
                 let mut m = [Mac::default(); 4];
                 let mut k = [Key::default(); 4];
 
@@ -257,14 +261,14 @@ impl<'a> AuthEvaluator<'a> {
         Ok(tables)
     }
 
-    /// Returns the MAC for each input wire.
+    /// Evaluator outputs MACs for each input wire owned by Generator
     pub fn collect_input_macs(
         &self,
     ) -> Vec<Mac> {
         let mut macs = Vec::new();
         for input_group in self.circ.inputs() {
             for node in input_group.iter() {
-                // If this node is Evaluator’s, collect the MAC
+                // If this input is owned by Generator, collect the MAC
                 if self.input_owners[node.id()] == Party::Generator {
                     macs.push(self.auth_bits[node.id()].mac);
                 }
@@ -273,7 +277,7 @@ impl<'a> AuthEvaluator<'a> {
         macs
     }
 
-    /// Verifies input MACs, returning `masked_inputs`.
+    /// Verifies Generator's MACs for Evaluator's input wires, returning Evaluator's `masked_inputs`.
     pub fn collect_masked_inputs(&mut self, eval_inputs: Vec<bool>, eval_input_macs: Vec<Mac>) -> Result<Vec<bool>, AuthEvaluatorError> {
         
         let delta_b = self.fpre.delta_b.into_inner();
@@ -283,6 +287,8 @@ impl<'a> AuthEvaluator<'a> {
             .iter()
             .filter(|&p| *p == Party::Evaluator)
             .count();
+
+        // Check if received MACs and inputs have the same length
         if eval_input_macs.len() != num_eval_inputs || eval_inputs.len() != num_eval_inputs {
             return Err(AuthEvaluatorError::InvalidInputMacCount {
                 expected: num_eval_inputs,
@@ -290,6 +296,7 @@ impl<'a> AuthEvaluator<'a> {
             });
         }
 
+        // Verify MACs and generate masked inputs
         let mut masked_inputs = Vec::new();
         let mut idx = 0;
         for input in self.circ.inputs() {
@@ -310,7 +317,6 @@ impl<'a> AuthEvaluator<'a> {
 
                     let masked_input = self.auth_bits[node.id()].bit()^eval_inputs[idx]^mac_lsb;
                     masked_inputs.push(masked_input);
-                    // self.masked_values[node.id()] = masked_input;
                     idx += 1;
                 }
             }
@@ -369,7 +375,7 @@ impl<'a> AuthEvaluator<'a> {
                     let by = self.masked_values[y.id()] as usize;
                     let index = 2*bx + by;
 
-                    // compute `(gate_mac, gate_key)`
+                    // decrypt the Generator's encrypted AND gate table shares
                     let (gate_mac, gate_key) = gate_eval(
                         self.labels[x.id()],
                         self.labels[y.id()],
@@ -378,6 +384,7 @@ impl<'a> AuthEvaluator<'a> {
                         index,
                     );
 
+                    // Evaluator's AND gate table shares
                     let table_mac: Block = tables[and_count].m[index].as_block().clone();
                     let table_key: Block = tables[and_count].k[index].as_block().clone();
 
@@ -399,19 +406,13 @@ impl<'a> AuthEvaluator<'a> {
         Ok(())
     }
 
-    /// Verifies MAC of gen's share and reconstructs output bits. 
+    /// Verifies MAC of gen's share of output mask and reconstructs output bits. 
     pub fn finalize_outputs(
         &mut self,
         gen_output_macs: Vec<Mac>,
     ) -> Result<Vec<bool>, AuthEvaluatorError> {
 
         let delta_b = self.fpre.delta_b.into_inner();
-
-        let wire_ids = self.circ
-            .outputs()
-            .iter()
-            .flat_map(|group| group.iter().map(|node| node.id()))
-            .collect::<Vec<_>>();
 
         if gen_output_macs.len() != self.circ.output_len() {
             return Err(AuthEvaluatorError::InvalidOutputMacCount {
@@ -420,22 +421,30 @@ impl<'a> AuthEvaluator<'a> {
             });
         }
 
-        let final_bits = wire_ids.iter().enumerate()
-            .map(|(i, &wid)| {
-                let mut mac = gen_output_macs[i].as_block().clone();
+        let mut final_bits = Vec::with_capacity(gen_output_macs.len());
+        let mut mac_idx = 0;
+
+        for output_group in self.circ.outputs() {
+            for node in output_group.iter() {
+                
+                let mut mac = gen_output_macs[mac_idx].as_block().clone();
                 if mac.lsb() {
                     mac ^= delta_b;
                 }
-                let key = self.auth_bits[wid].key.as_block().clone();
+    
+                let key = self.auth_bits[node.id()].key.as_block().clone();
                 if key != mac {
-                    return Err(AuthEvaluatorError::MacCheckFailed(i));
+                    return Err(AuthEvaluatorError::MacCheckFailed(mac_idx));
                 }
-                let bit = self.masked_values[wid]
-                    ^ self.auth_bits[wid].bit()
-                    ^ gen_output_macs[i].pointer();
-                Ok(bit)
-            })
-            .collect::<Result<Vec<_>,_>>()?;
+    
+                let bit = self.masked_values[node.id()]
+                    ^ self.auth_bits[node.id()].bit()
+                    ^ gen_output_macs[mac_idx].pointer();
+    
+                final_bits.push(bit);
+                mac_idx += 1;
+            }
+        }
 
         Ok(final_bits)
     }

@@ -459,6 +459,7 @@ mod tests {
 }
 
 // Next steps:
-// 1) Robust testing with different circuits and different input ownership
+// 1) Write multiple tests, including one that's simple to understand and others for robustness
+// ---
 // 2) Output processing -- allow Gen to learn output as well, optimize by masking to sec param
 // 3) Hash tweaks
