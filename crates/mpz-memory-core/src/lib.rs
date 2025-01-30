@@ -419,6 +419,31 @@ impl<T> Vector<T> {
         })
     }
 
+    /// Splits the collection into two at the given index.
+    ///
+    /// Returns a vector containing the elements in the range [at, len). After
+    /// the call, the original vector will be left containing the elements [0,
+    /// at).
+    ///
+    /// # Panics
+    ///
+    /// Panics if `at > len`.
+    pub fn split_off(&mut self, at: usize) -> Self {
+        assert!(at <= self.len, "index out of bounds");
+
+        let ptr = Ptr::new(self.ptr.as_usize() + at * self.item_size);
+        let len = self.len - at;
+
+        self.len = at;
+
+        Vector {
+            ptr,
+            item_size: self.item_size,
+            len,
+            _pd: PhantomData,
+        }
+    }
+
     /// Shortens the vector, keeping the first len elements and dropping the
     /// rest.
     ///
@@ -590,3 +615,27 @@ impl_repr_for_tuples!(T0, T1, T2, T3, T4);
 impl_repr_for_tuples!(T0, T1, T2, T3, T4, T5);
 impl_repr_for_tuples!(T0, T1, T2, T3, T4, T5, T6);
 impl_repr_for_tuples!(T0, T1, T2, T3, T4, T5, T6, T7);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::binary::U8;
+
+    #[test]
+    fn test_vector_split_off() {
+        let mut vec: Vector<U8> = Vector {
+            ptr: Ptr::new(32),
+            item_size: U8::SIZE,
+            len: 5,
+            _pd: PhantomData,
+        };
+
+        let new_vec = vec.split_off(2);
+
+        assert_eq!(vec.len(), 2);
+        assert_eq!(new_vec.len(), 3);
+
+        assert_eq!(vec.ptr.as_usize(), 32);
+        assert_eq!(new_vec.ptr.as_usize(), 32 + 2 * U8::SIZE);
+    }
+}
