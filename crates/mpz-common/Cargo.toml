@@ -6,10 +6,10 @@ edition = "2021"
 [features]
 default = []
 cpu = ["rayon"]
-executor = ["cpu", "dep:uid-mux"]
+executor = ["cpu"]
 sync = ["tokio/sync"]
 future = []
-test-utils = ["dep:uid-mux", "uid-mux/test-utils"]
+test-utils = ["uid-mux/test-utils"]
 ideal = ["tokio/sync"]
 rayon = ["dep:rayon"]
 force-st = []
@@ -24,7 +24,7 @@ pin-project-lite.workspace = true
 scoped-futures.workspace = true
 thiserror.workspace = true
 serio.workspace = true
-uid-mux = { workspace = true, optional = true }
+uid-mux = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 pollster.workspace = true
 rayon = { workspace = true, optional = true }
