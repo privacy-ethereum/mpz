@@ -28,9 +28,11 @@ pub(crate) mod load_balance;
 mod mux;
 #[cfg(feature = "sync")]
 pub mod sync;
+mod task;
 
 pub use context::{Context, ContextError};
 pub use id::{Counter, ThreadId};
+pub use task::Task;
 // Re-export scoped-futures for use with the callback-like API in `Context`.
 pub use scoped_futures;
 
