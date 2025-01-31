@@ -57,10 +57,7 @@ mod tests {
                 gen.commit(key).unwrap();
                 gen.commit(msg).unwrap();
 
-                gen.flush(&mut ctx_a).await.unwrap();
-                gen.execute(&mut ctx_a).await.unwrap();
-                gen.flush(&mut ctx_a).await.unwrap();
-
+                gen.execute_all(&mut ctx_a).await.unwrap();
                 ciphertext.try_recv().unwrap().unwrap()
             },
             async {
@@ -80,10 +77,7 @@ mod tests {
                 ev.commit(key).unwrap();
                 ev.commit(msg).unwrap();
 
-                ev.flush(&mut ctx_b).await.unwrap();
-                ev.execute(&mut ctx_b).await.unwrap();
-                ev.flush(&mut ctx_b).await.unwrap();
-
+                ev.execute_all(&mut ctx_b).await.unwrap();
                 ciphertext.try_recv().unwrap().unwrap()
             }
         );
@@ -142,16 +136,14 @@ mod tests {
 
                 let mut ciphertext = gen.decode(ciphertext).unwrap();
 
+                assert!(gen.wants_preprocess());
                 gen.preprocess(&mut ctx_a).await.unwrap();
 
                 gen.assign(key, [0u8; 16]).unwrap();
                 gen.commit(key).unwrap();
                 gen.commit(msg).unwrap();
 
-                gen.flush(&mut ctx_a).await.unwrap();
-                gen.execute(&mut ctx_a).await.unwrap();
-                gen.flush(&mut ctx_a).await.unwrap();
-
+                gen.execute_all(&mut ctx_a).await.unwrap();
                 ciphertext.try_recv().unwrap().unwrap()
             },
             async {
@@ -178,16 +170,14 @@ mod tests {
 
                 let mut ciphertext = ev.decode(ciphertext).unwrap();
 
+                assert!(ev.wants_preprocess());
                 ev.preprocess(&mut ctx_b).await.unwrap();
 
                 ev.assign(msg, [42u8; 16]).unwrap();
                 ev.commit(key).unwrap();
                 ev.commit(msg).unwrap();
 
-                ev.flush(&mut ctx_b).await.unwrap();
-                ev.execute(&mut ctx_b).await.unwrap();
-                ev.flush(&mut ctx_b).await.unwrap();
-
+                ev.execute_all(&mut ctx_b).await.unwrap();
                 ciphertext.try_recv().unwrap().unwrap()
             }
         );
