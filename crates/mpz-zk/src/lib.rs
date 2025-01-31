@@ -61,10 +61,7 @@ mod tests {
                 let mut ciphertext = prover.decode(ciphertext).unwrap();
 
                 async move {
-                    prover.flush(&mut ctx_p).await.unwrap();
-                    prover.execute(&mut ctx_p).await.unwrap();
-                    prover.flush(&mut ctx_p).await.unwrap();
-
+                    prover.execute_all(&mut ctx_p).await.unwrap();
                     ciphertext.try_recv().unwrap().unwrap()
                 }
             },
@@ -87,10 +84,7 @@ mod tests {
                 let mut ciphertext = verifier.decode(ciphertext).unwrap();
 
                 async move {
-                    verifier.flush(&mut ctx_v).await.unwrap();
-                    verifier.execute(&mut ctx_v).await.unwrap();
-                    verifier.flush(&mut ctx_v).await.unwrap();
-
+                    verifier.execute_all(&mut ctx_v).await.unwrap();
                     ciphertext.try_recv().unwrap().unwrap()
                 }
             }

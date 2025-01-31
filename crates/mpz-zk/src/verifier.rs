@@ -33,11 +33,14 @@ impl<OT> Verifier<OT> {
 }
 
 #[async_trait]
-impl< OT> Execute for Verifier<OT>
+impl<OT> Execute for Verifier<OT>
 where
-    
     OT: RCOTSender<Block> + Flush + Send + 'static,
 {
+    fn wants_flush(&self) -> bool {
+        self.ot.wants_flush() || self.store.wants_keys() || self.store.wants_flush()
+    }
+
     async fn flush(&mut self, ctx: &mut Context) -> Result<()> {
         if self.ot.wants_flush() {
             self.ot.flush(ctx).await.map_err(VmError::execute)?;
@@ -63,8 +66,20 @@ where
         Ok(())
     }
 
+    fn wants_preprocess(&self) -> bool {
+        false
+    }
+
     async fn preprocess(&mut self, _ctx: &mut Context) -> Result<()> {
         Ok(())
+    }
+
+    fn wants_execute(&self) -> bool {
+        self.callstack.iter().any(|(call, _)| {
+            call.inputs()
+                .iter()
+                .all(|input| self.store.is_committed(*input))
+        })
     }
 
     async fn execute(&mut self, ctx: &mut Context) -> Result<()> {

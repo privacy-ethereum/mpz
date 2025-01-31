@@ -208,6 +208,10 @@ where
     COT: COTReceiver<bool, Block> + Flush + Send + 'static,
     COT::Future: Send + 'static,
 {
+    fn wants_flush(&self) -> bool {
+        self.store.try_lock().unwrap().wants_flush()
+    }
+
     async fn flush(&mut self, ctx: &mut Context) -> Result<()> {
         let mut store = self.store.try_lock().unwrap();
         if store.wants_flush() {
@@ -215,6 +219,18 @@ where
         }
 
         Ok(())
+    }
+
+    fn wants_preprocess(&self) -> bool {
+        let mut idx_outputs = RangeSet::default();
+        self.call_stack.iter().any(|(call, output)| {
+            let ready = call
+                .inputs()
+                .iter()
+                .all(|input| input.to_range().is_disjoint(&idx_outputs));
+            idx_outputs |= output.to_range();
+            ready
+        })
     }
 
     async fn preprocess(&mut self, ctx: &mut Context) -> Result<()> {
@@ -252,6 +268,17 @@ where
         }
 
         Ok(())
+    }
+
+    fn wants_execute(&self) -> bool {
+        let store = self.store.try_lock().unwrap();
+        self.preprocessed
+            .iter()
+            .any(|(_, (call, _))| call.inputs().iter().all(|input| store.is_committed(*input)))
+            || self
+                .call_stack
+                .iter()
+                .any(|(call, _)| call.inputs().iter().all(|input| store.is_committed(*input)))
     }
 
     async fn execute(&mut self, ctx: &mut Context) -> Result<()> {

@@ -165,6 +165,10 @@ impl<COT> Execute for Generator<COT>
 where
     COT: COTSender<Block> + Flush + Send + 'static,
 {
+    fn wants_flush(&self) -> bool {
+        self.store.try_lock().unwrap().wants_flush()
+    }
+
     async fn flush(&mut self, ctx: &mut Context) -> Result<()> {
         let mut store = self.store.try_lock().unwrap();
         if store.wants_flush() {
@@ -172,6 +176,13 @@ where
         }
 
         Ok(())
+    }
+
+    fn wants_preprocess(&self) -> bool {
+        let store = self.store.try_lock().unwrap();
+        self.call_stack
+            .iter()
+            .any(|(call, _)| call.inputs().iter().all(|slice| store.is_set_keys(*slice)))
     }
 
     async fn preprocess(&mut self, ctx: &mut Context) -> Result<()> {
@@ -202,6 +213,17 @@ where
         }
 
         Ok(())
+    }
+
+    fn wants_execute(&self) -> bool {
+        let store = self.store.try_lock().unwrap();
+        self.preprocessed
+            .iter()
+            .any(|(inputs, _)| inputs.iter().all(|input| store.is_committed(*input)))
+            || self
+                .call_stack
+                .iter()
+                .any(|(call, _)| call.inputs().iter().all(|slice| store.is_committed(*slice)))
     }
 
     async fn execute(&mut self, ctx: &mut Context) -> Result<()> {

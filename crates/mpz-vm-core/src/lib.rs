@@ -57,16 +57,39 @@ where
 
 #[async_trait]
 pub trait Execute {
+    /// Returns `true` if the VM has memory operations that need to be flushed.
+    fn wants_flush(&self) -> bool;
+
     /// Flushes all memory operations.
     ///
     /// This ensures all memory operations are completed.
     async fn flush(&mut self, ctx: &mut Context) -> Result<()>;
 
+    /// Returns `true` if the VM has calls which can be preprocessed.
+    fn wants_preprocess(&self) -> bool;
+
     /// Preprocesses the callstack.
     async fn preprocess(&mut self, ctx: &mut Context) -> Result<()>;
 
+    /// Returns `true` if the VM has calls which can be executed.
+    fn wants_execute(&self) -> bool;
+
     /// Executes the callstack.
     async fn execute(&mut self, ctx: &mut Context) -> Result<()>;
+
+    /// Executes the callstack and flushes memory until all ready operations are
+    /// completed.
+    async fn execute_all(&mut self, ctx: &mut Context) -> Result<()> {
+        loop {
+            if self.wants_flush() {
+                self.flush(ctx).await?;
+            } else if self.wants_execute() {
+                self.execute(ctx).await?;
+            } else {
+                return Ok(());
+            }
+        }
+    }
 }
 
 #[cfg(test)]
