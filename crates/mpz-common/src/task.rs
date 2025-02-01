@@ -10,4 +10,7 @@ pub trait Task {
 
     /// Runs the task to completion.
     async fn run(self, ctx: &mut Context) -> Self::Output;
+
+    /// Runs the boxed task to completion.
+    async fn run_boxed(self: Box<Self>, ctx: &mut Context) -> Self::Output;
 }
