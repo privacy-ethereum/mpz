@@ -324,6 +324,7 @@ pub struct Array<T, const N: usize> {
 impl<T, const N: usize> Array<T, N> {
     pub(crate) const fn new(slice: Slice) -> Self {
         assert!(N > 0, "array size must be greater than 0");
+        assert!(slice.size % N == 0, "slice size must be a multiple of N");
 
         Self {
             slice,
@@ -512,6 +513,17 @@ impl<T, const N: usize> TryFrom<Vector<T>> for Array<T, N> {
             ptr: value.ptr,
             size: value.item_size * N,
         }))
+    }
+}
+
+impl<T, const N: usize> From<Array<T, N>> for Vector<T> {
+    fn from(value: Array<T, N>) -> Self {
+        Self {
+            ptr: value.slice.ptr,
+            item_size: value.slice.size / N,
+            len: N,
+            _pd: PhantomData,
+        }
     }
 }
 
