@@ -55,6 +55,8 @@ impl LpnParams {
 
         const MAX_STEP: u32 = 4;
         const MIN_T: u64 = 200;
+        const MAX_T: u64 = 10_000;
+        let max_t = MAX_T.min(k / 2);
 
         // Do not scan for n > 100_000_000
         const MAX_N: u64 = 100_000_000;
@@ -74,6 +76,7 @@ impl LpnParams {
             let lpn = Self::new(typ, cur_n, k, cur_t);
 
             if lpn.s > s {
+                eprintln!("Found LPN instance for n = {cur_n}");
                 lpns.push(lpn);
                 n = cur_n;
                 step_n = 0;
@@ -88,7 +91,7 @@ impl LpnParams {
                 t *= 2;
             }
 
-            if t > k / 2 || n > max_n {
+            if t > max_t || n > max_n {
                 break;
             }
         }
