@@ -1,0 +1,36 @@
+[package]
+name = "rust-lpn-estimator"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = ["rayon"]
+
+[dependencies]
+opaque-debug = "0.3"
+bcs = "0.1"
+rand_core = "0.9"
+rug = "1.27"
+bytemuck = { version = "1.21", features = ["derive"] }
+generic-array = "1.2"
+cfg-if = "1.0"
+rayon = { version = "1.10", optional = true}
+
+[dev-dependencies]
+divan = "0.1"
+
+[[bin]]
+name = "exact"
+path = "src/bin/exact.rs"
+
+[[bin]]
+name = "regular"
+path = "src/bin/regular.rs"
+
+[[bin]]
+name = "estimator"
+path = "src/bin/estimator.rs"
+
+[[bench]]
+name = "throughput"
+harness = false

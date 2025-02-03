@@ -22,6 +22,9 @@ members = [
     "crates/mpz-zk-core",
     "crates/mpz-zk",
 ]
+exclude = [
+    "crates/lpn-estimator",
+]
 resolver = "2"
 
 [profile.release]
