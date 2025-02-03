@@ -2,7 +2,7 @@
 //! The implementation is according to https://eprint.iacr.org/2022/712.pdf.
 
 #[cfg(feature = "rayon")]
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+use rayon::prelude::*;
 use rug::Float;
 
 // The precision.
@@ -26,7 +26,9 @@ impl LpnEstimator {
         res
     }
 
-    /// Compute the bit security under the Pooled Gauss attack, see page 37 in this [paper](https://eprint.iacr.org/2022/712.pdf). Note that it is the same for binary and larger fields.
+    /// Compute the bit security under the Pooled Gauss attack, see page 37 in this
+    /// [paper](https://eprint.iacr.org/2022/712.pdf). Note that it is the same for binary and
+    /// larger fields.
     ///
     /// # Arguments.
     ///
@@ -41,7 +43,8 @@ impl LpnEstimator {
         matrix_inversion_cost.log2() - log_guess_prob
     }
 
-    // Compute the fomulas inside the min function of Theorem 14 in this [paper](https://eprint.iacr.org/2022/712.pdf).
+    // Compute the fomulas inside the min function of Theorem 14 in this
+    // [paper](https://eprint.iacr.org/2022/712.pdf).
     fn sub_sd_isd_binary(n: u64, k: u64, t: u64, l: u64, p: u64) -> f64 {
         let log_l_zero = Self::cal_comb_log2((k + l) / 2 + 1, p / 2);
         let l_zero = 2.0_f64.powf(log_l_zero);
@@ -116,7 +119,8 @@ impl LpnEstimator {
         res
     }
 
-    /// The security of the lpn parameters under SD_ISD attack for binary field. See Therem 14 in this [paper](https://eprint.iacr.org/2022/712.pdf).
+    /// The security of the lpn parameters under SD_ISD attack for binary field. See Therem 14 in
+    /// this [paper](https://eprint.iacr.org/2022/712.pdf).
     ///
     /// # Arguments.
     ///
@@ -140,7 +144,8 @@ impl LpnEstimator {
         res
     }
 
-    // Compute the fomulas inside the min function of Theorem 16 in this [paper](https://eprint.iacr.org/2022/712.pdf).
+    // Compute the fomulas inside the min function of Theorem 16 in this
+    // [paper](https://eprint.iacr.org/2022/712.pdf).
     #[allow(clippy::too_many_arguments)]
     fn sub_bjmm_isd_binary(
         n: u64,
@@ -232,7 +237,8 @@ impl LpnEstimator {
             for e1 in e1_start..p1 {
                 let p = 2 * (p1 - e1);
 
-                // The following part is according to Equation (6), Page 11 in this [paper](https://eprint.iacr.org/2013/162.pdf).
+                // The following part is according to Equation (6), Page 11 in this
+                // [paper](https://eprint.iacr.org/2013/162.pdf).
                 assert!(k + l >= p2);
                 assert!(k + l >= p1);
                 assert!(p2 >= e2);
@@ -314,7 +320,8 @@ impl LpnEstimator {
         min_cost
     }
 
-    /// The security of the lpn parameters under BJMM_ISD attack for binary field. See Therem 16 in this [paper](https://eprint.iacr.org/2022/712.pdf).
+    /// The security of the lpn parameters under BJMM_ISD attack for binary field. See Therem 16 in
+    /// this [paper](https://eprint.iacr.org/2022/712.pdf).
     ///
     /// # Arguments.
     ///
@@ -337,7 +344,8 @@ impl LpnEstimator {
         res
     }
 
-    /// The security of the lpn parameters under SD attack for binary field. See The equation with s = 0 in page 39 in this [paper](https://eprint.iacr.org/2022/712.pdf).
+    /// The security of the lpn parameters under SD attack for binary field. See The equation with
+    /// s = 0 in page 39 in this [paper](https://eprint.iacr.org/2022/712.pdf).
     ///
     /// # Arguments.
     ///
@@ -354,7 +362,8 @@ impl LpnEstimator {
         ((k + 1) as f64).log2() + cost
     }
 
-    /// The security of the lpn parameters under SD 2.0 attack for binary field. See The equation with in page 39 in this [paper](https://eprint.iacr.org/2022/712.pdf).
+    /// The security of the lpn parameters under SD 2.0 attack for binary field. See The equation
+    /// with in page 39 in this [paper](https://eprint.iacr.org/2022/712.pdf).
     ///
     /// # Arguments.
     ///
@@ -540,18 +549,32 @@ impl LpnEstimator {
 
     // Attack in the [paper](https://eprint.iacr.org/2023/176.pdf)
     fn security_under_agb_binary(n: u64, k: u64, t: u64) -> f64 {
-        let mut res = HIGHEST_SECURITY as f64;
-        for f in 0..t {
+        let ts: Vec<u64> = (0..t).collect();
+        let mut security = vec![HIGHEST_SECURITY as f64; t as usize];
+
+        let iter = {
+            cfg_if::cfg_if! {
+                if #[cfg(feature = "rayon")]{
+                    ts.into_par_iter().zip(security.par_iter_mut())
+                } else {
+                    ts.into_iter().zip(security.iter_mut())
+                }
+            }
+        };
+
+        iter.for_each(|(f, s)| {
             for mu in 0..n / t {
                 if f * mu < k + 1 {
                     let cost = Self::sub_agb_binary(n, k, t, f, mu);
-                    if res > cost {
-                        res = cost;
+                    if *s > cost {
+                        *s = cost;
                     }
                 }
             }
-        }
-        res
+        });
+
+        let min = security.iter().fold(f64::INFINITY, |a, &b| a.min(b));
+        min
     }
 
     /// The security of the regular lpn parameters for binary field.
@@ -570,7 +593,7 @@ impl LpnEstimator {
                     || Self::security_under_agb_binary(n, k, t),
                     || Self::security_for_binary(n - t, k - t, t),
                 );
-            }else{
+            } else {
                 let cost_agb = Self::security_under_agb_binary(n, k, t);
                 let cost_others = Self::security_for_binary(n-t, k-t, t);
             }
@@ -609,7 +632,9 @@ impl LpnEstimator {
     }
 }
 
+#[cfg(test)]
 mod tests {
+
     #[test]
     fn security_test() {
         let sec = crate::LpnEstimator::security_for_binary(1 << 10, 652, 57);
