@@ -69,7 +69,7 @@ impl LpnParams {
 
         loop {
             let cur_n = n + n / 2_u64.pow(step_n);
-            let cur_t = t + t / 2_u64.pow(step_t);
+            let cur_t = t + t / 2_u64.pow(MAX_STEP - step_t + 1);
 
             let lpn = Self::new(typ, cur_n, k, cur_t);
 
@@ -81,7 +81,6 @@ impl LpnParams {
             } else if step_n < MAX_STEP {
                 step_n += 1;
             } else if step_t < MAX_STEP {
-                t = cur_t;
                 step_t += 1;
             } else {
                 step_n = 0;
