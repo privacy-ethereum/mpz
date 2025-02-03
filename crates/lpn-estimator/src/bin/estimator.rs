@@ -1,4 +1,4 @@
-use rust_lpn_estimator::{LpnParams, LpnType};
+use lpn_estimator::{LpnParams, LpnType};
 
 fn main() {
     eprintln!("\nThis program searches primal LPN instances over F2 satisfying a minimum bit security for a given secret length.");

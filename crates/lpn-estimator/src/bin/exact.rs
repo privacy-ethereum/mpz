@@ -1,4 +1,4 @@
-use rust_lpn_estimator::LpnEstimator;
+use lpn_estimator::LpnEstimator;
 
 fn main() {
     eprintln!("\nThis program estimates the bit security for exact, primal LPN over F2 considering well-known attacks.");
