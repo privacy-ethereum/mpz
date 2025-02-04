@@ -10,6 +10,10 @@ use rand_chacha::ChaCha12Rng;
 
 use mpz_memory_core::correlated::{Delta, Key, Mac};
 
+use mpz_ot_core::ideal::cot::IdealCOT;
+use mpz_ot_core::cot::{COTSenderOutput, COTReceiverOutput};
+use mpz_core::Block;
+
 #[derive(Debug, thiserror::Error)]
 #[allow(missing_docs)]
 pub enum FpreError {
@@ -294,6 +298,78 @@ pub struct FpreEval {
     pub triple_shares: Vec<AuthTripleShare>,
 }
 
+/// First step of Fpre generation: generate auth bit shares using COT
+pub fn gen_auth_bit_shares(
+    length: usize,
+    delta_a: Delta,
+    delta_b: Delta,
+) -> Result<(Vec<AuthBitShare>, Vec<AuthBitShare>), FpreError> {
+
+    let mut rng = ChaCha12Rng::seed_from_u64(0);
+
+    let mut cot_delta_b = IdealCOT::new(delta_b.into_inner());
+
+    let gen_bits: Vec<bool> = (0..length).map(|_| rng.gen()).collect::<Vec<_>>();
+    let eval_keys: Vec<Block> = (0..length).map(|_| rng.gen()).collect::<Vec<_>>();
+
+    let (
+        COTSenderOutput { id: _sender_id },
+        COTReceiverOutput {
+            id: _receiver_id,
+            msgs: received,
+        },
+    ) = cot_delta_b.transfer(&gen_bits, &eval_keys).unwrap();
+
+    let gen_macs = received;
+
+    let mut cot_delta_a = IdealCOT::new(delta_a.into_inner());
+
+    let eval_bits: Vec<bool> = (0..length).map(|_| rng.gen()).collect::<Vec<_>>();
+    let gen_keys: Vec<Block> = (0..length).map(|_| rng.gen()).collect::<Vec<_>>();
+
+    let (
+        COTSenderOutput { id: _sender_id },
+        COTReceiverOutput {
+            id: _receiver_id,
+            msgs: received,
+        },
+    ) = cot_delta_a.transfer(&eval_bits, &gen_keys).unwrap();
+
+    let eval_macs = received;
+
+    let mut gen_shares: Vec<AuthBitShare> = Vec::with_capacity(length);
+    let mut eval_shares: Vec<AuthBitShare> = Vec::with_capacity(length);
+
+    for i in 0..length {
+        let r = gen_bits[i];
+        let mut m_r = gen_macs[i];
+        m_r.set_lsb(r);
+
+        let mut k_r = gen_keys[i];
+        k_r.set_lsb(false);
+
+        gen_shares.push(AuthBitShare {
+            key: k_r.into(),
+            mac: m_r.into(),
+        });
+
+        let s = eval_bits[i];
+        let mut m_s = eval_macs[i];
+        m_s.set_lsb(s);
+
+        let mut k_s = eval_keys[i];
+        k_s.set_lsb(false);
+
+        eval_shares.push(AuthBitShare {
+            key: k_s.into(),
+            mac: m_s.into(),
+        });
+    }
+
+    Ok((gen_shares, eval_shares))
+    
+}
+
 #[cfg(test)]
 mod tests {
     use std::iter::zip;
@@ -388,6 +464,27 @@ mod tests {
                 },
             };
             check_auth_triple(&triple, &fpre_gen.delta_a, &fpre_eval.delta_b);
+        }
+    }
+
+    #[test]
+    fn test_gen_auth_bit_shares() {
+        let length = 100;
+        let mut rng = ChaCha12Rng::seed_from_u64(0);
+
+        let delta_a = Delta::random(&mut rng);
+        let delta_b = Delta::random(&mut rng);
+
+        let (gen_shares, eval_shares) = 
+            gen_auth_bit_shares(length, delta_a, delta_b)
+            .unwrap();
+
+        for (gen_share, eval_share) in zip(gen_shares, eval_shares) {
+            let bit = AuthBit {
+                gen_share,
+                eval_share,
+            };
+            check_auth_bit(&bit, &delta_a, &delta_b);
         }
     }
 }
