@@ -28,5 +28,5 @@ fn scan_exact() {
 
 #[divan::bench(max_time = 10)]
 fn scan_regular() {
-    LpnParams::scan(LpnType::Exact, 128., N[1].1, None);
+    LpnParams::scan(LpnType::Regular, 128., N[1].1, None);
 }
