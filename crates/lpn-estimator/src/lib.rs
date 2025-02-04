@@ -76,7 +76,6 @@ impl LpnParams {
             let lpn = Self::new(typ, cur_n, k, cur_t);
 
             if lpn.s > s {
-                eprintln!("Found LPN instance for n = {cur_n}");
                 lpns.push(lpn);
                 n = cur_n;
                 step_n = 0;
