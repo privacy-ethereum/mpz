@@ -37,20 +37,15 @@ fn main() {
 
     let lpns = LpnParams::scan(typ, s, k, max_n);
 
-    let mut table = Vec::with_capacity(lpns.len());
-    lpns.iter().for_each(|lpn| {
-        let (n, _, t) = lpn.nkt();
-        let s = lpn.security() as u64;
-        table.push((t, n, s));
-    });
-
     eprintln!("Computed the following primal LPN instances for:");
     eprintln!("\ttype: {typ:?}");
     eprintln!("\ts: {s}");
     eprintln!("\tk: {k}");
 
     println!("t, n, s");
-    for t in table {
-        println!("{}, {}, {}", t.0, t.1, t.2);
+    for lpn in lpns {
+        let (n, _, t) = lpn.nkt();
+        let s = lpn.security() as u64;
+        println!("{}, {}, {}", t, n, s);
     }
 }
