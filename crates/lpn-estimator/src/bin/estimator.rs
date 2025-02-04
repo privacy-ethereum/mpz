@@ -49,7 +49,7 @@ fn main() {
     eprintln!("\ts: {s}");
     eprintln!("\tk: {k}");
 
-    println!("\nt, n, s");
+    println!("t, n, s");
     for t in table {
         println!("{}, {}, {}", t.0, t.1, t.2);
     }
