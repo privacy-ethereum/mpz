@@ -127,6 +127,12 @@ impl Delta {
     pub fn into_inner(self) -> Block {
         self.0
     }
+
+    /// Set second least significant bit of the block
+    #[inline]
+    pub fn set_second_lsb(&mut self, value: bool) {
+        self.0.set_second_lsb(value);
+    }
 }
 
 impl Distribution<Delta> for StandardUniform {

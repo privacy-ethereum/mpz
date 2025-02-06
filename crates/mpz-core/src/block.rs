@@ -142,12 +142,10 @@ impl Block {
         self.0[0] = (self.0[0] & 0xfe) | value as u8;
     }
 
-    /// XORs the least significant bit of the block with the given value.
+    /// Sets the second least significant bit of the block
     #[inline]
-    pub fn xor_lsb(&mut self, bit: bool) {
-        self.0[0] ^= bit as u8;
-    pub fn set_lsb(&mut self, value: bool) {
-        self.0[0] = (self.0[0] & 0xfe) | value as u8;
+    pub fn set_second_lsb(&mut self, value: bool) {
+        self.0[0] = (self.0[0] & 0xfd) | ((value as u8) << 1);
     }
 
     /// XORs the least significant bit of the block with the given value.
@@ -160,8 +158,12 @@ impl Block {
     #[inline]
     pub fn lsb(&self) -> bool {
         (self.0[0] & 1) == 1
-    pub fn lsb(&self) -> bool {
-        (self.0[0] & 1) == 1
+    } 
+
+    /// Returns the second least significant bit of the block
+    #[inline]
+    pub fn second_lsb(&self) -> bool {
+        (self.0[0] & 2) == 2
     }
 
     /// Let `x0` and `x1` be the lower and higher halves of `x`, respectively.

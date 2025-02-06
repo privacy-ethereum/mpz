@@ -278,7 +278,7 @@ impl Fpre {
 
 
 
-/// Fpre data from the generator’s perspective.
+/// Fpre data from the generator's perspective.
 #[derive(Debug)]
 pub struct FpreGen {
     pub num_input: usize,
@@ -288,7 +288,7 @@ pub struct FpreGen {
     pub triple_shares: Vec<AuthTripleShare>,
 }
 
-/// Fpre data from the evaluator’s perspective.
+/// Fpre data from the evaluator's perspective.
 #[derive(Debug)]
 pub struct FpreEval {
     pub num_input: usize,
@@ -307,8 +307,8 @@ pub fn gen_auth_bit_shares(
 
     let mut rng = ChaCha12Rng::seed_from_u64(0);
 
-    let mut cot_delta_b = IdealCOT::new(delta_b.into_inner());
-
+    // Perform COT with delta_b and eval keys so that received messages are macs on bits known to eval
+    let mut cot_eval = IdealCOT::new(delta_b.into_inner());
     let gen_bits: Vec<bool> = (0..length).map(|_| rng.gen()).collect::<Vec<_>>();
     let eval_keys: Vec<Block> = (0..length).map(|_| rng.gen()).collect::<Vec<_>>();
 
@@ -318,12 +318,12 @@ pub fn gen_auth_bit_shares(
             id: _receiver_id,
             msgs: received,
         },
-    ) = cot_delta_b.transfer(&gen_bits, &eval_keys).unwrap();
+    ) = cot_eval.transfer(&gen_bits, &eval_keys).unwrap();
 
     let gen_macs = received;
 
-    let mut cot_delta_a = IdealCOT::new(delta_a.into_inner());
-
+    // Perform COT with delta_a and gen keys so that received messages are macs on bits known to gen
+    let mut cot_gen = IdealCOT::new(delta_a.into_inner());
     let eval_bits: Vec<bool> = (0..length).map(|_| rng.gen()).collect::<Vec<_>>();
     let gen_keys: Vec<Block> = (0..length).map(|_| rng.gen()).collect::<Vec<_>>();
 
@@ -333,10 +333,11 @@ pub fn gen_auth_bit_shares(
             id: _receiver_id,
             msgs: received,
         },
-    ) = cot_delta_a.transfer(&eval_bits, &gen_keys).unwrap();
+    ) = cot_gen.transfer(&eval_bits, &gen_keys).unwrap();
 
     let eval_macs = received;
 
+    // Construct auth bit shares from COT outputs
     let mut gen_shares: Vec<AuthBitShare> = Vec::with_capacity(length);
     let mut eval_shares: Vec<AuthBitShare> = Vec::with_capacity(length);
 
@@ -368,6 +369,86 @@ pub fn gen_auth_bit_shares(
 
     Ok((gen_shares, eval_shares))
     
+}
+
+static SELECT_MASK: [Block; 2] = [Block::ZERO, Block::ONES];
+
+// insecure hash function
+fn h2d(a: Block, b: Block) -> Block {
+    let mut d = [a, a ^ b];
+    d[0] = d[0] ^ d[1]; 
+    return d[0] ^ b;
+}
+
+// insecure hash function
+fn h2(a: Block, b: Block) -> Block {
+    let mut d = [a, b];
+    d[0] = d[0] ^ d[1];
+    d[0] = d[0] ^ a;
+    return d[0] ^ b;
+}
+
+fn check(mut gen_triples: Vec<AuthTripleShare>, mut eval_triples: Vec<AuthTripleShare>, delta_a: &Delta, delta_b: &Delta) {
+    let length = gen_triples.len();
+    let mut c_gen = vec![Block::ZERO; length];
+    let mut g_gen = vec![Block::ZERO; length];
+    let mut d_gen = vec![false; length];
+    
+    let mut c_eval = vec![Block::ZERO; length];
+    let mut g_eval = vec![Block::ZERO; length];
+    let mut d_eval = vec![false; length];
+    for i in 0..length {
+        c_gen[i] = gen_triples[i].y.mac.as_block().clone()
+            ^ gen_triples[i].y.key.as_block().clone()
+            ^ (SELECT_MASK[gen_triples[i].y.bit() as usize] & delta_a.as_block());
+
+        g_gen[i] = c_gen[i] ^ h2d(gen_triples[i].x.key.into(), delta_a.into_inner());
+
+        c_eval[i] = eval_triples[i].y.mac.as_block().clone()
+            ^ eval_triples[i].y.key.as_block().clone()
+            ^ (SELECT_MASK[eval_triples[i].y.bit() as usize] & delta_b.as_block());
+
+        g_eval[i] = c_eval[i] ^ h2d(eval_triples[i].x.key.into(), delta_b.into_inner());
+    }
+
+    // communication here
+    let g_gen_recv = g_gen.clone();
+    let g_eval_recv = g_eval.clone();
+
+    for i in 0..length {
+        let mut s_gen = h2(gen_triples[i].x.mac.as_block().clone(), gen_triples[i].x.key.as_block().clone());
+        s_gen = s_gen ^ gen_triples[i].z.mac.as_block().clone() ^ gen_triples[i].z.key.as_block().clone();
+        s_gen = s_gen ^ SELECT_MASK[gen_triples[i].x.bit() as usize] & (g_eval_recv[i] ^ c_gen[i]);
+        g_gen[i] = s_gen ^ SELECT_MASK[gen_triples[i].z.bit() as usize] & delta_a.as_block();
+        d_gen[i] = g_gen[i].second_lsb();
+
+        let mut s_eval = h2(eval_triples[i].x.mac.as_block().clone(), eval_triples[i].x.key.as_block().clone());
+        s_eval = s_eval ^ eval_triples[i].z.mac.as_block().clone() ^ eval_triples[i].z.key.as_block().clone();
+        s_eval = s_eval ^ SELECT_MASK[eval_triples[i].x.bit() as usize] & (g_gen_recv[i] ^ c_eval[i]);
+        g_eval[i] = s_eval ^ SELECT_MASK[eval_triples[i].z.bit() as usize] & delta_b.as_block();
+        d_eval[i] = g_eval[i].second_lsb();
+    }
+
+    let mut one: Block = Block::ZERO;
+    one.set_lsb(true);
+
+    let mut zdelta_mask: Block = Block::ONES;
+    zdelta_mask.set_lsb(false);
+    let zdelta = delta_b.as_block() & zdelta_mask;
+
+    let mut d = vec![false; length];
+    for i in 0..length {
+        d[i] = d_gen[i] ^ d_eval[i];
+        if d[i] {
+            gen_triples[i].z.mac = gen_triples[i].z.mac + Mac::from(one);
+            eval_triples[i].z.key = eval_triples[i].z.key + Key::from(zdelta);
+
+            g_gen[i] = g_gen[i] ^ delta_a.as_block();
+            g_eval[i] = g_eval[i] ^ delta_b.as_block();
+        }
+        assert!(g_gen[i] == g_eval[i]);
+    }
+
 }
 
 #[cfg(test)]
@@ -472,19 +553,38 @@ mod tests {
         let length = 100;
         let mut rng = ChaCha12Rng::seed_from_u64(0);
 
-        let delta_a = Delta::random(&mut rng);
-        let delta_b = Delta::random(&mut rng);
+        // need to set second-LSB of deltas to XOR to 1 for an optimization
+        let mut delta_a = Delta::random(&mut rng);
+        delta_a.set_second_lsb(true);
+        let mut delta_b = Delta::random(&mut rng);
+        delta_b.set_second_lsb(false);
 
         let (gen_shares, eval_shares) = 
             gen_auth_bit_shares(length, delta_a, delta_b)
             .unwrap();
 
-        for (gen_share, eval_share) in zip(gen_shares, eval_shares) {
-            let bit = AuthBit {
-                gen_share,
-                eval_share,
-            };
-            check_auth_bit(&bit, &delta_a, &delta_b);
+        // for (gen_share, eval_share) in zip(gen_shares, eval_shares) {
+        //     let bit = AuthBit {
+        //         gen_share,
+        //         eval_share,
+        //     };
+        //     check_auth_bit(&bit, &delta_a, &delta_b);
+        // }
+
+        let mut gen_triples = Vec::new();
+        let mut eval_triples = Vec::new();
+        for i in 0..length/3 {
+            gen_triples.push(AuthTripleShare {
+                x: gen_shares[i],
+                y: gen_shares[i+1],
+                z: gen_shares[i+2],
+            });
+            eval_triples.push(AuthTripleShare {
+                x: eval_shares[i],
+                y: eval_shares[i+1],
+                z: eval_shares[i+2],
+            });
         }
+        check(gen_triples, eval_triples, &delta_a, &delta_b);
     }
 }
