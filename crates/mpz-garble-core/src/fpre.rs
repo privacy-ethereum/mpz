@@ -25,6 +25,23 @@ pub enum FpreError {
     InvalidTripleCount(usize, usize),
 }
 
+static SELECT_MASK: [Block; 2] = [Block::ZERO, Block::ONES];
+
+// insecure hash function
+fn h2d(a: Block, b: Block) -> Block {
+    let mut d = [a, a ^ b];
+    d[0] = d[0] ^ d[1]; 
+    return d[0] ^ b;
+}
+
+// insecure hash function
+fn h2(a: Block, b: Block) -> Block {
+    let mut d = [a, b];
+    d[0] = d[0] ^ d[1];
+    d[0] = d[0] ^ a;
+    return d[0] ^ b;
+}
+
 /// (key, mac) pair with bit = mac.pointer()
 #[derive(Debug, Clone, Default, Copy)]
 pub struct AuthBitShare {
@@ -288,6 +305,78 @@ pub struct FpreGen {
     pub triple_shares: Vec<AuthTripleShare>,
 }
 
+impl FpreGen {
+    pub fn new(num_input: usize, num_and: usize, delta_a: Delta) -> Self {
+        Self {
+            num_input,
+            num_and,
+            delta_a,
+            wire_shares: Vec::new(),
+            triple_shares: Vec::new(),
+        }
+    }
+
+    fn set_bits(&mut self, auth_bits: Vec<AuthBitShare>) {
+        self.wire_shares = auth_bits;
+    }
+
+    fn set_faulty_triples(&mut self, auth_bits: Vec<AuthBitShare>) {
+        let length = auth_bits.len() / 3;
+        for i in 0..length {
+            self.triple_shares.push(AuthTripleShare {
+                x: auth_bits[3 * i].clone(),
+                y: auth_bits[3 * i + 1].clone(),
+                z: auth_bits[3 * i + 2].clone(),
+            });
+        }
+    }
+
+    fn triple_check_1(&mut self) -> (Vec<Block>, Vec<Block>) {
+        let length = self.triple_shares.len();
+        let mut c = vec![Block::ZERO; length];
+        let mut g = vec![Block::ZERO; length];
+
+        for i in 0..length {
+            c[i] = self.triple_shares[i].y.mac.as_block().clone()
+                ^ self.triple_shares[i].y.key.as_block().clone()
+                ^ (SELECT_MASK[self.triple_shares[i].y.bit() as usize] & self.delta_a.as_block());
+
+            g[i] = c[i] ^ h2d(self.triple_shares[i].x.key.into(), self.delta_a.into_inner());
+        }
+        (c, g)
+    }
+
+    fn triple_check_2(&mut self, c: Vec<Block>, g: &mut Vec<Block>, gr: Vec<Block>) -> Vec<bool> {
+        let length = self.triple_shares.len();
+        let mut d = vec![false; length];
+
+        for i in 0..length {
+            let mut s = h2(self.triple_shares[i].x.mac.as_block().clone(), self.triple_shares[i].x.key.as_block().clone());
+            s = s ^ self.triple_shares[i].z.mac.as_block().clone() ^ self.triple_shares[i].z.key.as_block().clone();
+            s = s ^ SELECT_MASK[self.triple_shares[i].x.bit() as usize] & (gr[i] ^ c[i]);
+            g[i] = s ^ SELECT_MASK[self.triple_shares[i].z.bit() as usize] & self.delta_a.as_block();
+            d[i] = g[i].second_lsb();
+        }
+
+        return d;
+    }
+
+    fn triple_check_3(&mut self, g: &mut Vec<Block>, mut d: Vec<bool>, dr: Vec<bool>) {
+        let mut one: Block = Block::ZERO;
+        one.set_lsb(true);
+
+        let length = self.triple_shares.len();
+        for i in 0..length {
+            d[i] = d[i] ^ dr[i];
+            if d[i] {
+                self.triple_shares[i].z.mac = self.triple_shares[i].z.mac + Mac::from(one);
+                g[i] = g[i] ^ self.delta_a.as_block();
+            }
+        }
+    }
+}
+
+
 /// Fpre data from the evaluator's perspective.
 #[derive(Debug)]
 pub struct FpreEval {
@@ -298,8 +387,81 @@ pub struct FpreEval {
     pub triple_shares: Vec<AuthTripleShare>,
 }
 
-/// First step of Fpre generation: generate auth bit shares using COT
-pub fn gen_auth_bit_shares(
+impl FpreEval {
+    pub fn new(num_input: usize, num_and: usize, delta_b: Delta) -> Self {
+        Self {
+            num_input,
+            num_and,
+            delta_b,
+            wire_shares: Vec::new(),
+            triple_shares: Vec::new(),
+        }
+    }
+
+    fn set_bits(&mut self, auth_bits: Vec<AuthBitShare>) {
+        self.wire_shares = auth_bits;
+    }
+
+    fn set_faulty_triples(&mut self, auth_bits: Vec<AuthBitShare>) {
+        let length = auth_bits.len() / 3;
+        for i in 0..length {
+            self.triple_shares.push(AuthTripleShare {
+                x: auth_bits[3 * i].clone(),
+                y: auth_bits[3 * i + 1].clone(),
+                z: auth_bits[3 * i + 2].clone(),
+            });
+        }
+    }
+
+    fn triple_check_1(&mut self) -> (Vec<Block>, Vec<Block>) {
+        let length = self.triple_shares.len();
+        let mut c = vec![Block::ZERO; length];
+        let mut g = vec![Block::ZERO; length];
+
+        for i in 0..length {
+            c[i] = self.triple_shares[i].y.mac.as_block().clone()
+                ^ self.triple_shares[i].y.key.as_block().clone()
+                ^ (SELECT_MASK[self.triple_shares[i].y.bit() as usize] & self.delta_b.as_block());
+
+            g[i] = c[i] ^ h2d(self.triple_shares[i].x.key.into(), self.delta_b.into_inner());
+        }
+        (c, g)
+    }
+
+    fn triple_check_2(&mut self, c: Vec<Block>, g: &mut Vec<Block>, gr: Vec<Block>) -> Vec<bool> {
+        let length = self.triple_shares.len();
+        let mut d = vec![false; length];
+
+        for i in 0..length {
+            let mut s = h2(self.triple_shares[i].x.mac.as_block().clone(), self.triple_shares[i].x.key.as_block().clone());
+            s = s ^ self.triple_shares[i].z.mac.as_block().clone() ^ self.triple_shares[i].z.key.as_block().clone();
+            s = s ^ SELECT_MASK[self.triple_shares[i].x.bit() as usize] & (gr[i] ^ c[i]);
+            g[i] = s ^ SELECT_MASK[self.triple_shares[i].z.bit() as usize] & self.delta_b.as_block();
+            d[i] = g[i].second_lsb();
+        }
+
+        return d;
+
+    }
+
+    fn triple_check_3(&mut self, g: &mut Vec<Block>, mut d: Vec<bool>, dr: Vec<bool>) {
+        let mut zdelta_mask: Block = Block::ONES;
+        zdelta_mask.set_lsb(false);
+        let zdelta = self.delta_b.as_block() & zdelta_mask;
+
+        let length = self.triple_shares.len();
+        for i in 0..length {
+            d[i] = d[i] ^ dr[i];
+            if d[i] {
+                self.triple_shares[i].z.key = self.triple_shares[i].z.key + Key::from(zdelta);
+                g[i] = g[i] ^ self.delta_b.as_block();
+            }
+        }
+    }
+}
+
+/// Generate auth bit shares using ideal COT
+fn bit_shares_from_cot(
     length: usize,
     delta_a: Delta,
     delta_b: Delta,
@@ -371,86 +533,6 @@ pub fn gen_auth_bit_shares(
     
 }
 
-static SELECT_MASK: [Block; 2] = [Block::ZERO, Block::ONES];
-
-// insecure hash function
-fn h2d(a: Block, b: Block) -> Block {
-    let mut d = [a, a ^ b];
-    d[0] = d[0] ^ d[1]; 
-    return d[0] ^ b;
-}
-
-// insecure hash function
-fn h2(a: Block, b: Block) -> Block {
-    let mut d = [a, b];
-    d[0] = d[0] ^ d[1];
-    d[0] = d[0] ^ a;
-    return d[0] ^ b;
-}
-
-fn check(mut gen_triples: Vec<AuthTripleShare>, mut eval_triples: Vec<AuthTripleShare>, delta_a: &Delta, delta_b: &Delta) {
-    let length = gen_triples.len();
-    let mut c_gen = vec![Block::ZERO; length];
-    let mut g_gen = vec![Block::ZERO; length];
-    let mut d_gen = vec![false; length];
-    
-    let mut c_eval = vec![Block::ZERO; length];
-    let mut g_eval = vec![Block::ZERO; length];
-    let mut d_eval = vec![false; length];
-    for i in 0..length {
-        c_gen[i] = gen_triples[i].y.mac.as_block().clone()
-            ^ gen_triples[i].y.key.as_block().clone()
-            ^ (SELECT_MASK[gen_triples[i].y.bit() as usize] & delta_a.as_block());
-
-        g_gen[i] = c_gen[i] ^ h2d(gen_triples[i].x.key.into(), delta_a.into_inner());
-
-        c_eval[i] = eval_triples[i].y.mac.as_block().clone()
-            ^ eval_triples[i].y.key.as_block().clone()
-            ^ (SELECT_MASK[eval_triples[i].y.bit() as usize] & delta_b.as_block());
-
-        g_eval[i] = c_eval[i] ^ h2d(eval_triples[i].x.key.into(), delta_b.into_inner());
-    }
-
-    // communication here
-    let g_gen_recv = g_gen.clone();
-    let g_eval_recv = g_eval.clone();
-
-    for i in 0..length {
-        let mut s_gen = h2(gen_triples[i].x.mac.as_block().clone(), gen_triples[i].x.key.as_block().clone());
-        s_gen = s_gen ^ gen_triples[i].z.mac.as_block().clone() ^ gen_triples[i].z.key.as_block().clone();
-        s_gen = s_gen ^ SELECT_MASK[gen_triples[i].x.bit() as usize] & (g_eval_recv[i] ^ c_gen[i]);
-        g_gen[i] = s_gen ^ SELECT_MASK[gen_triples[i].z.bit() as usize] & delta_a.as_block();
-        d_gen[i] = g_gen[i].second_lsb();
-
-        let mut s_eval = h2(eval_triples[i].x.mac.as_block().clone(), eval_triples[i].x.key.as_block().clone());
-        s_eval = s_eval ^ eval_triples[i].z.mac.as_block().clone() ^ eval_triples[i].z.key.as_block().clone();
-        s_eval = s_eval ^ SELECT_MASK[eval_triples[i].x.bit() as usize] & (g_gen_recv[i] ^ c_eval[i]);
-        g_eval[i] = s_eval ^ SELECT_MASK[eval_triples[i].z.bit() as usize] & delta_b.as_block();
-        d_eval[i] = g_eval[i].second_lsb();
-    }
-
-    let mut one: Block = Block::ZERO;
-    one.set_lsb(true);
-
-    let mut zdelta_mask: Block = Block::ONES;
-    zdelta_mask.set_lsb(false);
-    let zdelta = delta_b.as_block() & zdelta_mask;
-
-    let mut d = vec![false; length];
-    for i in 0..length {
-        d[i] = d_gen[i] ^ d_eval[i];
-        if d[i] {
-            gen_triples[i].z.mac = gen_triples[i].z.mac + Mac::from(one);
-            eval_triples[i].z.key = eval_triples[i].z.key + Key::from(zdelta);
-
-            g_gen[i] = g_gen[i] ^ delta_a.as_block();
-            g_eval[i] = g_eval[i] ^ delta_b.as_block();
-        }
-        assert!(g_gen[i] == g_eval[i]);
-    }
-
-}
-
 #[cfg(test)]
 mod tests {
     use std::iter::zip;
@@ -488,7 +570,7 @@ mod tests {
     }
 
     #[test]
-    fn test_fpre_generate() {
+    fn test_fpre_insecure() {
         let num_input = 10;
         let num_and = 8;
         let mut fpre = Fpre::new(0xDEAD_BEEF, num_input, num_and);
@@ -549,8 +631,9 @@ mod tests {
     }
 
     #[test]
-    fn test_gen_auth_bit_shares() {
-        let length = 100;
+    fn test_fpre_bits() {
+        let num_wires = 100;
+        let num_and = 50;
         let mut rng = ChaCha12Rng::seed_from_u64(0);
 
         // need to set second-LSB of deltas to XOR to 1 for an optimization
@@ -559,32 +642,87 @@ mod tests {
         let mut delta_b = Delta::random(&mut rng);
         delta_b.set_second_lsb(false);
 
+        let mut fpre_gen = FpreGen::new(num_wires, num_and, delta_a);
+        let mut fpre_eval = FpreEval::new(num_wires, num_and, delta_b);
+
         let (gen_shares, eval_shares) = 
-            gen_auth_bit_shares(length, delta_a, delta_b)
+            bit_shares_from_cot(num_wires+num_and, delta_a, delta_b)
             .unwrap();
 
-        // for (gen_share, eval_share) in zip(gen_shares, eval_shares) {
-        //     let bit = AuthBit {
-        //         gen_share,
-        //         eval_share,
-        //     };
-        //     check_auth_bit(&bit, &delta_a, &delta_b);
-        // }
+        fpre_gen.set_bits(gen_shares);
+        fpre_eval.set_bits(eval_shares);
 
-        let mut gen_triples = Vec::new();
-        let mut eval_triples = Vec::new();
-        for i in 0..length/3 {
-            gen_triples.push(AuthTripleShare {
-                x: gen_shares[i],
-                y: gen_shares[i+1],
-                z: gen_shares[i+2],
-            });
-            eval_triples.push(AuthTripleShare {
-                x: eval_shares[i],
-                y: eval_shares[i+1],
-                z: eval_shares[i+2],
-            });
+        for i in 0..num_wires+num_and {
+            check_auth_bit(&AuthBit {
+                gen_share: fpre_gen.wire_shares[i],
+                eval_share: fpre_eval.wire_shares[i],
+            }, &delta_a, &delta_b);
         }
-        check(gen_triples, eval_triples, &delta_a, &delta_b);
+    }
+
+    #[test]
+    fn test_fpre_triples() {
+        let num_wires = 100;
+        let num_and = 50;
+        let mut rng = ChaCha12Rng::seed_from_u64(0);
+
+        // need to set second-LSB of deltas to XOR to 1 for an optimization
+        let mut delta_a = Delta::random(&mut rng);
+        delta_a.set_second_lsb(true);
+        let mut delta_b = Delta::random(&mut rng);
+        delta_b.set_second_lsb(false);
+
+        let mut fpre_gen = FpreGen::new(num_wires, num_and, delta_a);
+        let mut fpre_eval = FpreEval::new(num_wires, num_and, delta_b);
+
+        let (gen_shares, eval_shares) = 
+            bit_shares_from_cot(3*num_and, delta_a, delta_b)
+            .unwrap();
+
+        fpre_gen.set_faulty_triples(gen_shares);
+        fpre_eval.set_faulty_triples(eval_shares);
+
+        let (c_gen, mut g_gen) = fpre_gen.triple_check_1();
+        let (c_eval, mut g_eval) = fpre_eval.triple_check_1();
+
+        // First round of communication
+        let gr_gen = g_eval.clone();
+        let gr_eval = g_gen.clone();
+
+        let d_gen = fpre_gen.triple_check_2(c_gen, &mut g_gen, gr_gen);
+        let d_eval = fpre_eval.triple_check_2(c_eval, &mut g_eval, gr_eval);
+
+        // Second round of communication
+        let dr_gen = d_eval.clone();    
+        let dr_eval = d_gen.clone();
+
+        fpre_gen.triple_check_3(&mut g_gen, d_gen, dr_gen);
+        fpre_eval.triple_check_3(&mut g_eval, d_eval, dr_eval);
+
+        // Call Feq here
+        for (g_gen, g_eval) in zip(g_gen, g_eval) {
+            assert_eq!(g_gen, g_eval);
+        }
+
+        // TODO: Bucketing AND triples
+
+        for (gen_triple, eval_triple) in zip(fpre_gen.triple_shares, fpre_eval.triple_shares) {
+            let triple = AuthTriple {
+                x: AuthBit {
+                    gen_share: gen_triple.x,
+                    eval_share: eval_triple.x,
+                },
+                y: AuthBit {
+                    gen_share: gen_triple.y,
+                    eval_share: eval_triple.y,
+                },
+                z: AuthBit {
+                    gen_share: gen_triple.z,
+                    eval_share: eval_triple.z,
+                },
+            };
+            check_auth_triple(&triple, &fpre_gen.delta_a, &fpre_eval.delta_b);
+        }
+        
     }
 }

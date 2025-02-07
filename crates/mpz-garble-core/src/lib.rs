@@ -28,7 +28,7 @@ pub use garbler::{
 };
 pub use auth_gen::{AuthGenerator, AuthGeneratorError};
 
-pub use fpre::{Fpre, FpreError, gen_auth_bit_shares};
+pub use fpre::{Fpre, FpreError};
 pub use mpz_memory_core::correlated::{Delta, Key, Mac};
 
 pub use mpz_circuits::Circuit;
