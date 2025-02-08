@@ -28,8 +28,8 @@ impl TryFrom<UncheckedDerandomize> for Derandomize {
     type Error = std::io::Error;
 
     fn try_from(value: UncheckedDerandomize) -> Result<Self, Self::Error> {
-        // Divide by 8, rounding up
-        let expected_len = (value.count as usize + 7) / 8;
+        // Use the built-in `div_ceil` method for ceiling division
+        let expected_len = (value.count as usize).div_ceil(8);
 
         if value.flip.len() != expected_len {
             return Err(std::io::Error::new(

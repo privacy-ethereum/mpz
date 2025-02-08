@@ -196,11 +196,11 @@ impl Receiver<state::Setup> {
 ///
 /// # Arguments
 ///
-/// * `base_table` - A Ristretto basepoint table from the sender's public key
-/// * `receiver_private_keys` - The private keys of the OT receiver
-/// * `choices` - The choices of the OT receiver
-/// * `offset` - The number of decryption keys that have already been computed
-///              (used for the key derivation tweak)
+///  `base_table` - A Ristretto basepoint table from the sender's public key
+///  `receiver_private_keys` - The private keys of the OT receiver
+///  `choices` - The choices of the OT receiver
+///  `offset` - The number of decryption keys that have already been computed
+///  (used for the key derivation tweak)
 fn compute_decryption_keys<T: BitIterable + Sync>(
     base_table: &RistrettoBasepointTable,
     receiver_private_keys: &[Scalar],

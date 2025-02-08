@@ -230,11 +230,11 @@ impl Sender<state::Setup> {
 ///
 /// # Arguments
 ///
-/// * `private_key` - The sender's private key.
-/// * `public_key` - The sender's public key.
-/// * `blinded_choices` - The receiver's blinded choices.
-/// * `offset` - The number of OTs that have already been performed
-///              (used for the key derivation tweak)
+///  `private_key` - The sender's private key.
+///  `public_key` - The sender's public key.
+///  `blinded_choices` - The receiver's blinded choices.
+///  `offset` - The number of OTs that have already been performed
+///  (used for the key derivation tweak)
 fn compute_encryption_keys(
     private_key: &Scalar,
     public_key: &RistrettoPoint,
