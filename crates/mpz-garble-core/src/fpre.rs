@@ -533,6 +533,88 @@ fn bit_shares_from_cot(
     
 }
 
+// work on notation
+fn combine_leaky_triples(
+    gen_shares: Vec<AuthTripleShare>,
+    eval_shares: Vec<AuthTripleShare>,
+    seed: u64,
+    bucket_size: usize,
+) -> (Vec<AuthTripleShare>, Vec<AuthTripleShare>) {
+    let total = gen_shares.len();
+    assert_eq!(total, eval_shares.len(),
+        "gen_shares and eval_shares must have same length");
+    assert_eq!(total % bucket_size, 0,
+        "total length must be multiple of bucket_size");
+    let n = total / bucket_size;
+
+    // Fisher–Yates shuffle in place
+    let mut rng = ChaCha12Rng::seed_from_u64(seed);
+    let mut location: Vec<usize> = (0..total).collect();
+    for i in (0..total).rev() {
+        let idx = rng.gen_range(0..=i);
+        location.swap(i, idx);
+    }
+
+    let mut gen_data = vec![false; total];
+    let mut eval_data = vec![false; total];
+
+    for i in 0..n {
+
+        let base_idx = location[i*bucket_size + 0];
+        
+        let y_base_gen = gen_shares[base_idx].y.bit();
+        let y_base_eval = eval_shares[base_idx].y.bit();
+
+        for j in 1..bucket_size {
+            let idx_j = location[i*bucket_size + j];
+
+            let y_gen_j = gen_shares[idx_j].y.bit();
+            let y_eval_j = eval_shares[idx_j].y.bit();
+
+            gen_data[i*bucket_size + j] = y_base_gen ^ y_gen_j;
+            eval_data[i*bucket_size + j] = y_base_eval ^ y_eval_j;
+        }
+    }
+
+    // d array
+    let mut final_data = vec![false; total];
+    for i in 0..total {
+        final_data[i] = gen_data[i] ^ eval_data[i];
+    }
+
+    let mut new_gen = Vec::with_capacity(n);
+    let mut new_eval = Vec::with_capacity(n);
+
+    for i in 0..n {
+        let base_idx = location[i*bucket_size + 0];
+
+        // Start with a "copy" of the first triple in the bucket
+        let mut combined_gen = gen_shares[base_idx].clone();
+        let mut combined_eval = eval_shares[base_idx].clone();
+
+        // For j in [1..bucket_size], merge x and z wires, keep y same as base
+        for j in 1..bucket_size {
+            let idx_j = location[i*bucket_size + j];
+
+            combined_gen.x = combined_gen.x + gen_shares[idx_j].x;
+            combined_eval.x = combined_eval.x + eval_shares[idx_j].x;
+
+            combined_gen.z = combined_gen.z + gen_shares[idx_j].z;
+            combined_eval.z = combined_eval.z + eval_shares[idx_j].z;
+
+            // If d == 1, correct z-wire by xoring with x-wire
+            if final_data[i*bucket_size + j] {
+                combined_gen.z = combined_gen.z + gen_shares[idx_j].x;
+                combined_eval.z = combined_eval.z + eval_shares[idx_j].x;
+            }
+        }
+        new_gen.push(combined_gen);
+        new_eval.push(combined_eval);
+    }
+
+    (new_gen, new_eval)
+}
+
 #[cfg(test)]
 mod tests {
     use std::iter::zip;
@@ -663,7 +745,7 @@ mod tests {
     #[test]
     fn test_fpre_triples() {
         let num_wires = 100;
-        let num_and = 50;
+        let num_and = 60;
         let mut rng = ChaCha12Rng::seed_from_u64(0);
 
         // need to set second-LSB of deltas to XOR to 1 for an optimization
@@ -699,14 +781,21 @@ mod tests {
         fpre_gen.triple_check_3(&mut g_gen, d_gen, dr_gen);
         fpre_eval.triple_check_3(&mut g_eval, d_eval, dr_eval);
 
-        // Call Feq here
+        // Push to Feq here
         for (g_gen, g_eval) in zip(g_gen, g_eval) {
             assert_eq!(g_gen, g_eval);
         }
 
-        // TODO: Bucketing AND triples
+        // Combine triples
+        let (new_gen, new_eval) = combine_leaky_triples(
+            fpre_gen.triple_shares,
+            fpre_eval.triple_shares,
+            0xDEAD_BEEF,
+            5,
+        );
 
-        for (gen_triple, eval_triple) in zip(fpre_gen.triple_shares, fpre_eval.triple_shares) {
+        // Check new triples
+        for (gen_triple, eval_triple) in zip(new_gen, new_eval) {
             let triple = AuthTriple {
                 x: AuthBit {
                     gen_share: gen_triple.x,
@@ -722,7 +811,6 @@ mod tests {
                 },
             };
             check_auth_triple(&triple, &fpre_gen.delta_a, &fpre_eval.delta_b);
-        }
-        
+        }  
     }
 }
