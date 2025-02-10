@@ -35,6 +35,7 @@ opaque-debug.workspace = true
 serde = { workspace = true, optional = true }
 serio.workspace = true
 cfg-if.workspace = true
+tokio = { workspace = true, features = ["sync"] }
 
 [dev-dependencies]
 mpz-common = { workspace = true, features = [
