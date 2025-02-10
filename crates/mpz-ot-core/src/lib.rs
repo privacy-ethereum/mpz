@@ -54,7 +54,7 @@ impl TransferId {
     }
 
     /// Returns the current transfer ID, incrementing `self` in-place.
-    pub(crate) fn next(&mut self) -> Self {
+    pub fn next(&mut self) -> Self {
         let id = *self;
         self.0 += 1;
         id
