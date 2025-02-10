@@ -374,6 +374,94 @@ impl FpreGen {
             }
         }
     }
+
+    fn triple_combine_1(
+        self: &Self,
+        leaky_and_shares: &Vec<AuthTripleShare>,
+        seed: u64,
+        bucket_size: usize,
+    ) -> Vec<bool> {
+        let total = leaky_and_shares.len();
+        assert_eq!(total % bucket_size, 0,
+            "total length must be multiple of bucket_size");
+        let n = total / bucket_size;
+    
+        // Fisher–Yates shuffle in place
+        let mut rng = ChaCha12Rng::seed_from_u64(seed);
+        let mut location: Vec<usize> = (0..total).collect();
+        for i in (0..total).rev() {
+            let idx = rng.gen_range(0..=i);
+            location.swap(i, idx);
+        }
+    
+        let mut data = vec![false; total];
+    
+        for i in 0..n {
+            let base_idx = location[i*bucket_size + 0];    
+            let y_base = leaky_and_shares[base_idx].y.bit();
+    
+            for j in 1..bucket_size {
+                let idx_j = location[i*bucket_size + j];
+                let y_j = leaky_and_shares[idx_j].y.bit();
+                data[i*bucket_size + j] = y_base ^ y_j;
+            }
+        }
+        data
+    }
+
+    fn triple_combine_2(
+        self: &Self,
+        leaky_and_shares: Vec<AuthTripleShare>,
+        seed: u64,
+        bucket_size: usize,
+        data: Vec<bool>,
+        data_recv: Vec<bool>,
+    ) -> Vec<AuthTripleShare> {
+
+        let total = leaky_and_shares.len();
+        assert_eq!(total % bucket_size, 0,
+            "total length must be multiple of bucket_size");
+        let n = total / bucket_size;
+        
+        // Fisher–Yates shuffle in place
+        let mut rng = ChaCha12Rng::seed_from_u64(seed);
+        let mut location: Vec<usize> = (0..total).collect();
+        for i in (0..total).rev() {
+            let idx = rng.gen_range(0..=i);
+            location.swap(i, idx);
+        }
+
+        let mut final_data = vec![false; total];
+        for i in 0..total {
+            final_data[i] = data[i] ^ data_recv[i];
+        }
+
+        let mut combined_shares = Vec::with_capacity(n);
+    
+        for i in 0..n {
+            let base_idx = location[i*bucket_size + 0];
+    
+            // Start with a "copy" of the first triple in the bucket
+            let mut combined_share = leaky_and_shares[base_idx].clone();
+    
+            // For j in [1..bucket_size], merge x and z wires, keep y same as base
+            for j in 1..bucket_size {
+                let idx_j = location[i*bucket_size + j];
+    
+                combined_share.x = combined_share.x + leaky_and_shares[idx_j].x;
+    
+                combined_share.z = combined_share.z + leaky_and_shares[idx_j].z;
+    
+                // If d == 1, correct z-wire by xoring with x-wire
+                if final_data[i*bucket_size + j] {
+                    combined_share.z = combined_share.z + leaky_and_shares[idx_j].x;
+                }
+            }
+            combined_shares.push(combined_share);
+        }
+    
+        combined_shares
+    }
 }
 
 
@@ -457,6 +545,94 @@ impl FpreEval {
                 g[i] = g[i] ^ self.delta_b.as_block();
             }
         }
+    }
+
+    fn triple_combine_1(
+        self: &Self,
+        leaky_and_shares: &Vec<AuthTripleShare>,
+        seed: u64,
+        bucket_size: usize,
+    ) -> Vec<bool> {
+        let total = leaky_and_shares.len();
+        assert_eq!(total % bucket_size, 0,
+            "total length must be multiple of bucket_size");
+        let n = total / bucket_size;
+    
+        // Fisher–Yates shuffle in place
+        let mut rng = ChaCha12Rng::seed_from_u64(seed);
+        let mut location: Vec<usize> = (0..total).collect();
+        for i in (0..total).rev() {
+            let idx = rng.gen_range(0..=i);
+            location.swap(i, idx);
+        }
+    
+        let mut data = vec![false; total];
+    
+        for i in 0..n {
+            let base_idx = location[i*bucket_size + 0];    
+            let y_base = leaky_and_shares[base_idx].y.bit();
+    
+            for j in 1..bucket_size {
+                let idx_j = location[i*bucket_size + j];
+                let y_j = leaky_and_shares[idx_j].y.bit();
+                data[i*bucket_size + j] = y_base ^ y_j;
+            }
+        }
+        data
+    }
+
+    fn triple_combine_2(
+        self: &Self,
+        leaky_and_shares: Vec<AuthTripleShare>,
+        seed: u64,
+        bucket_size: usize,
+        mut data: Vec<bool>,
+        data_recv: Vec<bool>,
+    ) -> Vec<AuthTripleShare> {
+
+        let total = leaky_and_shares.len();
+        assert_eq!(total % bucket_size, 0,
+            "total length must be multiple of bucket_size");
+        let n = total / bucket_size;
+        
+        // Fisher–Yates shuffle in place
+        let mut rng = ChaCha12Rng::seed_from_u64(seed);
+        let mut location: Vec<usize> = (0..total).collect();
+        for i in (0..total).rev() {
+            let idx = rng.gen_range(0..=i);
+            location.swap(i, idx);
+        }
+
+        let mut final_data = vec![false; total];
+        for i in 0..total {
+            final_data[i] = data[i] ^ data_recv[i];
+        }
+
+        let mut combined_shares = Vec::with_capacity(n);
+    
+        for i in 0..n {
+            let base_idx = location[i*bucket_size + 0];
+    
+            // Start with a "copy" of the first triple in the bucket
+            let mut combined_share = leaky_and_shares[base_idx].clone();
+    
+            // For j in [1..bucket_size], merge x and z wires, keep y same as base
+            for j in 1..bucket_size {
+                let idx_j = location[i*bucket_size + j];
+    
+                combined_share.x = combined_share.x + leaky_and_shares[idx_j].x;
+    
+                combined_share.z = combined_share.z + leaky_and_shares[idx_j].z;
+    
+                // If d == 1, correct z-wire by xoring with x-wire
+                if final_data[i*bucket_size + j] {
+                    combined_share.z = combined_share.z + leaky_and_shares[idx_j].x;
+                }
+            }
+            combined_shares.push(combined_share);
+        }
+    
+        combined_shares
     }
 }
 
@@ -786,13 +962,14 @@ mod tests {
             assert_eq!(g_gen, g_eval);
         }
 
-        // Combine triples
-        let (new_gen, new_eval) = combine_leaky_triples(
-            fpre_gen.triple_shares,
-            fpre_eval.triple_shares,
-            0xDEAD_BEEF,
-            5,
-        );
+        let gen_leaky_shares = fpre_gen.triple_shares.clone();
+        let eval_leaky_shares = fpre_eval.triple_shares.clone();
+
+        let d_gen = fpre_gen.triple_combine_1(&gen_leaky_shares, 0xDEAD_BEEF, 5);
+        let d_eval = fpre_eval.triple_combine_1(&eval_leaky_shares, 0xDEAD_BEEF, 5);
+
+        let new_gen = fpre_gen.triple_combine_2(gen_leaky_shares, 0xDEAD_BEEF, 5, d_gen.clone(), d_eval.clone());
+        let new_eval = fpre_eval.triple_combine_2(eval_leaky_shares, 0xDEAD_BEEF, 5, d_eval.clone(), d_gen.clone());
 
         // Check new triples
         for (gen_triple, eval_triple) in zip(new_gen, new_eval) {
@@ -814,3 +991,6 @@ mod tests {
         }  
     }
 }
+
+
+// TODO: ownership stuff for FpreGen/FpreEval, leaky and triples, location array, etc.
