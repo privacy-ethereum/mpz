@@ -247,3 +247,125 @@ where
 
     Ok(Ok((ra, rb)))
 }
+
+pub(crate) async fn try_join3<'a, A, B, C, RA, RB, RC, E>(
+    threads: &[Handle],
+    a: A,
+    b: B,
+    c: C,
+) -> Result<Result<(RA, RB, RC), E>, ContextError>
+where
+    A: for<'b> FnOnce(&'b mut Context) -> ScopedBoxFuture<'a, 'b, Result<RA, E>> + Send + 'static,
+    B: for<'b> FnOnce(&'b mut Context) -> ScopedBoxFuture<'a, 'b, Result<RB, E>> + Send + 'static,
+    C: for<'b> FnOnce(&'b mut Context) -> ScopedBoxFuture<'a, 'b, Result<RC, E>> + Send + 'static,
+    RA: Send + 'static,
+    RB: Send + 'static,
+    RC: Send + 'static,
+    E: Send + 'static,
+{
+    assert_eq!(threads.len(), 3, "expecting exactly three threads");
+
+    let mut a = threads[0].send_with_return(|ctx| a(ctx).block_on())?.fuse();
+    let mut b = threads[1].send_with_return(|ctx| b(ctx).block_on())?.fuse();
+    let mut c = threads[2].send_with_return(|ctx| c(ctx).block_on())?.fuse();
+
+    let mut ra = None;
+    let mut rb = None;
+    let mut rc = None;
+    loop {
+        futures::select! {
+            output = a => {
+                match output? {
+                    Ok(output) => ra = Some(output),
+                    Err(error) => return Ok(Err(error)),
+                }
+            },
+            output = b => {
+                match output? {
+                    Ok(output) => rb = Some(output),
+                    Err(error) => return Ok(Err(error)),
+                }
+            }
+            output = c => {
+                match output? {
+                    Ok(output) => rc = Some(output),
+                    Err(error) => return Ok(Err(error)),
+                }
+            }
+            complete => break,
+        }
+    }
+
+    let ra = ra.expect("a future should have resolved");
+    let rb = rb.expect("b future should have resolved");
+    let rc = rc.expect("c future should have resolved");
+
+    Ok(Ok((ra, rb, rc)))
+}
+
+pub(crate) async fn try_join4<'a, A, B, C, D, RA, RB, RC, RD, E>(
+    threads: &[Handle],
+    a: A,
+    b: B,
+    c: C,
+    d: D,
+) -> Result<Result<(RA, RB, RC, RD), E>, ContextError>
+where
+    A: for<'b> FnOnce(&'b mut Context) -> ScopedBoxFuture<'a, 'b, Result<RA, E>> + Send + 'static,
+    B: for<'b> FnOnce(&'b mut Context) -> ScopedBoxFuture<'a, 'b, Result<RB, E>> + Send + 'static,
+    C: for<'b> FnOnce(&'b mut Context) -> ScopedBoxFuture<'a, 'b, Result<RC, E>> + Send + 'static,
+    D: for<'b> FnOnce(&'b mut Context) -> ScopedBoxFuture<'a, 'b, Result<RD, E>> + Send + 'static,
+    RA: Send + 'static,
+    RB: Send + 'static,
+    RC: Send + 'static,
+    RD: Send + 'static,
+    E: Send + 'static,
+{
+    assert_eq!(threads.len(), 4, "expecting exactly four threads");
+
+    let mut a = threads[0].send_with_return(|ctx| a(ctx).block_on())?.fuse();
+    let mut b = threads[1].send_with_return(|ctx| b(ctx).block_on())?.fuse();
+    let mut c = threads[2].send_with_return(|ctx| c(ctx).block_on())?.fuse();
+    let mut d = threads[3].send_with_return(|ctx| d(ctx).block_on())?.fuse();
+
+    let mut ra = None;
+    let mut rb = None;
+    let mut rc = None;
+    let mut rd = None;
+    loop {
+        futures::select! {
+            output = a => {
+                match output? {
+                    Ok(output) => ra = Some(output),
+                    Err(error) => return Ok(Err(error)),
+                }
+            },
+            output = b => {
+                match output? {
+                    Ok(output) => rb = Some(output),
+                    Err(error) => return Ok(Err(error)),
+                }
+            }
+            output = c => {
+                match output? {
+                    Ok(output) => rc = Some(output),
+                    Err(error) => return Ok(Err(error)),
+                }
+            }
+            output = d => {
+                match output? {
+                    Ok(output) => rd = Some(output),
+                    Err(error) => return Ok(Err(error)),
+                }
+            }
+            complete => break,
+        }
+    }
+
+    let ra = ra.expect("a future should have resolved");
+    let rb = rb.expect("b future should have resolved");
+    let rc = rc.expect("c future should have resolved");
+    let rd = rd.expect("d future should have resolved");
+
+    Ok(Ok((ra, rb, rc, rd)))
+}
