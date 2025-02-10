@@ -4,6 +4,15 @@ mod verifier;
 pub use prover::Prover;
 pub use verifier::Verifier;
 
+use mpz_core::Block;
+use mpz_vm_core::prelude::Slice;
+
+pub trait Encodings {
+    type Error: Send + 'static + std::error::Error;
+
+    fn get_encodings(&self, slice: Slice) -> Result<Vec<Block>, Self::Error>;
+}
+
 #[cfg(test)]
 mod tests {
     use mpz_circuits::circuits::AES128;

@@ -4,11 +4,13 @@ use mpz_core::{bitvec::BitVec, Block};
 use mpz_ot::rcot::{RCOTReceiver, RCOTReceiverOutput};
 use mpz_vm_core::{
     memory::{binary::Binary, correlated::Mac, DecodeFuture, Memory, Slice, View},
-    Call, Callable, Execute, Result, VmError,
+    Call, Callable, Execute, Result as VmResult, VmError,
 };
-use mpz_zk_core::{store::ProverStore, Prover as Core};
+use mpz_zk_core::{store::ProverStore, Prover as Core, ProverError};
 use serio::{stream::IoStreamExt, SinkExt};
 use utils::filter_drain::FilterDrain;
+
+use crate::Encodings;
 
 #[derive(Debug)]
 pub struct Prover<OT> {
@@ -37,7 +39,7 @@ where
         self.ot.wants_flush() || self.store.wants_macs() || self.store.wants_flush()
     }
 
-    async fn flush(&mut self, ctx: &mut Context) -> Result<()> {
+    async fn flush(&mut self, ctx: &mut Context) -> VmResult<()> {
         if self.ot.wants_flush() {
             self.ot.flush(ctx).await.map_err(VmError::execute)?;
         }
@@ -73,7 +75,7 @@ where
         false
     }
 
-    async fn preprocess(&mut self, _ctx: &mut Context) -> Result<()> {
+    async fn preprocess(&mut self, _ctx: &mut Context) -> VmResult<()> {
         Ok(())
     }
 
@@ -85,7 +87,7 @@ where
         })
     }
 
-    async fn execute(&mut self, ctx: &mut Context) -> Result<()> {
+    async fn execute(&mut self, ctx: &mut Context) -> VmResult<()> {
         let mut prover = Core::default();
         while !self.callstack.is_empty() {
             let ready_calls: Vec<_> = self
@@ -159,7 +161,7 @@ where
                 .await
                 .map_err(VmError::execute)?
                 .into_iter()
-                .collect::<Result<Vec<_>>>()?;
+                .collect::<VmResult<Vec<_>>>()?;
 
             for (output, output_macs) in outputs {
                 self.store
@@ -189,7 +191,7 @@ impl<OT> Callable<Binary> for Prover<OT>
 where
     OT: RCOTReceiver<bool, Block>,
 {
-    fn call_raw(&mut self, call: Call) -> Result<Slice> {
+    fn call_raw(&mut self, call: Call) -> VmResult<Slice> {
         let output = self.store.alloc_output(call.circ().output_len());
 
         let mut count = call.circ().and_count();
@@ -212,23 +214,23 @@ where
 {
     type Error = VmError;
 
-    fn alloc_raw(&mut self, size: usize) -> Result<Slice> {
+    fn alloc_raw(&mut self, size: usize) -> VmResult<Slice> {
         self.store.alloc_raw(size).map_err(VmError::memory)
     }
 
-    fn assign_raw(&mut self, slice: Slice, data: BitVec) -> Result<()> {
+    fn assign_raw(&mut self, slice: Slice, data: BitVec) -> VmResult<()> {
         self.store.assign_raw(slice, data).map_err(VmError::memory)
     }
 
-    fn commit_raw(&mut self, slice: Slice) -> Result<()> {
+    fn commit_raw(&mut self, slice: Slice) -> VmResult<()> {
         self.store.commit_raw(slice).map_err(VmError::memory)
     }
 
-    fn get_raw(&self, slice: Slice) -> Result<Option<BitVec>> {
+    fn get_raw(&self, slice: Slice) -> VmResult<Option<BitVec>> {
         self.store.get_raw(slice).map_err(VmError::memory)
     }
 
-    fn decode_raw(&mut self, slice: Slice) -> Result<DecodeFuture<BitVec>> {
+    fn decode_raw(&mut self, slice: Slice) -> VmResult<DecodeFuture<BitVec>> {
         self.store.decode_raw(slice).map_err(VmError::memory)
     }
 }
@@ -239,11 +241,11 @@ where
 {
     type Error = VmError;
 
-    fn mark_public_raw(&mut self, slice: Slice) -> Result<()> {
+    fn mark_public_raw(&mut self, slice: Slice) -> VmResult<()> {
         self.store.mark_public_raw(slice).map_err(VmError::view)
     }
 
-    fn mark_private_raw(&mut self, slice: Slice) -> Result<()> {
+    fn mark_private_raw(&mut self, slice: Slice) -> VmResult<()> {
         self.store.mark_private_raw(slice).map_err(VmError::view)?;
 
         self.ot.alloc(slice.len()).map_err(VmError::view)?;
@@ -251,7 +253,18 @@ where
         Ok(())
     }
 
-    fn mark_blind_raw(&mut self, slice: Slice) -> Result<()> {
+    fn mark_blind_raw(&mut self, slice: Slice) -> VmResult<()> {
         self.store.mark_blind_raw(slice).map_err(VmError::view)
+    }
+}
+
+impl<OT> Encodings for Prover<OT> {
+    type Error = ProverError;
+
+    fn get_encodings(&self, slice: Slice) -> Result<Vec<Block>, Self::Error> {
+        let macs = self.store.try_get_macs(slice)?;
+        let macs = Mac::as_blocks(macs).to_vec();
+
+        Ok(macs)
     }
 }

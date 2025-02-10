@@ -4,7 +4,10 @@ use mpz_circuits::{Circuit, Gate};
 use mpz_core::{bitvec::BitVec, Block};
 use mpz_memory_core::correlated::Mac;
 
-use crate::check::{Check, CheckError, Triple, UV};
+use crate::{
+    check::{Check, CheckError, Triple, UV},
+    store::ProverStoreError,
+};
 
 type Result<T> = core::result::Result<T, ProverError>;
 
@@ -261,10 +264,18 @@ enum ErrorRepr {
     Inprogress,
     #[error(transparent)]
     Check(CheckError),
+    #[error("cannot return encodings: {0}")]
+    Encodings(ProverStoreError),
 }
 
 impl From<CheckError> for ProverError {
     fn from(err: CheckError) -> Self {
         Self(ErrorRepr::Check(err))
+    }
+}
+
+impl From<ProverStoreError> for ProverError {
+    fn from(value: ProverStoreError) -> Self {
+        Self(ErrorRepr::Encodings(value))
     }
 }
