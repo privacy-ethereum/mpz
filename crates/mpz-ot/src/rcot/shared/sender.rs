@@ -151,6 +151,8 @@ where
     }
 
     async fn flush(&mut self, ctx: &mut Context) -> Result<(), Self::Error> {
+        self.barrier.wait().await;
+
         if self.is_leader() {
             let mut inner = self.inner.lock().await;
 
@@ -175,6 +177,8 @@ where
                 state.keys[id].extend_from_slice(&keys);
             }
         }
+
+        self.barrier.wait().await;
 
         {
             let mut state = self.state.lock().unwrap();
