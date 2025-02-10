@@ -169,9 +169,10 @@ where
                 .map_err(SharedRCOTSenderError::inner)?;
 
             let state = &mut (*self.state.lock().unwrap());
-            for (id, alloc) in state.allocs.iter().enumerate() {
+            for (id, alloc) in state.allocs.iter_mut().enumerate() {
+                let alloc = take(alloc);
                 let keys = inner
-                    .try_send_rcot(*alloc)
+                    .try_send_rcot(alloc)
                     .map_err(SharedRCOTSenderError::inner)?
                     .keys;
                 state.keys[id].extend_from_slice(&keys);
@@ -184,7 +185,6 @@ where
             let mut state = self.state.lock().unwrap();
             self.keys.extend_from_slice(&state.keys[self.id]);
             state.keys[self.id].clear();
-            state.allocs[self.id] = 0;
         }
 
         for queued in take(&mut self.queue) {
