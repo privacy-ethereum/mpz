@@ -7,9 +7,15 @@ pub use verifier::Verifier;
 use mpz_core::Block;
 use mpz_vm_core::prelude::Slice;
 
+/// Trait for operating on raw encodings.
 pub trait Encodings {
     type Error: Send + 'static + std::error::Error;
 
+    /// Returns encodings for the specified memory location.
+    ///
+    /// # Arguments
+    ///
+    /// * `slice` - The memory location.
     fn get_encodings(&self, slice: Slice) -> Result<Vec<Block>, Self::Error>;
 }
 
