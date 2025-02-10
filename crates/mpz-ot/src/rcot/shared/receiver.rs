@@ -153,8 +153,6 @@ where
     }
 
     async fn flush(&mut self, ctx: &mut Context) -> Result<(), Self::Error> {
-        self.barrier.wait().await;
-
         if self.is_leader() {
             let mut inner = self.inner.lock().await;
 
@@ -173,10 +171,9 @@ where
                 .map_err(SharedRCOTReceiverError::inner)?;
 
             let state = &mut (*self.state.lock().unwrap());
-            for (id, alloc) in state.allocs.iter_mut().enumerate() {
-                let alloc = take(alloc);
+            for (id, alloc) in state.allocs.iter().enumerate() {
                 let output = inner
-                    .try_recv_rcot(alloc)
+                    .try_recv_rcot(*alloc)
                     .map_err(SharedRCOTReceiverError::inner)?;
 
                 state.inputs[id].extend_from_slice(&output.choices);
@@ -184,14 +181,13 @@ where
             }
         }
 
-        self.barrier.wait().await;
-
         {
             let mut state = self.state.lock().unwrap();
             self.inputs.extend_from_slice(&state.inputs[self.id]);
             self.macs.extend_from_slice(&state.macs[self.id]);
             state.inputs[self.id].clear();
             state.macs[self.id].clear();
+            state.allocs[self.id] = 0;
         }
 
         for queued in take(&mut self.queue) {
