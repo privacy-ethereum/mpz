@@ -279,6 +279,8 @@ impl Fpre {
             delta_a: self.delta_a,
             wire_shares: gen_wire_shares,
             triple_shares: gen_triple_shares,
+            leaky_shares: Vec::new(),
+            location: Vec::new(),
         };
 
         let eval = FpreEval {
@@ -287,6 +289,8 @@ impl Fpre {
             delta_b: self.delta_b,
             wire_shares: eval_wire_shares,
             triple_shares: eval_triple_shares,
+            leaky_shares: Vec::new(),
+            location: Vec::new(),
         };
 
         (gen, eval)
@@ -303,6 +307,8 @@ pub struct FpreGen {
     pub delta_a: Delta,
     pub wire_shares: Vec<AuthBitShare>,
     pub triple_shares: Vec<AuthTripleShare>,
+    pub leaky_shares: Vec<AuthTripleShare>,
+    pub location: Vec<usize>,
 }
 
 impl FpreGen {
@@ -313,6 +319,8 @@ impl FpreGen {
             delta_a,
             wire_shares: Vec::new(),
             triple_shares: Vec::new(),
+            leaky_shares: Vec::new(),
+            location: Vec::new(),
         }
     }
 
@@ -323,7 +331,7 @@ impl FpreGen {
     fn set_faulty_triples(&mut self, auth_bits: Vec<AuthBitShare>) {
         let length = auth_bits.len() / 3;
         for i in 0..length {
-            self.triple_shares.push(AuthTripleShare {
+            self.leaky_shares.push(AuthTripleShare {
                 x: auth_bits[3 * i].clone(),
                 y: auth_bits[3 * i + 1].clone(),
                 z: auth_bits[3 * i + 2].clone(),
@@ -332,29 +340,29 @@ impl FpreGen {
     }
 
     fn triple_check_1(&mut self) -> (Vec<Block>, Vec<Block>) {
-        let length = self.triple_shares.len();
+        let length = self.leaky_shares.len();
         let mut c = vec![Block::ZERO; length];
         let mut g = vec![Block::ZERO; length];
 
         for i in 0..length {
-            c[i] = self.triple_shares[i].y.mac.as_block().clone()
-                ^ self.triple_shares[i].y.key.as_block().clone()
-                ^ (SELECT_MASK[self.triple_shares[i].y.bit() as usize] & self.delta_a.as_block());
+            c[i] = self.leaky_shares[i].y.mac.as_block().clone()
+                ^ self.leaky_shares[i].y.key.as_block().clone()
+                ^ (SELECT_MASK[self.leaky_shares[i].y.bit() as usize] & self.delta_a.as_block());
 
-            g[i] = c[i] ^ h2d(self.triple_shares[i].x.key.into(), self.delta_a.into_inner());
+            g[i] = c[i] ^ h2d(self.leaky_shares[i].x.key.into(), self.delta_a.into_inner());
         }
         (c, g)
     }
 
     fn triple_check_2(&mut self, c: Vec<Block>, g: &mut Vec<Block>, gr: Vec<Block>) -> Vec<bool> {
-        let length = self.triple_shares.len();
+        let length = self.leaky_shares.len();
         let mut d = vec![false; length];
 
         for i in 0..length {
-            let mut s = h2(self.triple_shares[i].x.mac.as_block().clone(), self.triple_shares[i].x.key.as_block().clone());
-            s = s ^ self.triple_shares[i].z.mac.as_block().clone() ^ self.triple_shares[i].z.key.as_block().clone();
-            s = s ^ SELECT_MASK[self.triple_shares[i].x.bit() as usize] & (gr[i] ^ c[i]);
-            g[i] = s ^ SELECT_MASK[self.triple_shares[i].z.bit() as usize] & self.delta_a.as_block();
+            let mut s = h2(self.leaky_shares[i].x.mac.as_block().clone(), self.leaky_shares[i].x.key.as_block().clone());
+            s = s ^ self.leaky_shares[i].z.mac.as_block().clone() ^ self.leaky_shares[i].z.key.as_block().clone();
+            s = s ^ SELECT_MASK[self.leaky_shares[i].x.bit() as usize] & (gr[i] ^ c[i]);
+            g[i] = s ^ SELECT_MASK[self.leaky_shares[i].z.bit() as usize] & self.delta_a.as_block();
             d[i] = g[i].second_lsb();
         }
 
@@ -365,11 +373,11 @@ impl FpreGen {
         let mut one: Block = Block::ZERO;
         one.set_lsb(true);
 
-        let length = self.triple_shares.len();
+        let length = self.leaky_shares.len();
         for i in 0..length {
             d[i] = d[i] ^ dr[i];
             if d[i] {
-                self.triple_shares[i].z.mac = self.triple_shares[i].z.mac + Mac::from(one);
+                self.leaky_shares[i].z.mac = self.leaky_shares[i].z.mac + Mac::from(one);
                 g[i] = g[i] ^ self.delta_a.as_block();
             }
         }
@@ -377,11 +385,10 @@ impl FpreGen {
 
     fn triple_combine_1(
         self: &Self,
-        leaky_and_shares: &Vec<AuthTripleShare>,
         seed: u64,
         bucket_size: usize,
     ) -> Vec<bool> {
-        let total = leaky_and_shares.len();
+        let total = self.leaky_shares.len();
         assert_eq!(total % bucket_size, 0,
             "total length must be multiple of bucket_size");
         let n = total / bucket_size;
@@ -398,11 +405,11 @@ impl FpreGen {
     
         for i in 0..n {
             let base_idx = location[i*bucket_size + 0];    
-            let y_base = leaky_and_shares[base_idx].y.bit();
+            let y_base = self.leaky_shares[base_idx].y.bit();
     
             for j in 1..bucket_size {
                 let idx_j = location[i*bucket_size + j];
-                let y_j = leaky_and_shares[idx_j].y.bit();
+                let y_j = self.leaky_shares[idx_j].y.bit();
                 data[i*bucket_size + j] = y_base ^ y_j;
             }
         }
@@ -410,15 +417,14 @@ impl FpreGen {
     }
 
     fn triple_combine_2(
-        self: &Self,
-        leaky_and_shares: Vec<AuthTripleShare>,
+        self: &mut Self,
         seed: u64,
         bucket_size: usize,
         data: Vec<bool>,
         data_recv: Vec<bool>,
-    ) -> Vec<AuthTripleShare> {
+    ) {
 
-        let total = leaky_and_shares.len();
+        let total = self.leaky_shares.len();
         assert_eq!(total % bucket_size, 0,
             "total length must be multiple of bucket_size");
         let n = total / bucket_size;
@@ -435,32 +441,28 @@ impl FpreGen {
         for i in 0..total {
             final_data[i] = data[i] ^ data_recv[i];
         }
-
-        let mut combined_shares = Vec::with_capacity(n);
     
         for i in 0..n {
             let base_idx = location[i*bucket_size + 0];
     
             // Start with a "copy" of the first triple in the bucket
-            let mut combined_share = leaky_and_shares[base_idx].clone();
+            let mut combined_share = self.leaky_shares[base_idx].clone();
     
             // For j in [1..bucket_size], merge x and z wires, keep y same as base
             for j in 1..bucket_size {
                 let idx_j = location[i*bucket_size + j];
     
-                combined_share.x = combined_share.x + leaky_and_shares[idx_j].x;
+                combined_share.x = combined_share.x + self.leaky_shares[idx_j].x;
     
-                combined_share.z = combined_share.z + leaky_and_shares[idx_j].z;
+                combined_share.z = combined_share.z + self.leaky_shares[idx_j].z;
     
                 // If d == 1, correct z-wire by xoring with x-wire
                 if final_data[i*bucket_size + j] {
-                    combined_share.z = combined_share.z + leaky_and_shares[idx_j].x;
+                    combined_share.z = combined_share.z + self.leaky_shares[idx_j].x;
                 }
             }
-            combined_shares.push(combined_share);
+            self.triple_shares.push(combined_share);
         }
-    
-        combined_shares
     }
 }
 
@@ -473,6 +475,8 @@ pub struct FpreEval {
     pub delta_b: Delta,
     pub wire_shares: Vec<AuthBitShare>,
     pub triple_shares: Vec<AuthTripleShare>,
+    pub leaky_shares: Vec<AuthTripleShare>,
+    pub location: Vec<usize>,
 }
 
 impl FpreEval {
@@ -483,7 +487,9 @@ impl FpreEval {
             delta_b,
             wire_shares: Vec::new(),
             triple_shares: Vec::new(),
-        }
+            leaky_shares: Vec::new(),
+            location: Vec::new(),
+        }   
     }
 
     fn set_bits(&mut self, auth_bits: Vec<AuthBitShare>) {
@@ -493,7 +499,7 @@ impl FpreEval {
     fn set_faulty_triples(&mut self, auth_bits: Vec<AuthBitShare>) {
         let length = auth_bits.len() / 3;
         for i in 0..length {
-            self.triple_shares.push(AuthTripleShare {
+            self.leaky_shares.push(AuthTripleShare {
                 x: auth_bits[3 * i].clone(),
                 y: auth_bits[3 * i + 1].clone(),
                 z: auth_bits[3 * i + 2].clone(),
@@ -502,29 +508,29 @@ impl FpreEval {
     }
 
     fn triple_check_1(&mut self) -> (Vec<Block>, Vec<Block>) {
-        let length = self.triple_shares.len();
+        let length = self.leaky_shares.len();
         let mut c = vec![Block::ZERO; length];
         let mut g = vec![Block::ZERO; length];
 
         for i in 0..length {
-            c[i] = self.triple_shares[i].y.mac.as_block().clone()
-                ^ self.triple_shares[i].y.key.as_block().clone()
-                ^ (SELECT_MASK[self.triple_shares[i].y.bit() as usize] & self.delta_b.as_block());
+            c[i] = self.leaky_shares[i].y.mac.as_block().clone()
+                ^ self.leaky_shares[i].y.key.as_block().clone()
+                ^ (SELECT_MASK[self.leaky_shares[i].y.bit() as usize] & self.delta_b.as_block());
 
-            g[i] = c[i] ^ h2d(self.triple_shares[i].x.key.into(), self.delta_b.into_inner());
+            g[i] = c[i] ^ h2d(self.leaky_shares[i].x.key.into(), self.delta_b.into_inner());
         }
         (c, g)
     }
 
     fn triple_check_2(&mut self, c: Vec<Block>, g: &mut Vec<Block>, gr: Vec<Block>) -> Vec<bool> {
-        let length = self.triple_shares.len();
+        let length = self.leaky_shares.len();
         let mut d = vec![false; length];
 
         for i in 0..length {
-            let mut s = h2(self.triple_shares[i].x.mac.as_block().clone(), self.triple_shares[i].x.key.as_block().clone());
-            s = s ^ self.triple_shares[i].z.mac.as_block().clone() ^ self.triple_shares[i].z.key.as_block().clone();
-            s = s ^ SELECT_MASK[self.triple_shares[i].x.bit() as usize] & (gr[i] ^ c[i]);
-            g[i] = s ^ SELECT_MASK[self.triple_shares[i].z.bit() as usize] & self.delta_b.as_block();
+            let mut s = h2(self.leaky_shares[i].x.mac.as_block().clone(), self.leaky_shares[i].x.key.as_block().clone());
+            s = s ^ self.leaky_shares[i].z.mac.as_block().clone() ^ self.leaky_shares[i].z.key.as_block().clone();
+            s = s ^ SELECT_MASK[self.leaky_shares[i].x.bit() as usize] & (gr[i] ^ c[i]);
+            g[i] = s ^ SELECT_MASK[self.leaky_shares[i].z.bit() as usize] & self.delta_b.as_block();
             d[i] = g[i].second_lsb();
         }
 
@@ -537,11 +543,11 @@ impl FpreEval {
         zdelta_mask.set_lsb(false);
         let zdelta = self.delta_b.as_block() & zdelta_mask;
 
-        let length = self.triple_shares.len();
+        let length = self.leaky_shares.len();
         for i in 0..length {
             d[i] = d[i] ^ dr[i];
             if d[i] {
-                self.triple_shares[i].z.key = self.triple_shares[i].z.key + Key::from(zdelta);
+                self.leaky_shares[i].z.key = self.leaky_shares[i].z.key + Key::from(zdelta);
                 g[i] = g[i] ^ self.delta_b.as_block();
             }
         }
@@ -549,11 +555,10 @@ impl FpreEval {
 
     fn triple_combine_1(
         self: &Self,
-        leaky_and_shares: &Vec<AuthTripleShare>,
         seed: u64,
         bucket_size: usize,
     ) -> Vec<bool> {
-        let total = leaky_and_shares.len();
+        let total = self.leaky_shares.len();
         assert_eq!(total % bucket_size, 0,
             "total length must be multiple of bucket_size");
         let n = total / bucket_size;
@@ -570,11 +575,11 @@ impl FpreEval {
     
         for i in 0..n {
             let base_idx = location[i*bucket_size + 0];    
-            let y_base = leaky_and_shares[base_idx].y.bit();
+            let y_base = self.leaky_shares[base_idx].y.bit();
     
             for j in 1..bucket_size {
                 let idx_j = location[i*bucket_size + j];
-                let y_j = leaky_and_shares[idx_j].y.bit();
+                let y_j = self.leaky_shares[idx_j].y.bit();
                 data[i*bucket_size + j] = y_base ^ y_j;
             }
         }
@@ -582,15 +587,14 @@ impl FpreEval {
     }
 
     fn triple_combine_2(
-        self: &Self,
-        leaky_and_shares: Vec<AuthTripleShare>,
+        self: &mut Self,
         seed: u64,
         bucket_size: usize,
-        mut data: Vec<bool>,
+        data: Vec<bool>,
         data_recv: Vec<bool>,
-    ) -> Vec<AuthTripleShare> {
+    ) {
 
-        let total = leaky_and_shares.len();
+        let total = self.leaky_shares.len();
         assert_eq!(total % bucket_size, 0,
             "total length must be multiple of bucket_size");
         let n = total / bucket_size;
@@ -608,31 +612,27 @@ impl FpreEval {
             final_data[i] = data[i] ^ data_recv[i];
         }
 
-        let mut combined_shares = Vec::with_capacity(n);
-    
         for i in 0..n {
             let base_idx = location[i*bucket_size + 0];
     
             // Start with a "copy" of the first triple in the bucket
-            let mut combined_share = leaky_and_shares[base_idx].clone();
+            let mut combined_share = self.leaky_shares[base_idx].clone();
     
             // For j in [1..bucket_size], merge x and z wires, keep y same as base
             for j in 1..bucket_size {
                 let idx_j = location[i*bucket_size + j];
     
-                combined_share.x = combined_share.x + leaky_and_shares[idx_j].x;
+                combined_share.x = combined_share.x + self.leaky_shares[idx_j].x;
     
-                combined_share.z = combined_share.z + leaky_and_shares[idx_j].z;
+                combined_share.z = combined_share.z + self.leaky_shares[idx_j].z;
     
                 // If d == 1, correct z-wire by xoring with x-wire
                 if final_data[i*bucket_size + j] {
-                    combined_share.z = combined_share.z + leaky_and_shares[idx_j].x;
+                    combined_share.z = combined_share.z + self.leaky_shares[idx_j].x;
                 }
             }
-            combined_shares.push(combined_share);
+            self.triple_shares.push(combined_share);
         }
-    
-        combined_shares
     }
 }
 
@@ -707,88 +707,6 @@ fn bit_shares_from_cot(
 
     Ok((gen_shares, eval_shares))
     
-}
-
-// work on notation
-fn combine_leaky_triples(
-    gen_shares: Vec<AuthTripleShare>,
-    eval_shares: Vec<AuthTripleShare>,
-    seed: u64,
-    bucket_size: usize,
-) -> (Vec<AuthTripleShare>, Vec<AuthTripleShare>) {
-    let total = gen_shares.len();
-    assert_eq!(total, eval_shares.len(),
-        "gen_shares and eval_shares must have same length");
-    assert_eq!(total % bucket_size, 0,
-        "total length must be multiple of bucket_size");
-    let n = total / bucket_size;
-
-    // Fisher–Yates shuffle in place
-    let mut rng = ChaCha12Rng::seed_from_u64(seed);
-    let mut location: Vec<usize> = (0..total).collect();
-    for i in (0..total).rev() {
-        let idx = rng.gen_range(0..=i);
-        location.swap(i, idx);
-    }
-
-    let mut gen_data = vec![false; total];
-    let mut eval_data = vec![false; total];
-
-    for i in 0..n {
-
-        let base_idx = location[i*bucket_size + 0];
-        
-        let y_base_gen = gen_shares[base_idx].y.bit();
-        let y_base_eval = eval_shares[base_idx].y.bit();
-
-        for j in 1..bucket_size {
-            let idx_j = location[i*bucket_size + j];
-
-            let y_gen_j = gen_shares[idx_j].y.bit();
-            let y_eval_j = eval_shares[idx_j].y.bit();
-
-            gen_data[i*bucket_size + j] = y_base_gen ^ y_gen_j;
-            eval_data[i*bucket_size + j] = y_base_eval ^ y_eval_j;
-        }
-    }
-
-    // d array
-    let mut final_data = vec![false; total];
-    for i in 0..total {
-        final_data[i] = gen_data[i] ^ eval_data[i];
-    }
-
-    let mut new_gen = Vec::with_capacity(n);
-    let mut new_eval = Vec::with_capacity(n);
-
-    for i in 0..n {
-        let base_idx = location[i*bucket_size + 0];
-
-        // Start with a "copy" of the first triple in the bucket
-        let mut combined_gen = gen_shares[base_idx].clone();
-        let mut combined_eval = eval_shares[base_idx].clone();
-
-        // For j in [1..bucket_size], merge x and z wires, keep y same as base
-        for j in 1..bucket_size {
-            let idx_j = location[i*bucket_size + j];
-
-            combined_gen.x = combined_gen.x + gen_shares[idx_j].x;
-            combined_eval.x = combined_eval.x + eval_shares[idx_j].x;
-
-            combined_gen.z = combined_gen.z + gen_shares[idx_j].z;
-            combined_eval.z = combined_eval.z + eval_shares[idx_j].z;
-
-            // If d == 1, correct z-wire by xoring with x-wire
-            if final_data[i*bucket_size + j] {
-                combined_gen.z = combined_gen.z + gen_shares[idx_j].x;
-                combined_eval.z = combined_eval.z + eval_shares[idx_j].x;
-            }
-        }
-        new_gen.push(combined_gen);
-        new_eval.push(combined_eval);
-    }
-
-    (new_gen, new_eval)
 }
 
 #[cfg(test)]
@@ -962,17 +880,14 @@ mod tests {
             assert_eq!(g_gen, g_eval);
         }
 
-        let gen_leaky_shares = fpre_gen.triple_shares.clone();
-        let eval_leaky_shares = fpre_eval.triple_shares.clone();
+        let d_gen = fpre_gen.triple_combine_1(0xDEAD_BEEF, 5);
+        let d_eval = fpre_eval.triple_combine_1( 0xDEAD_BEEF, 5);
 
-        let d_gen = fpre_gen.triple_combine_1(&gen_leaky_shares, 0xDEAD_BEEF, 5);
-        let d_eval = fpre_eval.triple_combine_1(&eval_leaky_shares, 0xDEAD_BEEF, 5);
-
-        let new_gen = fpre_gen.triple_combine_2(gen_leaky_shares, 0xDEAD_BEEF, 5, d_gen.clone(), d_eval.clone());
-        let new_eval = fpre_eval.triple_combine_2(eval_leaky_shares, 0xDEAD_BEEF, 5, d_eval.clone(), d_gen.clone());
+        fpre_gen.triple_combine_2(0xDEAD_BEEF, 5, d_gen.clone(), d_eval.clone());
+        fpre_eval.triple_combine_2(0xDEAD_BEEF, 5, d_eval.clone(), d_gen.clone());
 
         // Check new triples
-        for (gen_triple, eval_triple) in zip(new_gen, new_eval) {
+        for (gen_triple, eval_triple) in zip(fpre_gen.triple_shares, fpre_eval.triple_shares) {
             let triple = AuthTriple {
                 x: AuthBit {
                     gen_share: gen_triple.x,
@@ -993,4 +908,4 @@ mod tests {
 }
 
 
-// TODO: ownership stuff for FpreGen/FpreEval, leaky and triples, location array, etc.
+// TODO: secure coin tossing and secure COT
