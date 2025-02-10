@@ -218,9 +218,9 @@ impl SharedRCOTReceiverError {
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("shared RCOT recver error: ")]
+#[error("shared RCOT receiver error: ")]
 enum ErrorRepr {
-    #[error("inner recver error: {0}")]
+    #[error("inner receiver error: {0}")]
     Receiver(Box<dyn std::error::Error + Send + Sync + 'static>),
     #[error("insufficient RCOTs setup: expected {expected}, actual {actual}")]
     InsufficientSetup { expected: usize, actual: usize },
