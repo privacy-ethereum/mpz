@@ -160,6 +160,59 @@ impl Context {
             }
         }
     }
+
+    /// Same as [`Context::try_join`], but with three closures.
+    pub async fn try_join3<'a, A, B, C, RA, RB, RC, E>(
+        &'a mut self,
+        a: A,
+        b: B,
+        c: C,
+    ) -> Result<Result<(RA, RB, RC), E>, ContextError>
+    where
+        A: for<'b> FnOnce(&'b mut Self) -> ScopedBoxFuture<'a, 'b, Result<RA, E>> + Send + 'static,
+        B: for<'b> FnOnce(&'b mut Self) -> ScopedBoxFuture<'a, 'b, Result<RB, E>> + Send + 'static,
+        C: for<'b> FnOnce(&'b mut Self) -> ScopedBoxFuture<'a, 'b, Result<RC, E>> + Send + 'static,
+        RA: Send + 'static,
+        RB: Send + 'static,
+        RC: Send + 'static,
+        E: Send + 'static,
+    {
+        match &mut self.mode {
+            Mode::St => Ok(st::try_join3(self, a, b, c).await),
+            Mode::Mt { threads } => {
+                let threads = threads.get(3).await?;
+                mt::try_join3(threads, a, b, c).await
+            }
+        }
+    }
+
+    /// Same as [`Context::try_join`], but with four closures.
+    pub async fn try_join4<'a, A, B, C, D, RA, RB, RC, RD, E>(
+        &'a mut self,
+        a: A,
+        b: B,
+        c: C,
+        d: D,
+    ) -> Result<Result<(RA, RB, RC, RD), E>, ContextError>
+    where
+        A: for<'b> FnOnce(&'b mut Self) -> ScopedBoxFuture<'a, 'b, Result<RA, E>> + Send + 'static,
+        B: for<'b> FnOnce(&'b mut Self) -> ScopedBoxFuture<'a, 'b, Result<RB, E>> + Send + 'static,
+        C: for<'b> FnOnce(&'b mut Self) -> ScopedBoxFuture<'a, 'b, Result<RC, E>> + Send + 'static,
+        D: for<'b> FnOnce(&'b mut Self) -> ScopedBoxFuture<'a, 'b, Result<RD, E>> + Send + 'static,
+        RA: Send + 'static,
+        RB: Send + 'static,
+        RC: Send + 'static,
+        RD: Send + 'static,
+        E: Send + 'static,
+    {
+        match &mut self.mode {
+            Mode::St => Ok(st::try_join4(self, a, b, c, d).await),
+            Mode::Mt { threads } => {
+                let threads = threads.get(4).await?;
+                mt::try_join4(threads, a, b, c, d).await
+            }
+        }
+    }
 }
 
 #[derive(Debug)]
