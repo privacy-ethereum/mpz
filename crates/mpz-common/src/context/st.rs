@@ -36,3 +36,40 @@ where
     let b = b(ctx).await?;
     Ok((a, b))
 }
+
+pub(crate) async fn try_join3<'a, A, B, C, RA, RB, RC, E>(
+    ctx: &'a mut Context,
+    a: A,
+    b: B,
+    c: C,
+) -> Result<(RA, RB, RC), E>
+where
+    A: for<'b> FnOnce(&'b mut Context) -> ScopedBoxFuture<'a, 'b, Result<RA, E>>,
+    B: for<'b> FnOnce(&'b mut Context) -> ScopedBoxFuture<'a, 'b, Result<RB, E>>,
+    C: for<'b> FnOnce(&'b mut Context) -> ScopedBoxFuture<'a, 'b, Result<RC, E>>,
+{
+    let a = a(ctx).await?;
+    let b = b(ctx).await?;
+    let c = c(ctx).await?;
+    Ok((a, b, c))
+}
+
+pub(crate) async fn try_join4<'a, A, B, C, D, RA, RB, RC, RD, E>(
+    ctx: &'a mut Context,
+    a: A,
+    b: B,
+    c: C,
+    d: D,
+) -> Result<(RA, RB, RC, RD), E>
+where
+    A: for<'b> FnOnce(&'b mut Context) -> ScopedBoxFuture<'a, 'b, Result<RA, E>>,
+    B: for<'b> FnOnce(&'b mut Context) -> ScopedBoxFuture<'a, 'b, Result<RB, E>>,
+    C: for<'b> FnOnce(&'b mut Context) -> ScopedBoxFuture<'a, 'b, Result<RC, E>>,
+    D: for<'b> FnOnce(&'b mut Context) -> ScopedBoxFuture<'a, 'b, Result<RD, E>>,
+{
+    let a = a(ctx).await?;
+    let b = b(ctx).await?;
+    let c = c(ctx).await?;
+    let d = d(ctx).await?;
+    Ok((a, b, c, d))
+}
