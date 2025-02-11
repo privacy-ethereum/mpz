@@ -4,6 +4,7 @@
 // TODO: Implement Delta/Block/Key/Mac arithmetic
 
 use std::ops::Add;
+use std::iter::zip;
 
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha12Rng;
@@ -54,6 +55,12 @@ impl AuthBitShare {
     #[inline]
     pub fn bit(&self) -> bool {
         self.mac.pointer()
+    }
+
+    /// Checks that `share.mac == share.key.auth(share.bit, delta)`.
+    pub fn verify(&self, delta: &Delta) {
+        let want = self.key.auth(self.bit(), delta);
+        assert_eq!(self.mac, want, "MAC mismatch in share");
     }
 }
 
@@ -125,6 +132,20 @@ impl AuthBit {
     pub fn full_bit(&self) -> bool {
         self.gen_share.bit() ^ self.eval_share.bit()
     }
+
+    fn verify(&self, delta_a: &Delta, delta_b: &Delta) {
+        // Reconstruct shares for testing
+        let r = AuthBitShare {
+            mac: self.gen_share.mac,
+            key: self.eval_share.key,
+        };
+        let s = AuthBitShare {
+            mac: self.eval_share.mac,
+            key: self.gen_share.key,
+        };
+        r.verify(delta_b);
+        s.verify(delta_a);
+    }
 }
 
 /// A triple ([x], [y], [z]) of auth bits such that z = x & y.
@@ -133,6 +154,18 @@ pub struct AuthTriple {
     pub x: AuthBit,
     pub y: AuthBit,
     pub z: AuthBit,
+}
+
+impl AuthTriple {
+    fn verify(&self, delta_a: &Delta, delta_b: &Delta) {
+        let x = self.x.full_bit();
+        let y = self.y.full_bit();
+        let z = self.z.full_bit();
+        assert_eq!(z, x && y, "z must equal x & y");
+        self.x.verify(delta_a, delta_b);
+        self.y.verify(delta_a, delta_b);
+        self.z.verify(delta_a, delta_b);
+    }
 }
 
 /// Per-party triple share: x,y,z each an `AuthBitShare`.
@@ -466,7 +499,6 @@ impl FpreGen {
     }
 }
 
-
 /// Fpre data from the evaluator's perspective.
 #[derive(Debug)]
 pub struct FpreEval {
@@ -709,40 +741,114 @@ fn bit_shares_from_cot(
     
 }
 
+fn fpre(
+    num_wires: usize,
+    num_and: usize,
+    bucket_size: usize,
+) -> (FpreGen, FpreEval) {
+
+    let mut rng = ChaCha12Rng::seed_from_u64(0);
+
+    // need to set second-LSB of deltas to XOR to 1 for an optimization
+    let mut delta_a = Delta::random(&mut rng);
+    delta_a.set_second_lsb(true);
+    let mut delta_b = Delta::random(&mut rng);
+    delta_b.set_second_lsb(false);
+
+    let mut fpre_gen = FpreGen::new(num_wires, num_and, delta_a);
+    let mut fpre_eval = FpreEval::new(num_wires, num_and, delta_b);
+
+    let (gen_shares, eval_shares) = 
+        bit_shares_from_cot(num_wires+num_and, delta_a, delta_b)
+        .unwrap();
+
+    fpre_gen.set_bits(gen_shares);
+    fpre_eval.set_bits(eval_shares);
+
+    let (gen_shares, eval_shares) = 
+            bit_shares_from_cot(3*num_and, delta_a, delta_b)
+            .unwrap();
+
+    fpre_gen.set_faulty_triples(gen_shares);
+    fpre_eval.set_faulty_triples(eval_shares);
+
+    let (c_gen, mut g_gen) = fpre_gen.triple_check_1();
+    let (c_eval, mut g_eval) = fpre_eval.triple_check_1();
+
+    // Comm 1
+    let gr_gen = g_eval.clone();
+    let gr_eval = g_gen.clone();
+
+    let d_gen = fpre_gen.triple_check_2(c_gen, &mut g_gen, gr_gen);
+    let d_eval = fpre_eval.triple_check_2(c_eval, &mut g_eval, gr_eval);
+
+    // Comm 2
+    let dr_gen = d_eval.clone();    
+    let dr_eval = d_gen.clone();
+
+    fpre_gen.triple_check_3(&mut g_gen, d_gen, dr_gen);
+    fpre_eval.triple_check_3(&mut g_eval, d_eval, dr_eval);
+
+    // Comm 3
+    for (g_gen, g_eval) in zip(g_gen, g_eval) {
+        assert_eq!(g_gen, g_eval);
+    }
+
+    // Comm 4: coin-tossing to agree on a seed
+    let seed = rand::thread_rng().gen();
+
+    let data_gen = fpre_gen.triple_combine_1(seed, bucket_size);
+    let data_eval = fpre_eval.triple_combine_1(seed, bucket_size);
+
+    // Comm 5
+    let data_recv_gen = data_eval.clone();
+    let data_recv_eval = data_gen.clone();
+
+    fpre_gen.triple_combine_2(seed, bucket_size, data_gen, data_recv_gen);
+    fpre_eval.triple_combine_2(seed, bucket_size, data_eval, data_recv_eval);
+
+    (fpre_gen, fpre_eval)
+}
+
+fn verify_fpre(fpre_gen: FpreGen, fpre_eval: FpreEval){
+    for (gen_share, eval_share) in zip(fpre_gen.wire_shares, fpre_eval.wire_shares) {
+        AuthBit {
+            gen_share,
+            eval_share,
+        }.verify(&fpre_gen.delta_a, &fpre_eval.delta_b);
+    }
+
+    for (gen_triple, eval_triple) in zip(fpre_gen.triple_shares, fpre_eval.triple_shares) {
+        AuthTriple {
+            x: AuthBit {
+                gen_share: gen_triple.x,
+                eval_share: eval_triple.x,
+            },
+            y: AuthBit {
+                gen_share: gen_triple.y,
+                eval_share: eval_triple.y,
+            },
+            z: AuthBit {
+                gen_share: gen_triple.z,
+                eval_share: eval_triple.z,
+            },
+        }.verify(&fpre_gen.delta_a, &fpre_eval.delta_b);
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use std::iter::zip;
-
     use super::*;
 
-    /// Checks that `share.mac == share.key.auth(share.bit, delta)`.
-    fn check_share(share: &AuthBitShare, delta: &Delta) {
-        let want = share.key.auth(share.bit(), delta);
-        assert_eq!(share.mac, want, "MAC mismatch in share");
-    }
+    #[test]
+    fn test_fpre(){
+        let num_wires = 10000;
+        let num_and = 6000;
+        let bucket_size = 5;
 
-    fn check_auth_bit(bit: &AuthBit, delta_a: &Delta, delta_b: &Delta) {
-        // Reconstruct shares for testing
-        let r = AuthBitShare {
-            mac: bit.gen_share.mac,
-            key: bit.eval_share.key,
-        };
-        let s = AuthBitShare {
-            mac: bit.eval_share.mac,
-            key: bit.gen_share.key,
-        };
-        check_share(&r, delta_b);
-        check_share(&s, delta_a);
-    }
+        let (fpre_gen, fpre_eval) = fpre(num_wires, num_and, bucket_size);
 
-    fn check_auth_triple(triple: &AuthTriple, delta_a: &Delta, delta_b: &Delta) {
-        let x = triple.x.full_bit();
-        let y = triple.y.full_bit();
-        let z = triple.z.full_bit();
-        assert_eq!(z, x && y, "z must equal x & y");
-        check_auth_bit(&triple.x, delta_a, delta_b);
-        check_auth_bit(&triple.y, delta_a, delta_b);
-        check_auth_bit(&triple.z, delta_a, delta_b);
+        verify_fpre(fpre_gen, fpre_eval);
     }
 
     #[test]
@@ -756,10 +862,10 @@ mod tests {
         assert_eq!(fpre.auth_triples.len(), num_and);
 
         for bit in &fpre.auth_bits {
-            check_auth_bit(bit, fpre.delta_a(), fpre.delta_b());
+            bit.verify(fpre.delta_a(), fpre.delta_b());
         }
         for triple in &fpre.auth_triples {
-            check_auth_triple(triple, fpre.delta_a(), fpre.delta_b());
+            triple.verify(fpre.delta_a(), fpre.delta_b());
         }
 
         let (fpre_gen, fpre_eval) = fpre.into_gen_eval();
@@ -784,7 +890,7 @@ mod tests {
                 gen_share,
                 eval_share,
             };
-            check_auth_bit(&bit, &fpre_gen.delta_a, &fpre_eval.delta_b);
+            bit.verify(&fpre_gen.delta_a, &fpre_eval.delta_b);
         }
 
         for (gen_triple, eval_triple) in zip(fpre_gen.triple_shares, fpre_eval.triple_shares) {
@@ -802,110 +908,7 @@ mod tests {
                     eval_share: eval_triple.z,
                 },
             };
-            check_auth_triple(&triple, &fpre_gen.delta_a, &fpre_eval.delta_b);
+            triple.verify(&fpre_gen.delta_a, &fpre_eval.delta_b);
         }
-    }
-
-    #[test]
-    fn test_fpre_bits() {
-        let num_wires = 100;
-        let num_and = 50;
-        let mut rng = ChaCha12Rng::seed_from_u64(0);
-
-        // need to set second-LSB of deltas to XOR to 1 for an optimization
-        let mut delta_a = Delta::random(&mut rng);
-        delta_a.set_second_lsb(true);
-        let mut delta_b = Delta::random(&mut rng);
-        delta_b.set_second_lsb(false);
-
-        let mut fpre_gen = FpreGen::new(num_wires, num_and, delta_a);
-        let mut fpre_eval = FpreEval::new(num_wires, num_and, delta_b);
-
-        let (gen_shares, eval_shares) = 
-            bit_shares_from_cot(num_wires+num_and, delta_a, delta_b)
-            .unwrap();
-
-        fpre_gen.set_bits(gen_shares);
-        fpre_eval.set_bits(eval_shares);
-
-        for i in 0..num_wires+num_and {
-            check_auth_bit(&AuthBit {
-                gen_share: fpre_gen.wire_shares[i],
-                eval_share: fpre_eval.wire_shares[i],
-            }, &delta_a, &delta_b);
-        }
-    }
-
-    #[test]
-    fn test_fpre_triples() {
-        let num_wires = 100;
-        let num_and = 60;
-        let mut rng = ChaCha12Rng::seed_from_u64(0);
-
-        // need to set second-LSB of deltas to XOR to 1 for an optimization
-        let mut delta_a = Delta::random(&mut rng);
-        delta_a.set_second_lsb(true);
-        let mut delta_b = Delta::random(&mut rng);
-        delta_b.set_second_lsb(false);
-
-        let mut fpre_gen = FpreGen::new(num_wires, num_and, delta_a);
-        let mut fpre_eval = FpreEval::new(num_wires, num_and, delta_b);
-
-        let (gen_shares, eval_shares) = 
-            bit_shares_from_cot(3*num_and, delta_a, delta_b)
-            .unwrap();
-
-        fpre_gen.set_faulty_triples(gen_shares);
-        fpre_eval.set_faulty_triples(eval_shares);
-
-        let (c_gen, mut g_gen) = fpre_gen.triple_check_1();
-        let (c_eval, mut g_eval) = fpre_eval.triple_check_1();
-
-        // First round of communication
-        let gr_gen = g_eval.clone();
-        let gr_eval = g_gen.clone();
-
-        let d_gen = fpre_gen.triple_check_2(c_gen, &mut g_gen, gr_gen);
-        let d_eval = fpre_eval.triple_check_2(c_eval, &mut g_eval, gr_eval);
-
-        // Second round of communication
-        let dr_gen = d_eval.clone();    
-        let dr_eval = d_gen.clone();
-
-        fpre_gen.triple_check_3(&mut g_gen, d_gen, dr_gen);
-        fpre_eval.triple_check_3(&mut g_eval, d_eval, dr_eval);
-
-        // Push to Feq here
-        for (g_gen, g_eval) in zip(g_gen, g_eval) {
-            assert_eq!(g_gen, g_eval);
-        }
-
-        let d_gen = fpre_gen.triple_combine_1(0xDEAD_BEEF, 5);
-        let d_eval = fpre_eval.triple_combine_1( 0xDEAD_BEEF, 5);
-
-        fpre_gen.triple_combine_2(0xDEAD_BEEF, 5, d_gen.clone(), d_eval.clone());
-        fpre_eval.triple_combine_2(0xDEAD_BEEF, 5, d_eval.clone(), d_gen.clone());
-
-        // Check new triples
-        for (gen_triple, eval_triple) in zip(fpre_gen.triple_shares, fpre_eval.triple_shares) {
-            let triple = AuthTriple {
-                x: AuthBit {
-                    gen_share: gen_triple.x,
-                    eval_share: eval_triple.x,
-                },
-                y: AuthBit {
-                    gen_share: gen_triple.y,
-                    eval_share: eval_triple.y,
-                },
-                z: AuthBit {
-                    gen_share: gen_triple.z,
-                    eval_share: eval_triple.z,
-                },
-            };
-            check_auth_triple(&triple, &fpre_gen.delta_a, &fpre_eval.delta_b);
-        }  
     }
 }
-
-
-// TODO: secure coin tossing and secure COT

@@ -13,6 +13,7 @@ pub use evaluator::{Evaluator, EvaluatorError};
 pub use generator::{Generator, GeneratorError};
 >>>>>>> 50828d7 (feat: garble vm (#191))
 
+pub use generator::Generator;
 #[cfg(test)]
 mod tests {
     use mpz_circuits::circuits::AES128;
