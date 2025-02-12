@@ -311,7 +311,10 @@ impl View {
         // Decode evaluator inputs if they are ready.
         self.flush.decode |= view.ot.intersection(&self.decode.all);
         // Decode outputs if they are ready.
-        self.flush.decode |= view.decode_info.intersection(&self.output.complete);
+        self.flush.decode |= view
+            .decode_info
+            .intersection(&self.output.complete)
+            .difference(&self.decode.complete);
     }
 }
 
