@@ -151,6 +151,10 @@ where
     }
 
     async fn flush(&mut self, ctx: &mut Context) -> Result<(), Self::Error> {
+        if !self.wants_flush() {
+            return Ok(());
+        }
+
         self.barrier.wait().await;
 
         if self.is_leader() {

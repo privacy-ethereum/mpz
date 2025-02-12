@@ -160,6 +160,16 @@ impl BitStore {
 
     /// Returns a slice if it is set.
     #[inline]
+    pub fn get(&self, slice: Slice) -> Option<&BitSlice> {
+        if slice.to_range().is_subset(&self.set) {
+            Some(&self.bits[slice])
+        } else {
+            None
+        }
+    }
+
+    /// Returns a slice if it is set, otherwise returns an error.
+    #[inline]
     pub fn try_get(&self, slice: Slice) -> Result<&BitSlice> {
         if slice.to_range().is_subset(&self.set) {
             Ok(&self.bits[slice])

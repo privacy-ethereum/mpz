@@ -325,10 +325,7 @@ impl<COT> Memory<Binary> for EvaluatorStore<COT> {
     }
 
     fn get_raw(&self, slice: Slice) -> Result<Option<BitVec>> {
-        self.data_store
-            .try_get(slice)
-            .map(|data| Some(data.to_bitvec()))
-            .map_err(Error::from)
+        Ok(self.data_store.get(slice).map(|data| data.to_bitvec()))
     }
 
     fn decode_raw(&mut self, slice: Slice) -> Result<DecodeFuture<BitVec>> {
