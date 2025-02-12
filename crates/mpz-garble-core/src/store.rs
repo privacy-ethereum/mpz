@@ -67,7 +67,7 @@ mod validation {
                 mac_commitments,
             } = value;
 
-            if idx.macs.len().saturating_sub(idx.ot.len()) != macs.len() {
+            if idx.macs.len() != macs.len() {
                 return Err("generator sent flush with invalid number of MACs".to_string());
             }
 
