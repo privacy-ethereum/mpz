@@ -31,6 +31,10 @@ path = "src/bin/regular.rs"
 name = "estimator"
 path = "src/bin/estimator.rs"
 
+[[bin]]
+name = "reference_checker"
+path = "src/bin/reference_checker.rs"
+
 [[bench]]
 name = "throughput"
 harness = false

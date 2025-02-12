@@ -9,9 +9,11 @@ import sys
 import re
 from decimal import Decimal
 
+def eprint(*args, **kwargs):
+    print(*args, file=sys.stderr, **kwargs)
+
 decimal.getcontext().prec = 170
 log10Two = decimal.Decimal(2).log10()
-
 
 # com: Combination calculator (n choose m calculator)
 def com(n, m):
@@ -902,41 +904,35 @@ def main():
         t = int(re.findall(r"\d+", sys.argv[3]).pop())
 
         if len(sys.argv) == 5 and 'e' in sys.argv[-1]:
-            print("bit security of dual exact LPN (n=" + str(n) + ", N=" + str(N) + ", t=" + str(t) + "):")
+            eprint("bit security of dual exact LPN (n=" + str(n) + ", N=" + str(N) + ", t=" + str(t) + "):")
             print(analysisfordual2(n, N, t))
-            print()
 
         elif len(sys.argv) == 5 and 'r' in sys.argv[-1]:
-            print("bit security of dual regular LPN (n=" + str(n) + ", N=" + str(N) + ", t=" + str(t) + "):")
+            eprint("bit security of dual regular LPN (n=" + str(n) + ", N=" + str(N) + ", t=" + str(t) + "):")
             print(analysisfordual2regular(n, N, t))
-            print()
 
         elif 'q' in sys.argv[-2] and 'e' in sys.argv[-1]:
             q = int(re.findall(r"\d+", sys.argv[4]).pop())
-            print("bit security of dual exact LPN (n=" + str(n) + ", N=" + str(N) + ", t=" + str(t) + ", q=" + str(q) + "):")
+            eprint("bit security of dual exact LPN (n=" + str(n) + ", N=" + str(N) + ", t=" + str(t) + ", q=" + str(q) + "):")
             print(analysisfordualq(n, N, t, q))
-            print()
 
         elif 'q' in sys.argv[-2] and 'r' in sys.argv[-1]:
             q = int(re.findall(r"\d+", sys.argv[4]).pop())
-            print("bit security of regular LPN (n=" + str(n) + ", N=" + str(N) + ", t=" + str(t) + ", q=" + str(q) + "):")
+            eprint("bit security of regular LPN (n=" + str(n) + ", N=" + str(N) + ", t=" + str(t) + ", q=" + str(q) + "):")
             print(analysisfordualqregular(n, N, t, q))
-            print()
 
 
         elif 'lambda' in sys.argv[-2] and 'e' in sys.argv[-1]:
             lam = int(re.findall(r"\d+", sys.argv[4]).pop())
-            print("bit security of dual exact LPN (n=" + str(n) + ", N=" + str(N) + ", t=" + str(t) + ", lambda=" + str(
+            eprint("bit security of dual exact LPN (n=" + str(n) + ", N=" + str(N) + ", t=" + str(t) + ", lambda=" + str(
                 lam) + "):")
             print(analysisfordual2lambda(n, N, t, lam))
-            print()
 
         elif 'lambda' in sys.argv[-2] and 'r' in sys.argv[-1]:
             lam = int(re.findall(r"\d+", sys.argv[4]).pop())
-            print("bit security of dual regular LPN (n=" + str(n) + ", N=" + str(N) + ", t=" + str(t) + ", lambda=" + str(
+            eprint("bit security of dual regular LPN (n=" + str(n) + ", N=" + str(N) + ", t=" + str(t) + ", lambda=" + str(
                 lam) + "):")
             print(analysisfordual2lambdaregular(n, N, t, lam))
-            print()
 
         else:
             print(" ============================================input error ================================================  ")
@@ -962,31 +958,29 @@ def main():
         t = int(re.findall(r"\d+", sys.argv[3]).pop())
 
         if len(sys.argv) == 5 and 'e' in sys.argv[-1]:
-            print("bit security of exact LPN (N=" + str(N) + ", k=" + str(k) + ", t=" + str(t) + "):")
+            eprint("bit security of exact LPN (N=" + str(N) + ", k=" + str(k) + ", t=" + str(t) + "):")
             print(analysisfor2(N, k, t))
-            print()
 
         elif len(sys.argv) == 5 and 'r' in sys.argv[-1]:
-            print("bit security of regular LPN (N=" + str(N) + ", k=" + str(k) + ", t=" + str(t) + "):")
+            eprint("bit security of regular LPN (N=" + str(N) + ", k=" + str(k) + ", t=" + str(t) + "):")
             print(analysisfor2regular(N, k, t))
-            print()
 
         elif 'q' in sys.argv[-2] and 'e' in sys.argv[-1]:
             q = int(re.findall(r"\d+", sys.argv[4]).pop())
-            print("bit security of LPN (N=" + str(N) + ", k=" + str(k) + ", t=" + str(t) + ", q=" + str(
+            eprint("bit security of LPN (N=" + str(N) + ", k=" + str(k) + ", t=" + str(t) + ", q=" + str(
                 q) + "):")
             print(analysisforq(N, k, t, q))
 
 
         elif 'q' in sys.argv[-2] and 'r' in sys.argv[-1]:
             q = int(re.findall(r"\d+", sys.argv[4]).pop())
-            print("bit security of regular LPN (N=" + str(N) + ", k=" + str(k) + ", t=" + str(t) + ", q=" + str(
+            eprint("bit security of regular LPN (N=" + str(N) + ", k=" + str(k) + ", t=" + str(t) + ", q=" + str(
                 q) + "):")
             print(analysisforqregular(N, k, t, q))
 
         elif 'lambda' in sys.argv[-2] and 'e' in sys.argv[-1]:
             lam = int(re.findall(r"\d+", sys.argv[4]).pop())
-            print("bit security of exact LPN (N=" + str(N) + ", k=" + str(k) + ", t=" + str(t) + ", lambda=" + str(
+            eprint("bit security of exact LPN (N=" + str(N) + ", k=" + str(k) + ", t=" + str(t) + ", lambda=" + str(
                 lam) + "):")
             print(analysisfor2lambda(N, k, t, lam))
 
@@ -994,7 +988,7 @@ def main():
 
         elif 'lambda' in sys.argv[-1] and 'r' in sys.argv[4]:
             lam = int(re.findall(r"\d+", sys.argv[4]).pop())
-            print("bit security of regular LPN (N=" + str(N) + ", k=" + str(k) + ", t=" + str(t) + ", lambda=" + str(
+            eprint("bit security of regular LPN (N=" + str(N) + ", k=" + str(k) + ", t=" + str(t) + ", lambda=" + str(
                 lam) + "):")
             print(analysisfor2lambdaregular(N, k, t, lam))
 
