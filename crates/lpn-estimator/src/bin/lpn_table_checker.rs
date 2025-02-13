@@ -93,8 +93,8 @@ fn main() {
     for (expected, reference) in lpns.iter().zip(reference_lpns.iter()) {
         println!(
             "{expected:?}, computed: {}, reference: {}",
-            expected.security(),
-            reference.security()
+            expected.security() as u64,
+            reference.security() as u64
         );
     }
 }
