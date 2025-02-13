@@ -10,10 +10,18 @@ const ESTIMATOR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/lpnestimator.com/e
 const EXPECTED_TABLE_FORMAT: &str = "t, n, s";
 
 fn main() {
+    eprintln!(
+        "\nThis program checks the bit security of LPN tables against a reference implementation."
+    );
+    eprintln!("Parameters: path, type, k");
+    eprintln!("\tpath - the path to the LPN table");
+    eprintln!("\ttype - either \"regular\" or \"exact\"");
+    eprintln!("\tk - length of secret\n");
+
     let mut args = std::env::args().skip(1);
 
     if args.len() != 3 {
-        panic!("You need to provide 3 parameters for the LPN reference checker.")
+        panic!("You need to provide 3 parameters.")
     }
 
     let path = args.next().unwrap();
@@ -36,10 +44,10 @@ fn main() {
         let reference_lpns = reference_lpns.clone();
 
         rayon::spawn(move || {
-            eprintln!("Spawning thread...");
-            let ref_lpn = compute_security_with_reference(lpn);
+            let ref_lpn = compute_security_with_reference_impl(lpn);
             let mut reference_lpns = reference_lpns.lock().unwrap();
             reference_lpns[k] = Some(ref_lpn);
+            eprintln!("Finished checking one table entry...");
         });
     }
 
@@ -60,7 +68,7 @@ fn main() {
         .collect::<Option<Vec<_>>>()
         .unwrap();
 
-    println!("\nComputed and reference bit securities:");
+    println!("\nShowing computed and reference bit securities:");
     for (expected, reference) in lpns.iter().zip(reference_lpns.iter()) {
         println!(
             "{expected:?}, computed: {}, reference: {}",
@@ -113,7 +121,7 @@ fn create_lpns(table: String, typ: LpnType, k: u64) -> Vec<LpnParams> {
     lpns
 }
 
-fn compute_security_with_reference(lpn: LpnParams) -> LpnParams {
+fn compute_security_with_reference_impl(lpn: LpnParams) -> LpnParams {
     let typ = match lpn.typ() {
         LpnType::Exact => "exact",
         LpnType::Regular => "regular",

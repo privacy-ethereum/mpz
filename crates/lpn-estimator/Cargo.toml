@@ -32,8 +32,8 @@ name = "estimator"
 path = "src/bin/estimator.rs"
 
 [[bin]]
-name = "reference_checker"
-path = "src/bin/reference_checker.rs"
+name = "lpn_table_checker"
+path = "src/bin/lpn_table_checker.rs"
 
 [[bench]]
 name = "throughput"
