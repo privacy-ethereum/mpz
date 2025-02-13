@@ -84,6 +84,7 @@ fn main() {
         .lock()
         .unwrap()
         .iter()
+        .filter(|lpn| lpn.is_some())
         .copied()
         .collect::<Option<Vec<_>>>()
         .unwrap();
