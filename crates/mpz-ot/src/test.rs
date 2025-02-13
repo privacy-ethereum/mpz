@@ -45,14 +45,13 @@ where
 }
 
 /// Tests RCOT functionality.
-pub async fn test_rcot<S, R>(mut sender: S, mut receiver: R, cycles: usize)
+pub async fn test_rcot<S, R>(mut sender: S, mut receiver: R, count: usize, cycles: usize)
 where
     S: RCOTSender<Block> + Flush,
     R: RCOTReceiver<bool, Block> + Flush,
 {
     let (mut sender_ctx, mut receiver_ctx) = test_st_context(8);
 
-    let count = 128;
     for _ in 0..cycles {
         let (
             RCOTSenderOutput {

@@ -26,6 +26,7 @@ use serde::{Deserialize, Serialize};
 
 pub mod chou_orlandi;
 pub mod cot;
+pub mod ferret;
 pub mod ideal;
 pub mod kos;
 pub mod ot;
@@ -66,5 +67,5 @@ impl TransferId {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Derandomize {
     /// Correction bits
-    pub flip: BitVec,
+    pub flip: BitVec<u8>,
 }

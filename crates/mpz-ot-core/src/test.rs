@@ -17,15 +17,15 @@ pub fn assert_ot(choices: &[bool], msgs: &[[Block; 2]], received: &[Block]) {
 }
 
 /// Asserts the correctness of correlated oblivious transfer.
-pub fn assert_cot(delta: Block, choices: &[bool], msgs: &[Block], received: &[Block]) {
+pub fn assert_cot(delta: Block, choices: &[bool], keys: &[Block], macs: &[Block]) {
     assert!(choices
         .iter()
-        .zip(msgs.iter().zip(received))
-        .all(|(&choice, (&msg, &received))| {
+        .zip(keys.iter().zip(macs))
+        .all(|(&choice, (&key, &mac))| {
             if choice {
-                received == msg ^ delta
+                mac == key ^ delta
             } else {
-                received == msg
+                mac == key
             }
         }));
 }
@@ -42,4 +42,15 @@ pub fn assert_rot<T: Copy + PartialEq>(choices: &[bool], msgs: &[[T; 2]], receiv
                 received == msg[0]
             }
         }));
+}
+
+/// Asserts the correctness of single-point correlated oblivious transfer.
+pub fn assert_spcot(delta: Block, keys: &[Block], idx: usize, received: &[Block]) {
+    assert_eq!(received.len(), keys.len());
+
+    assert_eq!(
+        keys.iter().fold(delta, |x_acc, x| x_acc ^ x),
+        received.iter().fold(Block::ZERO, |x_acc, x| x_acc ^ x)
+    );
+    assert_eq!(keys[idx] ^ delta, received[idx]);
 }
