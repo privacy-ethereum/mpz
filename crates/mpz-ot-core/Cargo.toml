@@ -24,7 +24,7 @@ tlsn-utils.workspace = true
 
 aes.workspace = true
 ctr.workspace = true
-blake3.workspace = true
+blake3 = { workspace = true, features = ["serde"] }
 cipher.workspace = true
 rand.workspace = true
 rand_core.workspace = true
@@ -40,6 +40,7 @@ cfg-if.workspace = true
 bytemuck = { workspace = true, features = ["derive"] }
 enum-try-as-inner.workspace = true
 futures = { workspace = true }
+tokio = { workspace = true, default-features = false, features = ["sync"] }
 
 [dev-dependencies]
 rstest.workspace = true

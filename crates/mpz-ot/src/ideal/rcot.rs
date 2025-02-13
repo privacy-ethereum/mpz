@@ -142,6 +142,6 @@ mod tests {
     async fn test_ideal_rcot() {
         let mut rng = StdRng::seed_from_u64(0);
         let (sender, receiver) = ideal_rcot(rng.gen(), rng.gen());
-        test_rcot(sender, receiver, 8).await;
+        test_rcot(sender, receiver, 128, 8).await;
     }
 }
