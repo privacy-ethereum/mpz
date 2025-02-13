@@ -35,6 +35,7 @@ pub async fn generate(
     while let Some(batch) = gen_iter.by_ref().next() {
         io.feed(batch).await?;
     }
+    io.flush().await?;
 
     Ok(gen_iter.finish()?)
 }
