@@ -35,6 +35,7 @@ impl<'a> GgmTree<'a> {
     ///
     /// * `depth` - The depth of the tree.
     /// * `seed` - The seed of the tree.
+    /// * `leaves` - The leaves of the tree.
     pub fn new_from_seed(depth: usize, seed: Block, leaves: &'a mut [Block]) -> Self {
         assert_eq!(leaves.len(), 1 << depth, "invalid length of leaves");
 
@@ -71,6 +72,7 @@ impl<'a> GgmTree<'a> {
     /// * `depth` - Depth of the tree.
     /// * `sums` - Sum of the left or right nodes for each layer.
     /// * `idx` - Index of the missing leaf.
+    /// * `leaves` - Leaves of the tree.
     pub fn new_partial(depth: usize, sums: &[Block], idx: usize, leaves: &'a mut [Block]) -> Self {
         assert!(idx < 1 << depth, "index out of bounds");
         assert_eq!(sums.len(), depth, "invalid length of sums");
@@ -135,11 +137,11 @@ impl<'a> GgmTree<'a> {
         self.depth
     }
 
-    /// Returns the layer at the given height.
-    pub fn layer(&self, height: usize) -> Option<&[Block]> {
-        if height < self.depth {
-            return Some(&self.buf[layer(height)]);
-        } else if height == self.depth {
+    /// Returns the layer at the given depth.
+    pub fn layer(&self, depth: usize) -> Option<&[Block]> {
+        if depth < self.depth {
+            return Some(&self.buf[layer(depth)]);
+        } else if depth == self.depth {
             return Some(&self.leaves);
         }
 
