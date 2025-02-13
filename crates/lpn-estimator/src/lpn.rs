@@ -1,7 +1,6 @@
 //! An estimator to analyse the security of different LPN parameters.
 //! The implementation is according to https://eprint.iacr.org/2022/712.pdf.
 
-#[cfg(feature = "rayon")]
 use rayon::prelude::*;
 use rug::Float;
 
@@ -394,14 +393,7 @@ impl LpnEstimator {
             Self::security_under_bjmm_isd_binary,
         ];
 
-        cfg_if::cfg_if! {
-            if #[cfg(feature = "rayon")]{
-                let iter = funcs.par_iter();
-            }else{
-                let iter = funcs.iter();
-            }
-        };
-
+        let iter = funcs.par_iter();
         let res: Vec<f64> = iter.map(|&func| func(n, k, t)).collect();
 
         res.into_iter()
@@ -552,15 +544,7 @@ impl LpnEstimator {
         let ts: Vec<u64> = (0..t).collect();
         let mut security = vec![HIGHEST_SECURITY as f64; t as usize];
 
-        let iter = {
-            cfg_if::cfg_if! {
-                if #[cfg(feature = "rayon")]{
-                    ts.into_par_iter().zip(security.par_iter_mut())
-                } else {
-                    ts.into_iter().zip(security.iter_mut())
-                }
-            }
-        };
+        let iter = ts.into_par_iter().zip(security.par_iter_mut());
 
         iter.for_each(|(f, s)| {
             for mu in 0..n / t {
@@ -587,17 +571,11 @@ impl LpnEstimator {
     ///
     /// NOTE: Run it in the release mode.
     pub fn security_for_binary_regular(n: u64, k: u64, t: u64) -> f64 {
-        cfg_if::cfg_if! {
-            if #[cfg(feature = "rayon")]{
-                let (cost_agb, cost_others) = rayon::join(
-                    || Self::security_under_agb_binary(n, k, t),
-                    || Self::security_for_binary(n - t, k - t, t),
-                );
-            } else {
-                let cost_agb = Self::security_under_agb_binary(n, k, t);
-                let cost_others = Self::security_for_binary(n-t, k-t, t);
-            }
-        }
+        let (cost_agb, cost_others) = rayon::join(
+            || Self::security_under_agb_binary(n, k, t),
+            || Self::security_for_binary(n - t, k - t, t),
+        );
+
         cost_agb.min(cost_others)
     }
 
