@@ -147,6 +147,9 @@ where
         let masks = &self.choices[self.choices.len() - spcot_count..];
         let derandomize = self.spcot.derandomize(&spcot_lengths, &spcot_idxs, masks)?;
 
+        // Drop used COT choices.
+        self.choices.truncate(self.choices.len() - spcot_count);
+
         self.state = State::Extending(Extending {
             public_prg,
             start: self.macs.len(),
@@ -190,7 +193,6 @@ where
 
         // Drop used COTs.
         self.macs.truncate(self.macs.len() - spcot_count);
-        self.choices.truncate(self.choices.len() - spcot_count);
 
         let r = mpcot.extend(ws)?;
 
