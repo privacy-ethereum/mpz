@@ -151,7 +151,7 @@ where
     ///
     /// # Arguments
     ///
-    /// * `derandomize` - SPCOT derandomization bits from the receiver.
+    /// * `msg` - Receiver extend message.
     pub fn extend(&mut self, msg: ReceiverExtend) -> Result<SenderExtend> {
         let ReceiverExtend { derandomize } = msg;
 
@@ -195,7 +195,7 @@ where
     ///
     /// # Arguments
     ///
-    /// * `derandomize` - SPCOT derandomization bits from the receiver.
+    /// * `msg` - Receiver check message.
     pub fn check(&mut self, msg: ReceiverCheck) -> Result<SenderCheck> {
         let ReceiverCheck { derandomize } = msg;
 
