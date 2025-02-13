@@ -62,10 +62,9 @@ where
 }
 
 #[async_trait]
-impl<Ctx, COT> Flush<Ctx> for Receiver<COT>
+impl<COT> Flush for Receiver<COT>
 where
-    Ctx: Context,
-    COT: RCOTReceiver<bool, Block> + Flush<Ctx> + Send,
+    COT: RCOTReceiver<bool, Block> + Flush + Send,
 {
     type Error = Error;
 
@@ -73,7 +72,7 @@ where
         self.core.wants_init() || self.core.wants_extend()
     }
 
-    async fn flush(&mut self, ctx: &mut Ctx) -> Result<(), Self::Error> {
+    async fn flush(&mut self, ctx: &mut Context) -> Result<(), Self::Error> {
         if self.core.wants_init() {
             let msg = self.core.initialize()?;
             ctx.io_mut().send(msg).await?;

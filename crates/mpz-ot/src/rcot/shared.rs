@@ -31,7 +31,7 @@ mod tests {
 
         let tasks: Vec<_> = rcots
             .into_iter()
-            .map(|(send, recv)| tokio::spawn(test_rcot(send, recv, cycles)))
+            .map(|(send, recv)| tokio::spawn(test_rcot(send, recv, 128, cycles)))
             .collect();
 
         for task in tasks {
