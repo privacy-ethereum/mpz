@@ -8,6 +8,7 @@ use std::{
 
 const ESTIMATOR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/lpnestimator.com/estimator.py");
 const EXPECTED_TABLE_FORMAT: &str = "t, n, s";
+const MAX_SECS_WITHOUT_PROGRESS: u32 = 180;
 
 fn main() {
     eprintln!(
@@ -51,9 +52,28 @@ fn main() {
         });
     }
 
+    let mut count_finished = 0;
+    let mut seconds_elapsed_since_progress = 0;
     loop {
         std::thread::sleep(Duration::from_secs(1));
+        seconds_elapsed_since_progress += 1;
+
         if let Ok(reference_lpns) = reference_lpns.lock() {
+            // Put some maximum time on computation
+            let new_finished =
+                reference_lpns.iter().filter(|lpn| lpn.is_some()).count() - count_finished;
+            count_finished += new_finished;
+
+            if new_finished > 0 {
+                seconds_elapsed_since_progress = 0;
+            } else if new_finished == 0
+                && seconds_elapsed_since_progress >= MAX_SECS_WITHOUT_PROGRESS
+            {
+                eprintln!("Could not compute all instances! Computation taking too long.");
+                break;
+            }
+
+            // All finished
             if reference_lpns.iter().all(|lpn| lpn.is_some()) {
                 break;
             }
