@@ -45,7 +45,9 @@ impl Multithread {
             ContextError::new(ErrorKind::Thread, "thread ID overflow".to_string())
         })?;
 
-        let io = { self.builder.lock().unwrap().mux.open(id.clone()) }
+        let io_fut = { self.builder.lock().unwrap().mux.open(id.clone()) };
+
+        let io = io_fut
             .await
             .map_err(|e| ContextError::new(ErrorKind::Mux, e))?;
 
