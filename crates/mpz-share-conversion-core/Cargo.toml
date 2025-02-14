@@ -16,7 +16,7 @@ test-utils = []
 [dependencies]
 mpz-fields.workspace = true
 mpz-core.workspace = true
-mpz-common = { workspace = true, default-features = false, features = [
+mpz-common = { workspace = true, features = [
     "future",
 ] }
 mpz-ole-core = { workspace = true }
