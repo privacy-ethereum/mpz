@@ -40,7 +40,7 @@ cfg-if.workspace = true
 bytemuck = { workspace = true, features = ["derive"] }
 enum-try-as-inner.workspace = true
 futures = { workspace = true }
-tokio = { workspace = true, default-features = false, features = ["sync"] }
+tokio = { workspace = true, features = ["sync"] }
 
 [dev-dependencies]
 rstest.workspace = true
