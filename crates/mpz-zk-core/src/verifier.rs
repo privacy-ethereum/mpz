@@ -4,7 +4,10 @@ use mpz_circuits::{Circuit, Gate};
 use mpz_core::{bitvec::BitVec, Block};
 use mpz_memory_core::correlated::{Delta, Key};
 
-use crate::check::{Check, CheckError, Triple, UV};
+use crate::{
+    check::{Check, CheckError, Triple, UV},
+    store::VerifierStoreError,
+};
 
 type Result<T> = core::result::Result<T, VerifierError>;
 
@@ -273,10 +276,18 @@ enum ErrorRepr {
     Inprogress,
     #[error(transparent)]
     Check(CheckError),
+    #[error("cannot return keys: {0}")]
+    Keys(VerifierStoreError),
 }
 
 impl From<CheckError> for VerifierError {
     fn from(err: CheckError) -> Self {
         Self(ErrorRepr::Check(err))
+    }
+}
+
+impl From<VerifierStoreError> for VerifierError {
+    fn from(value: VerifierStoreError) -> Self {
+        Self(ErrorRepr::Keys(value))
     }
 }
