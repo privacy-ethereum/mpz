@@ -30,7 +30,7 @@ impl Verifier {
         self.check.lock().unwrap().wants_check()
     }
 
-    pub fn execute<'a>(
+    pub fn execute(
         &mut self,
         circ: Arc<Circuit>,
         input_keys: &[Key],
@@ -53,7 +53,7 @@ impl Verifier {
         let check_idx = self.check.lock().unwrap().reserve(circ.and_count());
 
         let mut keys = vec![Key::default(); input_keys.len()];
-        let mut input_keys = input_keys.into_iter();
+        let mut input_keys = input_keys.iter();
         for input in circ.inputs() {
             for (node, key) in input.iter().zip(input_keys.by_ref()) {
                 keys[node.id()] = *key;

@@ -75,7 +75,7 @@ impl Receiver {
             state: state::Extension {
                 rngs: seeds
                     .into_iter()
-                    .map(|seeds| seeds.map(|seed| Prg::from_seed(seed)))
+                    .map(|seeds| seeds.map(Prg::from_seed))
                     .collect(),
                 msgs: Vec::default(),
                 choices: Vec::default(),
@@ -282,9 +282,9 @@ impl RCOTReceiver<bool, Block> for Receiver<state::Initialized> {
         &mut self,
         _count: usize,
     ) -> Result<RCOTReceiverOutput<bool, Block>, Self::Error> {
-        return Err(ReceiverError::InvalidState(
+        Err(ReceiverError::InvalidState(
             "receiver has not been set up yet".to_string(),
-        ));
+        ))
     }
 
     fn queue_recv_rcot(&mut self, count: usize) -> Result<Self::Future, Self::Error> {
@@ -292,7 +292,7 @@ impl RCOTReceiver<bool, Block> for Receiver<state::Initialized> {
 
         self.queue.push_back(Queued { count, sender });
 
-        return Ok(recv);
+        Ok(recv)
     }
 }
 
@@ -343,18 +343,18 @@ impl RCOTReceiver<bool, Block> for Receiver<state::Extension> {
             let (sender, recv) = new_output();
             sender.send(output);
 
-            return Ok(recv);
+            Ok(recv)
         } else if !self.state.extended {
             let (sender, recv) = new_output();
 
             self.queue.push_back(Queued { count, sender });
 
-            return Ok(recv);
+            Ok(recv)
         } else {
-            return Err(ReceiverError::InsufficientSetup {
+            Err(ReceiverError::InsufficientSetup {
                 expected: count,
                 actual: self.available(),
-            });
+            })
         }
     }
 }

@@ -147,7 +147,7 @@ pub struct EncryptedGateConsumer<'a, I: Iterator> {
     complete: bool,
 }
 
-impl<'a, I: Iterator> fmt::Debug for EncryptedGateConsumer<'a, I> {
+impl<I: Iterator> fmt::Debug for EncryptedGateConsumer<'_, I> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "EncryptedGateConsumer {{ .. }}")
     }

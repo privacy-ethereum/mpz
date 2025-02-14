@@ -72,19 +72,17 @@ mod rayon_backend {
 
     impl RayonBackend {
         /// Executes a future on the CPU backend.
-        pub fn blocking_async<F>(fut: F) -> impl Future<Output = F::Output> + Send
+        pub async fn blocking_async<F>(fut: F) -> F::Output
         where
             F: Future + Send + 'static,
             F::Output: Send,
         {
-            async move {
-                let (sender, receiver) = oneshot::channel();
-                rayon::spawn(move || {
-                    let output = block_on(fut);
-                    _ = sender.send(output);
-                });
-                receiver.await.expect("worker thread does not drop channel")
-            }
+            let (sender, receiver) = oneshot::channel();
+            rayon::spawn(move || {
+                let output = block_on(fut);
+                _ = sender.send(output);
+            });
+            receiver.await.expect("worker thread does not drop channel")
         }
 
         /// Executes a closure on the CPU backend.

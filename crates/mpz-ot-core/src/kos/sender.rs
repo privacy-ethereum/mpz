@@ -82,7 +82,7 @@ impl Sender<state::Initialized> {
             queue: self.queue,
             delta: self.delta,
             state: state::Extension {
-                rngs: seeds.into_iter().map(|seed| Prg::from_seed(seed)).collect(),
+                rngs: seeds.into_iter().map(Prg::from_seed).collect(),
                 keys: Vec::default(),
                 extended: false,
                 unchecked_qs: Vec::default(),
@@ -286,9 +286,9 @@ impl RCOTSender<Block> for Sender<state::Initialized> {
     }
 
     fn try_send_rcot(&mut self, _count: usize) -> Result<RCOTSenderOutput<Block>, Self::Error> {
-        return Err(SenderError::InvalidState(
+        Err(SenderError::InvalidState(
             "sender has not been setup yet".to_string(),
-        ));
+        ))
     }
 
     fn queue_send_rcot(&mut self, count: usize) -> Result<Self::Future, Self::Error> {
@@ -296,7 +296,7 @@ impl RCOTSender<Block> for Sender<state::Initialized> {
 
         self.queue.push_back(Queued { count, sender });
 
-        return Ok(recv);
+        Ok(recv)
     }
 }
 
@@ -346,18 +346,18 @@ impl RCOTSender<Block> for Sender<state::Extension> {
             let (sender, recv) = new_output();
             sender.send(output);
 
-            return Ok(recv);
+            Ok(recv)
         } else if !self.state.extended {
             let (sender, recv) = new_output();
 
             self.queue.push_back(Queued { count, sender });
 
-            return Ok(recv);
+            Ok(recv)
         } else {
-            return Err(SenderError::InsufficientSetup {
+            Err(SenderError::InsufficientSetup {
                 expected: count,
                 actual: self.available(),
-            });
+            })
         }
     }
 }

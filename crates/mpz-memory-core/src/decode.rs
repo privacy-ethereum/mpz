@@ -85,7 +85,7 @@ impl<T, U> DecodeFutureTyped<T, U> {
 
     /// Tries to receive the value, returning `None` if the value is not ready.
     pub fn try_recv(&mut self) -> Result<Option<U>, DecodeError> {
-        self.inner.try_recv().map(|opt| opt.map(&self.f))
+        self.inner.try_recv().map(|opt| opt.map(self.f))
     }
 }
 
@@ -93,6 +93,6 @@ impl<T, U> Future for DecodeFutureTyped<T, U> {
     type Output = Result<U, DecodeError>;
 
     fn poll(mut self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        self.inner.poll_unpin(cx).map(|res| res.map(&self.f))
+        self.inner.poll_unpin(cx).map(|res| res.map(self.f))
     }
 }

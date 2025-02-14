@@ -68,6 +68,7 @@ impl IdealROT {
     }
 
     /// Returns `count` random ROTs.
+    #[allow(clippy::type_complexity)]
     pub fn transfer(
         &mut self,
         count: usize,

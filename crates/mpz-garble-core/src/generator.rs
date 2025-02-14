@@ -155,7 +155,7 @@ pub struct EncryptedGateIter<'a, I> {
     complete: bool,
 }
 
-impl<'a, I> fmt::Debug for EncryptedGateIter<'a, I> {
+impl<I> fmt::Debug for EncryptedGateIter<'_, I> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "EncryptedGateIter {{ .. }}")
     }

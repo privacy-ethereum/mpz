@@ -107,9 +107,7 @@ fn default_parameter_selector(ty: LpnType, available: usize, additional: usize) 
         let net = param.t - cost;
         // If we don't have enough available we select the smallest parameters
         // immediately.
-        if available <= cost {
-            return *param;
-        } else if net >= additional {
+        if available <= cost || net >= additional {
             return *param;
         }
     }

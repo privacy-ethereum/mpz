@@ -2,10 +2,7 @@ mod builder;
 mod spawn;
 mod worker;
 
-use std::{
-    future::Future,
-    sync::{Arc, Mutex},
-};
+use std::sync::{Arc, Mutex};
 
 use futures::{stream::FuturesUnordered, FutureExt, StreamExt as _};
 use pollster::FutureExt as _;
@@ -64,28 +61,26 @@ pub(crate) struct ThreadBuilder {
 }
 
 impl ThreadBuilder {
-    fn spawn(
+    async fn spawn(
         this: Arc<Mutex<Self>>,
         id: ThreadId,
         config: Arc<MtConfig>,
-    ) -> impl Future<Output = Result<Handle, ContextError>> + Send {
-        async move {
-            let io_fut = { this.lock().unwrap().mux.open(id.clone()) };
+    ) -> Result<Handle, ContextError> {
+        let io_fut = { this.lock().unwrap().mux.open(id.clone()) };
 
-            let io = io_fut
-                .await
-                .map_err(|e| ContextError::new(ErrorKind::Mux, e))?;
+        let io = io_fut
+            .await
+            .map_err(|e| ContextError::new(ErrorKind::Mux, e))?;
 
-            let ctx = Context::new_multi_threaded(id.clone(), io, config, this.clone());
-            let (worker, handle) = Worker::new(id, ctx);
+        let ctx = Context::new_multi_threaded(id.clone(), io, config, this.clone());
+        let (worker, handle) = Worker::new(id, ctx);
 
-            this.lock()
-                .unwrap()
-                .spawn
-                .spawn(Box::new(move || worker.run()))?;
+        this.lock()
+            .unwrap()
+            .spawn
+            .spawn(Box::new(move || worker.run()))?;
 
-            Ok(handle)
-        }
+        Ok(handle)
     }
 }
 

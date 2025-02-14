@@ -12,6 +12,7 @@ use serio::{stream::IoStreamExt as _, SinkExt as _};
 type Error = ReceiverError;
 
 #[derive(Debug)]
+#[allow(clippy::large_enum_variant)]
 enum State {
     Initialized(Core<state::Initialized>),
     Setup(Core<state::Setup>),

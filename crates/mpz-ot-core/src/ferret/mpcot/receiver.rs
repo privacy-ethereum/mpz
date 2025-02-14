@@ -53,7 +53,7 @@ impl MPCOTReceiver<state::Initialized> {
         if idxs.len() > len {
             return Err(ErrorRepr::Params {
                 count: idxs.len(),
-                len: len as usize,
+                len,
                 reason: "indices cannot exceed vector length".to_string(),
             }
             .into());
@@ -219,6 +219,7 @@ pub(crate) mod state {
 
     pub(crate) trait State: sealed::Sealed {}
 
+    #[allow(clippy::large_enum_variant)]
     pub(crate) enum Initialized {
         Uniform {
             hashes: [AesEncryptor; HASH_NUM as usize],

@@ -240,9 +240,7 @@ impl View {
         let public = range.intersection(self.vis.public());
 
         // Assert visible data is assigned.
-        if !public.is_subset(&self.input.assigned) {
-            return Err(ErrorRepr::NotAssigned { range }.into());
-        } else if !private.is_subset(&self.input.assigned) {
+        if !public.is_subset(&self.input.assigned) || !private.is_subset(&self.input.assigned) {
             return Err(ErrorRepr::NotAssigned { range }.into());
         }
 

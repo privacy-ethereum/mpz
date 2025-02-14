@@ -1,3 +1,5 @@
+#![allow(clippy::suspicious_arithmetic_impl)]
+
 pub mod binary;
 pub mod correlated;
 mod decode;
@@ -161,7 +163,7 @@ impl Ptr {
 
     /// Returns the pointer as a `usize`.
     pub fn as_usize(&self) -> usize {
-        self.0 as usize
+        self.0
     }
 }
 
@@ -239,6 +241,7 @@ impl Slice {
     }
 
     /// Returns the length of the slice.
+    #[allow(clippy::len_without_is_empty)]
     pub fn len(&self) -> usize {
         self.size
     }

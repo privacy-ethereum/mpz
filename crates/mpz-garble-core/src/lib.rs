@@ -4,6 +4,7 @@
 
 #![deny(missing_docs, unreachable_pub, unused_must_use)]
 #![deny(clippy::all)]
+#![allow(clippy::result_large_err)]
 
 pub(crate) mod circuit;
 mod evaluator;

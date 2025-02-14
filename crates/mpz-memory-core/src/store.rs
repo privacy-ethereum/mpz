@@ -39,6 +39,7 @@ impl<T> Store<T> {
     }
 
     /// Returns the length of the store.
+    #[allow(clippy::len_without_is_empty)]
     pub fn len(&self) -> usize {
         self.items.len()
     }

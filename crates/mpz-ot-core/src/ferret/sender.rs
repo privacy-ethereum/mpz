@@ -169,12 +169,9 @@ where
         let spcot_count: usize = spcot_lengths.iter().sum();
         let spcot_keys = &self.keys[self.keys.len() - spcot_count..];
 
-        let (vs, ms, sums) = self.spcot.extend(
-            &mut self.prg,
-            &spcot_lengths,
-            &spcot_keys,
-            &derandomize.flip,
-        )?;
+        let (vs, ms, sums) =
+            self.spcot
+                .extend(&mut self.prg, &spcot_lengths, spcot_keys, &derandomize.flip)?;
 
         // Drop used keys.
         self.keys.truncate(self.keys.len() - spcot_count);
@@ -243,7 +240,7 @@ where
         // Compute y = A * v + s
         let v = &self.keys[self.keys.len() - params.k..];
         let mut y = s;
-        encoder.compute(lpn_seed, &mut y, &v);
+        encoder.compute(lpn_seed, &mut y, v);
 
         self.keys.truncate(self.keys.len() - params.k);
         self.keys.extend_from_slice(&y);
@@ -269,7 +266,7 @@ where
             let id = self.transfer_id.next();
             let keys = self.keys.split_off(self.keys.len() - next.count);
 
-            _ = next.sender.send(RCOTSenderOutput { id, keys });
+            next.sender.send(RCOTSenderOutput { id, keys });
         }
     }
 }
@@ -321,13 +318,13 @@ where
             let (sender, recv) = new_output();
             sender.send(output);
 
-            return Ok(recv);
+            Ok(recv)
         } else {
             let (sender, recv) = new_output();
 
             self.queue.push_back(Queued { count, sender });
 
-            return Ok(recv);
+            Ok(recv)
         }
     }
 }
@@ -399,9 +396,9 @@ enum ErrorRepr {
     #[error("bootstrap COT error: {0}")]
     Bootstrap(Box<dyn std::error::Error + Send + Sync + 'static>),
     #[error("SPCOT sender error: {0}")]
-    SPCOT(SPCOTSenderError),
+    Spcot(SPCOTSenderError),
     #[error("MPCOT sender error: {0}")]
-    MPCOT(MPCOTSenderError),
+    Mpcot(MPCOTSenderError),
     #[error("insufficient COTs: expected {expected}, actual {actual}")]
     InsufficientCOTs { expected: usize, actual: usize },
 }
@@ -414,12 +411,12 @@ impl From<ErrorRepr> for SenderError {
 
 impl From<SPCOTSenderError> for SenderError {
     fn from(e: SPCOTSenderError) -> Self {
-        Self(ErrorRepr::SPCOT(e))
+        Self(ErrorRepr::Spcot(e))
     }
 }
 
 impl From<MPCOTSenderError> for SenderError {
     fn from(e: MPCOTSenderError) -> Self {
-        Self(ErrorRepr::MPCOT(e))
+        Self(ErrorRepr::Mpcot(e))
     }
 }
