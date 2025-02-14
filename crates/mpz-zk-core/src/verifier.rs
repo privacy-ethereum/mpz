@@ -277,7 +277,7 @@ enum ErrorRepr {
     #[error(transparent)]
     Check(CheckError),
     #[error("cannot return encodings: {0}")]
-    Encodings(VerifierStoreError),
+    Keys(VerifierStoreError),
 }
 
 impl From<CheckError> for VerifierError {
@@ -288,6 +288,6 @@ impl From<CheckError> for VerifierError {
 
 impl From<VerifierStoreError> for VerifierError {
     fn from(value: VerifierStoreError) -> Self {
-        Self(ErrorRepr::Encodings(value))
+        Self(ErrorRepr::Keys(value))
     }
 }

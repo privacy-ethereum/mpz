@@ -264,8 +264,8 @@ enum ErrorRepr {
     Inprogress,
     #[error(transparent)]
     Check(CheckError),
-    #[error("cannot return encodings: {0}")]
-    Encodings(ProverStoreError),
+    #[error("cannot return Macs: {0}")]
+    Macs(ProverStoreError),
 }
 
 impl From<CheckError> for ProverError {
@@ -276,6 +276,6 @@ impl From<CheckError> for ProverError {
 
 impl From<ProverStoreError> for ProverError {
     fn from(value: ProverStoreError) -> Self {
-        Self(ErrorRepr::Encodings(value))
+        Self(ErrorRepr::Macs(value))
     }
 }
