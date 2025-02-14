@@ -3,14 +3,14 @@ use mpz_common::{scoped_futures::ScopedFutureExt, Context, Flush};
 use mpz_core::{bitvec::BitVec, Block};
 use mpz_ot::rcot::{RCOTReceiver, RCOTReceiverOutput};
 use mpz_vm_core::{
-    memory::{binary::Binary, correlated::Mac, DecodeFuture, Memory, Slice, View},
+    memory::{
+        binary::Binary, correlated::Mac, DecodeFuture, Memory, MemoryType, Repr, Slice, View,
+    },
     Call, Callable, Execute, Result as VmResult, VmError,
 };
 use mpz_zk_core::{store::ProverStore, Prover as Core, ProverError};
 use serio::{stream::IoStreamExt, SinkExt};
 use utils::filter_drain::FilterDrain;
-
-use crate::Encodings;
 
 #[derive(Debug)]
 pub struct Prover<OT> {
@@ -27,6 +27,22 @@ impl<OT> Prover<OT> {
             ot,
             callstack: Vec::default(),
         }
+    }
+
+    /// Returns the MACs.
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - The value to return the MACs for.
+    pub fn get_macs<R, M>(&self, value: R) -> Result<Vec<Mac>, ProverError>
+    where
+        R: Repr<M>,
+        M: MemoryType,
+    {
+        let slice = value.to_raw();
+        let macs = self.store.try_get_macs(slice)?.to_vec();
+
+        Ok(macs)
     }
 }
 
@@ -255,16 +271,5 @@ where
 
     fn mark_blind_raw(&mut self, slice: Slice) -> VmResult<()> {
         self.store.mark_blind_raw(slice).map_err(VmError::view)
-    }
-}
-
-impl<OT> Encodings for Prover<OT> {
-    type Error = ProverError;
-
-    fn get_encodings(&self, slice: Slice) -> Result<Vec<Block>, Self::Error> {
-        let macs = self.store.try_get_macs(slice)?;
-        let macs = Mac::as_blocks(macs).to_vec();
-
-        Ok(macs)
     }
 }

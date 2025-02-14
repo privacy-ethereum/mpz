@@ -6,15 +6,13 @@ use mpz_vm_core::{
     memory::{
         binary::Binary,
         correlated::{Delta, Key},
-        DecodeFuture, Memory, Slice, View,
+        DecodeFuture, Memory, MemoryType, Repr, Slice, View,
     },
     Call, Callable, Execute, Result as VmResult, VmError,
 };
 use mpz_zk_core::{store::VerifierStore, Verifier as Core, VerifierError};
 use serio::{stream::IoStreamExt, SinkExt};
 use utils::filter_drain::FilterDrain;
-
-use crate::Encodings;
 
 #[derive(Debug)]
 pub struct Verifier<OT> {
@@ -31,6 +29,22 @@ impl<OT> Verifier<OT> {
             ot,
             callstack: Vec::default(),
         }
+    }
+
+    /// Returns the keys.
+    ///
+    /// # Arguments
+    ///
+    /// * `value` - The value to return the keys for.
+    pub fn get_keys<R, M>(&self, value: R) -> Result<Vec<Key>, VerifierError>
+    where
+        R: Repr<M>,
+        M: MemoryType,
+    {
+        let slice = value.to_raw();
+        let keys = self.store.try_get_keys(slice)?.to_vec();
+
+        Ok(keys)
     }
 }
 
@@ -241,16 +255,5 @@ where
         self.ot.alloc(slice.len()).map_err(VmError::view)?;
 
         Ok(())
-    }
-}
-
-impl<OT> Encodings for Verifier<OT> {
-    type Error = VerifierError;
-
-    fn get_encodings(&self, slice: Slice) -> Result<Vec<Block>, Self::Error> {
-        let keys = self.store.try_get_keys(slice)?;
-        let keys = Key::as_blocks(keys).to_vec();
-
-        Ok(keys)
     }
 }
