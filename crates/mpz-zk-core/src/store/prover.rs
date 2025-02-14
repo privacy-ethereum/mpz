@@ -261,6 +261,74 @@ impl ViewTrait<Binary> for ProverStore {
     }
 }
 
+impl Memory<Encoding> for ProverStore {
+    type Error = Error;
+
+    fn alloc_raw(&mut self, size: usize) -> Result<Slice> {
+        self.view.alloc_input(size);
+        self.mac_store.alloc(size);
+        self.mask_store.alloc(size);
+        let slice = self.data_store.alloc(size);
+
+        Ok(slice)
+    }
+
+    fn assign_raw(&mut self, slice: Slice, data: BitVec) -> Result<()> {
+        self.view.assign(slice.to_range())?;
+        self.data_store.try_set(slice, &data)?;
+
+        // For public data, set MACs.
+        let public = slice.to_range() & self.view.visibility().public();
+        for range in public.iter_ranges() {
+            let slice = Slice::from_range_unchecked(range);
+
+            let data = self.data_store.try_get(slice)?;
+            self.mac_store.try_set_public(slice, data)?;
+        }
+
+        Ok(())
+    }
+
+    fn commit_raw(&mut self, slice: Slice) -> Result<()> {
+        self.view.commit(slice.to_range()).map_err(Error::from)
+    }
+
+    fn get_raw(&self, slice: Slice) -> Result<Option<BitVec>> {
+        Ok(self.data_store.get(slice).map(|data| data.to_bitvec()))
+    }
+
+    fn decode_raw(&mut self, slice: Slice) -> Result<DecodeFuture<BitVec>> {
+        let (fut, mut op) = DecodeFuture::new(slice);
+
+        // If data is already decoded, send it immediately.
+        if let Ok(data) = self.data_store.try_get(slice) {
+            op.send(data.to_bitvec())?;
+        } else {
+            self.buffer_decode.push(op);
+        }
+
+        self.view.decode(slice.to_range())?;
+
+        Ok(fut)
+    }
+}
+
+impl ViewTrait<Encoding> for ProverStore {
+    type Error = Error;
+
+    fn mark_public_raw(&mut self, slice: Slice) -> Result<()> {
+        self.view.mark_public_raw(slice).map_err(Error::from)
+    }
+
+    fn mark_private_raw(&mut self, slice: Slice) -> Result<()> {
+        self.view.mark_private_raw(slice).map_err(Error::from)
+    }
+
+    fn mark_blind_raw(&mut self, slice: Slice) -> Result<()> {
+        self.view.mark_blind_raw(slice).map_err(Error::from)
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 #[error(transparent)]
 pub struct ProverStoreError(#[from] ErrorRepr);

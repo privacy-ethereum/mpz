@@ -3,7 +3,9 @@ use mpz_common::{scoped_futures::ScopedFutureExt, Context, Flush};
 use mpz_core::{bitvec::BitVec, Block};
 use mpz_ot::rcot::{RCOTReceiver, RCOTReceiverOutput};
 use mpz_vm_core::{
-    memory::{binary::Binary, correlated::Mac, DecodeFuture, Memory, Slice, View},
+    memory::{
+        binary::Binary, correlated::Mac, encoding::Encoding, DecodeFuture, Memory, Slice, View,
+    },
     Call, Callable, Execute, Result, VmError,
 };
 use mpz_zk_core::{store::ProverStore, Prover as Core};
@@ -234,6 +236,56 @@ where
 }
 
 impl<OT> View<Binary> for Prover<OT>
+where
+    OT: RCOTReceiver<bool, Block>,
+{
+    type Error = VmError;
+
+    fn mark_public_raw(&mut self, slice: Slice) -> Result<()> {
+        self.store.mark_public_raw(slice).map_err(VmError::view)
+    }
+
+    fn mark_private_raw(&mut self, slice: Slice) -> Result<()> {
+        self.store.mark_private_raw(slice).map_err(VmError::view)?;
+
+        self.ot.alloc(slice.len()).map_err(VmError::view)?;
+
+        Ok(())
+    }
+
+    fn mark_blind_raw(&mut self, slice: Slice) -> Result<()> {
+        self.store.mark_blind_raw(slice).map_err(VmError::view)
+    }
+}
+
+impl<OT> Memory<Encoding> for Prover<OT>
+where
+    OT: RCOTReceiver<bool, Block>,
+{
+    type Error = VmError;
+
+    fn alloc_raw(&mut self, size: usize) -> Result<Slice> {
+        self.store.alloc_raw(size).map_err(VmError::memory)
+    }
+
+    fn assign_raw(&mut self, slice: Slice, data: BitVec) -> Result<()> {
+        self.store.assign_raw(slice, data).map_err(VmError::memory)
+    }
+
+    fn commit_raw(&mut self, slice: Slice) -> Result<()> {
+        self.store.commit_raw(slice).map_err(VmError::memory)
+    }
+
+    fn get_raw(&self, slice: Slice) -> Result<Option<BitVec>> {
+        self.store.get_raw(slice).map_err(VmError::memory)
+    }
+
+    fn decode_raw(&mut self, slice: Slice) -> Result<DecodeFuture<BitVec>> {
+        self.store.decode_raw(slice).map_err(VmError::memory)
+    }
+}
+
+impl<OT> View<Encoding> for Prover<OT>
 where
     OT: RCOTReceiver<bool, Block>,
 {

@@ -6,6 +6,7 @@ use mpz_vm_core::{
     memory::{
         binary::Binary,
         correlated::{Delta, Key},
+        encoding::Encoding,
         DecodeFuture, Memory, Slice, View,
     },
     Call, Callable, Execute, Result, VmError,
@@ -221,6 +222,55 @@ where
 }
 
 impl<OT> View<Binary> for Verifier<OT>
+where
+    OT: RCOTSender<Block>,
+{
+    type Error = VmError;
+
+    fn mark_public_raw(&mut self, slice: Slice) -> Result<()> {
+        self.store.mark_public_raw(slice).map_err(VmError::view)
+    }
+
+    fn mark_private_raw(&mut self, slice: Slice) -> Result<()> {
+        self.store.mark_private_raw(slice).map_err(VmError::view)
+    }
+
+    fn mark_blind_raw(&mut self, slice: Slice) -> Result<()> {
+        self.store.mark_blind_raw(slice).map_err(VmError::view)?;
+        self.ot.alloc(slice.len()).map_err(VmError::view)?;
+
+        Ok(())
+    }
+}
+
+impl<OT> Memory<Encoding> for Verifier<OT>
+where
+    OT: RCOTSender<Block>,
+{
+    type Error = VmError;
+
+    fn alloc_raw(&mut self, size: usize) -> Result<Slice> {
+        self.store.alloc_raw(size).map_err(VmError::memory)
+    }
+
+    fn assign_raw(&mut self, slice: Slice, data: BitVec) -> Result<()> {
+        self.store.assign_raw(slice, data).map_err(VmError::memory)
+    }
+
+    fn commit_raw(&mut self, slice: Slice) -> Result<()> {
+        self.store.commit_raw(slice).map_err(VmError::memory)
+    }
+
+    fn get_raw(&self, slice: Slice) -> Result<Option<BitVec>> {
+        self.store.get_raw(slice).map_err(VmError::memory)
+    }
+
+    fn decode_raw(&mut self, slice: Slice) -> Result<DecodeFuture<BitVec>> {
+        self.store.decode_raw(slice).map_err(VmError::memory)
+    }
+}
+
+impl<OT> View<Encoding> for Verifier<OT>
 where
     OT: RCOTSender<Block>,
 {
