@@ -84,7 +84,7 @@ impl Evaluator {
         &'a mut self,
         circ: &'a Circuit,
         inputs: Vec<Mac>,
-    ) -> Result<EncryptedGateConsumer<'_, std::slice::Iter<'_, Gate>>, EvaluatorError> {
+    ) -> Result<EncryptedGateConsumer<'a, std::slice::Iter<'a, Gate>>, EvaluatorError> {
         if inputs.len() != circ.input_len() {
             return Err(CircuitError::InvalidInputCount(
                 circ.input_len(),
@@ -122,7 +122,7 @@ impl Evaluator {
         &'a mut self,
         circ: &'a Circuit,
         inputs: Vec<Mac>,
-    ) -> Result<EncryptedGateBatchConsumer<'_, std::slice::Iter<'_, Gate>>, EvaluatorError> {
+    ) -> Result<EncryptedGateBatchConsumer<'a, std::slice::Iter<'a, Gate>>, EvaluatorError> {
         self.evaluate(circ, inputs).map(EncryptedGateBatchConsumer)
     }
 }
