@@ -9,9 +9,6 @@ workspace = true
 [lib]
 name = "mpz_garble_core"
 
-[profile.release]
-lto = true
-
 [features]
 default = ["rayon"]
 rayon = ["dep:rayon"]

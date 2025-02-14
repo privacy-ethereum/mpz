@@ -86,7 +86,7 @@ impl Generator {
         circ: &'a Circuit,
         delta: Delta,
         inputs: Vec<Key>,
-    ) -> Result<EncryptedGateIter<'_, std::slice::Iter<'_, Gate>>, GeneratorError> {
+    ) -> Result<EncryptedGateIter<'a, std::slice::Iter<'a, Gate>>, GeneratorError> {
         if inputs.len() != circ.input_len() {
             return Err(CircuitError::InvalidInputCount(
                 circ.input_len(),
@@ -127,7 +127,7 @@ impl Generator {
         circ: &'a Circuit,
         delta: Delta,
         inputs: Vec<Key>,
-    ) -> Result<EncryptedGateBatchIter<'_, std::slice::Iter<'_, Gate>>, GeneratorError> {
+    ) -> Result<EncryptedGateBatchIter<'a, std::slice::Iter<'a, Gate>>, GeneratorError> {
         self.generate(circ, delta, inputs)
             .map(EncryptedGateBatchIter)
     }
