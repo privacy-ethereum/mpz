@@ -24,6 +24,9 @@ members = [
 ]
 resolver = "2"
 
+[profile.release]
+lto = true
+
 [workspace.lints.rust]
 # unsafe_code = "forbid"
 unexpected_cfgs = { level = "warn", check-cfg = ["cfg(clmul_armv8)", "cfg(clmul_force_soft)"] }
