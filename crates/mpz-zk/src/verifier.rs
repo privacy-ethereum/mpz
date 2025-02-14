@@ -6,7 +6,7 @@ use mpz_vm_core::{
     memory::{
         binary::Binary,
         correlated::{Delta, Key},
-        DecodeFuture, Memory, MemoryType, Repr, Slice, View,
+        DecodeFuture, Memory, Repr, Slice, View,
     },
     Call, Callable, Execute, Result as VmResult, VmError,
 };
@@ -36,13 +36,12 @@ impl<OT> Verifier<OT> {
     /// # Arguments
     ///
     /// * `value` - The value to return the keys for.
-    pub fn get_keys<R, M>(&self, value: R) -> Result<Vec<Key>, VerifierError>
+    pub fn get_keys<R>(&self, value: R) -> Result<&[Key], VerifierError>
     where
-        R: Repr<M>,
-        M: MemoryType,
+        R: Repr<Binary>,
     {
         let slice = value.to_raw();
-        let keys = self.store.try_get_keys(slice)?.to_vec();
+        let keys = self.store.try_get_keys(slice)?;
 
         Ok(keys)
     }

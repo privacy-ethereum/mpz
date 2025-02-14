@@ -3,9 +3,7 @@ use mpz_common::{scoped_futures::ScopedFutureExt, Context, Flush};
 use mpz_core::{bitvec::BitVec, Block};
 use mpz_ot::rcot::{RCOTReceiver, RCOTReceiverOutput};
 use mpz_vm_core::{
-    memory::{
-        binary::Binary, correlated::Mac, DecodeFuture, Memory, MemoryType, Repr, Slice, View,
-    },
+    memory::{binary::Binary, correlated::Mac, DecodeFuture, Memory, Repr, Slice, View},
     Call, Callable, Execute, Result as VmResult, VmError,
 };
 use mpz_zk_core::{store::ProverStore, Prover as Core, ProverError};
@@ -34,13 +32,12 @@ impl<OT> Prover<OT> {
     /// # Arguments
     ///
     /// * `value` - The value to return the MACs for.
-    pub fn get_macs<R, M>(&self, value: R) -> Result<Vec<Mac>, ProverError>
+    pub fn get_macs<R>(&self, value: R) -> Result<&[Mac], ProverError>
     where
-        R: Repr<M>,
-        M: MemoryType,
+        R: Repr<Binary>,
     {
         let slice = value.to_raw();
-        let macs = self.store.try_get_macs(slice)?.to_vec();
+        let macs = self.store.try_get_macs(slice)?;
 
         Ok(macs)
     }
