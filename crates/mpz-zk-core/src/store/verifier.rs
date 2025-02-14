@@ -2,6 +2,7 @@ use mpz_core::bitvec::BitVec;
 use mpz_memory_core::{
     binary::Binary,
     correlated::{Delta, Key, KeyStore, KeyStoreError},
+    encoding::Encoding,
     store::{BitStore, StoreError},
     DecodeError, DecodeFuture, DecodeOp, Memory, Slice, View as ViewTrait,
 };

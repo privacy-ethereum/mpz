@@ -2,6 +2,7 @@ use mpz_core::bitvec::{BitSlice, BitVec};
 use mpz_memory_core::{
     binary::Binary,
     correlated::{Mac, MacStore, MacStoreError},
+    encoding::Encoding,
     store::{BitStore, StoreError},
     DecodeError, DecodeFuture, DecodeOp, Memory, Slice, View as ViewTrait,
 };

@@ -215,23 +215,24 @@ where
     type Error = VmError;
 
     fn alloc_raw(&mut self, size: usize) -> Result<Slice> {
-        self.store.alloc_raw(size).map_err(VmError::memory)
+        <ProverStore as Memory<Binary>>::alloc_raw(&mut self.store, size).map_err(VmError::memory)
     }
 
     fn assign_raw(&mut self, slice: Slice, data: BitVec) -> Result<()> {
-        self.store.assign_raw(slice, data).map_err(VmError::memory)
+        <ProverStore as Memory<Binary>>::assign_raw(&mut self.store, slice, data)
+            .map_err(VmError::memory)
     }
 
     fn commit_raw(&mut self, slice: Slice) -> Result<()> {
-        self.store.commit_raw(slice).map_err(VmError::memory)
+        <ProverStore as Memory<Binary>>::commit_raw(&mut self.store, slice).map_err(VmError::memory)
     }
 
     fn get_raw(&self, slice: Slice) -> Result<Option<BitVec>> {
-        self.store.get_raw(slice).map_err(VmError::memory)
+        <ProverStore as Memory<Binary>>::get_raw(&self.store, slice).map_err(VmError::memory)
     }
 
     fn decode_raw(&mut self, slice: Slice) -> Result<DecodeFuture<BitVec>> {
-        self.store.decode_raw(slice).map_err(VmError::memory)
+        <ProverStore as Memory<Binary>>::decode_raw(&mut self.store, slice).map_err(VmError::memory)
     }
 }
 
@@ -242,11 +243,13 @@ where
     type Error = VmError;
 
     fn mark_public_raw(&mut self, slice: Slice) -> Result<()> {
-        self.store.mark_public_raw(slice).map_err(VmError::view)
+        <ProverStore as View<Binary>>::mark_public_raw(&mut self.store, slice)
+            .map_err(VmError::view)
     }
 
     fn mark_private_raw(&mut self, slice: Slice) -> Result<()> {
-        self.store.mark_private_raw(slice).map_err(VmError::view)?;
+        <ProverStore as View<Binary>>::mark_private_raw(&mut self.store, slice)
+            .map_err(VmError::view)?;
 
         self.ot.alloc(slice.len()).map_err(VmError::view)?;
 
@@ -254,7 +257,7 @@ where
     }
 
     fn mark_blind_raw(&mut self, slice: Slice) -> Result<()> {
-        self.store.mark_blind_raw(slice).map_err(VmError::view)
+        <ProverStore as View<Binary>>::mark_blind_raw(&mut self.store, slice).map_err(VmError::view)
     }
 }
 
@@ -265,23 +268,26 @@ where
     type Error = VmError;
 
     fn alloc_raw(&mut self, size: usize) -> Result<Slice> {
-        self.store.alloc_raw(size).map_err(VmError::memory)
+        <ProverStore as Memory<Encoding>>::alloc_raw(&mut self.store, size).map_err(VmError::memory)
     }
 
     fn assign_raw(&mut self, slice: Slice, data: BitVec) -> Result<()> {
-        self.store.assign_raw(slice, data).map_err(VmError::memory)
+        <ProverStore as Memory<Encoding>>::assign_raw(&mut self.store, slice, data)
+            .map_err(VmError::memory)
     }
 
     fn commit_raw(&mut self, slice: Slice) -> Result<()> {
-        self.store.commit_raw(slice).map_err(VmError::memory)
+        <ProverStore as Memory<Encoding>>::commit_raw(&mut self.store, slice)
+            .map_err(VmError::memory)
     }
 
     fn get_raw(&self, slice: Slice) -> Result<Option<BitVec>> {
-        self.store.get_raw(slice).map_err(VmError::memory)
+        <ProverStore as Memory<Encoding>>::get_raw(&self.store, slice).map_err(VmError::memory)
     }
 
     fn decode_raw(&mut self, slice: Slice) -> Result<DecodeFuture<BitVec>> {
-        self.store.decode_raw(slice).map_err(VmError::memory)
+        <ProverStore as Memory<Encoding>>::decode_raw(&mut self.store, slice)
+            .map_err(VmError::memory)
     }
 }
 
@@ -292,11 +298,13 @@ where
     type Error = VmError;
 
     fn mark_public_raw(&mut self, slice: Slice) -> Result<()> {
-        self.store.mark_public_raw(slice).map_err(VmError::view)
+        <ProverStore as View<Encoding>>::mark_public_raw(&mut self.store, slice)
+            .map_err(VmError::view)
     }
 
     fn mark_private_raw(&mut self, slice: Slice) -> Result<()> {
-        self.store.mark_private_raw(slice).map_err(VmError::view)?;
+        <ProverStore as View<Encoding>>::mark_private_raw(&mut self.store, slice)
+            .map_err(VmError::view)?;
 
         self.ot.alloc(slice.len()).map_err(VmError::view)?;
 
@@ -304,6 +312,7 @@ where
     }
 
     fn mark_blind_raw(&mut self, slice: Slice) -> Result<()> {
-        self.store.mark_blind_raw(slice).map_err(VmError::view)
+        <ProverStore as View<Encoding>>::mark_blind_raw(&mut self.store, slice)
+            .map_err(VmError::view)
     }
 }
