@@ -276,7 +276,7 @@ enum ErrorRepr {
     Inprogress,
     #[error(transparent)]
     Check(CheckError),
-    #[error("cannot return encodings: {0}")]
+    #[error("cannot return keys: {0}")]
     Keys(VerifierStoreError),
 }
 
