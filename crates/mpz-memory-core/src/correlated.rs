@@ -65,7 +65,7 @@ use mpz_core::{
     aes::{FixedKeyAes, FIXED_KEY},
     Block,
 };
-use rand::{distributions::Standard, prelude::Distribution, CryptoRng, Rng};
+use rand::{distr::StandardUniform, prelude::Distribution, CryptoRng, Rng};
 use serde::{Deserialize, Serialize};
 
 /// AES cipher used for MAC commitments.
@@ -106,7 +106,7 @@ impl Delta {
     /// Generate a random block using the provided RNG
     #[inline]
     pub fn random<R: Rng + CryptoRng + ?Sized>(rng: &mut R) -> Self {
-        Self::new(rng.gen())
+        Self::new(rng.random())
     }
 
     /// Returns the inner block
@@ -122,7 +122,7 @@ impl Delta {
     }
 }
 
-impl Distribution<Delta> for Standard {
+impl Distribution<Delta> for StandardUniform {
     #[inline]
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Delta {
         Delta::new(self.sample(rng))

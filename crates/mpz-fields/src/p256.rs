@@ -10,7 +10,7 @@ use ark_serialize::{
 use hybrid_array::Array;
 use itybity::{BitLength, FromBitIterator, GetBit, Lsb0, Msb0};
 use num_bigint::ToBigUint;
-use rand::{distributions::Standard, prelude::Distribution};
+use rand::{distr::StandardUniform, prelude::Distribution};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use typenum::{U256, U32};
@@ -67,7 +67,7 @@ impl TryFrom<Array<u8, U32>> for P256 {
     }
 }
 
-impl Distribution<P256> for Standard {
+impl Distribution<P256> for StandardUniform {
     fn sample<R: rand::Rng + ?Sized>(&self, rng: &mut R) -> P256 {
         P256(self.sample(rng))
     }

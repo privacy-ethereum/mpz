@@ -161,7 +161,7 @@ pub fn sample_error_indices<R: Rng>(
             assert_eq!(len % count, 0);
             let step = len / count;
             (0..count)
-                .map(|i| rng.gen_range(i * step..(i + 1) * step))
+                .map(|i| rng.random_range(i * step..(i + 1) * step))
                 .collect()
         }
     }

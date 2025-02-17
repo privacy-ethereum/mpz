@@ -62,9 +62,9 @@ matrix-transpose = { path = "crates/matrix-transpose" }
 tlsn-utils = { git = "https://github.com/tlsnotary/tlsn-utils", rev = "425614e" }
 
 # rand
-rand_chacha = "0.3"
-rand = "0.8"
-rand_core = "0.6"
+rand_chacha = "0.9"
+rand = "0.9"
+rand_core = "0.9"
 
 # crypto
 cipher = "0.4"

@@ -98,9 +98,9 @@ impl IdealROT {
         let count = this.sender_state.alloc;
 
         let keys = (0..count)
-            .map(|_| [this.prg.gen(), this.prg.gen()])
+            .map(|_| [this.prg.random(), this.prg.random()])
             .collect::<Vec<_>>();
-        let choices = (0..count).map(|_| this.prg.gen()).collect::<Vec<_>>();
+        let choices = (0..count).map(|_| this.prg.random()).collect::<Vec<_>>();
         let msgs = keys
             .iter()
             .zip(&choices)
@@ -253,7 +253,7 @@ impl ROTReceiver<bool, Block> for IdealROT {
 impl Default for IdealROT {
     fn default() -> Self {
         let mut rng = ChaCha8Rng::seed_from_u64(0);
-        Self::new(rng.gen())
+        Self::new(rng.random())
     }
 }
 
@@ -277,7 +277,7 @@ mod tests {
     #[test]
     fn test_ideal_rot() {
         let mut rng = ChaCha8Rng::seed_from_u64(0);
-        let mut ideal = IdealROT::new(rng.gen());
+        let mut ideal = IdealROT::new(rng.random());
 
         let count = 10;
 

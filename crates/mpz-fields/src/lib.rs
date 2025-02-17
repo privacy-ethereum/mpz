@@ -15,7 +15,7 @@ use std::{
 
 use hybrid_array::{Array, ArraySize};
 use itybity::{BitLength, FromBitIterator, GetBit, Lsb0, Msb0};
-use rand::{distributions::Standard, prelude::Distribution, Rng};
+use rand::{distr::StandardUniform, prelude::Distribution, Rng};
 use thiserror::Error;
 use typenum::Unsigned;
 
@@ -83,8 +83,8 @@ pub struct FieldError(Box<dyn Error + Send + Sync + 'static>);
 /// A trait for sampling random elements of the field.
 ///
 /// This is helpful, because we do not need to import other traits since this is
-/// a supertrait of field (which is not possible with `Standard` and
-/// `Distribution`).
+/// a supertrait of field (which is not possible with [`StandardUniform`] and
+/// [`Distribution`]).
 pub trait UniformRand: Sized {
     /// Return a random field element.
     fn rand<R: Rng + ?Sized>(rng: &mut R) -> Self;
@@ -92,11 +92,11 @@ pub trait UniformRand: Sized {
 
 impl<T> UniformRand for T
 where
-    Standard: Distribution<T>,
+    StandardUniform: Distribution<T>,
 {
     #[inline]
     fn rand<R: Rng + ?Sized>(rng: &mut R) -> Self {
-        rng.sample(Standard)
+        rng.sample(StandardUniform)
     }
 }
 

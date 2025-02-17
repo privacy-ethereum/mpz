@@ -10,7 +10,7 @@ use itybity::{FromBitIterator, IntoBits};
 use mpz_common::future::{new_output, MaybeDone, Sender};
 use mpz_core::{prg::Prg, Block};
 
-use rand::{thread_rng, Rng as _, SeedableRng};
+use rand::{rng, Rng as _, SeedableRng};
 use rand_core::RngCore;
 
 #[cfg(feature = "rayon")]
@@ -113,10 +113,10 @@ impl Receiver<state::Extension> {
         const NROWS: usize = CSP;
         let row_width = count / 8;
 
-        let mut rng = thread_rng();
+        let mut rng = rng();
         // x₁,...,xₗ bits in Figure 3, step 1.
         let choices = (0..row_width)
-            .flat_map(|_| rng.gen::<u8>().into_iter_lsb0())
+            .flat_map(|_| rng.random::<u8>().into_iter_lsb0())
             .collect::<Vec<_>>();
 
         // 𝐱ⁱ in Figure 3. Note that it is the same for all i = 1,...,k.

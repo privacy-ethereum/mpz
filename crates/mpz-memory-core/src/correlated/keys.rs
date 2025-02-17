@@ -6,7 +6,7 @@ use mpz_core::{
     bitvec::{BitSlice, BitVec},
     Block,
 };
-use rand::{distributions::Standard, prelude::Distribution};
+use rand::{distr::StandardUniform, prelude::Distribution};
 use utils::range::Disjoint;
 
 use crate::{
@@ -138,10 +138,10 @@ impl Add<&Key> for &Key {
     }
 }
 
-impl Distribution<Key> for Standard {
+impl Distribution<Key> for StandardUniform {
     #[inline]
     fn sample<R: rand::Rng + ?Sized>(&self, rng: &mut R) -> Key {
-        Key(rng.gen())
+        Key(rng.random())
     }
 }
 
