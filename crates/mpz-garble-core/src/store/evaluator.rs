@@ -372,14 +372,20 @@ where
 /// Error for [`EvaluatorStore`].
 #[derive(Debug, thiserror::Error)]
 #[error("evaluator store error: {}", .0)]
-pub struct EvaluatorStoreError(#[from] ErrorRepr);
+pub struct EvaluatorStoreError(#[source] Box<ErrorRepr>);
 
 impl EvaluatorStoreError {
     fn cot<E>(err: E) -> Self
     where
         E: Into<Box<dyn std::error::Error + Send + Sync + 'static>>,
     {
-        Self(ErrorRepr::Cot(err.into()))
+        Self(ErrorRepr::Cot(err.into()).into())
+    }
+}
+
+impl From<ErrorRepr> for EvaluatorStoreError {
+    fn from(err: ErrorRepr) -> Self {
+        Self(Box::new(err))
     }
 }
 
@@ -408,30 +414,35 @@ enum ErrorRepr {
 
 impl From<MacStoreError> for EvaluatorStoreError {
     fn from(err: MacStoreError) -> Self {
-        Self(ErrorRepr::MacStore(err))
+        let err = ErrorRepr::MacStore(err);
+        Self(err.into())
     }
 }
 
 impl From<StoreError> for EvaluatorStoreError {
     fn from(err: StoreError) -> Self {
-        Self(ErrorRepr::Store(err))
+        let err = ErrorRepr::Store(err);
+        Self(err.into())
     }
 }
 
 impl From<DecodeError> for EvaluatorStoreError {
     fn from(err: DecodeError) -> Self {
-        Self(ErrorRepr::Decode(err))
+        let err = ErrorRepr::Decode(err);
+        Self(err.into())
     }
 }
 
 impl From<ViewError> for EvaluatorStoreError {
     fn from(err: ViewError) -> Self {
-        Self(ErrorRepr::View(err))
+        let err = ErrorRepr::View(err);
+        Self(err.into())
     }
 }
 
 impl From<MacCommitmentError> for EvaluatorStoreError {
     fn from(err: MacCommitmentError) -> Self {
-        Self(ErrorRepr::MacCommitment(err))
+        let err = ErrorRepr::MacCommitment(err);
+        Self(err.into())
     }
 }

@@ -48,7 +48,13 @@ mod tests {
                 gen.mark_blind(msg).unwrap();
 
                 let ciphertext: Array<U8, 16> = gen
-                    .call(Call::new(AES128.clone()).arg(key).arg(msg).build().unwrap())
+                    .call(
+                        Call::builder(AES128.clone())
+                            .arg(key)
+                            .arg(msg)
+                            .build()
+                            .unwrap(),
+                    )
                     .unwrap();
 
                 let mut ciphertext = gen.decode(ciphertext).unwrap();
@@ -68,7 +74,13 @@ mod tests {
                 ev.mark_private(msg).unwrap();
 
                 let ciphertext: Array<U8, 16> = ev
-                    .call(Call::new(AES128.clone()).arg(key).arg(msg).build().unwrap())
+                    .call(
+                        Call::builder(AES128.clone())
+                            .arg(key)
+                            .arg(msg)
+                            .build()
+                            .unwrap(),
+                    )
                     .unwrap();
 
                 let mut ciphertext = ev.decode(ciphertext).unwrap();
@@ -120,13 +132,19 @@ mod tests {
                 gen.mark_blind(msg).unwrap();
 
                 let output: Array<U8, 16> = gen
-                    .call(Call::new(AES128.clone()).arg(key).arg(msg).build().unwrap())
+                    .call(
+                        Call::builder(AES128.clone())
+                            .arg(key)
+                            .arg(msg)
+                            .build()
+                            .unwrap(),
+                    )
                     .unwrap();
 
                 // Chain the AES calls.
                 let ciphertext: Array<U8, 16> = gen
                     .call(
-                        Call::new(AES128.clone())
+                        Call::builder(AES128.clone())
                             .arg(key)
                             .arg(output)
                             .build()
@@ -154,13 +172,19 @@ mod tests {
                 ev.mark_private(msg).unwrap();
 
                 let output: Array<U8, 16> = ev
-                    .call(Call::new(AES128.clone()).arg(key).arg(msg).build().unwrap())
+                    .call(
+                        Call::builder(AES128.clone())
+                            .arg(key)
+                            .arg(msg)
+                            .build()
+                            .unwrap(),
+                    )
                     .unwrap();
 
                 // Chain the AES calls.
                 let ciphertext: Array<U8, 16> = ev
                     .call(
-                        Call::new(AES128.clone())
+                        Call::builder(AES128.clone())
                             .arg(key)
                             .arg(output)
                             .build()

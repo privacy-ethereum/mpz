@@ -26,7 +26,7 @@ pub trait OneTimePad<T: MemoryType>:
         self.commit(otp_ref)?;
 
         let masked: R = self.call(
-            Call::new(build_otp(size))
+            Call::builder(build_otp(size))
                 .arg(value)
                 .arg(otp_ref)
                 .build()
@@ -51,7 +51,7 @@ pub trait OneTimePad<T: MemoryType>:
         self.commit(otp_ref)?;
 
         let masked: R = self.call(
-            Call::new(build_otp(size))
+            Call::builder(build_otp(size))
                 .arg(value)
                 .arg(otp_ref)
                 .build()

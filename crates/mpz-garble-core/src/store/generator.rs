@@ -307,14 +307,20 @@ where
 /// Error for [`GeneratorStore`].
 #[derive(Debug, thiserror::Error)]
 #[error("generator store error: {}", .0)]
-pub struct GeneratorStoreError(#[from] ErrorRepr);
+pub struct GeneratorStoreError(#[source] Box<ErrorRepr>);
 
 impl GeneratorStoreError {
     fn cot<E>(err: E) -> Self
     where
         E: Into<Box<dyn std::error::Error + Send + Sync + 'static>>,
     {
-        Self(ErrorRepr::Cot(err.into()))
+        Self(ErrorRepr::Cot(err.into()).into())
+    }
+}
+
+impl From<ErrorRepr> for GeneratorStoreError {
+    fn from(err: ErrorRepr) -> Self {
+        Self(Box::new(err))
     }
 }
 
@@ -341,24 +347,28 @@ enum ErrorRepr {
 
 impl From<KeyStoreError> for GeneratorStoreError {
     fn from(err: KeyStoreError) -> Self {
-        Self(ErrorRepr::KeyStore(err))
+        let err = ErrorRepr::KeyStore(err);
+        Self(err.into())
     }
 }
 
 impl From<StoreError> for GeneratorStoreError {
     fn from(err: StoreError) -> Self {
-        Self(ErrorRepr::Store(err))
+        let err = ErrorRepr::Store(err);
+        Self(err.into())
     }
 }
 
 impl From<DecodeError> for GeneratorStoreError {
     fn from(err: DecodeError) -> Self {
-        Self(ErrorRepr::Decode(err))
+        let err = ErrorRepr::Decode(err);
+        Self(err.into())
     }
 }
 
 impl From<ViewError> for GeneratorStoreError {
     fn from(err: ViewError) -> Self {
-        Self(ErrorRepr::View(err))
+        let err = ErrorRepr::View(err);
+        Self(err.into())
     }
 }

@@ -68,8 +68,7 @@ pub struct Call {
 
 impl Call {
     /// Creates a new call builder.
-    #[allow(clippy::new_ret_no_self)]
-    pub fn new(circ: Arc<Circuit>) -> CallBuilder {
+    pub fn builder(circ: Arc<Circuit>) -> CallBuilder {
         CallBuilder::new(circ)
     }
 

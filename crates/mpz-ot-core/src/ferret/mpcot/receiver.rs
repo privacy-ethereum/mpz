@@ -26,7 +26,9 @@ impl MPCOTReceiver {
         let hashes = from_fn(|_| AesEncryptor::new(prg.random_block()));
 
         let state = match lpn_type {
-            LpnType::Uniform => Initialized::Uniform { hashes },
+            LpnType::Uniform => Initialized::Uniform {
+                hashes: Box::new(hashes),
+            },
             LpnType::Regular => Initialized::Regular,
         };
 
@@ -219,10 +221,9 @@ pub(crate) mod state {
 
     pub(crate) trait State: sealed::Sealed {}
 
-    #[allow(clippy::large_enum_variant)]
     pub(crate) enum Initialized {
         Uniform {
-            hashes: [AesEncryptor; HASH_NUM as usize],
+            hashes: Box<[AesEncryptor; HASH_NUM as usize]>,
         },
         Regular,
     }

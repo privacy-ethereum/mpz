@@ -45,7 +45,13 @@ fn criterion_benchmark(c: &mut Criterion) {
                             prover.commit(msg).unwrap();
 
                             let ciphertext: Array<U8, 16> = prover
-                                .call(Call::new(AES128.clone()).arg(key).arg(msg).build().unwrap())
+                                .call(
+                                    Call::builder(AES128.clone())
+                                        .arg(key)
+                                        .arg(msg)
+                                        .build()
+                                        .unwrap(),
+                                )
                                 .unwrap();
 
                             let _ = prover.decode(ciphertext).unwrap();
@@ -69,7 +75,13 @@ fn criterion_benchmark(c: &mut Criterion) {
                             verifier.commit(msg).unwrap();
 
                             let ciphertext: Array<U8, 16> = verifier
-                                .call(Call::new(AES128.clone()).arg(key).arg(msg).build().unwrap())
+                                .call(
+                                    Call::builder(AES128.clone())
+                                        .arg(key)
+                                        .arg(msg)
+                                        .build()
+                                        .unwrap(),
+                                )
                                 .unwrap();
 
                             let _ = verifier.decode(ciphertext).unwrap();
