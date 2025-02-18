@@ -26,7 +26,7 @@ impl MPCOTSender {
             LpnType::Uniform => {
                 let mut prg = Prg::from_seed(seed);
                 Initialized::Uniform {
-                    hashes: from_fn(|_| AesEncryptor::new(prg.random_block())),
+                    hashes: Box::new(from_fn(|_| AesEncryptor::new(prg.random_block()))),
                 }
             }
             LpnType::Regular => Initialized::Regular,
@@ -196,10 +196,9 @@ pub(crate) mod state {
 
     pub(crate) trait State: sealed::Sealed {}
 
-    #[allow(clippy::large_enum_variant)]
     pub(crate) enum Initialized {
         Uniform {
-            hashes: [AesEncryptor; HASH_NUM as usize],
+            hashes: Box<[AesEncryptor; HASH_NUM as usize]>,
         },
         Regular,
     }

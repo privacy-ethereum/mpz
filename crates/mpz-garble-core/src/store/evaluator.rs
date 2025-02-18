@@ -252,8 +252,8 @@ where
         // Ensure the generators flush is consistent.
         if &view != self.view.flush() {
             return Err(ErrorRepr::InconsistentFlush {
-                expected: view,
-                actual: self.view.flush().clone(),
+                expected: Box::new(view),
+                actual: Box::new(self.view.flush().clone()),
             }
             .into());
         }
@@ -372,20 +372,14 @@ where
 /// Error for [`EvaluatorStore`].
 #[derive(Debug, thiserror::Error)]
 #[error("evaluator store error: {}", .0)]
-pub struct EvaluatorStoreError(#[source] Box<ErrorRepr>);
+pub struct EvaluatorStoreError(#[from] ErrorRepr);
 
 impl EvaluatorStoreError {
     fn cot<E>(err: E) -> Self
     where
         E: Into<Box<dyn std::error::Error + Send + Sync + 'static>>,
     {
-        Self(ErrorRepr::Cot(err.into()).into())
-    }
-}
-
-impl From<ErrorRepr> for EvaluatorStoreError {
-    fn from(err: ErrorRepr) -> Self {
-        Self(Box::new(err))
+        Self(ErrorRepr::Cot(err.into()))
     }
 }
 
@@ -405,8 +399,8 @@ enum ErrorRepr {
     UnexpectedFlush,
     #[error("inconsistent flush: expected={expected:?}, actual={actual:?}")]
     InconsistentFlush {
-        expected: FlushView,
-        actual: FlushView,
+        expected: Box<FlushView>,
+        actual: Box<FlushView>,
     },
     #[error("invalid MAC commitment: {0}")]
     MacCommitment(#[from] MacCommitmentError),
@@ -414,35 +408,30 @@ enum ErrorRepr {
 
 impl From<MacStoreError> for EvaluatorStoreError {
     fn from(err: MacStoreError) -> Self {
-        let err = ErrorRepr::MacStore(err);
-        Self(err.into())
+        Self(ErrorRepr::MacStore(err))
     }
 }
 
 impl From<StoreError> for EvaluatorStoreError {
     fn from(err: StoreError) -> Self {
-        let err = ErrorRepr::Store(err);
-        Self(err.into())
+        Self(ErrorRepr::Store(err))
     }
 }
 
 impl From<DecodeError> for EvaluatorStoreError {
     fn from(err: DecodeError) -> Self {
-        let err = ErrorRepr::Decode(err);
-        Self(err.into())
+        Self(ErrorRepr::Decode(err))
     }
 }
 
 impl From<ViewError> for EvaluatorStoreError {
     fn from(err: ViewError) -> Self {
-        let err = ErrorRepr::View(err);
-        Self(err.into())
+        Self(ErrorRepr::View(err))
     }
 }
 
 impl From<MacCommitmentError> for EvaluatorStoreError {
     fn from(err: MacCommitmentError) -> Self {
-        let err = ErrorRepr::MacCommitment(err);
-        Self(err.into())
+        Self(ErrorRepr::MacCommitment(err))
     }
 }

@@ -210,8 +210,8 @@ where
         // Ensure the evaluators view is consistent.
         if &view != self.view.flush() {
             return Err(ErrorRepr::InconsistentFlush {
-                expected: self.view.flush().clone(),
-                actual: view.clone(),
+                expected: Box::new(self.view.flush().clone()),
+                actual: Box::new(view.clone()),
             }
             .into());
         }
@@ -307,20 +307,14 @@ where
 /// Error for [`GeneratorStore`].
 #[derive(Debug, thiserror::Error)]
 #[error("generator store error: {}", .0)]
-pub struct GeneratorStoreError(#[source] Box<ErrorRepr>);
+pub struct GeneratorStoreError(#[from] ErrorRepr);
 
 impl GeneratorStoreError {
     fn cot<E>(err: E) -> Self
     where
         E: Into<Box<dyn std::error::Error + Send + Sync + 'static>>,
     {
-        Self(ErrorRepr::Cot(err.into()).into())
-    }
-}
-
-impl From<ErrorRepr> for GeneratorStoreError {
-    fn from(err: ErrorRepr) -> Self {
-        Self(Box::new(err))
+        Self(ErrorRepr::Cot(err.into()))
     }
 }
 
@@ -340,35 +334,31 @@ enum ErrorRepr {
     UnexpectedFlush,
     #[error("inconsistent flush: expected={expected:?}, actual={actual:?}")]
     InconsistentFlush {
-        expected: FlushView,
-        actual: FlushView,
+        expected: Box<FlushView>,
+        actual: Box<FlushView>,
     },
 }
 
 impl From<KeyStoreError> for GeneratorStoreError {
     fn from(err: KeyStoreError) -> Self {
-        let err = ErrorRepr::KeyStore(err);
-        Self(err.into())
+        Self(ErrorRepr::KeyStore(err))
     }
 }
 
 impl From<StoreError> for GeneratorStoreError {
     fn from(err: StoreError) -> Self {
-        let err = ErrorRepr::Store(err);
-        Self(err.into())
+        Self(ErrorRepr::Store(err))
     }
 }
 
 impl From<DecodeError> for GeneratorStoreError {
     fn from(err: DecodeError) -> Self {
-        let err = ErrorRepr::Decode(err);
-        Self(err.into())
+        Self(ErrorRepr::Decode(err))
     }
 }
 
 impl From<ViewError> for GeneratorStoreError {
     fn from(err: ViewError) -> Self {
-        let err = ErrorRepr::View(err);
-        Self(err.into())
+        Self(ErrorRepr::View(err))
     }
 }
