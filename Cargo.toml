@@ -29,7 +29,10 @@ lto = true
 
 [workspace.lints.rust]
 # unsafe_code = "forbid"
-unexpected_cfgs = { level = "warn", check-cfg = ["cfg(clmul_armv8)", "cfg(clmul_force_soft)"] }
+unexpected_cfgs = { level = "warn", check-cfg = [
+    "cfg(clmul_armv8)",
+    "cfg(clmul_force_soft)",
+] }
 
 [workspace.lints.clippy]
 # enum_glob_use = "deny"
@@ -56,7 +59,7 @@ mpz-zk = { path = "crates/mpz-zk" }
 clmul = { path = "crates/clmul" }
 matrix-transpose = { path = "crates/matrix-transpose" }
 
-tlsn-utils = { git = "https://github.com/tlsnotary/tlsn-utils", branch = "dev" }
+tlsn-utils = { git = "https://github.com/tlsnotary/tlsn-utils", rev = "8555275" }
 
 # rand
 rand_chacha = "0.3"
@@ -83,7 +86,7 @@ num-bigint = "0.4"
 async-trait = "0.1"
 futures = "0.3"
 futures-util = "0.3"
-tokio = { version = "1.23", default-features = false}
+tokio = { version = "1.23", default-features = false }
 tokio-util = "0.7"
 scoped-futures = "0.1.3"
 pollster = "0.3"
@@ -98,10 +101,10 @@ bincode = "1.3.3"
 bytes = "1"
 yamux = "0.10"
 bytemuck = { version = "1.13", features = ["derive"] }
-serio = { git = "https://github.com/tlsnotary/tlsn-utils", rev = "43995c5" }
+serio = { git = "https://github.com/tlsnotary/tlsn-utils", rev = "8555275" }
 
 # io
-uid-mux = { git = "https://github.com/tlsnotary/tlsn-utils", rev = "43995c5" }
+uid-mux = { git = "https://github.com/tlsnotary/tlsn-utils", rev = "8555275" }
 
 # testing
 rstest = "0.12"
