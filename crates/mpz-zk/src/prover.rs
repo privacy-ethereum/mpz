@@ -124,6 +124,7 @@ where
                         async move {
                             let mut iter = execute.iter();
                             loop {
+                                // Stream the `adjust` bits to avoid buffering them in memory.
                                 let adjust: BitVec<u32> =
                                     BitVec::from_iter(iter.by_ref().take(8000));
 
