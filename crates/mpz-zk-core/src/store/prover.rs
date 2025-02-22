@@ -102,6 +102,7 @@ impl ProverStore {
             self.mac_store.try_set(slice, &macs[i..i + slice.len()])?;
 
             let data = self.data_store.try_get(slice)?;
+            // Adjust so that the LSB of a MAC contains the value of the authenticated bit.
             self.mac_store.adjust(slice, data)?;
 
             i += slice.len();
@@ -114,6 +115,7 @@ impl ProverStore {
         self.view.set_output(slice.to_range())?;
         self.mac_store.try_set(slice, macs)?;
 
+        // (Note: LSBs of MACs contain the value of the authenticated bit).
         let data = BitVec::from_iter(macs.iter().map(|mac| mac.pointer()));
         self.data_store.try_set(slice, &data)?;
 
