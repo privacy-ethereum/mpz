@@ -1,4 +1,4 @@
-//! Quicksilver consistency check.
+//! QuickSilver consistency check.
 
 use std::mem;
 
@@ -71,7 +71,7 @@ impl Check {
         chis
     }
 
-    /// Executes the prover check, returning `U` and `V` defined in Step 7.b.
+    /// Executes the prover check, returning `U` and `V` defined in Figure 5, Step 7.b.
     pub(crate) fn check_prover(
         &mut self,
         svole_choices: &[bool],
@@ -83,6 +83,7 @@ impl Check {
 
             let u = x.gfmul(y).gfmul(chi);
 
+            // (Note that the LSB of a MAC contains the authenticated bit).
             let a_10 = if x.lsb() { y } else { Block::ZERO };
             let a_11 = if y.lsb() { x } else { Block::ZERO };
             let v = (a_10 ^ a_11 ^ z).gfmul(chi);
@@ -134,7 +135,7 @@ impl Check {
         Ok(UV { u, v })
     }
 
-    /// Executes the verifier check, returning `W` defined in Step 7.c.
+    /// Executes the verifier check, returning `W` defined in Figure 5, Step 7.c.
     pub(crate) fn check_verifier(
         &mut self,
         delta: &Block,
