@@ -27,11 +27,6 @@ rand.workspace = true
 itybity.workspace = true
 
 [dev-dependencies]
-tokio = { workspace = true, features = [
-    "net",
-    "macros",
-    "rt",
-    "rt-multi-thread",
-] }
+tokio = { workspace = true, features = [ "net", "macros", "rt", "rt-multi-thread" ] }
 mpz-common = { workspace = true, features = ["test-utils", "ideal"] }
 mpz-ot =  { workspace = true, features = ["ideal"] }
