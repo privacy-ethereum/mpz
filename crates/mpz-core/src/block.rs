@@ -1,8 +1,8 @@
 //! A block of 128 bits and its operations.
 
-use bytemuck::{Pod, Zeroable};
+use zerocopy::{AsBytes, FromBytes, FromZeroes};
 use clmul::Clmul;
-use core::ops::{BitAnd, BitAndAssign, BitXor, BitXorAssign};
+use core::{mem, ops::{BitAnd, BitAndAssign, BitXor, BitXorAssign}};
 use generic_array::{typenum::consts::U16, GenericArray};
 use itybity::{BitIterable, BitLength, FromBitIterator, GetBit, Lsb0, Msb0};
 use rand::{distributions::Standard, prelude::Distribution, CryptoRng, Rng};
@@ -14,7 +14,7 @@ use std::{
 
 /// A block of 128 bits
 #[repr(transparent)]
-#[derive(Copy, Clone, Debug, Default, PartialEq, Serialize, Deserialize, Pod, Zeroable)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Serialize, Deserialize, AsBytes, FromBytes, FromZeroes)]
 pub struct Block([u8; 16]);
 
 impl Block {
@@ -146,30 +146,26 @@ impl Block {
     /// This function compute ``sigma( x = x0 || x1 ) = x1 || (x0 xor x1)``.
     #[inline(always)]
     pub fn sigma(a: Self) -> Self {
-        let mut x: [u64; 2] = bytemuck::cast(a);
-        x[0] ^= x[1];
-        bytemuck::cast([x[1], x[0]])
+        let mut bytes = a.0;
+        let x0 = u64::from_le_bytes(bytes[0..8].try_into().unwrap());
+        let x1 = u64::from_le_bytes(bytes[8..16].try_into().unwrap());
+        let result_low = x0 ^ x1;
+        bytes[8..16].copy_from_slice(&result_low.to_le_bytes());
+        bytes[0..8].copy_from_slice(&x1.to_le_bytes());
+        Self(bytes)
     }
 
     /// Converts a slice of blocks to a slice of bytes.
     pub fn as_flattened_bytes(slice: &[Self]) -> &[u8] {
         // This is equivalent to `<[[u8; 16]]>::as_flattened`
-
-        // SAFETY: `slice.len() * Block::LEN` cannot overflow because `slice` is
-        // already in the address space.
-        let len = unsafe { slice.len().unchecked_mul(Self::LEN) };
-        // SAFETY: `[u8]` is layout-identical to `[u8; 16]` of which block is a newtype.
+        let len = slice.len() * Self::LEN;
         unsafe { from_raw_parts(slice.as_ptr().cast(), len) }
     }
 
     /// Converts a slice of block arrays to a slice of bytes.
     pub fn array_as_flattened_bytes<const N: usize>(slice: &[[Self; N]]) -> &[u8] {
         // This is equivalent to `<[[u8; 16 * N]]>::as_flattened`
-
-        // SAFETY: `slice.len() * N * Block::LEN` cannot overflow because `slice` is
-        // already in the address space.
-        let len = unsafe { slice.len().unchecked_mul(N * Self::LEN) };
-        // SAFETY: `[u8]` is layout-identical to `[u8; 16]` of which block is a newtype.
+        let len = slice.len() * N * Self::LEN;
         unsafe { from_raw_parts(slice.as_ptr().cast(), len) }
     }
 
@@ -177,7 +173,7 @@ impl Block {
     /// U16>`](cipher::generic_array::GenericArray) from the [`generic-array`](https://docs.rs/generic-array/latest/generic_array/) crate.
     #[allow(dead_code)]
     pub(crate) fn as_generic_array(&self) -> &GenericArray<u8, U16> {
-        (&self.0).into()
+        unsafe { mem::transmute(&self.0) }
     }
 
     /// Converts a mutable block to a mutable [`GenericArray<u8,
@@ -268,7 +264,7 @@ impl From<[u8; 16]> for Block {
 
 impl<'a> From<&'a [u8; 16]> for &'a Block {
     fn from(bytes: &'a [u8; 16]) -> Self {
-        bytemuck::cast_ref(bytes)
+        unsafe { mem::transmute(bytes) }
     }
 }
 
@@ -290,7 +286,7 @@ impl From<Block> for GenericArray<u8, U16> {
 impl<'a> From<&'a Block> for &'a GenericArray<u8, U16> {
     #[inline]
     fn from(b: &'a Block) -> Self {
-        (&b.0).into()
+        unsafe { mem::transmute(b) }
     }
 }
 
@@ -304,8 +300,7 @@ impl From<GenericArray<u8, U16>> for Block {
 impl<'a> From<&'a GenericArray<u8, U16>> for &'a Block {
     #[inline]
     fn from(b: &'a GenericArray<u8, U16>) -> Self {
-        let b: &'a [u8; 16] = b.as_ref();
-        b.into()
+        unsafe { mem::transmute(b) }
     }
 }
 
@@ -319,7 +314,7 @@ impl From<Block> for [u8; 16] {
 impl<'a> From<&'a Block> for &'a [u8; 16] {
     #[inline]
     fn from(b: &'a Block) -> Self {
-        &b.0
+        unsafe { mem::transmute(b) }
     }
 }
 

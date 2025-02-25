@@ -48,14 +48,22 @@ impl<const D: usize> LpnEncoder<D> {
         let mut index: [Block; D] = std::array::from_fn(|_| {
             let i = cnt;
             cnt += 1;
-            Block::from(bytemuck::cast::<_, [u8; 16]>([pos as u64, i]))
+            let mut bytes = [0u8; 16];
+            bytes[..8].copy_from_slice(&pos.to_le_bytes());
+            bytes[8..].copy_from_slice(&i.to_le_bytes());
+            Block::new(bytes)
         });
 
         prp.permute_many_blocks(&mut index);
-        let index = bytemuck::cast_slice_mut::<_, u32>(&mut index);
+        let index_bytes = unsafe {
+            std::slice::from_raw_parts_mut(
+                index.as_mut_ptr() as *mut u32,
+                index.len() * std::mem::size_of::<Block>() / std::mem::size_of::<u32>(),
+            )
+        };
 
         for (i, y) in y.iter_mut().enumerate().take(4) {
-            for ind in index[i * D..(i + 1) * D].iter_mut() {
+            for ind in index_bytes[i * D..(i + 1) * D].iter_mut() {
                 *ind &= self.mask;
                 *ind = if *ind >= self.k { *ind - self.k } else { *ind };
 
@@ -68,12 +76,22 @@ impl<const D: usize> LpnEncoder<D> {
     fn compute_one_row(&self, y: &mut [Block], x: &[Block], pos: usize, prp: &Prp) {
         let block_size = (D + 4 - 1) / 4;
         let mut index = (0..block_size)
-            .map(|i| Block::from(bytemuck::cast::<_, [u8; 16]>([pos as u64, i as u64])))
+            .map(|i| {
+                let mut bytes = [0u8; 16];
+                bytes[..8].copy_from_slice(&pos.to_le_bytes());
+                bytes[8..].copy_from_slice(&(i as u64).to_le_bytes());
+                Block::new(bytes)
+            })
             .collect::<Vec<Block>>();
         prp.permute_block_inplace(&mut index);
-        let index = bytemuck::cast_slice_mut::<_, u32>(&mut index);
+        let index_bytes = unsafe {
+            std::slice::from_raw_parts_mut(
+                index.as_mut_ptr() as *mut u32,
+                index.len() * std::mem::size_of::<Block>() / std::mem::size_of::<u32>(),
+            )
+        };
 
-        for ind in index.iter_mut().take(D) {
+        for ind in index_bytes.iter_mut().take(D) {
             *ind &= self.mask;
             *ind = if *ind >= self.k { *ind - self.k } else { *ind };
             y[pos] ^= x[*ind as usize];
@@ -185,14 +203,22 @@ mod tests {
             let mut index = [0; D].map(|_| {
                 let i: u64 = cnt;
                 cnt += 1;
-                Block::from(bytemuck::cast::<_, [u8; 16]>([pos as u64, i]))
+                let mut bytes = [0u8; 16];
+                bytes[..8].copy_from_slice(&pos.to_le_bytes());
+                bytes[8..].copy_from_slice(&i.to_le_bytes());
+                Block::new(bytes)
             });
 
             prp.permute_many_blocks(&mut index);
-            let index: &mut [u32] = bytemuck::cast_slice_mut::<_, u32>(&mut index);
+            let index_bytes = unsafe {
+                std::slice::from_raw_parts_mut(
+                    index.as_mut_ptr() as *mut u32,
+                    index.len() * std::mem::size_of::<Block>() / std::mem::size_of::<u32>(),
+                )
+            };
 
             for (i, y) in y[pos..].iter_mut().enumerate().take(4) {
-                for ind in index[i * D..(i + 1) * D].iter_mut() {
+                for ind in index_bytes[i * D..(i + 1) * D].iter_mut() {
                     *ind &= self.mask;
                     *ind = if *ind >= self.k { *ind - self.k } else { *ind };
 

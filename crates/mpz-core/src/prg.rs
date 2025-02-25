@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 
 use crate::{aes::AesEncryptor, Block};
+use core::mem;
 use rand::Rng;
 use rand_core::{
     block::{BlockRng, BlockRngCore},
@@ -40,7 +41,9 @@ impl BlockRngCore for PrgCore {
             },
         );
         self.aes.encrypt_many_blocks(&mut states);
-        *results = bytemuck::cast(states);
+        unsafe {
+            *results = mem::transmute_copy(&states);
+        }
     }
 }
 
@@ -177,7 +180,12 @@ impl Prg {
     /// Fill a block slice with random block values.
     #[inline(always)]
     pub fn random_blocks(&mut self, buf: &mut [Block]) {
-        let bytes: &mut [u8] = bytemuck::cast_slice_mut(buf);
+        let bytes = unsafe {
+            std::slice::from_raw_parts_mut(
+                buf.as_mut_ptr() as *mut u8,
+                buf.len() * std::mem::size_of::<Block>(),
+            )
+        };
         self.fill_bytes(bytes);
     }
 }

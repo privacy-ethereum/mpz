@@ -25,13 +25,13 @@
 //! In other words, if we bit-reverse (over 32 bits) the operands, then we
 //! bit-reverse (over 64 bits) the result.
 
-use bytemuck::{Pod, Zeroable};
+use zerocopy::{AsBytes, FromBytes, FromZeroes};
 use core::{num::Wrapping, ops::BitXor};
 pub type Clmul = U32x4;
 
 /// 4 x `u32` values
 #[repr(C)]
-#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Pod, Zeroable)]
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, AsBytes, FromBytes, FromZeroes)]
 pub struct U32x4(u32, u32, u32, u32);
 
 impl From<U32x4> for [u8; 16] {
