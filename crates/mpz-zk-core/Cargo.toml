@@ -24,6 +24,7 @@ blake3 = { workspace = true, features = ["serde"] }
 cfg-if = { workspace = true }
 rayon = { workspace = true, optional = true }
 itybity = { workspace = true }
+zerocopy = { workspace = true }
 
 [dev-dependencies]
 mpz-ot-core = { workspace = true, features = ["test-utils"] }

@@ -169,8 +169,8 @@ mod tests {
             },
         ) = rcot.transfer(128).unwrap();
 
-        let uv = prover.check(&svole_choices, &svole_ev).unwrap();
-        verifier.check(&svole_keys, uv).unwrap();
+        let uv = prover.check(prover_store.transcript(), &svole_choices, &svole_ev).unwrap();
+        verifier.check(verifier_store.transcript(), &svole_keys, uv).unwrap();
 
         prover_store
             .set_output_macs(ct_p.to_raw(), &output_macs)

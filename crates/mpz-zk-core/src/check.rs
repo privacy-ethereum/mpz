@@ -30,7 +30,6 @@ pub(crate) struct Triple {
 
 #[derive(Debug, Default)]
 pub(crate) struct Check {
-    transcript: Hasher,
     triples: Vec<Triple>,
     adjust: BitVec<u8>,
 }
@@ -56,10 +55,10 @@ impl Check {
         !self.triples.is_empty()
     }
 
-    fn compute_chis(&self) -> Vec<Block> {
+    fn compute_chis(&self, transcript: &Hasher) -> Vec<Block> {
         // TODO: Consider using a PRG instead so computing the coefficients
         // can be done in parallel.
-        let mut chi = Block::try_from(&self.transcript.finalize().as_bytes()[..16])
+        let mut chi = Block::try_from(&transcript.finalize().as_bytes()[..16])
             .expect("block should be 16 bytes");
         let mut chis = Vec::with_capacity(self.triples.len());
         chis.push(chi);
@@ -74,6 +73,7 @@ impl Check {
     /// Executes the prover check, returning `U` and `V` defined in Figure 5, Step 7.b.
     pub(crate) fn check_prover(
         &mut self,
+        transcript: &mut Hasher,
         svole_choices: &[bool],
         svole_ev: &[Block],
     ) -> Result<UV> {
@@ -91,9 +91,9 @@ impl Check {
             (u, v)
         }
 
-        self.transcript.update(self.adjust.as_raw_slice());
+        transcript.update(self.adjust.as_raw_slice());
 
-        let chis = self.compute_chis();
+        let chis = self.compute_chis(transcript);
         let macs = mem::take(&mut self.triples);
         cfg_if! {
             if #[cfg(all(feature = "rayon", not(feature = "force-st")))] {
@@ -127,8 +127,8 @@ impl Check {
         u ^= a_0;
         v ^= a_1;
 
-        self.transcript.update(&u.to_bytes());
-        self.transcript.update(&v.to_bytes());
+        transcript.update(&u.to_bytes());
+        transcript.update(&v.to_bytes());
 
         self.adjust.clear();
 
@@ -138,6 +138,7 @@ impl Check {
     /// Executes the verifier check, returning `W` defined in Figure 5, Step 7.c.
     pub(crate) fn check_verifier(
         &mut self,
+        transcript: &mut Hasher,
         delta: &Block,
         svole_keys: &[Block],
         uv: UV,
@@ -149,9 +150,9 @@ impl Check {
             b.gfmul(chi)
         }
 
-        self.transcript.update(self.adjust.as_raw_slice());
+        transcript.update(self.adjust.as_raw_slice());
 
-        let chis = self.compute_chis();
+        let chis = self.compute_chis(transcript);
         let keys = mem::take(&mut self.triples);
         cfg_if! {
             if #[cfg(all(feature = "rayon", not(feature = "force-st")))] {
@@ -182,8 +183,8 @@ impl Check {
         w ^= b;
 
         let UV { u, v } = uv;
-        self.transcript.update(&u.to_bytes());
-        self.transcript.update(&v.to_bytes());
+        transcript.update(&u.to_bytes());
+        transcript.update(&v.to_bytes());
 
         self.adjust.clear();
 

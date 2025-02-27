@@ -180,7 +180,7 @@ where
             } = self.ot.try_send_rcot(128).map_err(VmError::execute)?;
 
             let uv = ctx.io_mut().expect_next().await?;
-            verifier.check(&svole_keys, uv).map_err(VmError::execute)?;
+            verifier.check(self.store.transcript(), &svole_keys, uv).map_err(VmError::execute)?;
         }
 
         Ok(())

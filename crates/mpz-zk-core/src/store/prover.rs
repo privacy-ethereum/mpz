@@ -1,3 +1,4 @@
+use blake3::Hasher;
 use mpz_core::bitvec::{BitSlice, BitVec};
 use mpz_memory_core::{
     binary::Binary,
@@ -6,6 +7,7 @@ use mpz_memory_core::{
     DecodeError, DecodeFuture, DecodeOp, Memory, Slice, View as ViewTrait,
 };
 use utils::filter_drain::FilterDrain;
+use zerocopy::IntoBytes;
 
 use crate::{
     store::{ProverFlush, VerifierFlush},
@@ -23,6 +25,7 @@ pub struct ProverStore {
     view: View,
     pending: bool,
     buffer_decode: Vec<DecodeOp<BitVec>>,
+    transcript: Hasher,
 }
 
 impl ProverStore {
@@ -34,6 +37,7 @@ impl ProverStore {
             view: View::new_prover(),
             pending: false,
             buffer_decode: Vec::default(),
+            transcript: Hasher::default(),
         }
     }
 
@@ -42,6 +46,11 @@ impl ProverStore {
         self.mac_store.alloc(size);
         self.mask_store.alloc(size);
         self.data_store.alloc(size)
+    }
+
+    /// Returns transcript.
+    pub fn transcript(&mut self) -> &mut Hasher {
+        &mut self.transcript
     }
 
     /// Returns whether the MACs are set for a slice.
@@ -130,7 +139,7 @@ impl ProverStore {
         self.pending = true;
 
         // Commit MACs.
-        let mut adjust = BitVec::with_capacity(self.view.flush().commit.len());
+        let mut adjust: BitVec<u32> = BitVec::with_capacity(self.view.flush().commit.len());
         let mut i = 0;
         for range in self.view.flush().commit.iter_ranges() {
             let slice = Slice::from_range_unchecked(range);
@@ -144,6 +153,8 @@ impl ProverStore {
 
             i += slice.len();
         }
+
+        self.transcript.update(adjust.as_raw_slice().as_bytes());
 
         let mac_proof = if !self.view.flush().prove.is_empty() {
             Some(self.mac_store.prove(&self.view.flush().prove)?)

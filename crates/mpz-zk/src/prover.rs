@@ -192,7 +192,7 @@ where
             } = self.ot.try_recv_rcot(128).map_err(VmError::execute)?;
 
             let uv = prover
-                .check(&svole_choices, &svole_ev)
+                .check(self.store.transcript(), &svole_choices, &svole_ev)
                 .map_err(VmError::execute)?;
             ctx.io_mut().send(uv).await?;
         }
