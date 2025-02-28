@@ -55,11 +55,9 @@ impl Check {
         !self.triples.is_empty()
     }
 
-    fn compute_chis(&self, transcript: &Hasher) -> Vec<Block> {
+    fn compute_chis(&self, mut chi: Block) -> Vec<Block> {
         // TODO: Consider using a PRG instead so computing the coefficients
         // can be done in parallel.
-        let mut chi = Block::try_from(&transcript.finalize().as_bytes()[..16])
-            .expect("block should be 16 bytes");
         let mut chis = Vec::with_capacity(self.triples.len());
         chis.push(chi);
         for _ in 1..self.triples.len() {
@@ -70,7 +68,8 @@ impl Check {
         chis
     }
 
-    /// Executes the prover check, returning `U` and `V` defined in Figure 5, Step 7.b.
+    /// Executes the prover check, returning `U` and `V` defined in Figure 5,
+    /// Step 7.b.
     pub(crate) fn check_prover(
         &mut self,
         transcript: &mut Hasher,
@@ -93,7 +92,9 @@ impl Check {
 
         transcript.update(self.adjust.as_raw_slice());
 
-        let chis = self.compute_chis(transcript);
+        let chi = Block::try_from(&transcript.finalize().as_bytes()[..16])
+            .expect("block should be 16 bytes");
+        let chis = self.compute_chis(chi);
         let macs = mem::take(&mut self.triples);
         cfg_if! {
             if #[cfg(all(feature = "rayon", not(feature = "force-st")))] {
@@ -135,7 +136,8 @@ impl Check {
         Ok(UV { u, v })
     }
 
-    /// Executes the verifier check, returning `W` defined in Figure 5, Step 7.c.
+    /// Executes the verifier check, returning `W` defined in Figure 5, Step
+    /// 7.c.
     pub(crate) fn check_verifier(
         &mut self,
         transcript: &mut Hasher,
@@ -152,7 +154,9 @@ impl Check {
 
         transcript.update(self.adjust.as_raw_slice());
 
-        let chis = self.compute_chis(transcript);
+        let chi = Block::try_from(&transcript.finalize().as_bytes()[..16])
+            .expect("block should be 16 bytes");
+        let chis = self.compute_chis(chi);
         let keys = mem::take(&mut self.triples);
         cfg_if! {
             if #[cfg(all(feature = "rayon", not(feature = "force-st")))] {

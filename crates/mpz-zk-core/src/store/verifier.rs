@@ -24,8 +24,6 @@ pub struct VerifierStore {
     view: View,
     pending: bool,
     buffer_decode: Vec<DecodeOp<BitVec>>,
-    transcript: Hasher,
-
 }
 
 impl VerifierStore {
@@ -37,7 +35,6 @@ impl VerifierStore {
             view: View::new_verifier(),
             pending: false,
             buffer_decode: Vec::new(),
-            transcript: Hasher::default(),
         }
     }
 
@@ -50,11 +47,6 @@ impl VerifierStore {
     /// Returns delta.
     pub fn delta(&self) -> &Delta {
         self.key_store.delta()
-    }
-
-    /// Returns transcript.
-    pub fn transcript(&mut self) -> &mut Hasher {
-        &mut self.transcript
     }
 
     /// Returns whether the data is committed.
@@ -124,7 +116,7 @@ impl VerifierStore {
         Ok(flush)
     }
 
-    pub fn receive_flush(&mut self, flush: ProverFlush) -> Result<()> {
+    pub fn receive_flush(&mut self, flush: ProverFlush, transcript: &mut Hasher) -> Result<()> {
         if !self.pending {
             return Err(ErrorRepr::UnexpectedFlush.into());
         }
@@ -150,7 +142,8 @@ impl VerifierStore {
             self.key_store.adjust(slice, &adjust[i..i + slice.len()])?;
             i += slice.len();
         }
-        self.transcript.update(adjust.as_raw_slice().as_bytes());
+
+        transcript.update(adjust.as_raw_slice().as_bytes());
 
         // Verify MAC proofs.
         i = 0;

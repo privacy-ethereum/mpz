@@ -83,8 +83,12 @@ fn criterion_benchmark(c: &mut Criterion) {
             let output_macs = prover_execute.finish().unwrap();
             let output_keys = verifier_execute.finish().unwrap();
 
-            let uv = prover.check(&mut prover_transcript, &svole_choices, &svole_ev).unwrap();
-            verifier.check(&mut verifier_transcript, &svole_keys, uv).unwrap();
+            let uv = prover
+                .check(&mut prover_transcript, &svole_choices, &svole_ev)
+                .unwrap();
+            verifier
+                .check(&mut verifier_transcript, &svole_keys, uv)
+                .unwrap();
 
             black_box((output_macs, output_keys))
         })

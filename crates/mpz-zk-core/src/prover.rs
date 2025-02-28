@@ -71,7 +71,12 @@ impl Prover {
     }
 
     /// Executes the consistency check.
-    pub fn check(&mut self, transcript: &mut Hasher, svole_choices: &[bool], svole_ev: &[Block]) -> Result<UV> {
+    pub fn check(
+        &mut self,
+        transcript: &mut Hasher,
+        svole_choices: &[bool],
+        svole_ev: &[Block],
+    ) -> Result<UV> {
         if Arc::strong_count(&self.check) > 1 {
             return Err(ErrorRepr::Inprogress.into());
         }
@@ -213,8 +218,9 @@ where
                     let mac_y = self.macs[y.id()];
                     let mut mac_z = self.gate_macs[*self.counter];
 
-                    // By convention, the LSB of a MAC must contain the value of the authenticated bit.
-                    // The verifier must set LSB(key) == 0 and LSB(delta) == 1.
+                    // By convention, the LSB of a MAC must contain the value of the authenticated
+                    // bit. The verifier must set LSB(key) == 0 and LSB(delta)
+                    // == 1.
                     let w_z = mac_x.pointer() & mac_y.pointer();
                     mac_z.set_pointer(w_z);
 

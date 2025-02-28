@@ -21,6 +21,7 @@ thiserror = { workspace = true }
 async-trait = { workspace = true }
 serio = { workspace = true }
 tlsn-utils = { workspace = true }
+blake3 = { workspace = true, features = ["serde"] }
 
 [dev-dependencies]
 tokio = { workspace = true, features = [
