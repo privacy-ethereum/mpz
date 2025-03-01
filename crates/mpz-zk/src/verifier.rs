@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use blake3::Hasher;
 use mpz_common::{scoped_futures::ScopedFutureExt, Context, Flush};
 use mpz_core::{bitvec::BitVec, Block};
 use mpz_ot::rcot::{RCOTSender, RCOTSenderOutput};
@@ -19,6 +20,7 @@ pub struct Verifier<OT> {
     store: VerifierStore,
     ot: OT,
     callstack: Vec<(Call, Slice)>,
+    transcript: Hasher,
 }
 
 impl<OT> Verifier<OT> {
@@ -28,6 +30,7 @@ impl<OT> Verifier<OT> {
             store: VerifierStore::new(delta),
             ot,
             callstack: Vec::default(),
+            transcript: Hasher::default(),
         }
     }
 
@@ -75,7 +78,9 @@ where
             let flush = self.store.send_flush().map_err(VmError::memory)?;
             ctx.io_mut().send(flush).await?;
             let flush = ctx.io_mut().expect_next().await?;
-            self.store.receive_flush(flush).map_err(VmError::memory)?;
+            self.store
+                .receive_flush(flush, &mut self.transcript)
+                .map_err(VmError::memory)?;
         }
 
         Ok(())
@@ -180,7 +185,9 @@ where
             } = self.ot.try_send_rcot(128).map_err(VmError::execute)?;
 
             let uv = ctx.io_mut().expect_next().await?;
-            verifier.check(&svole_keys, uv).map_err(VmError::execute)?;
+            verifier
+                .check(&mut self.transcript, &svole_keys, uv)
+                .map_err(VmError::execute)?;
         }
 
         Ok(())

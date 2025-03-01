@@ -1,3 +1,4 @@
+use blake3::Hasher;
 use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
 use mpz_circuits::circuits::AES128;
 use mpz_memory_core::correlated::{Delta, Key, Mac};
@@ -63,6 +64,8 @@ fn criterion_benchmark(c: &mut Criterion) {
 
         let mut prover = Prover::default();
         let mut verifier = Verifier::new(delta);
+        let mut prover_transcript = Hasher::default();
+        let mut verifier_transcript = Hasher::default();
 
         b.iter(|| {
             let mut prover_execute = prover
@@ -80,8 +83,12 @@ fn criterion_benchmark(c: &mut Criterion) {
             let output_macs = prover_execute.finish().unwrap();
             let output_keys = verifier_execute.finish().unwrap();
 
-            let uv = prover.check(&svole_choices, &svole_ev).unwrap();
-            verifier.check(&svole_keys, uv).unwrap();
+            let uv = prover
+                .check(&mut prover_transcript, &svole_choices, &svole_ev)
+                .unwrap();
+            verifier
+                .check(&mut verifier_transcript, &svole_keys, uv)
+                .unwrap();
 
             black_box((output_macs, output_keys))
         })
