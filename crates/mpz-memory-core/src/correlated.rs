@@ -110,6 +110,13 @@ impl Delta {
         Self(value)
     }
 
+    /// Set the pointer bit of the Delta
+    #[inline]
+    pub fn set_lsb(mut self, value: bool) -> Self {
+        self.0.set_lsb(value);
+        self
+    }
+
     /// Generate a random block using the provided RNG
     #[inline]
     pub fn random<R: Rng + CryptoRng + ?Sized>(rng: &mut R) -> Self {

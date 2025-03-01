@@ -127,6 +127,21 @@ impl<const N: usize> AuthEncryptedGateBatch<N> {
     }
 }
 
+/// An authenticated half gate
+#[derive(Debug, Default, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct AuthHalfGate {
+    #[serde(with = "serde_arrays")]
+    pub(crate) gates: [Block; 2],
+    pub(crate) mask: bool,
+}
+
+impl AuthHalfGate {
+    /// Creates a new authenticated half gate
+    pub fn new(gates: [Block; 2], mask: bool) -> Self {
+        Self { gates, mask }
+    }
+}
+
 /// Helper function for hashing without tweaks for now.
 pub fn sigma(block: Block, cipher: &FixedKeyAes) -> Block {
     let tweak = Block::new([0; 16]);

@@ -15,7 +15,7 @@ mod fpre;
 pub mod store;
 pub(crate) mod view;
 
-pub use circuit::{AuthEncryptedGate, AuthEncryptedGateBatch, EncryptedGate, EncryptedGateBatch, GarbledCircuit, sigma};
+pub use circuit::{AuthHalfGate, AuthEncryptedGate, AuthEncryptedGateBatch, EncryptedGate, EncryptedGateBatch, GarbledCircuit, sigma};
 
 pub use evaluator::{evaluate_garbled_circuits, EncryptedGateBatchConsumer, EncryptedGateConsumer, Evaluator,
     EvaluatorError, EvaluatorOutput,};
@@ -28,7 +28,7 @@ pub use garbler::{
 };
 pub use auth_gen::{AuthGenerator, AuthGeneratorError};
 
-pub use fpre::{Fpre, FpreError};
+pub use fpre::{Fpre, FpreError, fpre};
 pub use mpz_memory_core::correlated::{Delta, Key, Mac};
 
 pub use mpz_circuits::Circuit;
@@ -306,10 +306,12 @@ mod tests {
         // Insecure generation of Fpre
         let num_input_wires = circ.input_len();
         let num_and_gates = circ.and_count();
-        let mut fpre = Fpre::new(0xDEAD_BEEF, num_input_wires, num_and_gates);
+        let mut fpre = Fpre::new(rng.gen(), num_input_wires, num_and_gates);
         fpre.generate(); // fill with random auth_bits & auth_triples
 
         let (fpre_gen, fpre_eval) = fpre.into_gen_eval();
+
+        // let (fpre_gen, fpre_eval) = fpre(num_input_wires, num_and_gates, 1);
 
         // Set inputs based on input ownership in order of node id  
         let mut eval_inputs: Vec<bool> = Vec::new();
@@ -341,14 +343,14 @@ mod tests {
 
         // Evaluate free gates (XOR/NOT) before preparing derandomization bits
         auth_gen.evaluate_free_gates();
-        auth_eval.garble_free_gates();
+        auth_eval.evaluate_free_gates();
 
         // Prepare derandomization bits for AND gates
         let (eval_px, eval_py) = auth_eval.prepare_px_py();
         let (gen_px, gen_py) = auth_gen.prepare_px_py();
 
         // Garble AND gates
-        let eval_gates = auth_eval.garble_and_gates(gen_px, gen_py).unwrap();
+        // let eval_gates = auth_eval.garble_and_gates(gen_px, gen_py).unwrap();
         let gen_gates = auth_gen.garble_and_gates(cipher, eval_px, eval_py).unwrap();
 
         // Input processing
@@ -380,7 +382,7 @@ mod tests {
         auth_eval.set_masked_values(masked_inputs);
 
         // Evaluate garbled circuit
-        auth_eval.evaluate(eval_gates, gen_gates, cipher).unwrap();
+        auth_eval.evaluate(gen_px, gen_py, gen_gates, cipher).unwrap();
 
         // Collect output macs and finalize outputs
         let output_macs = auth_gen.collect_output_macs();
@@ -503,15 +505,55 @@ mod tests {
         let a = builder.add_input::<bool>();
         let b = builder.add_input::<bool>();
         let c = a & b;
+        builder.add_output(b);
         builder.add_output(c);
         let circ = builder.build().unwrap();
         assert_eq!(circ.and_count(), 1);
 
         let a = true;
-        let b = false;
-        let expected = a & b;
+        let b = true;
+        let expected = [b, a & b];
 
         let input = vec![a, b];
+
+        let mut input_owners = Vec::new();
+        for input in circ.inputs() {
+            for node in input.iter() {
+                let id = node.id();
+                if id < circ.input_len()/2 {
+                    input_owners.push(Party::Evaluator);
+                } else {
+                    input_owners.push(Party::Generator);
+                }
+            }
+        }
+
+        let output_bits = auth_garble(&circ, input, input_owners);
+        assert_eq!(output_bits, expected, "Output mismatch");
+    }
+    
+    // Test auth garbling with a single AND gate
+    #[test]
+    fn test_auth_garble_simple() {
+        // Two AND gates circuit
+        let builder = CircuitBuilder::new();
+        let a = builder.add_input::<bool>();
+        let b = builder.add_input::<bool>();
+        let c = builder.add_input::<bool>();
+        let d = !a;
+        let e = b ^ c;
+        let f = d & e;
+        let g = !f; 
+        builder.add_output(g);
+        let circ = builder.build().unwrap();
+        // assert_eq!(circ.and_count(), 2);
+
+        let a = false;
+        let b = true;
+        let c = true;
+        let expected = !((!a) & (b ^ c));
+
+        let input = vec![a, b, c];
 
         let mut input_owners = Vec::new();
         for input in circ.inputs() {
@@ -529,7 +571,6 @@ mod tests {
         let output = output_bits[0];
         assert_eq!(output, expected, "Output mismatch");
     }
-    
 }
 
 // Next steps:

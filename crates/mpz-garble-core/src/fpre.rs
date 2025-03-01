@@ -48,13 +48,14 @@ fn h2(a: Block, b: Block) -> Block {
 pub struct AuthBitShare {
     pub key: Key,
     pub mac: Mac,
+    pub value: bool,
 }
 
 impl AuthBitShare {
     /// Retrieves the embedded bit from the LSB of `mac`.
     #[inline]
     pub fn bit(&self) -> bool {
-        self.mac.pointer()
+        self.value
     }
 
     /// Checks that `share.mac == share.key.auth(share.bit, delta)`.
@@ -72,6 +73,7 @@ impl Add<AuthBitShare> for AuthBitShare {
         Self {
             key: self.key + rhs.key,
             mac: self.mac + rhs.mac,
+            value: self.value ^ rhs.value,
         }
     }
 }
@@ -84,6 +86,7 @@ impl Add<&AuthBitShare> for AuthBitShare {
         Self {
             key: self.key + rhs.key,
             mac: self.mac + rhs.mac,
+            value: self.value ^ rhs.value,
         }
     }
 }
@@ -96,6 +99,7 @@ impl Add<AuthBitShare> for &AuthBitShare {
         AuthBitShare {
             key: self.key + rhs.key,
             mac: self.mac + rhs.mac,
+            value: self.value ^ rhs.value,
         }
     }
 }
@@ -108,16 +112,16 @@ impl Add<&AuthBitShare> for &AuthBitShare {
         AuthBitShare {
             key: self.key + rhs.key,
             mac: self.mac + rhs.mac,
+            value: self.value ^ rhs.value,
         }
     }
 }
 
-/// Builds one `AuthBitShare` from a boolean bit and delta, ensuring `key.lsb()==false`.
+/// Builds one `AuthBitShare` from a bit and delta, ensuring `key.lsb()==false`.
 fn build_share(rng: &mut ChaCha12Rng, bit: bool, delta: &Delta) -> AuthBitShare {
-    let mut key: Key = rng.gen();
-    key.set_pointer(false);
+    let key: Key = rng.gen();
     let mac = key.auth(bit, delta);
-    AuthBitShare { key, mac }
+    AuthBitShare { key, mac, value: bit }
 }
 
 /// Represents an auth bit [x] = [r]+[s] where [r] is known to gen, auth by eval and [s] is known to eval, auth by gen.
@@ -136,12 +140,14 @@ impl AuthBit {
     fn verify(&self, delta_a: &Delta, delta_b: &Delta) {
         // Reconstruct shares for testing
         let r = AuthBitShare {
-            mac: self.gen_share.mac,
             key: self.eval_share.key,
+            mac: self.gen_share.mac,
+            value: self.gen_share.bit(),
         };
         let s = AuthBitShare {
-            mac: self.eval_share.mac,
             key: self.gen_share.key,
+            mac: self.eval_share.mac,
+            value: self.eval_share.bit(),
         };
         r.verify(delta_b);
         s.verify(delta_a);
@@ -225,8 +231,8 @@ impl Fpre {
         AuthBit {
             // Swapped key/mac for each share so that
             // gen knows mac from delta_b and key from delta_a, etc.
-            gen_share: AuthBitShare{ mac: r_share.mac, key: s_share.key},
-            eval_share: AuthBitShare{mac: s_share.mac, key: r_share.key},
+            gen_share: AuthBitShare{ mac: r_share.mac, key: s_share.key, value: r},
+            eval_share: AuthBitShare{mac: s_share.mac, key: r_share.key, value: s},
         }
     }
 
@@ -357,11 +363,11 @@ impl FpreGen {
         }
     }
 
-    fn set_bits(&mut self, auth_bits: Vec<AuthBitShare>) {
+    pub fn set_bits(&mut self, auth_bits: Vec<AuthBitShare>) {
         self.wire_shares = auth_bits;
     }
 
-    fn set_faulty_triples(&mut self, auth_bits: Vec<AuthBitShare>) {
+    pub fn set_faulty_triples(&mut self, auth_bits: Vec<AuthBitShare>) {
         let length = auth_bits.len() / 3;
         for i in 0..length {
             self.leaky_shares.push(AuthTripleShare {
@@ -524,11 +530,11 @@ impl FpreEval {
         }   
     }
 
-    fn set_bits(&mut self, auth_bits: Vec<AuthBitShare>) {
+    pub fn set_bits(&mut self, auth_bits: Vec<AuthBitShare>) {
         self.wire_shares = auth_bits;
     }
 
-    fn set_faulty_triples(&mut self, auth_bits: Vec<AuthBitShare>) {
+    pub fn set_faulty_triples(&mut self, auth_bits: Vec<AuthBitShare>) {
         let length = auth_bits.len() / 3;
         for i in 0..length {
             self.leaky_shares.push(AuthTripleShare {
@@ -713,27 +719,25 @@ fn bit_shares_from_cot(
 
     for i in 0..length {
         let r = gen_bits[i];
-        let mut m_r = gen_macs[i];
-        m_r.set_lsb(r);
+        let m_r = gen_macs[i];
 
-        let mut k_r = gen_keys[i];
-        k_r.set_lsb(false);
+        let k_r = gen_keys[i];
 
         gen_shares.push(AuthBitShare {
             key: k_r.into(),
             mac: m_r.into(),
+            value: r,
         });
 
         let s = eval_bits[i];
-        let mut m_s = eval_macs[i];
-        m_s.set_lsb(s);
+        let m_s = eval_macs[i];
 
-        let mut k_s = eval_keys[i];
-        k_s.set_lsb(false);
+        let k_s = eval_keys[i];
 
         eval_shares.push(AuthBitShare {
             key: k_s.into(),
             mac: m_s.into(),
+            value: s,
         });
     }
 
@@ -741,7 +745,8 @@ fn bit_shares_from_cot(
     
 }
 
-fn fpre(
+/// Generate Fpre data
+pub fn fpre(
     num_wires: usize,
     num_and: usize,
     bucket_size: usize,
@@ -749,11 +754,9 @@ fn fpre(
 
     let mut rng = ChaCha12Rng::seed_from_u64(0);
 
-    // need to set second-LSB of deltas to XOR to 1 for an optimization
-    let mut delta_a = Delta::random(&mut rng);
-    delta_a.set_second_lsb(true);
-    let mut delta_b = Delta::random(&mut rng);
-    delta_b.set_second_lsb(false);
+    // need to set LSB of deltas to XOR to 1 for an optimization
+    let delta_a = Delta::random(&mut rng).set_lsb(true);
+    let delta_b = Delta::random(&mut rng).set_lsb(false);
 
     let mut fpre_gen = FpreGen::new(num_wires, num_and, delta_a);
     let mut fpre_eval = FpreEval::new(num_wires, num_and, delta_b);
@@ -840,6 +843,7 @@ fn verify_fpre(fpre_gen: FpreGen, fpre_eval: FpreEval){
 mod tests {
     use super::*;
 
+    // Need to fix secure generation with new LSB convention
     #[test]
     fn test_fpre(){
         let num_wires = 10000;
