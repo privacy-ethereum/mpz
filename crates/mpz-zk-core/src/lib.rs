@@ -14,6 +14,7 @@ pub use verifier::{Verifier, VerifierError};
 #[cfg(test)]
 mod tests {
     use aes::cipher::{BlockEncrypt, KeyInit};
+    use blake3::Hasher;
     use mpz_circuits::circuits::AES128;
     use mpz_core::bitvec::BitVec;
     use mpz_memory_core::{
@@ -44,6 +45,8 @@ mod tests {
     fn test_zk() {
         let mut rng = StdRng::seed_from_u64(0);
         let delta = Delta::random(&mut rng);
+        let mut prover_transcript = Hasher::default();
+        let mut verifier_transcript = Hasher::default();
 
         let key = [42u8; 16];
         let msg = [69u8; 16];
@@ -106,11 +109,13 @@ mod tests {
         assert!(prover_store.wants_flush());
         assert!(verifier_store.wants_flush());
 
-        let flush_p = prover_store.send_flush().unwrap();
+        let flush_p = prover_store.send_flush(&mut prover_transcript).unwrap();
         let flush_v = verifier_store.send_flush().unwrap();
 
         prover_store.receive_flush(flush_v).unwrap();
-        verifier_store.receive_flush(flush_p).unwrap();
+        verifier_store
+            .receive_flush(flush_p, &mut verifier_transcript)
+            .unwrap();
 
         let mut prover = Prover::default();
         let mut verifier = Verifier::new(delta);
@@ -169,8 +174,12 @@ mod tests {
             },
         ) = rcot.transfer(128).unwrap();
 
-        let uv = prover.check(&svole_choices, &svole_ev).unwrap();
-        verifier.check(&svole_keys, uv).unwrap();
+        let uv = prover
+            .check(&mut prover_transcript, &svole_choices, &svole_ev)
+            .unwrap();
+        verifier
+            .check(&mut verifier_transcript, &svole_keys, uv)
+            .unwrap();
 
         prover_store
             .set_output_macs(ct_p.to_raw(), &output_macs)
@@ -182,11 +191,13 @@ mod tests {
         assert!(prover_store.wants_flush());
         assert!(verifier_store.wants_flush());
 
-        let flush_p = prover_store.send_flush().unwrap();
+        let flush_p = prover_store.send_flush(&mut prover_transcript).unwrap();
         let flush_v = verifier_store.send_flush().unwrap();
 
         prover_store.receive_flush(flush_v).unwrap();
-        verifier_store.receive_flush(flush_p).unwrap();
+        verifier_store
+            .receive_flush(flush_p, &mut verifier_transcript)
+            .unwrap();
 
         let out_p = out_p.try_recv().unwrap().unwrap();
         let out_v = out_v.try_recv().unwrap().unwrap();

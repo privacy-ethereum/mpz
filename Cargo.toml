@@ -101,6 +101,7 @@ bincode = "1.3.3"
 bytes = "1"
 yamux = "0.10"
 bytemuck = { version = "1.13", features = ["derive"] }
+zerocopy = "0.8.20"
 serio = { git = "https://github.com/tlsnotary/tlsn-utils", rev = "8555275" }
 
 # io

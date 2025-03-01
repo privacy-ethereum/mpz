@@ -24,6 +24,7 @@ pub struct VerifierFlush {
 
 #[cfg(test)]
 mod tests {
+    use blake3::Hasher;
     use mpz_core::bitvec::BitVec;
     use mpz_memory_core::{
         binary::U8,
@@ -38,6 +39,8 @@ mod tests {
     fn test_store() {
         let mut rng = StdRng::seed_from_u64(0);
         let delta = Delta::random(&mut rng);
+        let mut prover_transcript = Hasher::default();
+        let mut verifier_transcript = Hasher::default();
 
         let mut verifier = VerifierStore::new(delta);
         let mut prover = ProverStore::new();
@@ -85,9 +88,11 @@ mod tests {
         assert!(prover.wants_flush());
 
         let flush_v = verifier.send_flush().unwrap();
-        let flush_p = prover.send_flush().unwrap();
+        let flush_p = prover.send_flush(&mut prover_transcript).unwrap();
 
-        verifier.receive_flush(flush_p).unwrap();
+        verifier
+            .receive_flush(flush_p, &mut verifier_transcript)
+            .unwrap();
         prover.receive_flush(flush_v).unwrap();
 
         // Prove
@@ -95,9 +100,11 @@ mod tests {
         assert!(prover.wants_flush());
 
         let flush_v = verifier.send_flush().unwrap();
-        let flush_p = prover.send_flush().unwrap();
+        let flush_p = prover.send_flush(&mut prover_transcript).unwrap();
 
-        verifier.receive_flush(flush_p).unwrap();
+        verifier
+            .receive_flush(flush_p, &mut verifier_transcript)
+            .unwrap();
         prover.receive_flush(flush_v).unwrap();
 
         let b_v = b_v.try_recv().unwrap().unwrap();

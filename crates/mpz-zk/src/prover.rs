@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use blake3::Hasher;
 use mpz_common::{scoped_futures::ScopedFutureExt, Context, Flush};
 use mpz_core::{bitvec::BitVec, Block};
 use mpz_ot::rcot::{RCOTReceiver, RCOTReceiverOutput};
@@ -15,6 +16,7 @@ pub struct Prover<OT> {
     store: ProverStore,
     ot: OT,
     callstack: Vec<(Call, Slice)>,
+    transcript: Hasher,
 }
 
 impl<OT> Prover<OT> {
@@ -24,6 +26,7 @@ impl<OT> Prover<OT> {
             store: ProverStore::new(),
             ot,
             callstack: Vec::default(),
+            transcript: Hasher::default(),
         }
     }
 
@@ -75,7 +78,10 @@ where
         }
 
         while self.store.wants_flush() {
-            let flush = self.store.send_flush().map_err(VmError::memory)?;
+            let flush = self
+                .store
+                .send_flush(&mut self.transcript)
+                .map_err(VmError::memory)?;
             ctx.io_mut().send(flush).await?;
             let flush = ctx.io_mut().expect_next().await?;
             self.store.receive_flush(flush).map_err(VmError::memory)?;
@@ -192,7 +198,7 @@ where
             } = self.ot.try_recv_rcot(128).map_err(VmError::execute)?;
 
             let uv = prover
-                .check(&svole_choices, &svole_ev)
+                .check(&mut self.transcript, &svole_choices, &svole_ev)
                 .map_err(VmError::execute)?;
             ctx.io_mut().send(uv).await?;
         }
