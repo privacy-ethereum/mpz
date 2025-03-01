@@ -295,18 +295,18 @@ mod tests {
     }
 
     // Helper function to test auth garbling
-    fn auth_garble(circ: &Circuit, input: Vec<bool>, input_owners: Vec<Party>) -> Vec<bool> { 
+    fn auth_garble(circ: &Circuit, input: Vec<bool>, input_owners: Vec<Party>, seed: u64) -> Vec<bool> { 
         if input.len() != input_owners.len() {
             panic!("Input length does not match input owners length");
         }
 
-        let mut rng = StdRng::seed_from_u64(0);    
+        let mut rng = StdRng::seed_from_u64(seed);    
         let cipher = &(*FIXED_KEY_AES);
         
         // Insecure generation of Fpre
         let num_input_wires = circ.input_len();
         let num_and_gates = circ.and_count();
-        let mut fpre = Fpre::new(rng.gen(), num_input_wires, num_and_gates);
+        let mut fpre = Fpre::new(0, num_input_wires, num_and_gates);
         fpre.generate(); // fill with random auth_bits & auth_triples
 
         let (fpre_gen, fpre_eval) = fpre.into_gen_eval();
@@ -338,6 +338,10 @@ mod tests {
             .map(|_| rng.gen())
             .collect::<Vec<Block>>();
 
+        // for label in &zero_labels {
+        //     println!("Label: {:?}", label);
+        // }
+
         auth_gen.initialize(zero_labels).unwrap();
         auth_eval.initialize().unwrap();
 
@@ -350,7 +354,6 @@ mod tests {
         let (gen_px, gen_py) = auth_gen.prepare_px_py();
 
         // Garble AND gates
-        // let eval_gates = auth_eval.garble_and_gates(gen_px, gen_py).unwrap();
         let gen_gates = auth_gen.garble_and_gates(cipher, eval_px, eval_py).unwrap();
 
         // Input processing
@@ -419,7 +422,7 @@ mod tests {
             }
         }
 
-        let output_bits = auth_garble(circ, input, input_owners);
+        let output_bits = auth_garble(circ, input, input_owners, 0);
         let output: Vec<u8> = Vec::from_lsb0_iter(output_bits);
         assert_eq!(output, expected, "Output mismatch");
     }
@@ -457,7 +460,7 @@ mod tests {
             }
         }
 
-        let output_bits = auth_garble(circ, input, input_owners);
+        let output_bits = auth_garble(circ, input, input_owners, 0);
         let output: Vec<u8> = Vec::from_lsb0_iter(output_bits);
         assert_eq!(output, expected, "Output mismatch");
     }
@@ -492,7 +495,7 @@ mod tests {
             }
         }
 
-        let output_bits = auth_garble(&circ, input, input_owners);
+        let output_bits = auth_garble(&circ, input, input_owners, 0);
         let output = u8::from_lsb0_iter(output_bits);
         assert_eq!(output, expected, "Output mismatch");
     }
@@ -528,7 +531,7 @@ mod tests {
             }
         }
 
-        let output_bits = auth_garble(&circ, input, input_owners);
+        let output_bits = auth_garble(&circ, input, input_owners, 0);
         assert_eq!(output_bits, expected, "Output mismatch");
     }
     
@@ -567,10 +570,95 @@ mod tests {
             }
         }
 
-        let output_bits = auth_garble(&circ, input, input_owners);
-        let output = output_bits[0];
-        assert_eq!(output, expected, "Output mismatch");
+        for seed in 0..100 {
+            let output_bits = auth_garble(&circ, input.clone(), input_owners.clone(), seed);
+            let output = output_bits[0];
+            assert_eq!(output, expected, "Output mismatch for seed {}", seed);
+        }
     }
+
+    #[test]
+    fn test_auth_garble_expressive() {
+        // Build a circuit with 4 inputs.
+        let builder = CircuitBuilder::new();
+        let a = builder.add_input::<bool>();
+        let b = builder.add_input::<bool>();
+        let c = builder.add_input::<bool>();
+        let d = builder.add_input::<bool>();
+
+        // Define intermediate signals:
+        // u = a AND b
+        let u = a & b;
+        // v = c AND d
+        let v = c & d;
+        // w = a XOR d
+        let w = a ^ d;
+        // x = NOT b
+        let x = !b;
+        // y = w XOR x
+        let y = w ^ x;
+        // z = u XOR v
+        let z = u ^ v;
+        // t = y AND z
+        let t = y & z;
+
+        // Multiple outputs
+        // Output 0: u (a AND b)
+        // Output 1: v (c AND d)
+        // Output 2: y (w XOR x)
+        // Output 3: t (y AND (u XOR v))
+        builder.add_output(u);
+        builder.add_output(v);
+        builder.add_output(y);
+        builder.add_output(t);
+
+        let circ = builder.build().unwrap();
+
+        // Choose test input values.
+        let a_val = false;
+        let b_val = true;
+        let c_val = true;
+        let d_val = true;
+        let input = vec![a_val, b_val, c_val, d_val];
+
+        // Compute expected outputs manually:
+        // u = false AND true = false
+        let u_expected = a_val && b_val;
+        // v = true AND true = true
+        let v_expected = c_val && d_val;
+        // w = false XOR true = true
+        let w_expected = a_val ^ d_val;
+        // x = NOT true = false
+        let x_expected = !b_val;
+        // y = true XOR false = true
+        let y_expected = w_expected ^ x_expected;
+        // z = false XOR true = true
+        let z_expected = u_expected ^ v_expected;
+        // t = true AND true = true
+        let t_expected = y_expected && z_expected;
+        let expected = vec![u_expected, v_expected, y_expected, t_expected];
+
+        // Assign input ownership.
+        let mut input_owners = Vec::new();
+        for input_group in circ.inputs() {
+            for node in input_group.iter() {
+                let id = node.id();
+                // For this test we split the wires: first half Evaluator, second half Generator.
+                if id < circ.input_len() / 2 {
+                    input_owners.push(Party::Evaluator);
+                } else {
+                    input_owners.push(Party::Generator);
+                }
+            }
+        }
+
+        // Run the authenticated garbling protocol.
+        for seed in 1..100 {
+            let output_bits = auth_garble(&circ, input.clone(), input_owners.clone(), seed);
+            assert_eq!(output_bits, expected, "Output mismatch for seed {}", seed);
+        }
+    }
+
 }
 
 // Next steps:

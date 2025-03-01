@@ -857,9 +857,9 @@ mod tests {
 
     #[test]
     fn test_fpre_insecure() {
-        let num_input = 10;
-        let num_and = 8;
-        let mut fpre = Fpre::new(0xDEAD_BEEF, num_input, num_and);
+        let num_input = 100;
+        let num_and = 50;
+        let mut fpre = Fpre::new(5, num_input, num_and);
         fpre.generate();
 
         assert_eq!(fpre.auth_bits.len(), num_input + num_and);

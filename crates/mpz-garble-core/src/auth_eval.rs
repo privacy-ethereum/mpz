@@ -396,10 +396,13 @@ impl<'a> AuthEvaluator<'a> {
                     let g_0 = gates[and_count].gates[0] ^ sy.mac.as_block();
                     let g_1 = gates[and_count].gates[1] ^ sx.mac.as_block();
 
-                    let lz = sigma(lx, cipher) ^ sigma(ly, cipher) ^ sz.mac.as_block() ^ ss.mac.as_block() ^ (SELECT_MASK[bx] & g_0) ^ (SELECT_MASK[by] & (g_1^lx));
+                    let mut lz = sigma(lx, cipher) ^ sigma(ly, cipher) ^ sz.mac.as_block() ^ ss.mac.as_block() ^ (SELECT_MASK[bx] & g_0) ^ (SELECT_MASK[by] & (g_1^lx));
 
-                    self.labels[z.id()] = lz;
+
                     self.masked_values[z.id()] = lz.lsb()^gates[and_count].mask;
+                    lz.set_lsb(self.masked_values[z.id()]);
+                    self.labels[z.id()] = lz;
+                    
                     and_count += 1;
                 }
             }
