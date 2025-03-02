@@ -402,21 +402,18 @@ impl FpreGen {
             s = s ^ self.leaky_shares[i].z.mac.as_block().clone() ^ self.leaky_shares[i].z.key.as_block().clone();
             s = s ^ SELECT_MASK[self.leaky_shares[i].x.bit() as usize] & (gr[i] ^ c[i]);
             g[i] = s ^ SELECT_MASK[self.leaky_shares[i].z.bit() as usize] & self.delta_a.as_block();
-            d[i] = g[i].second_lsb();
+            d[i] = g[i].lsb();
         }
 
         return d;
     }
 
     fn triple_check_3(&mut self, g: &mut Vec<Block>, mut d: Vec<bool>, dr: Vec<bool>) {
-        let mut one: Block = Block::ZERO;
-        one.set_lsb(true);
-
         let length = self.leaky_shares.len();
         for i in 0..length {
             d[i] = d[i] ^ dr[i];
             if d[i] {
-                self.leaky_shares[i].z.mac = self.leaky_shares[i].z.mac + Mac::from(one);
+                self.leaky_shares[i].z.value = !self.leaky_shares[i].z.value;
                 g[i] = g[i] ^ self.delta_a.as_block();
             }
         }
@@ -569,7 +566,7 @@ impl FpreEval {
             s = s ^ self.leaky_shares[i].z.mac.as_block().clone() ^ self.leaky_shares[i].z.key.as_block().clone();
             s = s ^ SELECT_MASK[self.leaky_shares[i].x.bit() as usize] & (gr[i] ^ c[i]);
             g[i] = s ^ SELECT_MASK[self.leaky_shares[i].z.bit() as usize] & self.delta_b.as_block();
-            d[i] = g[i].second_lsb();
+            d[i] = g[i].lsb();
         }
 
         return d;
@@ -577,15 +574,11 @@ impl FpreEval {
     }
 
     fn triple_check_3(&mut self, g: &mut Vec<Block>, mut d: Vec<bool>, dr: Vec<bool>) {
-        let mut zdelta_mask: Block = Block::ONES;
-        zdelta_mask.set_lsb(false);
-        let zdelta = self.delta_b.as_block() & zdelta_mask;
-
         let length = self.leaky_shares.len();
         for i in 0..length {
             d[i] = d[i] ^ dr[i];
             if d[i] {
-                self.leaky_shares[i].z.key = self.leaky_shares[i].z.key + Key::from(zdelta);
+                self.leaky_shares[i].z.key = self.leaky_shares[i].z.key + Key::from(self.delta_b.into_inner());
                 g[i] = g[i] ^ self.delta_b.as_block();
             }
         }
@@ -769,7 +762,7 @@ pub fn fpre(
     fpre_eval.set_bits(eval_shares);
 
     let (gen_shares, eval_shares) = 
-            bit_shares_from_cot(3*num_and, delta_a, delta_b)
+            bit_shares_from_cot(3*num_and*bucket_size, delta_a, delta_b)
             .unwrap();
 
     fpre_gen.set_faulty_triples(gen_shares);

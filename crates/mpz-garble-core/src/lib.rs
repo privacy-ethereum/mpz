@@ -38,6 +38,7 @@ const BYTES_PER_GATE: usize = 32;
 
 /// Maximum size of a batch in bytes.
 const MAX_BATCH_SIZE: usize = 4 * KB;
+const sec_param: usize = 40;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[allow(missing_docs)]
@@ -68,6 +69,7 @@ mod tests {
     use itybity::{FromBitIterator, IntoBitIterator, ToBits};
     use mpz_circuits::{circuits::AES128, CircuitBuilder};
     use mpz_core::{aes::FIXED_KEY_AES, Block};
+    use mpz_ot_core::kos::SSP;
     use rand::{rngs::StdRng, Rng, SeedableRng};
     use rand_chacha::ChaCha12Rng;
 
@@ -303,15 +305,12 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(seed);    
         let cipher = &(*FIXED_KEY_AES);
         
-        // Insecure generation of Fpre
         let num_input_wires = circ.input_len();
         let num_and_gates = circ.and_count();
-        let mut fpre = Fpre::new(0, num_input_wires, num_and_gates);
-        fpre.generate(); // fill with random auth_bits & auth_triples
 
-        let (fpre_gen, fpre_eval) = fpre.into_gen_eval();
+        let bucket_size = (sec_param as f64 / (num_input_wires as f64).log2()).ceil() as usize;
 
-        // let (fpre_gen, fpre_eval) = fpre(num_input_wires, num_and_gates, 1);
+        let (fpre_gen, fpre_eval) = fpre(num_input_wires, num_and_gates, bucket_size);
 
         // Set inputs based on input ownership in order of node id  
         let mut eval_inputs: Vec<bool> = Vec::new();
@@ -337,10 +336,6 @@ mod tests {
         let zero_labels = (0..circ.input_len())
             .map(|_| rng.gen())
             .collect::<Vec<Block>>();
-
-        // for label in &zero_labels {
-        //     println!("Label: {:?}", label);
-        // }
 
         auth_gen.initialize(zero_labels).unwrap();
         auth_eval.initialize().unwrap();
