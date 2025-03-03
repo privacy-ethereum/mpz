@@ -42,7 +42,7 @@ impl VisibilityView {
         &self.blind
     }
 
-    /// Returns the visible ranges.
+    /// Returns the visible ranges (i.e. all the ranges except for the blind ones).
     pub fn visible(&self) -> &RangeSet {
         &self.visible
     }

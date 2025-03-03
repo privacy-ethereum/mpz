@@ -10,7 +10,7 @@ type Result<T, E = ViewError> = core::result::Result<T, E>;
 struct InputView {
     /// Ranges which have been assigned.
     assigned: RangeSet,
-    /// Ranges which are fully committed in both parties views.
+    /// Ranges which are fully committed in both parties' views.
     complete: RangeSet,
     /// All input ranges.
     all: RangeSet,
@@ -18,12 +18,15 @@ struct InputView {
 
 #[derive(Debug, Default)]
 struct OutputView {
-    /// Ranges which have been computed.
+    /// Ranges which have been computed and thus are fully committed in both parties' views.
     complete: RangeSet,
     /// All output ranges.
     all: RangeSet,
 }
 
+/// A view into the decoded ranges.
+///
+/// A range is considered decoded when its value becomes known to both parties.
 #[derive(Debug, Default)]
 struct DecodeView {
     /// Ranges which have already been decoded.
@@ -181,7 +184,7 @@ impl View {
         }
 
         self.output.complete |= &range;
-        // If marked for decode, prove MACs.
+        // If marked for decoding, prove MACs.
         self.flush.prove |= range.intersection(&self.decode.all);
 
         Ok(())
@@ -231,6 +234,7 @@ impl View {
         Ok(())
     }
 
+    // Stages a to-be-decoded `range` for proving.
     pub(crate) fn decode(&mut self, range: Range) -> Result<()> {
         // Ignore already decoded data.
         let undecoded = range.difference(&self.decode.complete);
@@ -255,12 +259,15 @@ impl View {
     }
 
     pub(crate) fn complete_flush(&mut self, view: FlushView) {
+        // We don't allow outputs to be explicitely committed, only inputs.
         self.input.complete |= &view.commit;
+        // Since the verifier learned the plaintext of the proven ranges, those ranges are now
+        // decoded.
         self.decode.complete |= view.prove;
 
         self.flush.clear();
 
-        // Prove prover inputs if they are ready.
+        // Those to-be-decoded inputs which were committed can be proven now.
         self.flush.prove |= view.commit.intersection(&self.decode.all);
     }
 }

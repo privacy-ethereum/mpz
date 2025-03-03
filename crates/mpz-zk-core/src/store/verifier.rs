@@ -1,3 +1,4 @@
+use blake3::Hasher;
 use mpz_core::bitvec::BitVec;
 use mpz_memory_core::{
     binary::Binary,
@@ -6,6 +7,7 @@ use mpz_memory_core::{
     DecodeError, DecodeFuture, DecodeOp, Memory, Slice, View as ViewTrait,
 };
 use utils::filter_drain::FilterDrain;
+use zerocopy::IntoBytes;
 
 use crate::{
     store::{ProverFlush, VerifierFlush},
@@ -114,7 +116,7 @@ impl VerifierStore {
         Ok(flush)
     }
 
-    pub fn receive_flush(&mut self, flush: ProverFlush) -> Result<()> {
+    pub fn receive_flush(&mut self, flush: ProverFlush, transcript: &mut Hasher) -> Result<()> {
         if !self.pending {
             return Err(ErrorRepr::UnexpectedFlush.into());
         }
@@ -140,6 +142,8 @@ impl VerifierStore {
             self.key_store.adjust(slice, &adjust[i..i + slice.len()])?;
             i += slice.len();
         }
+
+        transcript.update(adjust.as_raw_slice().as_bytes());
 
         // Verify MAC proofs.
         i = 0;

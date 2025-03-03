@@ -1,3 +1,4 @@
+use blake3::Hasher;
 use mpz_core::bitvec::{BitSlice, BitVec};
 use mpz_memory_core::{
     binary::Binary,
@@ -6,6 +7,7 @@ use mpz_memory_core::{
     DecodeError, DecodeFuture, DecodeOp, Memory, Slice, View as ViewTrait,
 };
 use utils::filter_drain::FilterDrain;
+use zerocopy::IntoBytes;
 
 use crate::{
     store::{ProverFlush, VerifierFlush},
@@ -95,6 +97,7 @@ impl ProverStore {
             self.mac_store.try_set(slice, &macs[i..i + slice.len()])?;
 
             let data = self.data_store.try_get(slice)?;
+            // Adjust so that the LSB of a MAC contains the value of the authenticated bit.
             self.mac_store.adjust(slice, data)?;
 
             i += slice.len();
@@ -107,13 +110,14 @@ impl ProverStore {
         self.view.set_output(slice.to_range())?;
         self.mac_store.try_set(slice, macs)?;
 
+        // (Note: LSBs of MACs contain the value of the authenticated bit).
         let data = BitVec::from_iter(macs.iter().map(|mac| mac.pointer()));
         self.data_store.try_set(slice, &data)?;
 
         Ok(())
     }
 
-    pub fn send_flush(&mut self) -> Result<ProverFlush> {
+    pub fn send_flush(&mut self, transcript: &mut Hasher) -> Result<ProverFlush> {
         if self.pending {
             return Err(ErrorRepr::UnexpectedFlush.into());
         }
@@ -121,7 +125,7 @@ impl ProverStore {
         self.pending = true;
 
         // Commit MACs.
-        let mut adjust = BitVec::with_capacity(self.view.flush().commit.len());
+        let mut adjust: BitVec<u32> = BitVec::with_capacity(self.view.flush().commit.len());
         let mut i = 0;
         for range in self.view.flush().commit.iter_ranges() {
             let slice = Slice::from_range_unchecked(range);
@@ -135,6 +139,8 @@ impl ProverStore {
 
             i += slice.len();
         }
+
+        transcript.update(adjust.as_raw_slice().as_bytes());
 
         let mac_proof = if !self.view.flush().prove.is_empty() {
             Some(self.mac_store.prove(&self.view.flush().prove)?)

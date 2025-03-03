@@ -1,5 +1,6 @@
 use std::sync::{Arc, Mutex};
 
+use blake3::Hasher;
 use mpz_circuits::{Circuit, Gate};
 use mpz_core::{bitvec::BitVec, Block};
 use mpz_memory_core::correlated::{Delta, Key};
@@ -71,7 +72,7 @@ impl Verifier {
     }
 
     /// Executes the consistency check.
-    pub fn check(&mut self, svole_keys: &[Block], uv: UV) -> Result<()> {
+    pub fn check(&mut self, transcript: &mut Hasher, svole_keys: &[Block], uv: UV) -> Result<()> {
         if Arc::strong_count(&self.check) > 1 {
             return Err(ErrorRepr::Inprogress.into());
         }
@@ -79,7 +80,7 @@ impl Verifier {
         self.check
             .lock()
             .unwrap()
-            .check_verifier(self.delta.as_block(), svole_keys, uv)
+            .check_verifier(transcript, self.delta.as_block(), svole_keys, uv)
             .map_err(From::from)
     }
 }
