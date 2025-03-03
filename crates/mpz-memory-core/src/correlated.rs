@@ -129,9 +129,9 @@ impl Distribution<Delta> for Standard {
     }
 }
 
-impl Into<Block> for Delta {
-    fn into(self) -> Block {
-        self.0
+impl From<Delta> for Block {
+    fn from(val: Delta) -> Self {
+        val.0
     }
 }
 

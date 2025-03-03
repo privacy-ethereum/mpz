@@ -46,7 +46,13 @@ mod tests {
                 let msg: Array<U8, 16> = prover.alloc().unwrap();
 
                 let ciphertext: Array<U8, 16> = prover
-                    .call(Call::new(AES128.clone()).arg(key).arg(msg).build().unwrap())
+                    .call(
+                        Call::builder(AES128.clone())
+                            .arg(key)
+                            .arg(msg)
+                            .build()
+                            .unwrap(),
+                    )
                     .unwrap();
 
                 prover.mark_private(key).unwrap();
@@ -70,7 +76,13 @@ mod tests {
                 let msg: Array<U8, 16> = verifier.alloc().unwrap();
 
                 let ciphertext: Array<U8, 16> = verifier
-                    .call(Call::new(AES128.clone()).arg(key).arg(msg).build().unwrap())
+                    .call(
+                        Call::builder(AES128.clone())
+                            .arg(key)
+                            .arg(msg)
+                            .build()
+                            .unwrap(),
+                    )
                     .unwrap();
 
                 verifier.mark_blind(key).unwrap();

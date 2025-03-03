@@ -210,8 +210,8 @@ where
         // Ensure the evaluators view is consistent.
         if &view != self.view.flush() {
             return Err(ErrorRepr::InconsistentFlush {
-                expected: self.view.flush().clone(),
-                actual: view.clone(),
+                expected: Box::new(self.view.flush().clone()),
+                actual: Box::new(view.clone()),
             }
             .into());
         }
@@ -334,8 +334,8 @@ enum ErrorRepr {
     UnexpectedFlush,
     #[error("inconsistent flush: expected={expected:?}, actual={actual:?}")]
     InconsistentFlush {
-        expected: FlushView,
-        actual: FlushView,
+        expected: Box<FlushView>,
+        actual: Box<FlushView>,
     },
 }
 

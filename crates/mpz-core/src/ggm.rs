@@ -1,5 +1,6 @@
 //! GGM tree.
 
+use std::cmp::Ordering;
 use std::ops::Range;
 
 use itybity::ToBits;
@@ -139,13 +140,11 @@ impl<'a> GgmTree<'a> {
 
     /// Returns the layer at the given depth.
     pub fn layer(&self, depth: usize) -> Option<&[Block]> {
-        if depth < self.depth {
-            return Some(&self.buf[layer(depth)]);
-        } else if depth == self.depth {
-            return Some(&self.leaves);
+        match depth.cmp(&self.depth) {
+            Ordering::Less => Some(&self.buf[layer(depth)]),
+            Ordering::Equal => Some(self.leaves),
+            Ordering::Greater => None,
         }
-
-        None
     }
 
     /// Returns an iterator over the layers of the GGM tree.

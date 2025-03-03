@@ -31,12 +31,12 @@ impl Key {
     /// Adjusts the truth value of the corresponding MAC.
     #[inline]
     pub fn adjust(&mut self, adjust: bool, delta: &Delta) {
-        self.0 = self.0
-            ^ if adjust {
-                delta.as_block()
-            } else {
-                &Block::ZERO
-            };
+        self.0 ^= if adjust {
+            delta.as_block()
+        } else {
+            &Block::ZERO
+        };
+        
         // Setting LSB(key) == 0 to enable the prover to store the authenticated bit in LSB(MAC).
         self.0.set_lsb(false);
     }
@@ -368,7 +368,7 @@ impl KeyStore {
                     let expected_mac = key.auth(value, &self.delta);
 
                     data.push(value);
-                    hasher.update(&expected_mac.as_bytes());
+                    hasher.update(expected_mac.as_bytes());
                 });
             idx += slice.size;
         }

@@ -29,14 +29,7 @@ pub struct ProverStore {
 
 impl ProverStore {
     pub fn new() -> Self {
-        Self {
-            mac_store: MacStore::default(),
-            mask_store: BitStore::default(),
-            data_store: BitStore::default(),
-            view: View::new_prover(),
-            pending: false,
-            buffer_decode: Vec::default(),
-        }
+        Self::default()
     }
 
     pub fn alloc_output(&mut self, size: usize) -> Slice {
@@ -196,6 +189,19 @@ impl ProverStore {
         }
 
         Ok(())
+    }
+}
+
+impl Default for ProverStore {
+    fn default() -> Self {
+        Self {
+            mac_store: MacStore::default(),
+            mask_store: BitStore::default(),
+            data_store: BitStore::default(),
+            view: View::new_prover(),
+            pending: false,
+            buffer_decode: Vec::default(),
+        }
     }
 }
 

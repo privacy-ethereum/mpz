@@ -410,7 +410,7 @@ impl BitAnd<Block> for &Block {
     type Output = Block;
 
     fn bitand(self, rhs: Block) -> Self::Output {
-        *self & &rhs
+        *self & rhs
     }
 }
 

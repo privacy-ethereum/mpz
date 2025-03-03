@@ -232,7 +232,7 @@ impl MacStore {
             let slice = Slice::from_range_unchecked(range);
             self.macs.try_get(slice)?.iter().for_each(|mac| {
                 bits.push(mac.pointer());
-                hasher.update(&mac.as_bytes());
+                hasher.update(mac.as_bytes());
             });
         }
 

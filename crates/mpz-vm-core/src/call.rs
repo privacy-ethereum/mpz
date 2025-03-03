@@ -68,7 +68,7 @@ pub struct Call {
 
 impl Call {
     /// Creates a new call builder.
-    pub fn new(circ: Arc<Circuit>) -> CallBuilder {
+    pub fn builder(circ: Arc<Circuit>) -> CallBuilder {
         CallBuilder::new(circ)
     }
 

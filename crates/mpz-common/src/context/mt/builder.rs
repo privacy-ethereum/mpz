@@ -42,7 +42,7 @@ where
     pub fn build(self) -> Result<Multithread, MultithreadBuilderError> {
         let mux = self
             .mux
-            .ok_or_else(|| MultithreadBuilderError(ErrorRepr::MissingField("mux")))?;
+            .ok_or(MultithreadBuilderError(ErrorRepr::MissingField("mux")))?;
 
         let builder = ThreadBuilder {
             spawn: Box::new(self.spawn_handler),

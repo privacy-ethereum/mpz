@@ -48,7 +48,7 @@ impl Prover {
         let check_idx = self.check.lock().unwrap().reserve(circ.and_count());
 
         let mut macs = vec![Mac::default(); input_macs.len()];
-        let mut input_macs = input_macs.into_iter();
+        let mut input_macs = input_macs.iter();
         for input in circ.inputs() {
             for (node, mac) in input.iter().zip(input_macs.by_ref()) {
                 macs[node.id()] = *mac;

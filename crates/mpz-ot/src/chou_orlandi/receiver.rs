@@ -13,8 +13,8 @@ type Error = ReceiverError;
 
 #[derive(Debug)]
 enum State {
-    Initialized(Core<state::Initialized>),
-    Setup(Core<state::Setup>),
+    Initialized(Box<Core<state::Initialized>>),
+    Setup(Box<Core<state::Setup>>),
     Error,
 }
 
@@ -32,8 +32,9 @@ pub struct Receiver {
 
 impl Default for Receiver {
     fn default() -> Self {
+        let core = Core::new();
         Self {
-            state: State::Initialized(Core::new()),
+            state: State::Initialized(Box::new(core)),
         }
     }
 }
@@ -50,8 +51,9 @@ impl Receiver {
     ///
     /// * `seed` - The RNG seed used to generate the receiver's keys.
     pub fn new_with_seed(seed: [u8; 32]) -> Self {
+        let core = Core::new_with_seed(seed);
         Self {
-            state: State::Initialized(Core::new_with_seed(seed)),
+            state: State::Initialized(Box::new(core)),
         }
     }
 }
@@ -95,12 +97,12 @@ impl Flush for Receiver {
                 let payload = ctx.io_mut().expect_next().await?;
                 receiver.setup(payload)
             }
-            State::Setup(receiver) => receiver,
+            State::Setup(receiver) => *receiver,
             State::Error => return Err(Error::state("cannot flush, receiver is in error state")),
         };
 
         if !receiver.wants_flush() {
-            self.state = State::Setup(receiver);
+            self.state = State::Setup(Box::new(receiver));
             return Ok(());
         }
 
@@ -111,7 +113,7 @@ impl Flush for Receiver {
 
         receiver.receive(payload)?;
 
-        self.state = State::Setup(receiver);
+        self.state = State::Setup(Box::new(receiver));
 
         Ok(())
     }

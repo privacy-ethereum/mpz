@@ -33,7 +33,13 @@ fn criterion_benchmark(c: &mut Criterion) {
                     gen.mark_blind(msg).unwrap();
 
                     let ciphertext: Array<U8, 16> = gen
-                        .call(Call::new(AES128.clone()).arg(key).arg(msg).build().unwrap())
+                        .call(
+                            Call::builder(AES128.clone())
+                                .arg(key)
+                                .arg(msg)
+                                .build()
+                                .unwrap(),
+                        )
                         .unwrap();
 
                     let ciphertext = gen.decode(ciphertext).unwrap();
@@ -56,7 +62,13 @@ fn criterion_benchmark(c: &mut Criterion) {
                     ev.mark_private(msg).unwrap();
 
                     let ciphertext: Array<U8, 16> = ev
-                        .call(Call::new(AES128.clone()).arg(key).arg(msg).build().unwrap())
+                        .call(
+                            Call::builder(AES128.clone())
+                                .arg(key)
+                                .arg(msg)
+                                .build()
+                                .unwrap(),
+                        )
                         .unwrap();
 
                     let ciphertext = ev.decode(ciphertext).unwrap();
@@ -105,7 +117,13 @@ fn criterion_benchmark(c: &mut Criterion) {
                         gen.commit(msg).unwrap();
 
                         let ciphertext: Array<U8, 16> = gen
-                            .call(Call::new(AES128.clone()).arg(key).arg(msg).build().unwrap())
+                            .call(
+                                Call::builder(AES128.clone())
+                                    .arg(key)
+                                    .arg(msg)
+                                    .build()
+                                    .unwrap(),
+                            )
                             .unwrap();
 
                         let _ = gen.decode(ciphertext).unwrap();
@@ -127,7 +145,13 @@ fn criterion_benchmark(c: &mut Criterion) {
                         ev.commit(msg).unwrap();
 
                         let ciphertext: Array<U8, 16> = ev
-                            .call(Call::new(AES128.clone()).arg(key).arg(msg).build().unwrap())
+                            .call(
+                                Call::builder(AES128.clone())
+                                    .arg(key)
+                                    .arg(msg)
+                                    .build()
+                                    .unwrap(),
+                            )
                             .unwrap();
 
                         let _ = ev.decode(ciphertext).unwrap();

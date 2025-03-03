@@ -287,7 +287,7 @@ where
             let macs = self.macs.split_off(self.macs.len() - next.count);
             let choices = self.choices.split_off(self.choices.len() - next.count);
 
-            _ = next.sender.send(RCOTReceiverOutput {
+            next.sender.send(RCOTReceiverOutput {
                 id,
                 msgs: macs,
                 choices,
@@ -341,13 +341,13 @@ where
             let (sender, recv) = new_output();
             sender.send(output);
 
-            return Ok(recv);
+            Ok(recv)
         } else {
             let (sender, recv) = new_output();
 
             self.queue.push_back(Queued { count, sender });
 
-            return Ok(recv);
+            Ok(recv)
         }
     }
 }
@@ -415,9 +415,9 @@ enum ErrorRepr {
     #[error("bootstrap COT error: {0}")]
     Bootstrap(Box<dyn std::error::Error + Send + Sync + 'static>),
     #[error("SPCOT receiver error: {0}")]
-    SPCOT(SPCOTReceiverError),
+    Spcot(SPCOTReceiverError),
     #[error("MPCOT receiver error: {0}")]
-    MPCOT(MPCOTReceiverError),
+    Mpcot(MPCOTReceiverError),
     #[error("insufficient COTs: expected {expected}, actual {actual}")]
     InsufficientCOTs { expected: usize, actual: usize },
 }
@@ -430,12 +430,12 @@ impl From<ErrorRepr> for ReceiverError {
 
 impl From<SPCOTReceiverError> for ReceiverError {
     fn from(err: SPCOTReceiverError) -> Self {
-        Self(ErrorRepr::SPCOT(err))
+        Self(ErrorRepr::Spcot(err))
     }
 }
 
 impl From<MPCOTReceiverError> for ReceiverError {
     fn from(err: MPCOTReceiverError) -> Self {
-        Self(ErrorRepr::MPCOT(err))
+        Self(ErrorRepr::Mpcot(err))
     }
 }

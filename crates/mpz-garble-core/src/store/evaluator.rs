@@ -252,8 +252,8 @@ where
         // Ensure the generators flush is consistent.
         if &view != self.view.flush() {
             return Err(ErrorRepr::InconsistentFlush {
-                expected: view,
-                actual: self.view.flush().clone(),
+                expected: Box::new(view),
+                actual: Box::new(self.view.flush().clone()),
             }
             .into());
         }
@@ -399,8 +399,8 @@ enum ErrorRepr {
     UnexpectedFlush,
     #[error("inconsistent flush: expected={expected:?}, actual={actual:?}")]
     InconsistentFlush {
-        expected: FlushView,
-        actual: FlushView,
+        expected: Box<FlushView>,
+        actual: Box<FlushView>,
     },
     #[error("invalid MAC commitment: {0}")]
     MacCommitment(#[from] MacCommitmentError),

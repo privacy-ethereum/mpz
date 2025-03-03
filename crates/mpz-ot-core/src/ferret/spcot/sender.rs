@@ -52,6 +52,7 @@ impl SPCOTSender {
     /// * `log2_lengths` - log2 length of the SPCOT vectors.
     /// * `keys` - COT keys.
     /// * `masks` - Derandomized COT choices bits from the receiver.
+    #[allow(clippy::type_complexity)]
     pub(crate) fn extend<R: Rng>(
         &mut self,
         rng: &mut R,

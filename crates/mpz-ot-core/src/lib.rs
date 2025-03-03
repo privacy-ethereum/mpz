@@ -55,6 +55,7 @@ impl TransferId {
     }
 
     /// Returns the current transfer ID, incrementing `self` in-place.
+    #[allow(clippy::should_implement_trait)]
     pub fn next(&mut self) -> Self {
         let id = *self;
         self.0 += 1;

@@ -123,13 +123,13 @@ where
             let (sender, recv) = new_output();
             sender.send(output);
 
-            return Ok(recv);
+            Ok(recv)
         } else {
             let (sender, recv) = new_output();
 
             self.queue.push_back(Queued { count, sender });
 
-            return Ok(recv);
+            Ok(recv)
         }
     }
 }

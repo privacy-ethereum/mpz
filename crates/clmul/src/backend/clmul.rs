@@ -35,8 +35,8 @@ impl BitXor for ClmulX86 {
 impl PartialEq for ClmulX86 {
     fn eq(&self, other: &Self) -> bool {
         unsafe {
-            u128::from_le_bytes(core::mem::transmute(self.0))
-                == u128::from_le_bytes(core::mem::transmute(other.0))
+            u128::from_le_bytes(core::mem::transmute::<__m128i, [u8; 16]>(self.0))
+                == u128::from_le_bytes(core::mem::transmute::<__m128i, [u8; 16]>(other.0))
         }
     }
 }
