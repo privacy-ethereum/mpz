@@ -13,6 +13,7 @@ use mpz_core::{
     utils::{slices_from_lengths, slices_from_lengths_mut},
     Block,
 };
+use zerocopy::IntoBytes;
 
 use crate::{ferret::config::CSP, Derandomize};
 
@@ -89,7 +90,9 @@ impl SPCOTReceiver {
                 .map(|(b, m)| !b ^ m),
         );
 
-        self.transcript.update(flip.as_raw_slice());
+        let flip_len = flip.len();
+        self.transcript
+            .update(&flip.as_raw_slice().as_bytes()[..flip_len.div_ceil(8)]);
 
         Ok(Derandomize { flip })
     }

@@ -93,7 +93,7 @@ pub struct VerifierExecute {
     keys: Vec<Key>,
     gate_keys: Vec<Key>,
     triples: Vec<Triple>,
-    adjust: BitVec<u8>,
+    adjust: BitVec,
     check: Arc<Mutex<Check>>,
     check_idx: usize,
 
@@ -194,7 +194,7 @@ pub struct VerifierConsumer<'a, I> {
     delta: Delta,
     gates: I,
     triples: &'a mut Vec<Triple>,
-    adjust: &'a mut BitVec<u8>,
+    adjust: &'a mut BitVec,
     counter: &'a mut usize,
     and_count: usize,
 }

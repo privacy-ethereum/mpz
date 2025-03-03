@@ -95,7 +95,7 @@ pub struct ProverExecute {
     circ: Arc<Circuit>,
     macs: Vec<Mac>,
     triples: Vec<Triple>,
-    adjust: BitVec<u8>,
+    adjust: BitVec,
     gate_masks: Vec<bool>,
     gate_macs: Vec<Mac>,
     check: Arc<Mutex<Check>>,
@@ -193,7 +193,7 @@ pub struct ProverIter<'a, I> {
     gate_macs: &'a [Mac],
     gates: I,
     triples: &'a mut Vec<Triple>,
-    adjust: &'a mut BitVec<u8>,
+    adjust: &'a mut BitVec,
     counter: &'a mut usize,
     and_count: usize,
 }

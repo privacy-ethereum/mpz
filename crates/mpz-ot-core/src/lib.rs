@@ -68,5 +68,5 @@ impl TransferId {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Derandomize {
     /// Correction bits
-    pub flip: BitVec<u8>,
+    pub flip: BitVec,
 }

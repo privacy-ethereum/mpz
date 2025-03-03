@@ -276,7 +276,7 @@ mod tests {
         let macs = vec![Mac::PUBLIC[0], Mac::PUBLIC[1]];
 
         let slice = store.alloc_with(&macs);
-        let data = BitVec::<u32>::from_iter([true, false]);
+        let data = BitVec::from_iter([true, false]);
 
         store.adjust(slice, &data).unwrap();
 

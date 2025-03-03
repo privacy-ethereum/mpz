@@ -168,7 +168,7 @@ struct QueuedReceive {
 pub struct DerandCOTReceiver<T> {
     rcot: T,
     /// Choice bits from RCOT which need to be derandomized.
-    derandomize: BitVec<u8>,
+    derandomize: BitVec,
     queue: VecDeque<QueuedReceive>,
 }
 

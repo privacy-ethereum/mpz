@@ -256,15 +256,13 @@ enum MacCommitmentErrorKind {
 
 #[cfg(test)]
 mod tests {
-    use mpz_core::prg::Prg;
+    use mpz_core::{bitvec::BitVec, prg::Prg};
     use mpz_ot_core::{cot::COTReceiverOutput, ideal::cot::IdealCOT};
     use rand::{rngs::StdRng, SeedableRng};
 
     use crate::Slice;
 
     use super::*;
-
-    type BitVec = mpz_core::bitvec::BitVec<u32>;
 
     #[test]
     fn test_correlated_store() {

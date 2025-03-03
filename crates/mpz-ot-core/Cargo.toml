@@ -41,6 +41,7 @@ bytemuck = { workspace = true, features = ["derive"] }
 enum-try-as-inner.workspace = true
 futures = { workspace = true }
 tokio = { workspace = true, features = ["sync"] }
+zerocopy = { workspace = true }
 
 [dev-dependencies]
 rstest.workspace = true

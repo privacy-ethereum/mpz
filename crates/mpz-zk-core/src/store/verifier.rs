@@ -143,7 +143,8 @@ impl VerifierStore {
             i += slice.len();
         }
 
-        transcript.update(adjust.as_raw_slice().as_bytes());
+        let adjust_len = adjust.len();
+        transcript.update(&adjust.as_raw_slice().as_bytes()[..adjust_len.div_ceil(8)]);
 
         // Verify MAC proofs.
         i = 0;

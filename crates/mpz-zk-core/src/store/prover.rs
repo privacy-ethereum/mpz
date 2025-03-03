@@ -125,7 +125,7 @@ impl ProverStore {
         self.pending = true;
 
         // Commit MACs.
-        let mut adjust: BitVec<u32> = BitVec::with_capacity(self.view.flush().commit.len());
+        let mut adjust: BitVec = BitVec::with_capacity(self.view.flush().commit.len());
         let mut i = 0;
         for range in self.view.flush().commit.iter_ranges() {
             let slice = Slice::from_range_unchecked(range);
@@ -140,7 +140,8 @@ impl ProverStore {
             i += slice.len();
         }
 
-        transcript.update(adjust.as_raw_slice().as_bytes());
+        let adjust_len = adjust.len();
+        transcript.update(&adjust.as_raw_slice().as_bytes()[..adjust_len.div_ceil(8)]);
 
         let mac_proof = if !self.view.flush().prove.is_empty() {
             Some(self.mac_store.prove(&self.view.flush().prove)?)

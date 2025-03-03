@@ -8,6 +8,7 @@ use mpz_core::{
     aes::FIXED_KEY_AES, bitvec::BitVec, ggm::GgmTree, prg::Prg, utils::slices_from_lengths_mut,
     Block,
 };
+use zerocopy::IntoBytes;
 
 use crate::ferret::config::CSP;
 
@@ -58,7 +59,7 @@ impl SPCOTSender {
         rng: &mut R,
         log2_lengths: &[usize],
         keys: &[Block],
-        masks: &BitVec<u8>,
+        masks: &BitVec,
     ) -> Result<(&[Block], Vec<[Block; 2]>, Vec<Block>)> {
         let len_sum: usize = log2_lengths.iter().sum();
         if keys.len() != len_sum {
@@ -132,7 +133,9 @@ impl SPCOTSender {
             })
             .collect();
 
-        self.transcript.update(masks.as_raw_slice());
+        let masks_len = masks.len();
+        self.transcript
+            .update(&masks.as_raw_slice().as_bytes()[..masks_len.div_ceil(8)]);
         self.transcript.update(Block::array_as_flattened_bytes(&ms));
         self.transcript.update(Block::as_flattened_bytes(&sums));
         self.counter += len_sum as u128;
@@ -146,7 +149,7 @@ impl SPCOTSender {
     ///
     /// * `keys` - COT keys.
     /// * `masks` - Derandomized COT choice bits from the receiver.
-    pub(crate) fn check(&mut self, keys: &[Block], masks: &BitVec<u8>) -> Result<Hash> {
+    pub(crate) fn check(&mut self, keys: &[Block], masks: &BitVec) -> Result<Hash> {
         if keys.len() != CSP {
             return Err(ErrorRepr::KeyCount {
                 expected: CSP,

@@ -9,6 +9,7 @@ use mpz_core::{
     Block,
 };
 use serde::{Deserialize, Serialize};
+use zerocopy::IntoBytes;
 
 use crate::vole::{vole_receiver, vole_sender};
 
@@ -31,7 +32,7 @@ pub(crate) struct Triple {
 #[derive(Debug, Default)]
 pub(crate) struct Check {
     triples: Vec<Triple>,
-    adjust: BitVec<u8>,
+    adjust: BitVec,
 }
 
 impl Check {
@@ -44,7 +45,7 @@ impl Check {
         idx
     }
 
-    pub(crate) fn write(&mut self, idx: usize, triples: &[Triple], adjust: &BitSlice<u8>) {
+    pub(crate) fn write(&mut self, idx: usize, triples: &[Triple], adjust: &BitSlice) {
         self.triples[idx..idx + triples.len()].copy_from_slice(triples);
         self.adjust[idx..idx + triples.len()].copy_from_bitslice(adjust);
     }
@@ -90,7 +91,8 @@ impl Check {
             (u, v)
         }
 
-        transcript.update(self.adjust.as_raw_slice());
+        let adjust_len = self.adjust.len();
+        transcript.update(&self.adjust.as_raw_slice().as_bytes()[..adjust_len.div_ceil(8)]);
 
         let chi = Block::try_from(&transcript.finalize().as_bytes()[..16])
             .expect("block should be 16 bytes");
@@ -152,7 +154,8 @@ impl Check {
             b.gfmul(chi)
         }
 
-        transcript.update(self.adjust.as_raw_slice());
+        let adjust_len = self.adjust.len();
+        transcript.update(&self.adjust.as_raw_slice().as_bytes()[..adjust_len.div_ceil(8)]);
 
         let chi = Block::try_from(&transcript.finalize().as_bytes()[..16])
             .expect("block should be 16 bytes");

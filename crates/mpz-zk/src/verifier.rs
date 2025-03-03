@@ -153,7 +153,7 @@ where
                         async move {
                             let mut consumer = execute.consumer();
                             while consumer.wants_adjust() {
-                                let adjust: BitVec<u32> = ctx.io_mut().expect_next().await?;
+                                let adjust: BitVec = ctx.io_mut().expect_next().await?;
                                 for bit in adjust {
                                     consumer.next(bit);
                                 }
