@@ -71,10 +71,7 @@ where
 
     async fn flush(&mut self, _ctx: &mut Context) -> Result<(), Self::Error> {
         if self.core.wants_flush() {
-            self.sync
-                .call(|| self.core.flush())
-                .await
-                .transpose()?;
+            self.sync.call(|| self.core.flush()).await.transpose()?;
         }
 
         Ok(())
@@ -128,10 +125,7 @@ where
 
     async fn flush(&mut self, _ctx: &mut Context) -> Result<(), Self::Error> {
         if self.core.wants_flush() {
-            self.sync
-                .call(|| self.core.flush())
-                .await
-                .transpose()?;
+            self.sync.call(|| self.core.flush()).await.transpose()?;
         }
 
         Ok(())
