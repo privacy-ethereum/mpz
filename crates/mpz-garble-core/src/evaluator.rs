@@ -303,6 +303,8 @@ pub fn evaluate_garbled_circuits(
                 }
                 outputs.push(consumer.finish()?);
             }
+
+            Ok(outputs)
         }
     }
 }
