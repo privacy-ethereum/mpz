@@ -59,7 +59,7 @@ mpz-zk = { path = "crates/mpz-zk" }
 clmul = { path = "crates/clmul" }
 matrix-transpose = { path = "crates/matrix-transpose" }
 
-tlsn-utils = { git = "https://github.com/tlsnotary/tlsn-utils", rev = "8555275" }
+tlsn-utils = { git = "https://github.com/tlsnotary/tlsn-utils", rev = "425614e" }
 
 # rand
 rand_chacha = "0.3"
@@ -102,10 +102,10 @@ bytes = "1"
 yamux = "0.10"
 bytemuck = { version = "1.13", features = ["derive"] }
 zerocopy = "0.8.20"
-serio = { git = "https://github.com/tlsnotary/tlsn-utils", rev = "8555275" }
+serio = { version = "0.2" }
 
 # io
-uid-mux = { git = "https://github.com/tlsnotary/tlsn-utils", rev = "8555275" }
+uid-mux = { version = "0.2" }
 
 # testing
 rstest = "0.12"
