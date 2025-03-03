@@ -50,9 +50,8 @@ where
 }
 
 #[async_trait]
-impl< T> Flush for AnyReceiver<T>
+impl<T> Flush for AnyReceiver<T>
 where
-    
     T: Flush + Send,
 {
     type Error = T::Error;

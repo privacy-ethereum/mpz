@@ -1,5 +1,5 @@
-//! Constant-time software implementation of carryless multiplication for 32-bit architectures
-//! Adapted from BearSSL's `ghash_ctmul32.c`:
+//! Constant-time software implementation of carryless multiplication for 32-bit
+//! architectures Adapted from BearSSL's `ghash_ctmul32.c`:
 //!
 //! <https://bearssl.org/gitweb/?p=BearSSL;a=blob;f=src/hash/ghash_ctmul32.c;hb=4b6046412>
 //!

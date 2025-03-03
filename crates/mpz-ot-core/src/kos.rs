@@ -1,13 +1,13 @@
-//! Correlated random oblivious transfer extension protocol with leakage based on
-//! [`KOS15`](https://eprint.iacr.org/archive/2015/546/1433798896.pdf).
+//! Correlated random oblivious transfer extension protocol with leakage based
+//! on [`KOS15`](https://eprint.iacr.org/archive/2015/546/1433798896.pdf).
 //!
 //! # Warning
 //!
-//! The user of this protocol must carefully consider if the leakage introduced in this protocol
-//! is acceptable for their specific application.
+//! The user of this protocol must carefully consider if the leakage introduced
+//! in this protocol is acceptable for their specific application.
 //!
-//! Note that (temporarily) we reference an older version of the KOS15 paper from 2015 which
-//! **DOES NOT** include important security fixes.
+//! Note that (temporarily) we reference an older version of the KOS15 paper
+//! from 2015 which **DOES NOT** include important security fixes.
 
 mod config;
 mod error;

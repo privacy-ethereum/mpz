@@ -751,7 +751,8 @@ macro_rules! impl_convert_bytes {
                 $ty(std::array::from_fn(|i| bytes[i / 8].0[i % 8]))
             }
 
-            /// Returns the representation of this type as a byte array in little endian.
+            /// Returns the representation of this type as a byte array in little
+            /// endian.
             pub fn to_le_bytes(self) -> [U8; $len] {
                 std::array::from_fn(|i| U8(std::array::from_fn(|j| self.0[i * 8 + j])))
             }

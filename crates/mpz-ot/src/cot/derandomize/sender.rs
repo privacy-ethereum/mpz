@@ -55,9 +55,8 @@ where
 }
 
 #[async_trait]
-impl< T> Flush for DerandCOTSender<T>
+impl<T> Flush for DerandCOTSender<T>
 where
-    
     T: RCOTSender<Block> + Flush + Send,
 {
     type Error = Error;

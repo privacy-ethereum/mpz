@@ -60,9 +60,8 @@ where
 }
 
 #[async_trait]
-impl< T, F> Flush for Receiver<T, F>
+impl<T, F> Flush for Receiver<T, F>
 where
-    
     T: ROTReceiver<bool, F> + Flush + Send,
     F: Field + Deserialize,
 {

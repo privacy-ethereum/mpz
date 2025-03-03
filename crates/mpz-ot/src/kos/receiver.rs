@@ -96,9 +96,8 @@ impl<BaseOT> RCOTReceiver<bool, Block> for Receiver<BaseOT> {
 }
 
 #[async_trait]
-impl< BaseOT> Flush for Receiver<BaseOT>
+impl<BaseOT> Flush for Receiver<BaseOT>
 where
-    
     BaseOT: OTSender<Block> + Flush + Send,
 {
     type Error = Error;

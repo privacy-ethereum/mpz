@@ -409,7 +409,8 @@ macro_rules! impl_convert_bytes {
                 Tracer::new(state, $ty::from_le_bytes(bytes.map(|byte| byte.to_inner())))
             }
 
-            /// Returns the representation of this type as a byte array in little endian.
+            /// Returns the representation of this type as a byte array in little
+            /// endian.
             pub fn to_le_bytes(self) -> [Tracer<'a, U8>; $len] {
                 self.value
                     .to_le_bytes()

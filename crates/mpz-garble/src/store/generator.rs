@@ -97,9 +97,8 @@ where
 }
 
 #[async_trait]
-impl< COT> Flush for GeneratorStore<COT>
+impl<COT> Flush for GeneratorStore<COT>
 where
-    
     COT: COTSender<Block> + Flush + Send + 'static,
 {
     type Error = Error;

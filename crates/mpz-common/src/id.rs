@@ -2,7 +2,8 @@ use core::fmt;
 
 /// A logical thread identifier.
 ///
-/// Every thread is assigned a unique identifier, which can be forked to create a child thread.
+/// Every thread is assigned a unique identifier, which can be forked to create
+/// a child thread.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ThreadId(Box<[u8]>);
 
@@ -36,7 +37,8 @@ impl ThreadId {
         Some(next)
     }
 
-    /// Increments the thread ID in place, returning the original ID if it doesn't overflow.
+    /// Increments the thread ID in place, returning the original ID if it
+    /// doesn't overflow.
     #[inline]
     pub fn increment_in_place(&mut self) -> Option<Self> {
         let prev = self.clone();

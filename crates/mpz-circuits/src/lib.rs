@@ -24,8 +24,8 @@ pub use tracer::Tracer;
 
 pub use once_cell;
 
-/// An attribute macro that can be applied to a function to automatically convert
-/// it into a circuit.
+/// An attribute macro that can be applied to a function to automatically
+/// convert it into a circuit.
 ///
 /// # Example
 ///
@@ -59,14 +59,17 @@ pub use once_cell;
 ///
 /// # Dependencies
 ///
-/// Dependencies can be specified using the `#[dep]` attribute. This will replace any calls
-/// to the specified function with the provided trace function.
+/// Dependencies can be specified using the `#[dep]` attribute. This will
+/// replace any calls to the specified function with the provided trace
+/// function.
 ///
 /// ## Path override
 ///
-/// The default path of the trace is the original path appended with the `_trace` suffix.
+/// The default path of the trace is the original path appended with the
+/// `_trace` suffix.
 ///
-/// This can be overridden by passing the path in as the second argument to the attribute, eg `#[dep(old_path, new_path)]`.
+/// This can be overridden by passing the path in as the second argument to the
+/// attribute, eg `#[dep(old_path, new_path)]`.
 ///
 /// ## Example
 ///
@@ -125,13 +128,14 @@ pub use once_cell;
 /// This suffix can be overridden by passing the `suffix = "new_suffix"` argument to the macro.
 pub use mpz_circuits_macros::trace;
 
-/// Evaluates a circuit and attempts to coerce the output into the specified return type
-/// indicated in the function signature.
+/// Evaluates a circuit and attempts to coerce the output into the specified
+/// return type indicated in the function signature.
 ///
 /// # Returns
 ///
-/// The macro returns a `Result` with the output of the circuit or a [`TypeError`](crate::types::TypeError) if the
-/// output could not be coerced into the specified return type.
+/// The macro returns a `Result` with the output of the circuit or a
+/// [`TypeError`](crate::types::TypeError) if the output could not be coerced
+/// into the specified return type.
 ///
 /// `Result<T, TypeError>`
 ///
