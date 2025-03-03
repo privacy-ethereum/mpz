@@ -68,12 +68,12 @@ mod tests {
             },
         ) = cot.transfer(len_sum).unwrap();
 
-        let derandomize = receiver.derandomize(&lengths, &idxs, &masks).unwrap();
+        let derandomize = receiver.derandomize(lengths, idxs, &masks).unwrap();
 
         let (vs, ms, sums) = sender
-            .extend(rng, &lengths, &keys, &derandomize.flip)
+            .extend(rng, lengths, &keys, &derandomize.flip)
             .unwrap();
-        let ws = receiver.extend(&lengths, &idxs, &macs, &ms, &sums).unwrap();
+        let ws = receiver.extend(lengths, idxs, &macs, &ms, &sums).unwrap();
 
         let vs = vs.to_vec();
         let ws = ws.to_vec();
@@ -84,7 +84,7 @@ mod tests {
             .zip(slices_from_lengths(&ws, &spcot_lengths))
             .zip(idxs)
         {
-            assert_spcot(sender.delta(), &w, idx, &v);
+            assert_spcot(sender.delta(), w, idx, v);
         }
 
         assert!(sender.wants_check());

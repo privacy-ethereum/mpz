@@ -476,25 +476,25 @@ mod tests {
     #[test]
     fn test_lsb() {
         let a = Block::new([0; 16]);
-        assert_eq!(a.lsb(), false);
+        assert!(!a.lsb());
 
         let mut one = [0; 16];
         one[0] = 1;
 
         let a = Block::new(one);
-        assert_eq!(a.lsb(), true);
+        assert!(a.lsb());
 
         let mut two = [0; 16];
         two[0] = 2;
 
         let a = Block::new(two);
-        assert_eq!(a.lsb(), false);
+        assert!(!a.lsb());
 
         let mut three = [0; 16];
         three[0] = 3;
 
         let a = Block::new(three);
-        assert_eq!(a.lsb(), true);
+        assert!(a.lsb());
     }
 
     #[test]

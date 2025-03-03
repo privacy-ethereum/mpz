@@ -51,7 +51,7 @@ mod test {
             *x.lock().unwrap() += 1;
         };
 
-        futures::join!(sync_0.call(add_one.clone()), sync_1.call(add_one));
+        futures::join!(sync_0.call(add_one), sync_1.call(add_one));
 
         assert_eq!(*x.lock().unwrap(), 1);
     }

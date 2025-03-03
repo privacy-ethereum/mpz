@@ -72,7 +72,7 @@ where
     async fn flush(&mut self, _ctx: &mut Context) -> Result<(), Self::Error> {
         if self.core.wants_flush() {
             self.sync
-                .call(|| self.core.flush().map_err(IdealROLEError::from))
+                .call(|| self.core.flush())
                 .await
                 .transpose()?;
         }
@@ -129,7 +129,7 @@ where
     async fn flush(&mut self, _ctx: &mut Context) -> Result<(), Self::Error> {
         if self.core.wants_flush() {
             self.sync
-                .call(|| self.core.flush().map_err(IdealROLEError::from))
+                .call(|| self.core.flush())
                 .await
                 .transpose()?;
         }
