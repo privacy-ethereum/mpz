@@ -58,9 +58,8 @@ where
 }
 
 #[async_trait]
-impl< T, F> Flush for Sender<T, F>
+impl<T, F> Flush for Sender<T, F>
 where
-    
     T: ROTSender<[F; 2]> + Flush + Send,
     F: Field + Serialize,
 {

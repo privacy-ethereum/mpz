@@ -98,9 +98,8 @@ impl<BaseOT> RCOTSender<Block> for Sender<BaseOT> {
 }
 
 #[async_trait]
-impl< BaseOT> Flush for Sender<BaseOT>
+impl<BaseOT> Flush for Sender<BaseOT>
 where
-    
     BaseOT: OTReceiver<bool, Block> + Flush + Send,
     BaseOT::Future: Send,
 {

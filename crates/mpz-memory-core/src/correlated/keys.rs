@@ -36,8 +36,9 @@ impl Key {
         } else {
             &Block::ZERO
         };
-        
-        // Setting LSB(key) == 0 to enable the prover to store the authenticated bit in LSB(MAC).
+
+        // Setting LSB(key) == 0 to enable the prover to store the authenticated bit in
+        // LSB(MAC).
         self.0.set_lsb(false);
     }
 

@@ -59,9 +59,8 @@ where
 }
 
 #[async_trait]
-impl< F> Flush for IdealROLESender<F>
+impl<F> Flush for IdealROLESender<F>
 where
-    
     F: Field,
 {
     type Error = IdealROLEError;
@@ -117,9 +116,8 @@ where
 }
 
 #[async_trait]
-impl< F> Flush for IdealROLEReceiver<F>
+impl<F> Flush for IdealROLEReceiver<F>
 where
-    
     F: Field,
 {
     type Error = IdealROLEError;

@@ -34,8 +34,8 @@ pub static SHA256_COMPRESS: Lazy<Arc<Circuit>> = Lazy::new(|| {
 
 /// AES-128 circuit trace.
 ///
-/// This function is a wrapper around the AES-128 circuit that can be used to append
-/// it to other circuits.
+/// This function is a wrapper around the AES-128 circuit that can be used to
+/// append it to other circuits.
 ///
 /// # Arguments
 ///
@@ -68,8 +68,8 @@ pub fn aes128_trace<'a>(
 
 /// SHA-256 compression circuit trace.
 ///
-/// This function is a wrapper around the SHA256 compression circuit that can be used to append
-/// it to other circuits.
+/// This function is a wrapper around the SHA256 compression circuit that can be
+/// used to append it to other circuits.
 ///
 /// # Arguments
 ///
@@ -129,9 +129,11 @@ pub fn build_sha256(pos: usize, msg_len: usize) -> Circuit {
     let pad_len = padded_len - msg_len;
 
     // append a single '1' bit
-    // append K '0' bits, where K is the minimum number >= 0 such that (L + 1 + K + 64) is a multiple of 512
-    // append L as a 64-bit big-endian integer, making the total post-processed length a multiple of 512 bits
-    // such that the bits in the message are: <original message of length L> 1 <K zeros> <L as 64 bit integer> , (the number of bits will be a multiple of 512)
+    // append K '0' bits, where K is the minimum number >= 0 such that (L + 1 + K +
+    // 64) is a multiple of 512 append L as a 64-bit big-endian integer, making
+    // the total post-processed length a multiple of 512 bits such that the bits
+    // in the message are: <original message of length L> 1 <K zeros> <L as 64 bit
+    // integer> , (the number of bits will be a multiple of 512)
     msg.push(builder.get_constant(128u8));
     msg.extend((0..pad_len - 9).map(|_| builder.get_constant(0u8)));
     msg.extend(

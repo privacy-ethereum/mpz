@@ -124,7 +124,8 @@ impl<F> A2MReceiverAdjust<F>
 where
     F: Field,
 {
-    /// Receives the masked share (`d` in ref1), returning the multiplicative share.
+    /// Receives the masked share (`d` in ref1), returning the multiplicative
+    /// share.
     pub(crate) fn receive(self, masked: A2MMasked<F>) -> F {
         self.add + masked.0
     }

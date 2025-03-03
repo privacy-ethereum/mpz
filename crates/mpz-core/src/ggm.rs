@@ -1,7 +1,6 @@
 //! GGM tree.
 
-use std::cmp::Ordering;
-use std::ops::Range;
+use std::{cmp::Ordering, ops::Range};
 
 use itybity::ToBits;
 

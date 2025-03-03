@@ -1,10 +1,9 @@
-//! Constant-time software implementation of carryless multiplication for 64-bit architectures.
-//! Adapted from BearSSL's `ghash_ctmul64.c`:
+//! Constant-time software implementation of carryless multiplication for 64-bit
+//! architectures. Adapted from BearSSL's `ghash_ctmul64.c`:
 //!
 //! <https://bearssl.org/gitweb/?p=BearSSL;a=blob;f=src/hash/ghash_ctmul64.c;hb=4b6046412>
 //!
 //! Copyright (c) 2016 Thomas Pornin <pornin@bolet.org>
-//!
 use bytemuck::{Pod, Zeroable};
 use core::{num::Wrapping, ops::BitXor};
 pub type Clmul = U64x2;

@@ -19,7 +19,8 @@ pub enum BuilderError {
 
 /// A circuit builder.
 ///
-/// This type is used in conjunction with [`Tracer`](crate::Tracer) to build a circuit.
+/// This type is used in conjunction with [`Tracer`](crate::Tracer) to build a
+/// circuit.
 ///
 /// # Example
 ///

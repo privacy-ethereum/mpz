@@ -26,17 +26,19 @@ pub struct SyncError(#[from] std::io::Error);
 
 /// A primitive for synchronizing the order of execution across logical threads.
 ///
-/// This is useful for when multiple different functionalities need to access some shared stateful resource.
-/// In such cases, it is important that the order in which this occurs is synchronized from all parties views.
+/// This is useful for when multiple different functionalities need to access
+/// some shared stateful resource. In such cases, it is important that the order
+/// in which this occurs is synchronized from all parties views.
 ///
-/// [`Syncer`] employs a leader-follower coordination pattern, where the leader is responsible for
-/// dictating the order of execution, and the followers ensure their local execution is synchronized to it.
+/// [`Syncer`] employs a leader-follower coordination pattern, where the leader
+/// is responsible for dictating the order of execution, and the followers
+/// ensure their local execution is synchronized to it.
 ///
-/// Every operation involves broadcasting a 4-byte ticket to all followers, so be conscious of the overhead
-/// of this.
+/// Every operation involves broadcasting a 4-byte ticket to all followers, so
+/// be conscious of the overhead of this.
 ///
-/// See [`Mutex`] for a higher-level primitive that can be used to obtain a lock on a resource in synchronized
-/// order.
+/// See [`Mutex`] for a higher-level primitive that can be used to obtain a lock
+/// on a resource in synchronized order.
 #[derive(Debug, Clone)]
 pub struct Syncer(SyncerInner);
 

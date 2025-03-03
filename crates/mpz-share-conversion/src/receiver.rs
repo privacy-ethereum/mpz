@@ -71,9 +71,8 @@ where
 }
 
 #[async_trait]
-impl< T, F> Flush for ShareConversionReceiver<T, F>
+impl<T, F> Flush for ShareConversionReceiver<T, F>
 where
-    
     T: ROLEReceiver<F> + Flush + Send,
     F: Field + Serialize + Deserialize,
 {

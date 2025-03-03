@@ -36,7 +36,8 @@ pub fn nbyte_add_mod_trace<'a, const N: usize>(
     modulus.reverse();
 
     // NO OPERATIONS USING CONST GENERICS YET :(
-    // Otherwise, we would just use a const generic array here with length (N * 8) + 1
+    // Otherwise, we would just use a const generic array here with length (N * 8) +
+    // 1
     let mut a_bits = a
         .into_iter()
         .flat_map(|a| a.to_inner().nodes().into_iter())

@@ -51,9 +51,8 @@ where
 }
 
 #[async_trait]
-impl< T> Flush for DerandCOTReceiver<T>
+impl<T> Flush for DerandCOTReceiver<T>
 where
-    
     T: RCOTReceiver<bool, Block> + Flush + Send,
 {
     type Error = Error;

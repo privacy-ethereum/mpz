@@ -97,8 +97,9 @@ impl Clmul {
         }
     }
 
-    /// Reduces the polynomial represented in bits modulo the GCM polynomial x^128 + x^7 + x^2 + x + 1.
-    /// x and y are resp. upper and lower bits of the polynomial.
+    /// Reduces the polynomial represented in bits modulo the GCM polynomial
+    /// x^128 + x^7 + x^2 + x + 1. x and y are resp. upper and lower bits of
+    /// the polynomial.
     #[inline]
     pub fn reduce_gcm(x: Self, y: Self) -> Self {
         unsafe {

@@ -63,11 +63,13 @@ impl CryptoRng for PrgCore {}
 
 /// AES-based PRG.
 ///
-/// This PRG is based on AES128 used in counter-mode to generate pseudo-random data streams.
+/// This PRG is based on AES128 used in counter-mode to generate pseudo-random
+/// data streams.
 ///
 /// # Stream ID
 ///
-/// The PRG is configurable with a stream ID, which can be used to generate distinct streams using the same seed. See [`Prg::set_stream_id`].
+/// The PRG is configurable with a stream ID, which can be used to generate
+/// distinct streams using the same seed. See [`Prg::set_stream_id`].
 #[derive(Clone)]
 pub struct Prg(BlockRng<PrgCore>);
 

@@ -96,9 +96,8 @@ where
 }
 
 #[async_trait]
-impl< COT> Flush for EvaluatorStore<COT>
+impl<COT> Flush for EvaluatorStore<COT>
 where
-    
     COT: COTReceiver<bool, Block> + Flush + Send + 'static,
     COT::Future: Send + 'static,
 {

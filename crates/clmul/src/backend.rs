@@ -9,11 +9,12 @@ use cfg_if::cfg_if;
 mod soft;
 
 impl soft::Clmul {
-    /// Reduces the polynomial represented in bits modulo the GCM polynomial x^128 + x^7 + x^2 + x + 1.
-    /// x and y are resp. upper and lower bits of the polynomial.
+    /// Reduces the polynomial represented in bits modulo the GCM polynomial
+    /// x^128 + x^7 + x^2 + x + 1. x and y are resp. upper and lower bits of
+    /// the polynomial.
     ///
-    /// Page 16 of [Intel® Carry-Less Multiplication Instruction and its Usage for Computing the GCM Mode rev 2.02]
-    /// (https://www.intel.com/content/dam/develop/external/us/en/documents/clmul-wp-rev-2-02-2014-04-20.pdf)
+    /// Page 16 of [Intel® Carry-Less Multiplication Instruction and its Usage
+    /// for Computing the GCM Mode rev 2.02] (https://www.intel.com/content/dam/develop/external/us/en/documents/clmul-wp-rev-2-02-2014-04-20.pdf)
     pub fn reduce_gcm(x: Self, y: Self) -> Self {
         fn sep(x: u128) -> (u64, u64) {
             // (high, low)
