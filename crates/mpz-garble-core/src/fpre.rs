@@ -743,9 +743,10 @@ pub fn fpre(
     num_wires: usize,
     num_and: usize,
     bucket_size: usize,
+    seed: u64,
 ) -> (FpreGen, FpreEval) {
 
-    let mut rng = ChaCha12Rng::seed_from_u64(0);
+    let mut rng = ChaCha12Rng::seed_from_u64(seed);
 
     // need to set LSB of deltas to XOR to 1 for an optimization
     let delta_a = Delta::random(&mut rng).set_lsb(true);
@@ -843,7 +844,7 @@ mod tests {
         let num_and = 6000;
         let bucket_size = 5;
 
-        let (fpre_gen, fpre_eval) = fpre(num_wires, num_and, bucket_size);
+        let (fpre_gen, fpre_eval) = fpre(num_wires, num_and, bucket_size, 0);
 
         verify_fpre(fpre_gen, fpre_eval);
     }

@@ -15,7 +15,7 @@ mod fpre;
 pub mod store;
 pub(crate) mod view;
 
-pub use circuit::{AuthHalfGate, AuthEncryptedGate, AuthEncryptedGateBatch, EncryptedGate, EncryptedGateBatch, GarbledCircuit, sigma};
+pub use circuit::{AuthHalfGate, EncryptedGate, EncryptedGateBatch, GarbledCircuit, sigma};
 
 pub use evaluator::{evaluate_garbled_circuits, EncryptedGateBatchConsumer, EncryptedGateConsumer, Evaluator,
     EvaluatorError, EvaluatorOutput,};
@@ -38,7 +38,7 @@ const BYTES_PER_GATE: usize = 32;
 
 /// Maximum size of a batch in bytes.
 const MAX_BATCH_SIZE: usize = 4 * KB;
-const sec_param: usize = 40;
+const SECURITY_PARAM: usize = 40;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[allow(missing_docs)]
@@ -69,7 +69,6 @@ mod tests {
     use itybity::{FromBitIterator, IntoBitIterator, ToBits};
     use mpz_circuits::{circuits::AES128, CircuitBuilder};
     use mpz_core::{aes::FIXED_KEY_AES, Block};
-    use mpz_ot_core::kos::SSP;
     use rand::{rngs::StdRng, Rng, SeedableRng};
     use rand_chacha::ChaCha12Rng;
 
@@ -308,9 +307,9 @@ mod tests {
         let num_input_wires = circ.input_len();
         let num_and_gates = circ.and_count();
 
-        let bucket_size = (sec_param as f64 / (num_input_wires as f64).log2()).ceil() as usize;
+        let bucket_size = (SECURITY_PARAM as f64 / (num_input_wires as f64).log2()).ceil() as usize;
 
-        let (fpre_gen, fpre_eval) = fpre(num_input_wires, num_and_gates, bucket_size);
+        let (fpre_gen, fpre_eval) = fpre(num_input_wires, num_and_gates, bucket_size, rng.gen());
 
         // Set inputs based on input ownership in order of node id  
         let mut eval_inputs: Vec<bool> = Vec::new();
@@ -377,10 +376,20 @@ mod tests {
         // Gen provides Eval with input labels corresponding to masked inputs
         let labels = auth_gen.collect_input_labels(&masked_inputs);
         auth_eval.set_input_labels(labels);
-        auth_eval.set_masked_values(masked_inputs);
+        auth_eval.set_masked_inputs(masked_inputs);
 
         // Evaluate garbled circuit
         auth_eval.evaluate(gen_px, gen_py, gen_gates, cipher).unwrap();
+
+        // send over masked values to Gen
+        let masked_values = auth_eval.masked_values();
+        auth_gen.set_masked_values(masked_values);
+
+        // authenticate
+        let eval_hash = auth_eval.authenticate(cipher);
+        let gen_hash = auth_gen.authenticate(cipher);
+
+        assert_eq!(eval_hash, gen_hash, "Authentication failed");
 
         // Collect output macs and finalize outputs
         let output_macs = auth_gen.collect_output_macs();
@@ -657,7 +666,7 @@ mod tests {
 }
 
 // Next steps:
-// 1) Output processing -- allow Gen to learn output as well, optimize by masking to sec param
+// 1) Output processing -- allow Gen to learn output as well
 // 2) Hash tweaks
-// 3) Test with circuit whose input ids that are not contiguous
-// 4) Propagate errors across functions
+// 3) Propagate errors across functions
+// 4) Secure authentication -- only send AND gates

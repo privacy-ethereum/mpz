@@ -46,6 +46,10 @@ pub struct AuthGenerator<'a> {
     pub labels: Vec<Block>,
     /// Authenticated bit shares for each wire.
     pub auth_bits: Vec<AuthBitShare>,
+    /// A parallel buffer of AuthBitShares for each wire
+    pub sigma_bits: Vec<AuthBitShare>,
+    /// Masked values for each wire.
+    pub masked_values: Vec<bool>,
     /// Reference to the circuit to be garbled.
     pub circ: &'a Circuit,
     /// The input owners for the circuit (Generator or Evaluator)
@@ -59,6 +63,8 @@ impl<'a> AuthGenerator<'a> {
             fpre,
             labels: Vec::new(),
             auth_bits: Vec::new(),
+            sigma_bits: Vec::new(),
+            masked_values: Vec::new(),
             circ,
             input_owners,
         }
@@ -240,6 +246,8 @@ impl<'a> AuthGenerator<'a> {
                         value: sigma_value,   
                     };
 
+                    self.sigma_bits.push(ss);
+
                     // preprocessed share for wire z
                     let sz = self.auth_bits[z.id()];
 
@@ -342,6 +350,45 @@ impl<'a> AuthGenerator<'a> {
             }
         }
         labels
+    }
+
+    /// Sets the masked values for the generator.
+    pub fn set_masked_values(&mut self, masked_values: Vec<bool>) {
+        self.masked_values = masked_values;
+    }
+
+    /// Returns the check shares for the generator.
+    pub fn authenticate(&self, cipher: &FixedKeyAes) -> Block{
+        let mut hash = Block::ZERO;
+        let mut and_count = 0;
+        let delta_a = self.fpre.delta_a.into_inner();
+        for gate in self.circ.gates() {
+            if let Gate::And { x, y, z } = gate {
+                let ss = self.sigma_bits[and_count];
+                let sz = self.auth_bits[z.id()];
+                let mut share = ss.mac.as_block() ^ ss.key.as_block() ^ (SELECT_MASK[ss.bit() as usize] & delta_a) ^ sz.mac.as_block() ^ sz.key.as_block() ^ (SELECT_MASK[sz.bit() as usize] & delta_a);
+
+                let sx = self.auth_bits[x.id()];
+                let sy = self.auth_bits[y.id()];
+
+                let za = self.masked_values[x.id()];
+                let zb = self.masked_values[y.id()];
+                let zc = self.masked_values[z.id()];
+                
+                if za {
+                    share = share ^ sy.mac.as_block() ^ sy.key.as_block() ^ (SELECT_MASK[sy.bit() as usize] & delta_a);
+                }
+                if zb {
+                    share = share ^ sx.mac.as_block() ^ sx.key.as_block() ^ (SELECT_MASK[sx.bit() as usize] & delta_a);
+                }
+                if (za && zb) != zc {
+                    share = share ^ delta_a;
+                }
+                hash ^= sigma(share, cipher);
+                and_count += 1;
+            }
+        }
+        hash
     }
 
     /// Returns the Generator's MACs for each output wire.

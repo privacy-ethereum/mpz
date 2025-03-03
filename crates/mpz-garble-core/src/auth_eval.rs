@@ -64,6 +64,8 @@ pub struct AuthEvaluator<'a> {
     /// A parallel buffer of AuthBitShares for each wire
     pub auth_bits: Vec<AuthBitShare>,
     /// A parallel buffer of AuthBitShares for each wire
+    pub sigma_bits: Vec<AuthBitShare>,
+    /// A parallel buffer of AuthBitShares for each wire
     pub masked_values: Vec<bool>,
     /// The circuit to garble
     pub circ: &'a Circuit,
@@ -78,6 +80,7 @@ impl<'a> AuthEvaluator<'a> {
             fpre,
             labels: Vec::new(),
             auth_bits: Vec::new(),
+            sigma_bits: Vec::new(),
             masked_values: Vec::new(),
             circ,
             input_owners,
@@ -317,7 +320,7 @@ impl<'a> AuthEvaluator<'a> {
     }
 
     /// Set the masked values for the evaluator.
-    pub fn set_masked_values(&mut self, masked_inputs: Vec<bool>) -> () {
+    pub fn set_masked_inputs(&mut self, masked_inputs: Vec<bool>) -> () {
         let mut idx = 0;
         if self.circ.feed_count() > self.masked_values.len() {
             self.masked_values.resize(self.circ.feed_count(), Default::default());
@@ -387,6 +390,8 @@ impl<'a> AuthEvaluator<'a> {
                         value: sigma_value,
                     };
 
+                    self.sigma_bits.push(ss);
+
                     // preprocessed (mac, key) for wire z
                     let sz = self.auth_bits[z.id()];
 
@@ -398,7 +403,6 @@ impl<'a> AuthEvaluator<'a> {
 
                     let mut lz = sigma(lx, cipher) ^ sigma(ly, cipher) ^ sz.mac.as_block() ^ ss.mac.as_block() ^ (SELECT_MASK[bx] & g_0) ^ (SELECT_MASK[by] & (g_1^lx));
 
-
                     self.masked_values[z.id()] = lz.lsb()^gates[and_count].mask;
                     lz.set_lsb(self.masked_values[z.id()]);
                     self.labels[z.id()] = lz;
@@ -408,6 +412,45 @@ impl<'a> AuthEvaluator<'a> {
             }
         }
         Ok(())
+    }
+
+    /// Returns the masked values for the evaluator. TODO: only send for AND gates
+    pub fn masked_values(&self) -> Vec<bool> {
+        self.masked_values.clone()
+    }
+
+    /// Returns the check shares for the evaluator.
+    pub fn authenticate(&self, cipher: &FixedKeyAes) -> Block{
+        let mut hash = Block::ZERO;
+        let mut and_count = 0;
+        let delta_b = self.fpre.delta_b.into_inner();
+        for gate in self.circ.gates() {
+            if let Gate::And { x, y, z } = gate {
+                let ss = self.sigma_bits[and_count];
+                let sz = self.auth_bits[z.id()];
+                let mut share = ss.mac.as_block() ^ ss.key.as_block() ^ (SELECT_MASK[ss.bit() as usize] & delta_b) ^ sz.mac.as_block() ^ sz.key.as_block() ^ (SELECT_MASK[sz.bit() as usize] & delta_b);
+
+                let sx = self.auth_bits[x.id()];
+                let sy = self.auth_bits[y.id()];
+
+                let za = self.masked_values[x.id()];
+                let zb = self.masked_values[y.id()];
+                let zc = self.masked_values[z.id()];
+                
+                if za {
+                    share = share ^ sy.mac.as_block() ^ sy.key.as_block() ^ (SELECT_MASK[sy.bit() as usize] & delta_b);
+                }
+                if zb {
+                    share = share ^ sx.mac.as_block() ^ sx.key.as_block() ^ (SELECT_MASK[sx.bit() as usize] & delta_b);
+                }
+                if (za && zb) != zc {
+                    share = share ^ delta_b;
+                }
+                hash ^= sigma(share, cipher);
+                and_count += 1;
+            }
+        }
+        hash
     }
 
     /// Verifies MAC of gen's share of output mask and reconstructs output bits. 
