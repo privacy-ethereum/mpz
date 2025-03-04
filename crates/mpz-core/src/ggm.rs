@@ -77,7 +77,8 @@ impl<'a> GgmTree<'a> {
     /// * `idx` - Index of the missing leaf.
     /// * `leaves` - Leaves of the tree.
     pub fn new_partial(depth: usize, sums: &[Block], idx: usize, leaves: &'a mut [Block]) -> Self {
-        assert!(idx < 1 << depth, "index out of bounds");
+        assert_eq!(leaves.len(), 1 << depth, "invalid length of leaves");
+        assert!(idx < leaves.len(), "index out of bounds");
         assert_eq!(sums.len(), depth, "invalid length of sums");
 
         let mut buf = vec![Block::ZERO; (1 << depth) - 1];
