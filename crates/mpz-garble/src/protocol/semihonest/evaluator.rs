@@ -61,7 +61,7 @@ impl<COT> Evaluator<COT> {
     fn take_execute_calls(&mut self) -> Vec<(Call, Slice)> {
         let store = self.store.try_lock().unwrap();
         self.call_stack
-            // Extract calls which have no dependencies on other prior calls.
+            // Extract only a call which has all its inputs committed.
             .filter_drain(|(call, _)| call.inputs().iter().all(|input| store.is_committed(*input)))
             .collect()
     }
