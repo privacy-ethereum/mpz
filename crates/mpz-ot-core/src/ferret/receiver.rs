@@ -118,7 +118,7 @@ where
             return Err(ErrorRepr::State("not in extend state".to_string()).into());
         };
 
-        // If COTs are empty we haven't bootstrapped from inner COT yet.
+        // If COTs are empty, we haven't bootstrapped from inner COT yet.
         if self.macs.is_empty() {
             let RCOTReceiverOutput {
                 msgs: macs,
@@ -326,12 +326,12 @@ where
         }
 
         let choices = self.choices.split_off(self.choices.len() - count);
-        let keys = self.macs.split_off(self.macs.len() - count);
+        let macs = self.macs.split_off(self.macs.len() - count);
 
         Ok(RCOTReceiverOutput {
             id: self.transfer_id.next(),
             choices,
-            msgs: keys,
+            msgs: macs,
         })
     }
 

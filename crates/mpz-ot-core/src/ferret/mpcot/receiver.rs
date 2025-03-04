@@ -82,6 +82,8 @@ impl MPCOTReceiver<state::Initialized> {
 
                         idxs.push(pos);
                     } else {
+                        // Acc.to p.10 "if T[j] is empty ... then the receiver's input p_j can
+                        // point to this extra cell".
                         idxs.push(bucket_length);
                     }
 
@@ -101,6 +103,7 @@ impl MPCOTReceiver<state::Initialized> {
             }
             Initialized::Regular => {
                 let count = idxs.len();
+                // The length of each interval.
                 let k = len / count;
                 if len % count != 0 {
                     return Err(ErrorRepr::Params {

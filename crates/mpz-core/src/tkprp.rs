@@ -8,7 +8,7 @@ use crate::{aes::AesEncryptor, Block};
 pub struct TwoKeyPrp([AesEncryptor; 2]);
 
 impl TwoKeyPrp {
-    /// New an instance of TwoKeyPrp
+    /// Creates a new instance of TwoKeyPrp.
     #[inline(always)]
     pub fn new(seeds: [Block; 2]) -> Self {
         Self([AesEncryptor::new(seeds[0]), AesEncryptor::new(seeds[1])])

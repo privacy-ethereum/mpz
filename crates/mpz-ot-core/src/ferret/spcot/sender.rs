@@ -123,6 +123,7 @@ impl SPCOTSender {
 
                 // Encrypt the OT messages.
                 tree.layer_sums().zip(ks).for_each(|(sums, ks)| {
+                    // `sums` is K_0 and K_1 in Fig. 6 Step 3.
                     ks[0] ^= sums[0];
                     ks[1] ^= sums[1];
                 });

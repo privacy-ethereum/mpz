@@ -131,7 +131,7 @@ fn iteration_cost(ty: LpnType, params: LpnParameters) -> usize {
                 + params.k
                 + CSP
         }
-        // In our chosen paramters, we always set n is divided by t and n/t is a power of 2.
+        // In our chosen parameters, we always set n divisible by t and n/t is a power of 2.
         LpnType::Regular => {
             assert!(params.n % params.t == 0 && (params.n / params.t).is_power_of_two());
             params.t * ((params.n / params.t).ilog2() as usize) + params.k + CSP

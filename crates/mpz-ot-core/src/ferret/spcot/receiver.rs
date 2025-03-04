@@ -28,6 +28,7 @@ struct Check {
 #[derive(Debug)]
 pub(crate) struct SPCOTReceiver {
     ws: Vec<Block>,
+    /// log2 length of the SPCOT vectors.
     lengths: Vec<usize>,
     indices: Vec<usize>,
     check: Option<Check>,
@@ -103,8 +104,8 @@ impl SPCOTReceiver {
     /// * `log2_lengths` - log2 length of the SPCOT vectors.
     /// * `idxs` - Chosen SPCOT indices.
     /// * `macs` - COT MACs used to decrypt OT messages.
-    /// * `ms` - OT messages.
-    /// * `sums` - SPCOT sums.
+    /// * `ms` - OT messages from the sender.
+    /// * `sums` - SPCOT sums from the sender.
     pub(crate) fn extend(
         &mut self,
         log2_lengths: &[usize],
@@ -198,6 +199,7 @@ impl SPCOTReceiver {
         Ok(&self.ws[start..])
     }
 
+    // Starts a batched consistency check.
     pub(crate) fn start_check(&mut self, macs: &[Block], masks: &[bool]) -> Result<Derandomize> {
         if self.check.is_some() {
             return Err(ErrorRepr::State("check already started".to_string()).into());
