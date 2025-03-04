@@ -249,3 +249,32 @@ pub(crate) mod state {
 }
 
 use state::{Extension, Initialized};
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rand::{rngs::StdRng, Rng, SeedableRng};
+
+    #[test]
+    fn test_indices_not_regular() {
+        let mut rng = StdRng::seed_from_u64(0);
+
+        let interval_len = 8;
+        let idx_count = 4;
+        let mut idxs: Vec<_> = (0..idx_count)
+            .map(|i| rng.gen_range(interval_len * i..interval_len * (i + 1)))
+            .collect();
+
+        //Corrupt an index.
+        idxs[idx_count - 1] = idxs[idx_count - 2];
+
+        assert_eq!(
+            MPCOTReceiver::new(rng.gen(), LpnType::Regular)
+                .start_extend(&idxs, interval_len * idx_count)
+                .unwrap_err()
+                .0
+                .to_string(),
+            ErrorRepr::NotRegular.to_string()
+        );
+    }
+}

@@ -185,7 +185,7 @@ mod tests {
 
         GgmTree::new_from_seed(depth, seed, &mut leaves);
 
-        assert_ne!(leaves, vec![Block::ZERO; 1 << depth]);
+        assert!(leaves.iter().all(|leaf| *leaf != Block::ZERO));
     }
 
     #[test]
