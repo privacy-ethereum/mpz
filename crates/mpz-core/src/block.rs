@@ -108,6 +108,16 @@ impl Block {
         Block::reduce_gcm(a, b)
     }
 
+    /// Multiplies a block with a boolean value
+    #[inline]
+    pub fn mul_bool(self, bit: bool) -> Self {
+        if bit {
+            self
+        } else {
+            Block::ZERO
+        }
+    }
+
     /// Compute the inner product of two block vectors, without reducing the
     /// polynomial.
     /// Compute the inner product of two block vectors, without reducing the

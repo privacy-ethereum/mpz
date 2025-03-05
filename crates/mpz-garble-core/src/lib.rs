@@ -38,7 +38,7 @@ const BYTES_PER_GATE: usize = 32;
 
 /// Maximum size of a batch in bytes.
 const MAX_BATCH_SIZE: usize = 4 * KB;
-const SECURITY_PARAM: usize = 40;
+const SSP: usize = 40;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[allow(missing_docs)]
@@ -307,7 +307,7 @@ mod tests {
         let num_input_wires = circ.input_len();
         let num_and_gates = circ.and_count();
 
-        let bucket_size = (SECURITY_PARAM as f64 / (num_input_wires as f64).log2()).ceil() as usize;
+        let bucket_size = (SSP as f64 / (num_input_wires as f64).log2()).ceil() as usize;
 
         let (fpre_gen, fpre_eval) = fpre(num_input_wires, num_and_gates, bucket_size, rng.gen());
 
