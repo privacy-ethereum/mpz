@@ -104,7 +104,7 @@ fn default_parameter_selector(ty: LpnType, available: usize, additional: usize) 
     // *Assumes the parameters are in ascending order.*
     for param in params {
         let cost = iteration_cost(ty, *param);
-        let net = param.t - cost;
+        let net = param.n - cost;
         // If we don't have enough available we select the smallest parameters
         // immediately.
         if available <= cost || net >= additional {
