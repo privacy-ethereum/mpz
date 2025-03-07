@@ -3,17 +3,17 @@
 use std::ops::{Add, Mul, Neg, Sub};
 
 use ark_ff::{BigInt, BigInteger, Field as ArkField, FpConfig, MontBackend, One, Zero};
-use ark_secp256r1::{fq::Fq, FqConfig};
+use ark_secp256r1::{FqConfig, fq::Fq};
 use ark_serialize::{
     CanonicalDeserialize, CanonicalSerialize, Compress, SerializationError, Validate,
 };
 use hybrid_array::Array;
 use itybity::{BitLength, FromBitIterator, GetBit, Lsb0, Msb0};
 use num_bigint::ToBigUint;
-use rand::{distr::StandardUniform, prelude::Distribution};
+use rand::{distributions::Standard, prelude::Distribution};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-use typenum::{U256, U32};
+use typenum::{U32, U256};
 
 use crate::{Field, FieldError};
 
@@ -67,7 +67,7 @@ impl TryFrom<Array<u8, U32>> for P256 {
     }
 }
 
-impl Distribution<P256> for StandardUniform {
+impl Distribution<P256> for Standard {
     fn sample<R: rand::Rng + ?Sized>(&self, rng: &mut R) -> P256 {
         P256(self.sample(rng))
     }
@@ -175,8 +175,8 @@ pub struct P256Error(SerializationError);
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mpz_core::{prg::Prg, Block};
     use rand::{Rng, SeedableRng};
+    use rand_chacha::ChaCha12Rng;
 
     use crate::tests::{test_field_basic, test_field_bit_ops, test_field_compute_product_repeated};
 
@@ -199,10 +199,10 @@ mod tests {
 
     #[test]
     fn test_p256_serialize() {
-        let mut rng = Prg::from_seed(Block::ZERO);
+        let mut rng = ChaCha12Rng::from_seed([0_u8; 32]);
 
         for _ in 0..32 {
-            let a = P256(rng.gen());
+            let a = P256(rng.r#gen());
             let bytes: [u8; 32] = a.into();
             let b = P256::try_from(bytes).unwrap();
 

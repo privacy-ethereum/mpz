@@ -5,12 +5,12 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use mpz_common::future::{new_output, MaybeDone, Output, Sender};
+use mpz_common::future::{MaybeDone, Output, Sender, new_output};
 use mpz_core::Block;
 
 use crate::{
-    ot::{OTReceiver, OTReceiverOutput, OTSender, OTSenderOutput},
     TransferId,
+    ot::{OTReceiver, OTReceiverOutput, OTSender, OTSenderOutput},
 };
 
 #[derive(Debug, Default)]
@@ -82,7 +82,9 @@ impl IdealOT {
             let receiver_id = this.receiver_state.transfer_id.next();
 
             if sender_count != receiver_count {
-                return Err(IdealOTError::new(format!("number of messages and choices do not match ({sender_id}): {sender_count} != {receiver_count}")));
+                return Err(IdealOTError::new(format!(
+                    "number of messages and choices do not match ({sender_id}): {sender_count} != {receiver_count}"
+                )));
             }
 
             sender_output.send(OTSenderOutput { id: sender_id });
@@ -172,7 +174,7 @@ impl IdealOTError {
 #[cfg(test)]
 mod tests {
     use mpz_core::Block;
-    use rand::{rngs::StdRng, Rng, SeedableRng};
+    use rand::{Rng, SeedableRng, rngs::StdRng};
 
     use crate::test::assert_ot;
 
@@ -184,7 +186,7 @@ mod tests {
         let mut choices = vec![false; 100];
         rng.fill(&mut choices[..]);
 
-        let msgs: Vec<[Block; 2]> = (0..100).map(|_| [rng.gen(), rng.gen()]).collect();
+        let msgs: Vec<[Block; 2]> = (0..100).map(|_| [rng.r#gen(), rng.r#gen()]).collect();
 
         let (OTSenderOutput { .. }, OTReceiverOutput { msgs: chosen, .. }) =
             IdealOT::default().transfer(&choices, &msgs).unwrap();

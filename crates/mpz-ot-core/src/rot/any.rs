@@ -1,6 +1,6 @@
 use mpz_common::future::{Map, OutputExt};
 use mpz_core::{prg::Prg, Block};
-use rand::{distr::StandardUniform, prelude::Distribution, Rng};
+use rand::{distributions::Standard, prelude::Distribution, Rng};
 
 use crate::rot::{ROTReceiver, ROTReceiverOutput, ROTSender, ROTSenderOutput};
 
@@ -35,7 +35,7 @@ impl<T> AnySender<T> {
 impl<T, U> ROTSender<[U; 2]> for AnySender<T>
 where
     T: ROTSender<[Block; 2]>,
-    StandardUniform: Distribution<U>,
+    Standard: Distribution<U>,
 {
     type Error = T::Error;
     type Future = Map<
@@ -65,7 +65,7 @@ where
 
 fn map_sender<T>(output: ROTSenderOutput<[Block; 2]>) -> ROTSenderOutput<[T; 2]>
 where
-    StandardUniform: Distribution<T>,
+    Standard: Distribution<T>,
 {
     let ROTSenderOutput { id, keys } = output;
     let keys = keys
@@ -111,7 +111,7 @@ impl<T> AnyReceiver<T> {
 impl<T, U> ROTReceiver<bool, U> for AnyReceiver<T>
 where
     T: ROTReceiver<bool, Block>,
-    StandardUniform: Distribution<U>,
+    Standard: Distribution<U>,
 {
     type Error = T::Error;
     type Future = Map<
@@ -141,7 +141,7 @@ where
 
 fn map_receiver<T>(output: ROTReceiverOutput<bool, Block>) -> ROTReceiverOutput<bool, T>
 where
-    StandardUniform: Distribution<T>,
+    Standard: Distribution<T>,
 {
     let ROTReceiverOutput { id, choices, msgs } = output;
     let msgs = msgs

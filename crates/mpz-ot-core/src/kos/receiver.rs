@@ -1,16 +1,16 @@
 use std::{collections::VecDeque, mem};
 
 use crate::{
-    kos::{Check, Extend, ReceiverConfig, ReceiverError, CSP, SSP},
-    rcot::{RCOTReceiver, RCOTReceiverOutput},
     TransferId,
+    kos::{CSP, Check, Extend, ReceiverConfig, ReceiverError, SSP},
+    rcot::{RCOTReceiver, RCOTReceiverOutput},
 };
 
 use itybity::{FromBitIterator, IntoBits};
-use mpz_common::future::{new_output, MaybeDone, Sender};
-use mpz_core::{prg::Prg, Block};
+use mpz_common::future::{MaybeDone, Sender, new_output};
+use mpz_core::{Block, prg::Prg};
 
-use rand::{rng, Rng as _, SeedableRng};
+use rand::{SeedableRng, thread_rng};
 use rand_core::RngCore;
 
 #[cfg(feature = "rayon")]
@@ -113,7 +113,7 @@ impl Receiver<state::Extension> {
         const NROWS: usize = CSP;
         let row_width = count / 8;
 
-        let mut rng = rng();
+        let mut rng = thread_rng();
         // x₁,...,xₗ bits in Figure 3, step 1.
         let choices = (0..row_width)
             .flat_map(|_| rng.random::<u8>().into_iter_lsb0())

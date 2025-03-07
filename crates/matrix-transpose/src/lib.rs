@@ -76,14 +76,18 @@ pub enum TransposeError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rand::{distributions::Standard, prelude::*};
+    use rand::{
+        Rng,
+        distr::{Distribution, StandardUniform},
+        rng,
+    };
 
     fn random_vec<T>(elements: usize) -> Vec<T>
     where
-        Standard: Distribution<T>,
+        StandardUniform: Distribution<T>,
     {
-        let mut rng = thread_rng();
-        (0..elements).map(|_| rng.gen::<T>()).collect()
+        let mut rng = rng();
+        (0..elements).map(|_| rng.random::<T>()).collect()
     }
 
     fn transpose_naive(data: &[u8], row_width: usize) -> Vec<u8> {

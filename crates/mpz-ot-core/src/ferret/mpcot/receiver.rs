@@ -1,7 +1,6 @@
 use std::array::from_fn;
 
-use mpz_core::{aes::AesEncryptor, lpn::LpnType, prg::Prg, utils::slices_from_lengths, Block};
-use rand_core::SeedableRng;
+use mpz_core::{Block, aes::AesEncryptor, lpn::LpnType, prg::Prg, utils::slices_from_lengths};
 
 use crate::ferret::cuckoo::{Buckets, CuckooHash, CuckooHashError};
 
@@ -22,7 +21,7 @@ impl MPCOTReceiver {
     /// * `seed` - Seed for Cuckoo hashing.
     /// * `lpn_type` - The LPN type.
     pub(crate) fn new(seed: Block, lpn_type: LpnType) -> Self {
-        let mut prg = Prg::from_seed(seed);
+        let mut prg = Prg::new_with_seed(seed.to_bytes());
         let hashes = from_fn(|_| AesEncryptor::new(prg.random_block()));
 
         let state = match lpn_type {

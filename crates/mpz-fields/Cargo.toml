@@ -1,7 +1,7 @@
 [package]
 name = "mpz-fields"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 [lints]
 workspace = true
@@ -12,7 +12,7 @@ name = "mpz_fields"
 [dependencies]
 mpz-core.workspace = true
 
-rand.workspace = true
+rand = { version = "0.8" }
 ark-ff.workspace = true
 ark-secp256r1.workspace = true
 ark-serialize.workspace = true
@@ -27,6 +27,7 @@ thiserror.workspace = true
 [dev-dependencies]
 ghash_rc.workspace = true
 criterion.workspace = true
+rand_chacha = { version = "0.3" }
 
 [[bench]]
 name = "inverse_gf2_128"

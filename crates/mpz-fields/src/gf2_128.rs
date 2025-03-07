@@ -2,7 +2,7 @@
 
 use hybrid_array::Array;
 use itybity::{BitLength, FromBitIterator, GetBit, Lsb0, Msb0};
-use rand::{distr::StandardUniform, prelude::Distribution};
+use rand::{distributions::Standard, prelude::Distribution};
 use serde::{Deserialize, Serialize};
 use std::ops::{Add, Mul, Neg, Sub};
 
@@ -54,7 +54,7 @@ impl TryFrom<Array<u8, U16>> for Gf2_128 {
     }
 }
 
-impl Distribution<Gf2_128> for StandardUniform {
+impl Distribution<Gf2_128> for Standard {
     fn sample<R: rand::Rng + ?Sized>(&self, rng: &mut R) -> Gf2_128 {
         Gf2_128(self.sample(rng))
     }

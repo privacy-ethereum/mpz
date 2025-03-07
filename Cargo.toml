@@ -22,7 +22,7 @@ members = [
     "crates/mpz-zk-core",
     "crates/mpz-zk",
 ]
-resolver = "2"
+resolver = "3"
 
 [profile.release]
 lto = true

@@ -126,7 +126,7 @@ impl ClmulX86 {
 mod tests {
     use super::ClmulX86;
     use rand::Rng;
-    use rand_chacha::{rand_core::SeedableRng, ChaCha12Rng};
+    use rand_chacha::{ChaCha12Rng, rand_core::SeedableRng};
     use std::arch::x86_64::*;
 
     /// Carryless multiplication. Reference implementation.
@@ -160,8 +160,8 @@ mod tests {
         }
 
         let mut rng = ChaCha12Rng::from_seed([0; 32]);
-        let a: [u8; 16] = rng.gen();
-        let b: [u8; 16] = rng.gen();
+        let a: [u8; 16] = rng.random();
+        let b: [u8; 16] = rng.random();
 
         let (r_0, r_1) = ClmulX86::new(&a).clmul(ClmulX86::new(&b));
         let (ref_0, ref_1) = clmul128(u128::from_le_bytes(a), u128::from_le_bytes(b));

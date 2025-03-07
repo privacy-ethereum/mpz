@@ -1,15 +1,15 @@
 use std::{collections::VecDeque, mem};
 
 use crate::{
-    kos::{Check, Extend, SenderConfig, SenderError, CSP, SSP},
-    rcot::{RCOTSender, RCOTSenderOutput},
     TransferId,
+    kos::{CSP, Check, Extend, SSP, SenderConfig, SenderError},
+    rcot::{RCOTSender, RCOTSenderOutput},
 };
 
-use mpz_common::future::{new_output, MaybeDone, Sender as OutputSender};
-use mpz_core::{prg::Prg, Block};
+use mpz_common::future::{MaybeDone, Sender as OutputSender, new_output};
+use mpz_core::{Block, prg::Prg};
 
-use rand::{Rng as _, SeedableRng};
+use rand::SeedableRng;
 use rand_core::RngCore;
 
 cfg_if::cfg_if! {

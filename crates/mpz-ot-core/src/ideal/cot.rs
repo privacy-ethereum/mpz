@@ -5,12 +5,12 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use mpz_common::future::{new_output, MaybeDone, Output, Sender};
+use mpz_common::future::{MaybeDone, Output, Sender, new_output};
 use mpz_core::Block;
 
 use crate::{
-    cot::{COTReceiver, COTReceiverOutput, COTSender, COTSenderOutput},
     TransferId,
+    cot::{COTReceiver, COTReceiverOutput, COTSender, COTSenderOutput},
 };
 
 type Error = IdealCOTError;
@@ -126,11 +126,7 @@ impl IdealCOT {
         let delta = this.delta;
         let mut msgs = keys.into_iter().zip(choices).map(
             move |(key, choice)| {
-                if choice {
-                    key ^ delta
-                } else {
-                    key
-                }
+                if choice { key ^ delta } else { key }
             },
         );
 
@@ -141,7 +137,9 @@ impl IdealCOT {
             let receiver_id = this.receiver_state.transfer_id.next();
 
             if sender_count != receiver_count {
-                return Err(Error::new(format!("number of messages and choices do not match ({sender_id}): {sender_count} != {receiver_count}")));
+                return Err(Error::new(format!(
+                    "number of messages and choices do not match ({sender_id}): {sender_count} != {receiver_count}"
+                )));
             }
 
             sender_output.send(COTSenderOutput { id: sender_id });
@@ -232,7 +230,7 @@ impl IdealCOTError {
 
 #[cfg(test)]
 mod tests {
-    use rand::{rngs::StdRng, Rng, SeedableRng};
+    use rand::{Rng, SeedableRng, rngs::StdRng};
 
     use super::*;
 
@@ -245,8 +243,8 @@ mod tests {
         let mut ideal = IdealCOT::new(delta);
 
         let count = 128;
-        let choices = (0..count).map(|_| rng.gen()).collect::<Vec<_>>();
-        let keys = (0..count).map(|_| rng.gen()).collect::<Vec<_>>();
+        let choices = (0..count).map(|_| rng.r#gen()).collect::<Vec<_>>();
+        let keys = (0..count).map(|_| rng.r#gen()).collect::<Vec<_>>();
 
         let (
             COTSenderOutput { id: sender_id },
