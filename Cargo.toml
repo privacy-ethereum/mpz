@@ -65,6 +65,8 @@ tlsn-utils = { git = "https://github.com/tlsnotary/tlsn-utils", rev = "425614e" 
 rand_chacha = "0.9"
 rand = "0.9"
 rand_core = "0.9"
+rand_core_06 = { package = "rand_core", version = "0.6" }
+rand_08 = { package = "rand", version = "0.8" }
 
 # crypto
 cipher = "0.4"

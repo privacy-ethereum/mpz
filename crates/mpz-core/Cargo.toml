@@ -27,7 +27,7 @@ once_cell.workspace = true
 itybity.workspace = true
 opaque-debug.workspace = true
 bcs = "0.1.5"
-rand_core_06 = { package = "rand_core", version = "0.6" }
+rand_core_06 = { workspace = true }
 rand_core = { workspace = true }
 bytemuck = { workspace = true, features = ["derive"] }
 generic-array.workspace = true

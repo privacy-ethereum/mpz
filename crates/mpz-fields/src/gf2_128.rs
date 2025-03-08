@@ -54,7 +54,7 @@ impl TryFrom<Array<u8, U16>> for Gf2_128 {
     }
 }
 
-impl Distribution<Gf2_128> for Standard {
+impl Distribution<Gf2_128> for StandardUniform {
     fn sample<R: rand::Rng + ?Sized>(&self, rng: &mut R) -> Gf2_128 {
         Gf2_128(self.sample(rng))
     }
