@@ -130,7 +130,7 @@ mod tests {
     #[tokio::test]
     async fn test_ideal_cot() {
         let mut rng = StdRng::seed_from_u64(0);
-        let (sender, receiver) = ideal_cot(rng.r#gen());
+        let (sender, receiver) = ideal_cot(rng.random());
         test_cot(sender, receiver, 8).await;
     }
 }

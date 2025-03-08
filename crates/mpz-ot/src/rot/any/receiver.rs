@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use mpz_common::{Context, Flush};
 use mpz_core::Block;
 use mpz_ot_core::rot::{AnyReceiver as Core, ROTReceiver, ROTReceiverOutput};
-use rand::{distributions::Standard, prelude::Distribution};
+use rand::{distr::StandardUniform, prelude::Distribution};
 
 /// A ROT receiver which receives any type implementing `rand` traits.
 #[derive(Debug)]
@@ -27,7 +27,7 @@ impl<T> AnyReceiver<T> {
 impl<T, U> ROTReceiver<bool, U> for AnyReceiver<T>
 where
     T: ROTReceiver<bool, Block>,
-    Standard: Distribution<U>,
+    StandardUniform: Distribution<U>,
 {
     type Error = T::Error;
     type Future = <Core<T> as ROTReceiver<bool, U>>::Future;

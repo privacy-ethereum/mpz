@@ -205,7 +205,7 @@ mod tests {
     #[test]
     fn test_randomize_rcot() {
         let mut rng = StdRng::seed_from_u64(0);
-        let rcot = IdealRCOT::new(rng.r#gen(), rng.r#gen());
+        let rcot = IdealRCOT::new(rng.random(), rng.random());
 
         let mut sender = RandomizeRCOTSender::new(rcot.clone());
         let mut receiver = RandomizeRCOTReceiver::new(rcot);

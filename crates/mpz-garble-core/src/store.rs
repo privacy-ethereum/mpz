@@ -126,7 +126,7 @@ mod tests {
         let delta = Delta::random(&mut rng);
         let cot = IdealCOT::new(delta.into_inner());
 
-        let mut gb = GarblerStore::new(rng.r#gen(), delta, cot.clone());
+        let mut gb = GarblerStore::new(rng.random(), delta, cot.clone());
         let mut ev = EvaluatorStore::new(cot);
 
         let val_a = [0u8; 16];

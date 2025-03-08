@@ -100,7 +100,7 @@ impl SPCOTSender {
         self.vs.resize_with(start + len, || Block::ZERO);
 
         let spcot_lengths: Vec<_> = log2_lengths.iter().map(|length| 1 << length).collect();
-        let seeds: Vec<Block> = (0..log2_lengths.len()).map(|_| rng.r#gen()).collect();
+        let seeds: Vec<Block> = (0..log2_lengths.len()).map(|_| rng.random()).collect();
         let vs = slices_from_lengths_mut(&mut self.vs[start..], &spcot_lengths);
         let ks = slices_from_lengths_mut(&mut ms, log2_lengths);
 

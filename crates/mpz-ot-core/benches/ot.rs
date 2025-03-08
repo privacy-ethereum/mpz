@@ -19,7 +19,7 @@ fn chou_orlandi(c: &mut Criterion) {
         group.bench_with_input(BenchmarkId::from_parameter(n), &n, |b, &n| {
             let msgs = vec![[Block::ONES; 2]; n];
             let mut rng = ChaCha12Rng::seed_from_u64(0);
-            let choices = (0..n).map(|_| rng.r#gen()).collect::<Vec<bool>>();
+            let choices = (0..n).map(|_| rng.random()).collect::<Vec<bool>>();
             b.iter(|| {
                 let sender = chou_orlandi::Sender::default();
                 let receiver = chou_orlandi::Receiver::default();
@@ -50,7 +50,7 @@ fn kos(c: &mut Criterion) {
             let chi_seed = Block::random(&mut rng);
 
             let receiver_seeds: [[Block; 2]; 128] =
-                std::array::from_fn(|_| [rng.r#gen(), rng.r#gen()]);
+                std::array::from_fn(|_| [rng.random(), rng.random()]);
             let sender_seeds: [Block; 128] = delta
                 .iter_lsb0()
                 .zip(receiver_seeds)
@@ -102,9 +102,9 @@ fn ferret(c: &mut Criterion) {
                 let config = builder.build().unwrap();
 
                 b.iter(|| {
-                    let cot = IdealRCOT::new(rng.r#gen(), delta);
-                    let mut sender = ferret::Sender::new(rng.r#gen(), config.clone(), cot.clone());
-                    let mut receiver = ferret::Receiver::new(rng.r#gen(), config.clone(), cot);
+                    let cot = IdealRCOT::new(rng.random(), delta);
+                    let mut sender = ferret::Sender::new(rng.random(), config.clone(), cot.clone());
+                    let mut receiver = ferret::Receiver::new(rng.random(), config.clone(), cot);
 
                     let init = receiver.initialize().unwrap();
                     sender.initialize(init).unwrap();

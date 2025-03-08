@@ -91,7 +91,7 @@ mod tests {
 
         let delta = Delta::random(&mut rng);
         let input_keys = (0..AES128.input_len())
-            .map(|_| rng.r#gen())
+            .map(|_| rng.random())
             .collect::<Vec<Key>>();
 
         let input_macs = input_keys
@@ -151,7 +151,7 @@ mod tests {
 
         let delta = Delta::random(&mut rng);
         let input_keys = (0..AES128.input_len())
-            .map(|_| rng.r#gen())
+            .map(|_| rng.random())
             .collect::<Vec<Key>>();
 
         let input_macs = input_keys
@@ -225,7 +225,7 @@ mod tests {
 
         let delta = Delta::random(&mut rng);
         let input_keys = (0..circ.input_len())
-            .map(|_| rng.r#gen())
+            .map(|_| rng.random())
             .collect::<Vec<Key>>();
 
         let input_macs = input_keys

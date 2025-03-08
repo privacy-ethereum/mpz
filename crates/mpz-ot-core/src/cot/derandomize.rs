@@ -347,13 +347,13 @@ mod tests {
     fn test_derandomize_cot() {
         let mut rng = StdRng::seed_from_u64(0);
         let delta = Block::random(&mut rng);
-        let rcot = IdealRCOT::new(rng.r#gen(), delta);
+        let rcot = IdealRCOT::new(rng.random(), delta);
 
         let mut sender = DerandCOTSender::new(rcot.clone());
         let mut receiver = DerandCOTReceiver::new(rcot);
 
         let count = 10;
-        let choices = (0..count).map(|_| rng.r#gen()).collect::<Vec<_>>();
+        let choices = (0..count).map(|_| rng.random()).collect::<Vec<_>>();
         let keys: Vec<_> = (0..count).map(|_| Block::random(&mut rng)).collect();
 
         sender.alloc(count).unwrap();
