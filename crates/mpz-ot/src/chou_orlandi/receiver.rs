@@ -3,11 +3,11 @@ use async_trait::async_trait;
 use mpz_common::{Context, Flush};
 use mpz_core::Block;
 use mpz_ot_core::{
-    chou_orlandi::{receiver_state as state, Receiver as Core, ReceiverError as CoreError},
+    chou_orlandi::{Receiver as Core, ReceiverError as CoreError, receiver_state as state},
     ot::OTReceiver,
 };
 
-use serio::{stream::IoStreamExt as _, SinkExt as _};
+use serio::{SinkExt as _, stream::IoStreamExt as _};
 
 type Error = ReceiverError;
 

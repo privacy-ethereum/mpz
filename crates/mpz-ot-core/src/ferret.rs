@@ -58,7 +58,7 @@ mod tests {
         test::assert_cot,
     };
     use mpz_core::lpn::LpnType;
-    use rand::{rngs::StdRng, SeedableRng};
+    use rand::{SeedableRng, rngs::StdRng};
     use rstest::*;
 
     #[rstest]
@@ -68,8 +68,8 @@ mod tests {
         use rand::Rng;
 
         let mut rng = StdRng::seed_from_u64(0);
-        let delta = rng.gen();
-        let cot = IdealRCOT::new(rng.gen(), delta);
+        let delta = rng.r#gen();
+        let cot = IdealRCOT::new(rng.r#gen(), delta);
 
         let mut builder = FerretConfig::builder();
 
@@ -79,8 +79,8 @@ mod tests {
         let config = builder.build().unwrap();
         let count = TEST_PARAMS.n * 2;
 
-        let mut sender = Sender::new(rng.gen(), config.clone(), cot.clone());
-        let mut receiver = Receiver::new(rng.gen(), config, cot);
+        let mut sender = Sender::new(rng.r#gen(), config.clone(), cot.clone());
+        let mut receiver = Receiver::new(rng.r#gen(), config, cot);
 
         assert!(sender.wants_init());
         assert!(receiver.wants_init());

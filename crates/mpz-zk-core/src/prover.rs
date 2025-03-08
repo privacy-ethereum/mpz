@@ -2,7 +2,7 @@ use std::sync::{Arc, Mutex};
 
 use blake3::Hasher;
 use mpz_circuits::{Circuit, Gate};
-use mpz_core::{bitvec::BitVec, Block};
+use mpz_core::{Block, bitvec::BitVec};
 use mpz_memory_core::correlated::Mac;
 
 use crate::{

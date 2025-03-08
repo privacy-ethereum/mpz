@@ -4,14 +4,14 @@ mod worker;
 
 use std::sync::{Arc, Mutex};
 
-use futures::{stream::FuturesUnordered, FutureExt, StreamExt as _};
+use futures::{FutureExt, StreamExt as _, stream::FuturesUnordered};
 use pollster::FutureExt as _;
 use scoped_futures::ScopedBoxFuture;
 use worker::{Handle, Worker};
 
 use crate::{
-    context::ErrorKind, load_balance::distribute_by_weight, mux::Mux, Context, ContextError,
-    ThreadId,
+    Context, ContextError, ThreadId, context::ErrorKind, load_balance::distribute_by_weight,
+    mux::Mux,
 };
 
 pub use builder::{MultithreadBuilder, MultithreadBuilderError};

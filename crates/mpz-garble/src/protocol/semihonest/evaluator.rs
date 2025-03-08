@@ -9,12 +9,12 @@ use utils::{
 };
 
 use mpz_common::{
-    scoped_futures::{ScopedBoxFuture, ScopedFutureExt},
     Context, Flush,
+    scoped_futures::{ScopedBoxFuture, ScopedFutureExt},
 };
-use mpz_core::{bitvec::BitVec, Block};
-use mpz_garble_core::{evaluate_garbled_circuits, EvaluatorOutput, GarbledCircuit};
-use mpz_memory_core::{binary::Binary, DecodeFuture, Memory, Slice, View};
+use mpz_core::{Block, bitvec::BitVec};
+use mpz_garble_core::{EvaluatorOutput, GarbledCircuit, evaluate_garbled_circuits};
+use mpz_memory_core::{DecodeFuture, Memory, Slice, View, binary::Binary};
 use mpz_ot::cot::COTReceiver;
 use mpz_vm_core::{Call, Callable, Execute, Result, VmError};
 

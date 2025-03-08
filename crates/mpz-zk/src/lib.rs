@@ -8,17 +8,17 @@ pub use verifier::Verifier;
 mod tests {
     use mpz_circuits::circuits::AES128;
     use mpz_common::context::test_st_context;
-    use mpz_ot::ideal::rcot::{ideal_rcot, IdealRCOTReceiver, IdealRCOTSender};
+    use mpz_ot::ideal::rcot::{IdealRCOTReceiver, IdealRCOTSender, ideal_rcot};
     use mpz_vm_core::{
+        Call, Vm,
         memory::{
+            Array,
             binary::{Binary, U8},
             correlated::Delta,
-            Array,
         },
         prelude::*,
-        Call, Vm,
     };
-    use rand::{rngs::StdRng, Rng, SeedableRng};
+    use rand::{Rng, SeedableRng, rngs::StdRng};
 
     use super::*;
 
@@ -35,7 +35,7 @@ mod tests {
         let delta = Delta::random(&mut rng);
         let (mut ctx_p, mut ctx_v) = test_st_context(8);
 
-        let (ot_send, ot_recv) = ideal_rcot(rng.gen(), delta.into_inner());
+        let (ot_send, ot_recv) = ideal_rcot(rng.r#gen(), delta.into_inner());
 
         let mut prover = Prover::new(ot_recv);
         let mut verifier = Verifier::new(delta, ot_send);

@@ -1,23 +1,23 @@
 use async_trait::async_trait;
-use mpz_common::{scoped_futures::ScopedFutureExt, Context, ContextError, Flush};
-use mpz_core::{bitvec::BitVec, Block};
+use mpz_common::{Context, ContextError, Flush, scoped_futures::ScopedFutureExt};
+use mpz_core::{Block, bitvec::BitVec};
 use mpz_garble_core::{
-    store::{GeneratorStore as Core, GeneratorStoreError as CoreError},
     Delta, Key,
+    store::{GarblerStore as Core, GarblerStoreError as CoreError},
 };
-use mpz_memory_core::{binary::Binary, DecodeFuture, Memory, Slice, View};
+use mpz_memory_core::{DecodeFuture, Memory, Slice, View, binary::Binary};
 use mpz_ot::cot::COTSender;
-use serio::{stream::IoStreamExt, SinkExt};
+use serio::{SinkExt, stream::IoStreamExt};
 
-type Error = GeneratorStoreError;
+type Error = GarblerStoreError;
 
 #[derive(Debug)]
-pub(crate) struct GeneratorStore<COT> {
+pub(crate) struct GarblerStore<COT> {
     core: Core<COT>,
 }
 
-impl<COT> GeneratorStore<COT> {
-    /// Creates a new generator store.
+impl<COT> GarblerStore<COT> {
+    /// Creates a new garbler store.
     pub(crate) fn new(seed: [u8; 16], delta: Delta, cot: COT) -> Self {
         Self {
             core: Core::new(seed, delta, cot),
@@ -53,7 +53,7 @@ impl<COT> GeneratorStore<COT> {
     }
 }
 
-impl<COT> Memory<Binary> for GeneratorStore<COT> {
+impl<COT> Memory<Binary> for GarblerStore<COT> {
     type Error = Error;
 
     fn alloc_raw(&mut self, size: usize) -> Result<Slice, Self::Error> {
@@ -77,7 +77,7 @@ impl<COT> Memory<Binary> for GeneratorStore<COT> {
     }
 }
 
-impl<COT> View<Binary> for GeneratorStore<COT>
+impl<COT> View<Binary> for GarblerStore<COT>
 where
     COT: COTSender<Block>,
 {
@@ -97,7 +97,7 @@ where
 }
 
 #[async_trait]
-impl<COT> Flush for GeneratorStore<COT>
+impl<COT> Flush for GarblerStore<COT>
 where
     COT: COTSender<Block> + Flush + Send + 'static,
 {
@@ -134,9 +134,9 @@ where
 
 #[derive(Debug, thiserror::Error)]
 #[error(transparent)]
-pub(crate) struct GeneratorStoreError(#[from] ErrorRepr);
+pub(crate) struct GarblerStoreError(#[from] ErrorRepr);
 
-impl GeneratorStoreError {
+impl GarblerStoreError {
     fn cot<E>(err: E) -> Self
     where
         E: Into<Box<dyn std::error::Error + Send + Sync + 'static>>,
@@ -157,20 +157,20 @@ enum ErrorRepr {
     Context(#[from] ContextError),
 }
 
-impl From<CoreError> for GeneratorStoreError {
+impl From<CoreError> for GarblerStoreError {
     fn from(value: CoreError) -> Self {
-        GeneratorStoreError(ErrorRepr::Core(value))
+        GarblerStoreError(ErrorRepr::Core(value))
     }
 }
 
-impl From<std::io::Error> for GeneratorStoreError {
+impl From<std::io::Error> for GarblerStoreError {
     fn from(value: std::io::Error) -> Self {
-        GeneratorStoreError(ErrorRepr::Io(value))
+        GarblerStoreError(ErrorRepr::Io(value))
     }
 }
 
-impl From<ContextError> for GeneratorStoreError {
+impl From<ContextError> for GarblerStoreError {
     fn from(value: ContextError) -> Self {
-        GeneratorStoreError(ErrorRepr::Context(value))
+        GarblerStoreError(ErrorRepr::Context(value))
     }
 }

@@ -1,37 +1,35 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use mpz_circuits::circuits::AES128;
-use mpz_garble_core::{Evaluator, Generator};
+use mpz_garble_core::{Evaluator, Garbler};
 use mpz_memory_core::correlated::Delta;
-use rand::{rngs::StdRng, Rng, SeedableRng};
+use rand::{Rng, SeedableRng, rngs::StdRng};
 
 fn criterion_benchmark(c: &mut Criterion) {
     let mut gb_group = c.benchmark_group("garble");
 
     let mut rng = StdRng::seed_from_u64(0);
     let delta = Delta::random(&mut rng);
-    let inputs: Vec<_> = (0..256).map(|_| rng.gen()).collect();
+    let inputs: Vec<_> = (0..256).map(|_| rng.r#gen()).collect();
 
     gb_group.bench_function("aes128", |b| {
-        let mut gen = Generator::default();
+        let mut gb = Garbler::default();
         b.iter(|| {
-            let mut gen_iter = gen.generate(&AES128, delta, inputs.clone()).unwrap();
+            let mut gb_iter = gb.generate(&AES128, delta, inputs.clone()).unwrap();
 
-            let _: Vec<_> = gen_iter.by_ref().collect();
+            let _: Vec<_> = gb_iter.by_ref().collect();
 
-            black_box(gen_iter.finish().unwrap())
+            black_box(gb_iter.finish().unwrap())
         })
     });
 
     gb_group.bench_function("aes128_batched", |b| {
-        let mut gen = Generator::default();
+        let mut gb = Garbler::default();
         b.iter(|| {
-            let mut gen_iter = gen
-                .generate_batched(&AES128, delta, inputs.clone())
-                .unwrap();
+            let mut gb_iter = gb.generate_batched(&AES128, delta, inputs.clone()).unwrap();
 
-            let _: Vec<_> = gen_iter.by_ref().collect();
+            let _: Vec<_> = gb_iter.by_ref().collect();
 
-            black_box(gen_iter.finish().unwrap())
+            black_box(gb_iter.finish().unwrap())
         })
     });
 
@@ -40,11 +38,11 @@ fn criterion_benchmark(c: &mut Criterion) {
     let mut ev_group = c.benchmark_group("evaluate");
 
     ev_group.bench_function("aes128", |b| {
-        let mut gen = Generator::default();
-        let mut gen_iter = gen.generate(&AES128, delta, inputs.clone()).unwrap();
-        let gates: Vec<_> = gen_iter.by_ref().collect();
+        let mut gb = Garbler::default();
+        let mut gb_iter = gb.generate(&AES128, delta, inputs.clone()).unwrap();
+        let gates: Vec<_> = gb_iter.by_ref().collect();
 
-        let choices: Vec<bool> = (0..256).map(|_| rng.gen()).collect();
+        let choices: Vec<bool> = (0..256).map(|_| rng.r#gen()).collect();
         let inputs: Vec<_> = inputs
             .iter()
             .zip(choices)

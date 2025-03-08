@@ -1,14 +1,14 @@
 use async_trait::async_trait;
 use itybity::IntoBits;
 use mpz_cointoss::{self as cointoss, cointoss_receiver};
-use mpz_common::{future::MaybeDone, Context, ContextError, Flush};
+use mpz_common::{Context, ContextError, Flush, future::MaybeDone};
 use mpz_core::Block;
 use mpz_ot_core::{
-    kos::{sender_state as state, Sender as Core, SenderConfig, SenderError as CoreError},
+    kos::{Sender as Core, SenderConfig, SenderError as CoreError, sender_state as state},
     ot::{OTReceiver, OTReceiverOutput},
     rcot::{RCOTSender, RCOTSenderOutput},
 };
-use rand::{thread_rng, Rng};
+use rand::{Rng, thread_rng};
 use serio::stream::IoStreamExt as _;
 
 type Error = SenderError;
@@ -143,7 +143,7 @@ where
             sender.extend(extend)?;
         }
 
-        let seed = thread_rng().gen();
+        let seed = thread_rng().r#gen();
 
         // See issue #176.
         let chi_seed = cointoss_receiver(ctx, vec![seed]).await?[0];

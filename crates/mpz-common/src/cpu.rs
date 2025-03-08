@@ -63,7 +63,7 @@ mod st {
 
 #[cfg(all(feature = "rayon", not(feature = "force-st")))]
 mod rayon_backend {
-    use futures::{channel::oneshot, Future};
+    use futures::{Future, channel::oneshot};
     use pollster::block_on;
 
     /// A Rayon CPU backend.

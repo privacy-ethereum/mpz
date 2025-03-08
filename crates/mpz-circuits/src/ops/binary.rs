@@ -1,9 +1,9 @@
 use std::ops::{BitAnd, BitOr, BitXor, Not};
 
 use crate::{
+    BuilderState, Tracer,
     components::{Feed, Node},
     types::Bit,
-    BuilderState, Tracer,
 };
 
 /// Binary full-adder.
@@ -262,7 +262,7 @@ mod tests {
 
     use super::*;
 
-    use crate::{types::U8, CircuitBuilder};
+    use crate::{CircuitBuilder, types::U8};
 
     #[test]
     fn test_wrapping_add() {

@@ -42,7 +42,7 @@ use mpz_cointoss_core::{
 };
 use mpz_common::Context;
 use mpz_core::Block;
-use serio::{stream::IoStreamExt, SinkExt};
+use serio::{SinkExt, stream::IoStreamExt};
 
 pub use mpz_cointoss_core::{msgs, receiver_state, sender_state};
 

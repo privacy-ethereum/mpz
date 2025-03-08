@@ -9,7 +9,7 @@ pub use sender::{SharedRCOTSender, SharedRCOTSenderError};
 #[cfg(test)]
 mod tests {
     use mpz_core::Block;
-    use rand::{rngs::StdRng, SeedableRng};
+    use rand::{SeedableRng, rngs::StdRng};
 
     use crate::{ideal::rcot::ideal_rcot, test::test_rcot};
 

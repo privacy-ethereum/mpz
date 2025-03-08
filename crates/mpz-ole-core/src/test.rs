@@ -54,7 +54,7 @@ pub fn assert_ole<F: Field>(sender_share: OLEShare<F>, receiver_share: OLEShare<
 #[cfg(test)]
 mod tests {
     use mpz_fields::{gf2_128::Gf2_128, p256::P256};
-    use rand::{rngs::StdRng, SeedableRng};
+    use rand::{SeedableRng, rngs::StdRng};
 
     use super::*;
 

@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::ops::{Add, Mul, Neg, Sub};
 
 use mpz_core::Block;
-use typenum::{U128, U16};
+use typenum::{U16, U128};
 
 use crate::{Field, FieldError};
 
@@ -193,14 +193,14 @@ impl FromBitIterator for Gf2_128 {
 mod tests {
     use super::Gf2_128;
     use crate::{
-        tests::{test_field_basic, test_field_bit_ops, test_field_compute_product_repeated},
         Field,
+        tests::{test_field_basic, test_field_bit_ops, test_field_compute_product_repeated},
     };
     use ghash_rc::{
-        universal_hash::{NewUniversalHash, UniversalHash},
         GHash,
+        universal_hash::{NewUniversalHash, UniversalHash},
     };
-    use mpz_core::{prg::Prg, Block};
+    use mpz_core::{Block, prg::Prg};
     use rand::SeedableRng;
 
     #[test]

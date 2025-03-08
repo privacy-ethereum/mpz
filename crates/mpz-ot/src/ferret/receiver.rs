@@ -1,7 +1,7 @@
 use async_trait::async_trait;
-use serio::{stream::IoStreamExt, SinkExt};
+use serio::{SinkExt, stream::IoStreamExt};
 
-use mpz_common::{future::MaybeDone, Context, Flush};
+use mpz_common::{Context, Flush, future::MaybeDone};
 use mpz_core::Block;
 use mpz_ot_core::{
     ferret::{FerretConfig, Receiver as Core, ReceiverError as CoreError},

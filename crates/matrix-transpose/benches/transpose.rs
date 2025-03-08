@@ -1,6 +1,6 @@
 #![allow(clippy::all)]
 
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, criterion_group, criterion_main};
 use rand::{distributions::Standard, prelude::*};
 
 fn random_vec<T>(elements: usize) -> Vec<T>
@@ -8,7 +8,7 @@ where
     Standard: Distribution<T>,
 {
     let mut rng = thread_rng();
-    (0..elements).map(|_| rng.gen::<T>()).collect()
+    (0..elements).map(|_| rng.r#gen::<T>()).collect()
 }
 
 #[inline]

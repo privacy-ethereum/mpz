@@ -1,4 +1,4 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use mpz_circuits::{circuits::build_sha256, types::Value};
 
 fn criterion_benchmark(c: &mut Criterion) {

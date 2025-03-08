@@ -91,8 +91,8 @@ fn build_otp(size: usize) -> Arc<Circuit> {
 #[cfg(test)]
 mod tests {
     use mpz_memory_core::{
-        binary::{Binary, U8},
         Vector,
+        binary::{Binary, U8},
     };
 
     use super::*;

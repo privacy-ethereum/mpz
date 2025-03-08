@@ -5,8 +5,8 @@ use std::collections::VecDeque;
 use hybrid_array::Array;
 use rand::SeedableRng;
 
-use mpz_common::future::{new_output, MaybeDone, Sender as OutputSender};
-use mpz_core::{prg::Prg, Block};
+use mpz_common::future::{MaybeDone, Sender as OutputSender, new_output};
+use mpz_core::{Block, prg::Prg};
 use mpz_fields::Field;
 use mpz_ot_core::rot::{ROTSender, ROTSenderOutput};
 
