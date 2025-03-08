@@ -33,8 +33,6 @@ mod task;
 pub use context::{Context, ContextError};
 pub use id::{Counter, ThreadId};
 pub use task::Task;
-// Re-export scoped-futures for use with the callback-like API in `Context`.
-pub use scoped_futures;
 
 use async_trait::async_trait;
 

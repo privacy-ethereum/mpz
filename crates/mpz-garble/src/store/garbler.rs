@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use mpz_common::{Context, ContextError, Flush, scoped_futures::ScopedFutureExt};
+use mpz_common::{Context, ContextError, Flush};
 use mpz_core::{Block, bitvec::BitVec};
 use mpz_garble_core::{
     Delta, Key,
@@ -114,14 +114,11 @@ where
 
             let (flush, ()) = ctx
                 .try_join(
-                    |ctx| {
-                        async move {
-                            ctx.io_mut().send(flush).await?;
-                            ctx.io_mut().expect_next().await.map_err(Error::from)
-                        }
-                        .scope_boxed()
+                    async |ctx| {
+                        ctx.io_mut().send(flush).await?;
+                        ctx.io_mut().expect_next().await.map_err(Error::from)
                     },
-                    |ctx| async move { cot.flush(ctx).await.map_err(Error::cot) }.scope_boxed(),
+                    async move |ctx| cot.flush(ctx).await.map_err(Error::cot),
                 )
                 .await??;
 
