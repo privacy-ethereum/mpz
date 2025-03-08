@@ -1,7 +1,7 @@
 [package]
 name = "mpz-share-conversion-core"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 [lints]
 workspace = true
@@ -16,9 +16,7 @@ test-utils = []
 [dependencies]
 mpz-fields.workspace = true
 mpz-core.workspace = true
-mpz-common = { workspace = true, features = [
-    "future",
-] }
+mpz-common = { workspace = true, features = ["future"] }
 mpz-ole-core = { workspace = true }
 
 rand.workspace = true
