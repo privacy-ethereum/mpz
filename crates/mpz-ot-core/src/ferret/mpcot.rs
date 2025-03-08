@@ -17,8 +17,8 @@ mod tests {
     #[case::regular(LpnType::Regular)]
     fn test_mpcot(#[case] lpn_type: LpnType) {
         let mut rng = StdRng::seed_from_u64(0);
-        let delta = rng.r#gen();
-        let cuckoo_seed = rng.r#gen();
+        let delta = rng.random();
+        let cuckoo_seed = rng.random();
 
         let sender = MPCOTSender::new(cuckoo_seed, lpn_type);
         let receiver = MPCOTReceiver::new(cuckoo_seed, lpn_type);

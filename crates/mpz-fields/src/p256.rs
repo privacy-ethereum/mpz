@@ -9,8 +9,10 @@ use ark_serialize::{
 };
 use hybrid_array::Array;
 use itybity::{BitLength, FromBitIterator, GetBit, Lsb0, Msb0};
+use mpz_core::rand::Rand0_8CompatExt;
 use num_bigint::ToBigUint;
-use rand::{distributions::Standard, prelude::Distribution};
+use rand::{distr::StandardUniform, prelude::Distribution};
+use rand_08::Rng as _;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use typenum::{U32, U256};
@@ -67,9 +69,9 @@ impl TryFrom<Array<u8, U32>> for P256 {
     }
 }
 
-impl Distribution<P256> for Standard {
+impl Distribution<P256> for StandardUniform {
     fn sample<R: rand::Rng + ?Sized>(&self, rng: &mut R) -> P256 {
-        P256(self.sample(rng))
+        P256(rng.compat().r#gen::<Fq>())
     }
 }
 
@@ -202,7 +204,7 @@ mod tests {
         let mut rng = Prg::from_seed(Block::ZERO);
 
         for _ in 0..32 {
-            let a = P256(rng.r#gen());
+            let a: P256 = rng.random();
             let bytes: [u8; 32] = a.into();
             let b = P256::try_from(bytes).unwrap();
 

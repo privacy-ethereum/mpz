@@ -13,8 +13,8 @@
 //! # fn main() {
 //! # block_on(async {
 //! let (mut ctx_sender, mut ctx_receiver) = test_st_context(8);
-//! let sender_seeds = (0..8).map(|_| Block::random(&mut thread_rng())).collect();
-//! let receiver_seeds = (0..8).map(|_| Block::random(&mut thread_rng())).collect();
+//! let sender_seeds = (0..8).map(|_| Block::random(&mut rand::rng())).collect();
+//! let receiver_seeds = (0..8).map(|_| Block::random(&mut rand::rng())).collect();
 //!
 //! let (sender_output, receiver_output) =
 //!     futures::try_join!(

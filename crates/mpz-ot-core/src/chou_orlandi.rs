@@ -51,7 +51,7 @@ mod tests {
     #[fixture]
     fn choices() -> Vec<bool> {
         let mut rng = ChaCha12Rng::seed_from_u64(0);
-        (0..128).map(|_| rng.r#gen()).collect()
+        (0..128).map(|_| rng.random()).collect()
     }
 
     #[fixture]
@@ -60,8 +60,8 @@ mod tests {
         (0..128)
             .map(|_| {
                 [
-                    rng.r#gen::<[u8; 16]>().into(),
-                    rng.r#gen::<[u8; 16]>().into(),
+                    rng.random::<[u8; 16]>().into(),
+                    rng.random::<[u8; 16]>().into(),
                 ]
             })
             .collect()

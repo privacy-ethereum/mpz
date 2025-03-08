@@ -243,8 +243,8 @@ mod tests {
         let mut ideal = IdealCOT::new(delta);
 
         let count = 128;
-        let choices = (0..count).map(|_| rng.r#gen()).collect::<Vec<_>>();
-        let keys = (0..count).map(|_| rng.r#gen()).collect::<Vec<_>>();
+        let choices = (0..count).map(|_| rng.random()).collect::<Vec<_>>();
+        let keys = (0..count).map(|_| rng.random()).collect::<Vec<_>>();
 
         let (
             COTSenderOutput { id: sender_id },

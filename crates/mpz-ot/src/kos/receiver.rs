@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use rand::{Rng, thread_rng};
+use rand::Rng;
 use serio::SinkExt as _;
 
 use mpz_cointoss::{self as cointoss, cointoss_sender};
@@ -117,8 +117,8 @@ where
                 receiver,
             } => {
                 let (receiver, seeds) = {
-                    let mut rng = thread_rng();
-                    let seeds = std::array::from_fn(|_| rng.r#gen());
+                    let mut rng = rand::rng();
+                    let seeds = std::array::from_fn(|_| rng.random());
                     (receiver.setup(seeds), seeds)
                 };
 
@@ -141,7 +141,7 @@ where
             ctx.io_mut().send(extend).await?;
         }
 
-        let seed = thread_rng().r#gen();
+        let seed = rand::rng().random();
 
         // See issue #176.
         let chi_seed = cointoss_sender(ctx, vec![seed]).await?[0];

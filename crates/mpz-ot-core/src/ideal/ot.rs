@@ -186,7 +186,7 @@ mod tests {
         let mut choices = vec![false; 100];
         rng.fill(&mut choices[..]);
 
-        let msgs: Vec<[Block; 2]> = (0..100).map(|_| [rng.r#gen(), rng.r#gen()]).collect();
+        let msgs: Vec<[Block; 2]> = (0..100).map(|_| [rng.random(), rng.random()]).collect();
 
         let (OTSenderOutput { .. }, OTReceiverOutput { msgs: chosen, .. }) =
             IdealOT::default().transfer(&choices, &msgs).unwrap();

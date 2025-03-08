@@ -1,14 +1,14 @@
 #![allow(clippy::all)]
 
 use criterion::{Criterion, criterion_group, criterion_main};
-use rand::{distributions::Standard, prelude::*};
+use rand::{distr::StandardUniform, prelude::*};
 
 fn random_vec<T>(elements: usize) -> Vec<T>
 where
-    Standard: Distribution<T>,
+    StandardUniform: Distribution<T>,
 {
-    let mut rng = thread_rng();
-    (0..elements).map(|_| rng.r#gen::<T>()).collect()
+    let mut rng = rand::rng();
+    (0..elements).map(|_| rng.random::<T>()).collect()
 }
 
 #[inline]

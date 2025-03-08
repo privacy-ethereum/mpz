@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use mpz_common::{Context, Flush};
 use mpz_core::Block;
 use mpz_ot_core::rot::{AnySender as Core, ROTSender, ROTSenderOutput};
-use rand::{distributions::Standard, prelude::Distribution};
+use rand::{distr::StandardUniform, prelude::Distribution};
 
 /// A ROT sender which sends any type implementing `rand` traits.
 #[derive(Debug)]
@@ -27,7 +27,7 @@ impl<T> AnySender<T> {
 impl<T, U> ROTSender<[U; 2]> for AnySender<T>
 where
     T: ROTSender<[Block; 2]>,
-    Standard: Distribution<U>,
+    StandardUniform: Distribution<U>,
 {
     type Error = T::Error;
     type Future = <Core<T> as ROTSender<[U; 2]>>::Future;
