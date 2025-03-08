@@ -4,10 +4,7 @@ use async_trait::async_trait;
 use tokio::sync::Mutex;
 use utils::filter_drain::FilterDrain;
 
-use mpz_common::{
-    Context, Flush,
-    scoped_futures::{ScopedBoxFuture, ScopedFutureExt},
-};
+use mpz_common::{Context, Flush};
 use mpz_core::{Block, bitvec::BitVec};
 use mpz_garble_core::GarblerOutput;
 use mpz_memory_core::{DecodeFuture, Memory, Slice, View, binary::Binary, correlated::Delta};
@@ -187,10 +184,6 @@ where
 
     async fn preprocess(&mut self, ctx: &mut Context) -> Result<()> {
         let delta = *self.store.try_lock().unwrap().delta();
-        let store = self.store.clone();
-        let f = scope_closure(move |ctx: &mut Context, (call, output): (Call, Slice)| {
-            generate(ctx, store.clone(), delta, call, output, Mode::Preprocess).scope_boxed()
-        });
 
         while !self.call_stack.is_empty() {
             let calls = self.take_preprocess_calls();
@@ -204,8 +197,15 @@ where
                 }
             }
 
+            let store = self.store.clone();
             let outputs = ctx
-                .map(calls, f.clone(), |(call, _)| call.circ().and_count())
+                .map(
+                    calls,
+                    async move |ctx: &mut Context, (call, output): (Call, Slice)| {
+                        generate(ctx, store.clone(), delta, call, output, Mode::Preprocess).await
+                    },
+                    |(call, _)| call.circ().and_count(),
+                )
                 .await
                 .map_err(VmError::execute)?;
 
@@ -228,10 +228,6 @@ where
 
     async fn execute(&mut self, ctx: &mut Context) -> Result<()> {
         let delta = *self.store.try_lock().unwrap().delta();
-        let store = self.store.clone();
-        let f = scope_closure(move |ctx: &mut Context, (call, output): (Call, Slice)| {
-            generate(ctx, store.clone(), delta, call, output, Mode::Execute).scope_boxed()
-        });
 
         while !self.call_stack.is_empty() {
             let calls = self.take_execute_calls();
@@ -240,8 +236,15 @@ where
                 break;
             }
 
+            let store = self.store.clone();
             let outputs = ctx
-                .map(calls, f.clone(), |(call, _)| call.circ().and_count())
+                .map(
+                    calls,
+                    async move |ctx: &mut Context, (call, output): (Call, Slice)| {
+                        generate(ctx, store.clone(), delta, call, output, Mode::Execute).await
+                    },
+                    |(call, _)| call.circ().and_count(),
+                )
                 .await
                 .map_err(VmError::execute)?;
 
@@ -252,17 +255,6 @@ where
 
         Ok(())
     }
-}
-
-// This is required to help the compiler infer the correct lifetimes :(
-fn scope_closure<Ctx, F, R>(f: F) -> F
-where
-    F: for<'a> Fn(&'a mut Ctx, (Call, Slice)) -> ScopedBoxFuture<'static, 'a, R>
-        + Clone
-        + Send
-        + 'static,
-{
-    f
 }
 
 enum Mode {
