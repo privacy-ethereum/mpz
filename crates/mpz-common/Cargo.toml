@@ -21,7 +21,6 @@ futures.workspace = true
 async-trait.workspace = true
 bytes = { workspace = true }
 pin-project-lite.workspace = true
-scoped-futures.workspace = true
 thiserror.workspace = true
 serio.workspace = true
 uid-mux = { workspace = true }

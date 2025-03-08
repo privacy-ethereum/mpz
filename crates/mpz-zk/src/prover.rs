@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use blake3::Hasher;
-use mpz_common::{Context, Flush, scoped_futures::ScopedFutureExt};
+use mpz_common::{Context, Flush};
 use mpz_core::{Block, bitvec::BitVec};
 use mpz_ot::rcot::{RCOTReceiver, RCOTReceiverOutput};
 use mpz_vm_core::{
@@ -155,25 +155,22 @@ where
             let outputs = ctx
                 .map(
                     tasks,
-                    |ctx, (mut execute, output)| {
-                        async move {
-                            let mut iter = execute.iter();
-                            loop {
-                                // Stream the `adjust` bits to avoid buffering them in memory.
-                                let adjust: BitVec = BitVec::from_iter(iter.by_ref().take(8000));
+                    async move |ctx, (mut execute, output)| {
+                        let mut iter = execute.iter();
+                        loop {
+                            // Stream the `adjust` bits to avoid buffering them in memory.
+                            let adjust: BitVec = BitVec::from_iter(iter.by_ref().take(8000));
 
-                                if !adjust.is_empty() {
-                                    ctx.io_mut().send(adjust).await?;
-                                } else {
-                                    break;
-                                }
+                            if !adjust.is_empty() {
+                                ctx.io_mut().send(adjust).await?;
+                            } else {
+                                break;
                             }
-
-                            let output_macs = execute.finish().map_err(VmError::execute)?;
-
-                            Ok((output, output_macs))
                         }
-                        .scope_boxed()
+
+                        let output_macs = execute.finish().map_err(VmError::execute)?;
+
+                        Ok((output, output_macs))
                     },
                     |(execute, _)| execute.and_count(),
                 )
