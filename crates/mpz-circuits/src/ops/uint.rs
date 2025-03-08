@@ -1,11 +1,11 @@
 use std::ops::{BitAnd, BitOr, BitXor, Not, Shl, Shr};
 
 use crate::{
-    types::{BinaryRepr, U128, U16, U32, U64, U8},
     Tracer,
+    types::{BinaryRepr, U8, U16, U32, U64, U128},
 };
 
-use super::{binary, WrappingAdd, WrappingSub};
+use super::{WrappingAdd, WrappingSub, binary};
 
 macro_rules! impl_wrapping_add_uint {
     ($ty:ident, $const_ty:ident, $len:expr) => {

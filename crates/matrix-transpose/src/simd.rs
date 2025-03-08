@@ -1,4 +1,4 @@
-use super::{TransposeError, LANE_COUNT};
+use super::{LANE_COUNT, TransposeError};
 use std::{
     ops::ShlAssign,
     simd::{LaneCount, Simd, SimdElement, SupportedLaneCount},

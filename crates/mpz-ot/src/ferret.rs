@@ -14,7 +14,7 @@ mod tests {
     use super::*;
     use crate::ideal::rcot::ideal_rcot;
     use mpz_core::lpn::LpnParameters;
-    use rand::{rngs::StdRng, Rng, SeedableRng};
+    use rand::{Rng, SeedableRng, rngs::StdRng};
     use rstest::*;
 
     #[rstest]

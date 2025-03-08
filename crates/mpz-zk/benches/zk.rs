@@ -1,15 +1,15 @@
-use criterion::{criterion_group, criterion_main, Criterion, Throughput};
+use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use futures::executor::block_on;
 use mpz_circuits::circuits::AES128;
 use mpz_common::context::test_mt_context;
 use mpz_ot::ideal::rcot::ideal_rcot;
 use mpz_vm_core::{
-    memory::{binary::U8, correlated::Delta, Array},
-    prelude::*,
     Call,
+    memory::{Array, binary::U8, correlated::Delta},
+    prelude::*,
 };
 use mpz_zk::{Prover, Verifier};
-use rand::{rngs::StdRng, Rng, SeedableRng};
+use rand::{Rng, SeedableRng, rngs::StdRng};
 
 fn criterion_benchmark(c: &mut Criterion) {
     let mut group = c.benchmark_group("zk");

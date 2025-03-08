@@ -1,16 +1,15 @@
 use std::{collections::VecDeque, mem};
 
 use crate::{
+    TransferId,
     chou_orlandi::{
-        hash_point,
+        ReceiverError, hash_point,
         msgs::{ReceiverPayload, SenderPayload, SenderSetup},
-        ReceiverError,
     },
     ot::{OTReceiver, OTReceiverOutput},
-    TransferId,
 };
 
-use mpz_common::future::{new_output, MaybeDone, Sender as OutputSender};
+use mpz_common::future::{MaybeDone, Sender as OutputSender, new_output};
 use mpz_core::Block;
 
 use curve25519_dalek::{
@@ -148,11 +147,7 @@ impl Receiver<state::Setup> {
                 .zip(payload)
                 .map(
                     |((c, key), [ct0, ct1])| {
-                        if c {
-                            key ^ ct1
-                        } else {
-                            key ^ ct0
-                        }
+                        if c { key ^ ct1 } else { key ^ ct0 }
                     },
                 );
 

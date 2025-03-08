@@ -5,14 +5,14 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use mpz_common::future::{new_output, MaybeDone, Sender};
-use mpz_core::{prg::Prg, Block};
+use mpz_common::future::{MaybeDone, Sender, new_output};
+use mpz_core::{Block, prg::Prg};
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 
 use crate::{
-    rcot::{RCOTReceiver, RCOTReceiverOutput, RCOTSender, RCOTSenderOutput},
     TransferId,
+    rcot::{RCOTReceiver, RCOTReceiverOutput, RCOTSender, RCOTSenderOutput},
 };
 
 type Error = IdealRCOTError;

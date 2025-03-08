@@ -8,7 +8,7 @@ pub use sender::RandomizeRCOTSender;
 
 #[cfg(test)]
 mod tests {
-    use rand::{rngs::StdRng, Rng, SeedableRng};
+    use rand::{Rng, SeedableRng, rngs::StdRng};
 
     use crate::{ideal::rcot::ideal_rcot, test::test_rot};
 

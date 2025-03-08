@@ -5,7 +5,7 @@ use mpz_ole::ROLESender;
 use mpz_share_conversion_core::{
     AdditiveToMultiplicative, MultiplicativeToAdditive, Sender as Core, SenderError as CoreError,
 };
-use serio::{stream::IoStreamExt, Deserialize, Serialize, SinkExt};
+use serio::{Deserialize, Serialize, SinkExt, stream::IoStreamExt};
 
 /// Share conversion sender.
 #[derive(Debug)]

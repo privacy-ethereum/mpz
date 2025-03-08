@@ -2,11 +2,11 @@
 
 use std::collections::HashMap;
 
-use crate::{aes::AesEncryptor, Block};
+use crate::{Block, aes::AesEncryptor};
 use rand::Rng;
 use rand_core::{
-    block::{BlockRng, BlockRngCore},
     CryptoRng, RngCore, SeedableRng,
+    block::{BlockRng, BlockRngCore},
 };
 
 /// Struct of PRG Core

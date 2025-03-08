@@ -44,7 +44,7 @@ mod tests {
         test::assert_spcot,
     };
     use mpz_core::utils::slices_from_lengths;
-    use rand::{rngs::StdRng, Rng, SeedableRng};
+    use rand::{Rng, SeedableRng, rngs::StdRng};
 
     fn execute<R: Rng>(
         rng: &mut R,

@@ -8,7 +8,7 @@ use std::{
 use bytes::{Bytes, BytesMut};
 use futures::{AsyncRead, AsyncWrite};
 use pin_project_lite::pin_project;
-use serio::{channel::MemoryDuplex, codec::Bincode, Framed, Sink, Stream};
+use serio::{Framed, Sink, Stream, channel::MemoryDuplex, codec::Bincode};
 use tokio_util::{codec::LengthDelimitedCodec, compat::FuturesAsyncReadCompatExt as _};
 
 trait Duplex:

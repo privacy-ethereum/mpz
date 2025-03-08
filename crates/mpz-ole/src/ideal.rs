@@ -1,16 +1,16 @@
 //! Ideal ROLE.
 
 use async_trait::async_trait;
-use rand::{rngs::StdRng, Rng, SeedableRng};
+use rand::{Rng, SeedableRng, rngs::StdRng};
 
 use mpz_common::{
-    ideal::{call_sync, CallSync},
     Context, Flush,
+    ideal::{CallSync, call_sync},
 };
 use mpz_fields::Field;
 use mpz_ole_core::{
-    ideal::{IdealROLE as Core, IdealROLEError},
     ROLEReceiver, ROLESender, ROLESenderOutput,
+    ideal::{IdealROLE as Core, IdealROLEError},
 };
 
 /// Returns a new ideal ROLE sender and receiver.

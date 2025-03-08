@@ -1,4 +1,4 @@
-use mpz_circuits::{types::ValueType, Circuit};
+use mpz_circuits::{Circuit, types::ValueType};
 use std::fs::write;
 
 fn main() {

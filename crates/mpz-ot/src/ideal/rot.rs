@@ -3,8 +3,8 @@
 use async_trait::async_trait;
 
 use mpz_common::{
-    ideal::{call_sync, CallSync},
     Context, Flush,
+    ideal::{CallSync, call_sync},
 };
 use mpz_core::Block;
 use mpz_ot_core::{
@@ -129,7 +129,7 @@ pub struct IdealROTError(#[from] CoreError);
 
 #[cfg(test)]
 mod tests {
-    use rand::{rngs::StdRng, Rng, SeedableRng};
+    use rand::{Rng, SeedableRng, rngs::StdRng};
 
     use super::*;
     use crate::test::test_rot;

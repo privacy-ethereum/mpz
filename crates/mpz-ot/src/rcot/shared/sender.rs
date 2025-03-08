@@ -6,12 +6,12 @@ use std::{
 
 use async_trait::async_trait;
 use mpz_common::{
-    future::{new_output, MaybeDone, Sender},
     Context, Flush,
+    future::{MaybeDone, Sender, new_output},
 };
 use mpz_ot_core::{
-    rcot::{RCOTSender, RCOTSenderOutput},
     TransferId,
+    rcot::{RCOTSender, RCOTSenderOutput},
 };
 use tokio::sync::{Barrier, Mutex};
 

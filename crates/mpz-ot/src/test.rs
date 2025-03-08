@@ -1,6 +1,6 @@
 //! Test utilities.
 
-use mpz_common::{context::test_st_context, Flush};
+use mpz_common::{Flush, context::test_st_context};
 use mpz_core::Block;
 use mpz_ot_core::{
     cot::{COTReceiver, COTSender},
@@ -9,7 +9,7 @@ use mpz_ot_core::{
     rot::{ROTReceiver, ROTReceiverOutput, ROTSender, ROTSenderOutput},
     test::{assert_cot, assert_ot, assert_rot},
 };
-use rand::{rngs::StdRng, Rng, SeedableRng};
+use rand::{Rng, SeedableRng, rngs::StdRng};
 
 /// Tests OT functionality.
 pub async fn test_ot<S, R>(mut sender: S, mut receiver: R, cycles: usize)
@@ -20,7 +20,9 @@ where
     let (mut sender_ctx, mut receiver_ctx) = test_st_context(8);
 
     let mut rng = StdRng::seed_from_u64(0);
-    let msgs = (0..128).map(|_| [rng.r#gen(), rng.r#gen()]).collect::<Vec<_>>();
+    let msgs = (0..128)
+        .map(|_| [rng.r#gen(), rng.r#gen()])
+        .collect::<Vec<_>>();
     let choices = (0..128).map(|_| rng.r#gen()).collect::<Vec<_>>();
 
     for _ in 0..cycles {

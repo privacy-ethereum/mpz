@@ -6,8 +6,8 @@ use once_cell::sync::Lazy;
 use std::{cell::RefCell, sync::Arc};
 
 use crate::{
-    types::{BinaryRepr, U32, U8},
     BuilderState, Circuit, CircuitBuilder, Tracer,
+    types::{BinaryRepr, U8, U32},
 };
 
 /// AES-128 circuit.

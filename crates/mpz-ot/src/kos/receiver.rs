@@ -1,12 +1,12 @@
 use async_trait::async_trait;
-use rand::{thread_rng, Rng};
+use rand::{Rng, thread_rng};
 use serio::SinkExt as _;
 
 use mpz_cointoss::{self as cointoss, cointoss_sender};
-use mpz_common::{future::MaybeDone, Context, ContextError, Flush};
+use mpz_common::{Context, ContextError, Flush, future::MaybeDone};
 use mpz_core::Block;
 use mpz_ot_core::{
-    kos::{receiver_state as state, Receiver as Core, ReceiverConfig, ReceiverError as CoreError},
+    kos::{Receiver as Core, ReceiverConfig, ReceiverError as CoreError, receiver_state as state},
     ot::OTSender,
     rcot::{RCOTReceiver, RCOTReceiverOutput},
 };

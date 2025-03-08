@@ -4,7 +4,7 @@ use std::{
     task::{Context, Poll},
 };
 
-use futures::{channel::oneshot, FutureExt};
+use futures::{FutureExt, channel::oneshot};
 
 use crate::Slice;
 

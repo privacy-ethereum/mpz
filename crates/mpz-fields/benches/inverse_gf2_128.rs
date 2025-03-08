@@ -1,6 +1,6 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use mpz_core::{prg::Prg, Block};
-use mpz_fields::{gf2_128::Gf2_128, Field};
+use criterion::{Criterion, black_box, criterion_group, criterion_main};
+use mpz_core::{Block, prg::Prg};
+use mpz_fields::{Field, gf2_128::Gf2_128};
 use rand::{Rng, SeedableRng};
 
 fn bench_gf2_128_inverse(c: &mut Criterion) {

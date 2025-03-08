@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
+use criterion::{Criterion, Throughput, black_box, criterion_group, criterion_main};
 use mpz_common::io::Io;
 use pollster::FutureExt;
 use serde::{Deserialize, Serialize};
-use serio::{stream::IoStreamExt, SinkExt};
+use serio::{SinkExt, stream::IoStreamExt};
 use tokio::{
     io::duplex,
     net::{TcpListener, TcpStream},

@@ -1,5 +1,5 @@
 use blake3::Hasher;
-use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
+use criterion::{Criterion, Throughput, black_box, criterion_group, criterion_main};
 use mpz_circuits::circuits::AES128;
 use mpz_memory_core::correlated::{Delta, Key, Mac};
 use mpz_ot_core::{
@@ -7,7 +7,7 @@ use mpz_ot_core::{
     rcot::{RCOTReceiverOutput, RCOTSenderOutput},
 };
 use mpz_zk_core::{Prover, Verifier};
-use rand::{rngs::StdRng, Rng, SeedableRng};
+use rand::{Rng, SeedableRng, rngs::StdRng};
 
 fn criterion_benchmark(c: &mut Criterion) {
     let mut group = c.benchmark_group("zk-core");

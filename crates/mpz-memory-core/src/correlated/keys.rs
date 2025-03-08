@@ -2,17 +2,17 @@ use std::ops::Add;
 
 use blake3::{Hash, Hasher};
 use mpz_core::{
+    Block,
     aes::FixedKeyAes,
     bitvec::{BitSlice, BitVec},
-    Block,
 };
 use rand::{distributions::Standard, prelude::Distribution};
 use utils::range::Disjoint;
 
 use crate::{
-    correlated::{macs::Mac, Delta, MacCommitment, COMMIT_CIPHER, MAC_ONE, MAC_ZERO},
-    store::{Store, StoreError},
     RangeSet, Slice,
+    correlated::{COMMIT_CIPHER, Delta, MAC_ONE, MAC_ZERO, MacCommitment, macs::Mac},
+    store::{Store, StoreError},
 };
 
 type Result<T> = core::result::Result<T, KeyStoreError>;

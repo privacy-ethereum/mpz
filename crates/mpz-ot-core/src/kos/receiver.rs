@@ -1,16 +1,16 @@
 use std::{collections::VecDeque, mem};
 
 use crate::{
-    kos::{Check, Extend, ReceiverConfig, ReceiverError, CSP, SSP},
-    rcot::{RCOTReceiver, RCOTReceiverOutput},
     TransferId,
+    kos::{CSP, Check, Extend, ReceiverConfig, ReceiverError, SSP},
+    rcot::{RCOTReceiver, RCOTReceiverOutput},
 };
 
 use itybity::{FromBitIterator, IntoBits};
-use mpz_common::future::{new_output, MaybeDone, Sender};
-use mpz_core::{prg::Prg, Block};
+use mpz_common::future::{MaybeDone, Sender, new_output};
+use mpz_core::{Block, prg::Prg};
 
-use rand::{thread_rng, Rng as _, SeedableRng};
+use rand::{Rng as _, SeedableRng, thread_rng};
 use rand_core::RngCore;
 
 #[cfg(feature = "rayon")]

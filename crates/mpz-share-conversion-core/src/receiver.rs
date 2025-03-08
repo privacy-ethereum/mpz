@@ -2,14 +2,14 @@
 
 use std::{collections::VecDeque, marker::PhantomData};
 
-use mpz_common::future::{new_output, MaybeDone, Sender as OutputSender};
+use mpz_common::future::{MaybeDone, Sender as OutputSender, new_output};
 use mpz_fields::Field;
 use mpz_ole_core::{Adjust, ROLEReceiver, ROLEReceiverOutput};
 
 use crate::{
-    a2m::{A2MReceiverAdjust, A2MReceiverDerand},
     A2MOutput, AdditiveToMultiplicative, M2AOutput, MultiplicativeToAdditive, RecvA2M, RecvM2A,
     SendA2M, SendM2A,
+    a2m::{A2MReceiverAdjust, A2MReceiverDerand},
 };
 
 #[derive(Debug)]

@@ -19,9 +19,9 @@ use futures::{AsyncRead, AsyncWrite};
 use scoped_futures::ScopedBoxFuture;
 
 use crate::{
+    ThreadId,
     context::mt::{MtConfig, ThreadBuilder, Threads},
     io::Io,
-    ThreadId,
 };
 
 /// A thread context.

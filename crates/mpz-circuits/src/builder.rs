@@ -1,9 +1,9 @@
 use itybity::{BitIterable, IntoBits};
 
 use crate::{
+    Circuit, Tracer,
     components::{Feed, Gate, Node},
     types::{BinaryLength, BinaryRepr, ToBinaryRepr, ValueType},
-    Circuit, Tracer,
 };
 use std::{cell::RefCell, collections::HashMap, mem::discriminant};
 

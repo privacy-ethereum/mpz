@@ -1,12 +1,12 @@
-use blake3::{hash, Hash, Hasher};
+use blake3::{Hash, Hasher, hash};
 use cfg_if::cfg_if;
 use rand::{Rng, SeedableRng};
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
 
 use mpz_core::{
-    aes::FIXED_KEY_AES, bitvec::BitVec, ggm::GgmTree, prg::Prg, utils::slices_from_lengths_mut,
-    Block,
+    Block, aes::FIXED_KEY_AES, bitvec::BitVec, ggm::GgmTree, prg::Prg,
+    utils::slices_from_lengths_mut,
 };
 use zerocopy::IntoBytes;
 

@@ -102,9 +102,9 @@ pub struct RecvM2A<F> {
 mod tests {
     use super::*;
 
-    use mpz_fields::{gf2_128::Gf2_128, p256::P256, Field};
+    use mpz_fields::{Field, gf2_128::Gf2_128, p256::P256};
     use mpz_ole_core::ideal::IdealROLE;
-    use rand::{rngs::StdRng, Rng, SeedableRng};
+    use rand::{Rng, SeedableRng, rngs::StdRng};
 
     #[test]
     fn test_a2m_p256() {

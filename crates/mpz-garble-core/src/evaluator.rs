@@ -4,14 +4,14 @@ use std::sync::Arc;
 use cfg_if::cfg_if;
 use mpz_memory_core::correlated::Mac;
 
-use crate::{circuit::EncryptedGate, EncryptedGateBatch, GarbledCircuit, DEFAULT_BATCH_SIZE};
+use crate::{DEFAULT_BATCH_SIZE, EncryptedGateBatch, GarbledCircuit, circuit::EncryptedGate};
 use mpz_circuits::{
-    types::{BinaryRepr, TypeError},
     Circuit, CircuitError, Gate,
+    types::{BinaryRepr, TypeError},
 };
 use mpz_core::{
-    aes::{FixedKeyAes, FIXED_KEY_AES},
     Block,
+    aes::{FIXED_KEY_AES, FixedKeyAes},
 };
 
 /// Errors that can occur during garbled circuit evaluation.

@@ -27,11 +27,11 @@ mod tests {
     use blake3::Hasher;
     use mpz_core::bitvec::BitVec;
     use mpz_memory_core::{
+        Array, MemoryExt, ViewExt,
         binary::U8,
         correlated::{Delta, Key},
-        Array, MemoryExt, ViewExt,
     };
-    use rand::{rngs::StdRng, Rng, SeedableRng};
+    use rand::{Rng, SeedableRng, rngs::StdRng};
 
     use super::*;
 

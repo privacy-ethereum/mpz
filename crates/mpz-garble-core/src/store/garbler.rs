@@ -3,12 +3,12 @@ use std::sync::Arc;
 use rand::Rng;
 use tokio::sync::{Mutex, OwnedMutexGuard};
 
-use mpz_core::{bitvec::BitVec, prg::Prg, Block};
+use mpz_core::{Block, bitvec::BitVec, prg::Prg};
 use mpz_memory_core::{
+    DecodeError, DecodeFuture, DecodeOp, Memory, Slice, View as ViewTrait,
     binary::Binary,
     correlated::{Delta, Key, KeyStore, KeyStoreError},
     store::{BitStore, StoreError},
-    DecodeError, DecodeFuture, DecodeOp, Memory, Slice, View as ViewTrait,
 };
 use mpz_ot_core::cot::COTSender;
 use utils::filter_drain::FilterDrain;

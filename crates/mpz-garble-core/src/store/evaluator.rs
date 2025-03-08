@@ -3,12 +3,12 @@ use std::sync::Arc;
 use tokio::sync::{Mutex, OwnedMutexGuard};
 
 use mpz_common::future::Output;
-use mpz_core::{bitvec::BitVec, Block};
+use mpz_core::{Block, bitvec::BitVec};
 use mpz_memory_core::{
-    binary::Binary,
-    correlated::{Mac, MacCommitment, MacCommitmentError, MacStore, MacStoreError, COMMIT_CIPHER},
-    store::{BitStore, Store, StoreError},
     DecodeError, DecodeFuture, DecodeOp, Memory, Slice, View as ViewTrait,
+    binary::Binary,
+    correlated::{COMMIT_CIPHER, Mac, MacCommitment, MacCommitmentError, MacStore, MacStoreError},
+    store::{BitStore, Store, StoreError},
 };
 use mpz_ot_core::cot::{COTReceiver, COTReceiverOutput};
 use utils::{

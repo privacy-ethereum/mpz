@@ -58,7 +58,7 @@ mod tests {
         test::assert_cot,
     };
     use mpz_core::lpn::LpnType;
-    use rand::{rngs::StdRng, SeedableRng};
+    use rand::{SeedableRng, rngs::StdRng};
     use rstest::*;
 
     #[rstest]

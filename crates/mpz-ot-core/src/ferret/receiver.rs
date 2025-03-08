@@ -3,22 +3,22 @@ use std::{collections::VecDeque, sync::Arc};
 use rand::{Rng, SeedableRng};
 use tokio::sync::{Mutex, OwnedMutexGuard};
 
-use mpz_common::future::{new_output, MaybeDone, Sender as OutputSender};
+use mpz_common::future::{MaybeDone, Sender as OutputSender, new_output};
 use mpz_core::{
-    lpn::{sample_error_indices, LpnEncoder, LpnParameters},
-    prg::Prg,
     Block,
+    lpn::{LpnEncoder, LpnParameters, sample_error_indices},
+    prg::Prg,
 };
 
 use crate::{
+    TransferId,
     ferret::{
-        config::CSP,
-        mpcot::{receiver_state as mpcot_state, MPCOTReceiver, MPCOTReceiverError},
-        spcot::{SPCOTReceiver, SPCOTReceiverError},
         FerretConfig, Init, ReceiverCheck, ReceiverExtend, SenderCheck, SenderExtend,
+        config::CSP,
+        mpcot::{MPCOTReceiver, MPCOTReceiverError, receiver_state as mpcot_state},
+        spcot::{SPCOTReceiver, SPCOTReceiverError},
     },
     rcot::{RCOTReceiver, RCOTReceiverOutput},
-    TransferId,
 };
 
 type Error = ReceiverError;

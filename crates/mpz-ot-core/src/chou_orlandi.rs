@@ -6,8 +6,8 @@ mod receiver;
 mod sender;
 
 pub use error::{ReceiverError, SenderError, SenderVerifyError};
-pub use receiver::{state as receiver_state, Receiver};
-pub use sender::{state as sender_state, Sender};
+pub use receiver::{Receiver, state as receiver_state};
+pub use sender::{Sender, state as sender_state};
 
 use blake3::Hasher;
 use curve25519_dalek::ristretto::RistrettoPoint;
@@ -58,7 +58,12 @@ mod tests {
     fn data() -> Vec<[Block; 2]> {
         let mut rng = ChaCha12Rng::seed_from_u64(0);
         (0..128)
-            .map(|_| [rng.r#gen::<[u8; 16]>().into(), rng.r#gen::<[u8; 16]>().into()])
+            .map(|_| {
+                [
+                    rng.r#gen::<[u8; 16]>().into(),
+                    rng.r#gen::<[u8; 16]>().into(),
+                ]
+            })
             .collect()
     }
 

@@ -1,15 +1,15 @@
 mod receiver;
 mod sender;
 
-pub(crate) use receiver::{state as receiver_state, MPCOTReceiver, MPCOTReceiverError};
-pub(crate) use sender::{state as sender_state, MPCOTSender, MPCOTSenderError};
+pub(crate) use receiver::{MPCOTReceiver, MPCOTReceiverError, state as receiver_state};
+pub(crate) use sender::{MPCOTSender, MPCOTSenderError, state as sender_state};
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::ferret::spcot::spcot;
-    use mpz_core::lpn::{sample_error_indices, LpnType};
-    use rand::{rngs::StdRng, Rng, SeedableRng};
+    use mpz_core::lpn::{LpnType, sample_error_indices};
+    use rand::{Rng, SeedableRng, rngs::StdRng};
     use rstest::*;
 
     #[rstest]

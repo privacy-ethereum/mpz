@@ -72,7 +72,7 @@ mod tests {
     // test backends against each other
     fn clmul_test() {
         use rand::Rng;
-        use rand_chacha::{rand_core::SeedableRng, ChaCha12Rng};
+        use rand_chacha::{ChaCha12Rng, rand_core::SeedableRng};
 
         // test soft backends
         use soft32::Clmul as s32;

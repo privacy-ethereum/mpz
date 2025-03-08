@@ -2,11 +2,11 @@ use std::{
     collections::HashMap,
     pin::Pin,
     sync::{Arc, Mutex as StdMutex},
-    task::{ready, Context as StdContext, Poll, Waker},
+    task::{Context as StdContext, Poll, Waker, ready},
 };
 
 use futures::{Future, FutureExt, TryFutureExt};
-use serio::{stream::IoStreamExt, IoDuplex, SinkExt};
+use serio::{IoDuplex, SinkExt, stream::IoStreamExt};
 use tokio::sync::Mutex;
 
 use crate::sync::{SyncError, Ticket};

@@ -1,7 +1,7 @@
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::{
-    parse::Parse, parse_macro_input, parse_quote, punctuated::Punctuated, Expr, Token, Type,
+    Expr, Token, Type, parse::Parse, parse_macro_input, parse_quote, punctuated::Punctuated,
 };
 
 #[derive(Debug)]

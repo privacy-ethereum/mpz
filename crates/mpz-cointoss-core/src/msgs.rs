@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use mpz_core::{commit::Decommitment, hash::Hash, Block};
+use mpz_core::{Block, commit::Decommitment, hash::Hash};
 
 /// The coin-toss sender's commitment.
 #[derive(Debug, Clone, Serialize, Deserialize)]

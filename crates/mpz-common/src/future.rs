@@ -5,10 +5,10 @@ use std::{
     marker::PhantomData,
     mem,
     pin::Pin,
-    task::{ready, Context, Poll},
+    task::{Context, Poll, ready},
 };
 
-use futures::{channel::oneshot, FutureExt};
+use futures::{FutureExt, channel::oneshot};
 use pin_project_lite::pin_project;
 
 /// Creates a new output future.

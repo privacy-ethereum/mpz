@@ -58,7 +58,7 @@ mod tests {
 
     use super::*;
     use mpz_fields::{gf2_128::Gf2_128, p256::P256};
-    use rand::{rngs::StdRng, SeedableRng};
+    use rand::{SeedableRng, rngs::StdRng};
 
     #[test]
     fn test_adjust_p256() {

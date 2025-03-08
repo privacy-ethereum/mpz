@@ -1,6 +1,6 @@
 use mpz_common::future::{Map, OutputExt};
-use mpz_core::{prg::Prg, Block};
-use rand::{distributions::Standard, prelude::Distribution, Rng};
+use mpz_core::{Block, prg::Prg};
+use rand::{Rng, distributions::Standard, prelude::Distribution};
 
 use crate::rot::{ROTReceiver, ROTReceiverOutput, ROTSender, ROTSenderOutput};
 
