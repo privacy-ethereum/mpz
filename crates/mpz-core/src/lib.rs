@@ -11,6 +11,7 @@ pub mod hash;
 pub mod lpn;
 pub mod prg;
 pub mod prp;
+pub mod rand;
 pub mod serialize;
 pub mod tkprp;
 pub mod utils;

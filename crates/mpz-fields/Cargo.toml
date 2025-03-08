@@ -23,6 +23,7 @@ itybity.workspace = true
 typenum.workspace = true
 hybrid-array.workspace = true
 thiserror.workspace = true
+rand_08.workspace = true
 
 [dev-dependencies]
 ghash_rc.workspace = true

@@ -65,7 +65,7 @@ use mpz_core::{
     Block,
     aes::{FIXED_KEY, FixedKeyAes},
 };
-use rand::{CryptoRng, Rng, distributions::Standard, prelude::Distribution};
+use rand::{CryptoRng, Rng, distr::StandardUniform, prelude::Distribution};
 use serde::{Deserialize, Serialize};
 
 /// AES cipher used for MAC commitments.
@@ -106,7 +106,7 @@ impl Delta {
     /// Generate a random block using the provided RNG
     #[inline]
     pub fn random<R: Rng + CryptoRng + ?Sized>(rng: &mut R) -> Self {
-        Self::new(rng.r#gen())
+        Self::new(rng.random())
     }
 
     /// Returns the inner block
@@ -122,7 +122,7 @@ impl Delta {
     }
 }
 
-impl Distribution<Delta> for Standard {
+impl Distribution<Delta> for StandardUniform {
     #[inline]
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Delta {
         Delta::new(self.sample(rng))
@@ -273,11 +273,11 @@ mod tests {
         let mut keys = KeyStore::new(delta);
         let mut macs = MacStore::default();
 
-        let val_a = BitVec::from_iter((0..128).map(|_| rng.r#gen::<bool>()));
-        let val_b = BitVec::from_iter((0..128).map(|_| rng.r#gen::<bool>()));
+        let val_a = BitVec::from_iter((0..128).map(|_| rng.random::<bool>()));
+        let val_b = BitVec::from_iter((0..128).map(|_| rng.random::<bool>()));
 
-        let keys_a = (0..128).map(|_| rng.r#gen()).collect::<Vec<_>>();
-        let keys_b = (0..128).map(|_| rng.r#gen()).collect::<Vec<_>>();
+        let keys_a = (0..128).map(|_| rng.random()).collect::<Vec<_>>();
+        let keys_b = (0..128).map(|_| rng.random()).collect::<Vec<_>>();
 
         let ref_a_keys = keys.alloc_with(&keys_a);
         let ref_b_keys = keys.alloc_with(&keys_b);
@@ -341,8 +341,8 @@ mod tests {
         let mut key_store = KeyStore::new(delta);
         let mut mac_store = MacStore::default();
 
-        let keys = (0..128).map(|_| rng.r#gen()).collect::<Vec<Key>>();
-        let masks = BitVec::from_iter((0..128).map(|_| rng.r#gen::<bool>()));
+        let keys = (0..128).map(|_| rng.random()).collect::<Vec<Key>>();
+        let masks = BitVec::from_iter((0..128).map(|_| rng.random::<bool>()));
         let macs = keys
             .iter()
             .zip(masks.iter().by_vals())
@@ -352,7 +352,7 @@ mod tests {
         let ref_keys = key_store.alloc_with(&keys);
         let ref_macs = mac_store.alloc_with(&macs);
 
-        let data = BitVec::from_iter((0..128).map(|_| rng.r#gen::<bool>()));
+        let data = BitVec::from_iter((0..128).map(|_| rng.random::<bool>()));
 
         let mut adjust = masks;
         adjust ^= &data;

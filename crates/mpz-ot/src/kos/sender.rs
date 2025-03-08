@@ -8,7 +8,7 @@ use mpz_ot_core::{
     ot::{OTReceiver, OTReceiverOutput},
     rcot::{RCOTSender, RCOTSenderOutput},
 };
-use rand::{Rng, thread_rng};
+use rand::Rng;
 use serio::stream::IoStreamExt as _;
 
 type Error = SenderError;
@@ -143,7 +143,7 @@ where
             sender.extend(extend)?;
         }
 
-        let seed = thread_rng().r#gen();
+        let seed = rand::rng().random();
 
         // See issue #176.
         let chi_seed = cointoss_receiver(ctx, vec![seed]).await?[0];

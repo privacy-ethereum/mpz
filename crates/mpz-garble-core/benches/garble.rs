@@ -9,7 +9,7 @@ fn criterion_benchmark(c: &mut Criterion) {
 
     let mut rng = StdRng::seed_from_u64(0);
     let delta = Delta::random(&mut rng);
-    let inputs: Vec<_> = (0..256).map(|_| rng.r#gen()).collect();
+    let inputs: Vec<_> = (0..256).map(|_| rng.random()).collect();
 
     gb_group.bench_function("aes128", |b| {
         let mut gb = Garbler::default();
@@ -42,7 +42,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         let mut gb_iter = gb.generate(&AES128, delta, inputs.clone()).unwrap();
         let gates: Vec<_> = gb_iter.by_ref().collect();
 
-        let choices: Vec<bool> = (0..256).map(|_| rng.r#gen()).collect();
+        let choices: Vec<bool> = (0..256).map(|_| rng.random()).collect();
         let inputs: Vec<_> = inputs
             .iter()
             .zip(choices)

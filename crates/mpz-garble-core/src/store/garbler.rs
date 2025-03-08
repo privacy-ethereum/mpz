@@ -240,7 +240,7 @@ impl<COT> Memory<Binary> for GarblerStore<COT> {
     type Error = Error;
 
     fn alloc_raw(&mut self, size: usize) -> Result<Slice> {
-        let keys = (0..size).map(|_| self.prg.r#gen()).collect::<Vec<_>>();
+        let keys = (0..size).map(|_| self.prg.random()).collect::<Vec<_>>();
         self.view.alloc_input(size);
         self.key_store.alloc_with(&keys);
         let slice = self.data_store.alloc(size);

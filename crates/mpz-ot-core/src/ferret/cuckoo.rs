@@ -173,7 +173,7 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(0);
         const NUM: usize = 50;
 
-        let hashes = from_fn(|_| AesEncryptor::new(rng.r#gen()));
+        let hashes = from_fn(|_| AesEncryptor::new(rng.random()));
 
         let input: [usize; NUM] = std::array::from_fn(|i| i);
         let cuckoo = CuckooHash::new(&hashes, &input).unwrap();

@@ -206,7 +206,7 @@ impl Sender<state::Extension> {
         // Figure 7, "Check correlation", point 1.
         // Sample random weights for the consistency check.
         let chis = (0..unchecked_qs.len())
-            .map(|_| rng.r#gen())
+            .map(|_| rng.random())
             .collect::<Vec<_>>();
 
         // Figure 7, "Check correlation", point 3.

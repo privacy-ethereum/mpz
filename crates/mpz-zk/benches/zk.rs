@@ -26,7 +26,7 @@ fn criterion_benchmark(c: &mut Criterion) {
 
         b.iter(|| {
             block_on(async {
-                let (ot_send, ot_recv) = ideal_rcot(rng.r#gen(), delta.into_inner());
+                let (ot_send, ot_recv) = ideal_rcot(rng.random(), delta.into_inner());
 
                 let mut prover = Prover::new(ot_recv);
                 let mut verifier = Verifier::new(delta, ot_send);
