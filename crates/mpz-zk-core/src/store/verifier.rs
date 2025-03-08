@@ -1,10 +1,10 @@
 use blake3::Hasher;
 use mpz_core::bitvec::BitVec;
 use mpz_memory_core::{
+    DecodeError, DecodeFuture, DecodeOp, Memory, Slice, View as ViewTrait,
     binary::Binary,
     correlated::{Delta, Key, KeyStore, KeyStoreError},
     store::{BitStore, StoreError},
-    DecodeError, DecodeFuture, DecodeOp, Memory, Slice, View as ViewTrait,
 };
 use utils::filter_drain::FilterDrain;
 use zerocopy::IntoBytes;

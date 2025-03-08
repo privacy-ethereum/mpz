@@ -62,10 +62,10 @@ pub use keys::{Key, KeyStore, KeyStoreError};
 pub use macs::{Mac, MacStore, MacStoreError};
 
 use mpz_core::{
-    aes::{FixedKeyAes, FIXED_KEY},
     Block,
+    aes::{FIXED_KEY, FixedKeyAes},
 };
-use rand::{distributions::Standard, prelude::Distribution, CryptoRng, Rng};
+use rand::{CryptoRng, Rng, distributions::Standard, prelude::Distribution};
 use serde::{Deserialize, Serialize};
 
 /// AES cipher used for MAC commitments.
@@ -106,7 +106,7 @@ impl Delta {
     /// Generate a random block using the provided RNG
     #[inline]
     pub fn random<R: Rng + CryptoRng + ?Sized>(rng: &mut R) -> Self {
-        Self::new(rng.gen())
+        Self::new(rng.r#gen())
     }
 
     /// Returns the inner block
@@ -258,7 +258,7 @@ enum MacCommitmentErrorKind {
 mod tests {
     use mpz_core::{bitvec::BitVec, prg::Prg};
     use mpz_ot_core::{cot::COTReceiverOutput, ideal::cot::IdealCOT};
-    use rand::{rngs::StdRng, SeedableRng};
+    use rand::{SeedableRng, rngs::StdRng};
 
     use crate::Slice;
 
@@ -273,11 +273,11 @@ mod tests {
         let mut keys = KeyStore::new(delta);
         let mut macs = MacStore::default();
 
-        let val_a = BitVec::from_iter((0..128).map(|_| rng.gen::<bool>()));
-        let val_b = BitVec::from_iter((0..128).map(|_| rng.gen::<bool>()));
+        let val_a = BitVec::from_iter((0..128).map(|_| rng.r#gen::<bool>()));
+        let val_b = BitVec::from_iter((0..128).map(|_| rng.r#gen::<bool>()));
 
-        let keys_a = (0..128).map(|_| rng.gen()).collect::<Vec<_>>();
-        let keys_b = (0..128).map(|_| rng.gen()).collect::<Vec<_>>();
+        let keys_a = (0..128).map(|_| rng.r#gen()).collect::<Vec<_>>();
+        let keys_b = (0..128).map(|_| rng.r#gen()).collect::<Vec<_>>();
 
         let ref_a_keys = keys.alloc_with(&keys_a);
         let ref_b_keys = keys.alloc_with(&keys_b);
@@ -341,8 +341,8 @@ mod tests {
         let mut key_store = KeyStore::new(delta);
         let mut mac_store = MacStore::default();
 
-        let keys = (0..128).map(|_| rng.gen()).collect::<Vec<Key>>();
-        let masks = BitVec::from_iter((0..128).map(|_| rng.gen::<bool>()));
+        let keys = (0..128).map(|_| rng.r#gen()).collect::<Vec<Key>>();
+        let masks = BitVec::from_iter((0..128).map(|_| rng.r#gen::<bool>()));
         let macs = keys
             .iter()
             .zip(masks.iter().by_vals())
@@ -352,7 +352,7 @@ mod tests {
         let ref_keys = key_store.alloc_with(&keys);
         let ref_macs = mac_store.alloc_with(&macs);
 
-        let data = BitVec::from_iter((0..128).map(|_| rng.gen::<bool>()));
+        let data = BitVec::from_iter((0..128).map(|_| rng.r#gen::<bool>()));
 
         let mut adjust = masks;
         adjust ^= &data;
@@ -360,11 +360,13 @@ mod tests {
         key_store.adjust(ref_keys, &adjust).unwrap();
         mac_store.adjust(ref_macs, &data).unwrap();
 
-        assert!(key_store
-            .try_get(ref_keys)
-            .unwrap()
-            .iter()
-            .all(|key| !key.pointer()));
+        assert!(
+            key_store
+                .try_get(ref_keys)
+                .unwrap()
+                .iter()
+                .all(|key| !key.pointer())
+        );
         assert_eq!(
             mac_store
                 .try_get(ref_macs)
@@ -378,10 +380,11 @@ mod tests {
         let keys = key_store.try_get(ref_keys).unwrap();
         let macs = mac_store.try_get(ref_macs).unwrap();
 
-        assert!(keys
-            .iter()
-            .zip(macs)
-            .all(|(key, mac)| &key.auth(mac.pointer(), &delta) == mac))
+        assert!(
+            keys.iter()
+                .zip(macs)
+                .all(|(key, mac)| &key.auth(mac.pointer(), &delta) == mac)
+        )
     }
 
     #[test]

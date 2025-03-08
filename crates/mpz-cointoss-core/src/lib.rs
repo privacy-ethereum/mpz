@@ -38,8 +38,8 @@ pub mod msgs;
 mod receiver;
 mod sender;
 
-pub use receiver::{receiver_state, Receiver};
-pub use sender::{sender_state, Sender};
+pub use receiver::{Receiver, receiver_state};
+pub use sender::{Sender, sender_state};
 
 /// A coin-toss error.
 #[derive(Debug, thiserror::Error)]

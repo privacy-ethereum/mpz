@@ -16,7 +16,7 @@ pub use sender::{Sender, SenderError};
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mpz_common::{context::test_st_context, Flush};
+    use mpz_common::{Flush, context::test_st_context};
     use mpz_core::Block;
     use mpz_fields::p256::P256;
     use mpz_ole_core::test::assert_ole;
@@ -24,7 +24,7 @@ mod tests {
         ideal::rot::ideal_rot,
         rot::any::{AnyReceiver, AnySender},
     };
-    use rand::{rngs::StdRng, SeedableRng};
+    use rand::{SeedableRng, rngs::StdRng};
     use sender::Sender;
 
     #[tokio::test]

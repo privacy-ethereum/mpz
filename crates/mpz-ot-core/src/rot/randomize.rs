@@ -1,5 +1,5 @@
 use mpz_common::future::{Map, OutputExt};
-use mpz_core::{aes::FIXED_KEY_AES, Block};
+use mpz_core::{Block, aes::FIXED_KEY_AES};
 
 use crate::{
     rcot::{RCOTReceiver, RCOTReceiverOutput, RCOTSender, RCOTSenderOutput},
@@ -196,7 +196,7 @@ fn randomize_receiver(output: RCOTReceiverOutput<bool, Block>) -> ROTReceiverOut
 #[cfg(test)]
 mod tests {
     use mpz_common::future::Output;
-    use rand::{rngs::StdRng, Rng, SeedableRng};
+    use rand::{Rng, SeedableRng, rngs::StdRng};
 
     use super::*;
 
@@ -205,7 +205,7 @@ mod tests {
     #[test]
     fn test_randomize_rcot() {
         let mut rng = StdRng::seed_from_u64(0);
-        let rcot = IdealRCOT::new(rng.gen(), rng.gen());
+        let rcot = IdealRCOT::new(rng.r#gen(), rng.r#gen());
 
         let mut sender = RandomizeRCOTSender::new(rcot.clone());
         let mut receiver = RandomizeRCOTReceiver::new(rcot);

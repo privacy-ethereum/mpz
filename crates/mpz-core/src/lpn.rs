@@ -2,7 +2,7 @@
 //! More specifically, a local linear code is a random boolean matrix with at
 //! most D non-zero values in each row.
 
-use crate::{prp::Prp, Block};
+use crate::{Block, prp::Prp};
 use rand::Rng;
 use rayon::prelude::*;
 
@@ -177,7 +177,7 @@ impl LpnParameters {
 
 #[cfg(test)]
 mod tests {
-    use crate::{lpn::LpnEncoder, prp::Prp, Block};
+    use crate::{Block, lpn::LpnEncoder, prp::Prp};
 
     impl<const D: usize> LpnEncoder<D> {
         #[allow(dead_code)]
@@ -221,7 +221,7 @@ mod tests {
 
     #[test]
     fn lpn_test() {
-        use crate::{lpn::LpnEncoder, prg::Prg, Block};
+        use crate::{Block, lpn::LpnEncoder, prg::Prg};
 
         let k = 20;
         let n = 200;

@@ -5,6 +5,6 @@
 #![forbid(unsafe_code)]
 
 pub(crate) mod evaluator;
-pub(crate) mod generator;
+pub(crate) mod garbler;
 pub mod protocol;
 pub(crate) mod store;

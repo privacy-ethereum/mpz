@@ -1,7 +1,7 @@
 //! Implement the two-key PRG as G(k) = PRF_seed0(k)\xor k || PRF_seed1(k)\xor k
 //! Refer to (<https://www.usenix.org/system/files/conference/nsdi17/nsdi17-wang-frank.pdf>, Page 8)
 
-use crate::{aes::AesEncryptor, Block};
+use crate::{Block, aes::AesEncryptor};
 
 /// Struct of two-key prp.
 /// This implementation is adapted from EMP toolkit.

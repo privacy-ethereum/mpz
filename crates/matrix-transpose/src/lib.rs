@@ -82,7 +82,7 @@ mod tests {
         Standard: Distribution<T>,
     {
         let mut rng = thread_rng();
-        (0..elements).map(|_| rng.gen::<T>()).collect()
+        (0..elements).map(|_| rng.r#gen::<T>()).collect()
     }
 
     fn transpose_naive(data: &[u8], row_width: usize) -> Vec<u8> {

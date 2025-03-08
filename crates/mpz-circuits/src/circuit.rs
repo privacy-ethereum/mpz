@@ -218,7 +218,7 @@ impl IntoIterator for Circuit {
 mod tests {
     use mpz_circuits_macros::evaluate;
 
-    use crate::{ops::WrappingAdd, CircuitBuilder};
+    use crate::{CircuitBuilder, ops::WrappingAdd};
 
     use super::*;
 

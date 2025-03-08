@@ -5,7 +5,7 @@ use crate::{
     hash::{Hash, SecureHash},
     serialize::CanonicalSerialize,
 };
-use rand::{thread_rng, Rng};
+use rand::{Rng, thread_rng};
 use serde::{Deserialize, Serialize};
 
 /// Error associated with commitments
@@ -23,7 +23,7 @@ pub struct Nonce([u8; 32]);
 impl Nonce {
     /// Creates a random 32 byte nonce
     fn random() -> Self {
-        Self(thread_rng().gen())
+        Self(thread_rng().r#gen())
     }
 }
 

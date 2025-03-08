@@ -4,7 +4,7 @@ use std::collections::VecDeque;
 
 use hybrid_array::Array;
 
-use mpz_common::future::{new_output, MaybeDone, Sender as OutputSender};
+use mpz_common::future::{MaybeDone, Sender as OutputSender, new_output};
 use mpz_fields::Field;
 use mpz_ot_core::rot::{ROTReceiver, ROTReceiverOutput};
 

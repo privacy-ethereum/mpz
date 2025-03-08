@@ -18,15 +18,15 @@ mod tests {
     use mpz_circuits::circuits::AES128;
     use mpz_core::bitvec::BitVec;
     use mpz_memory_core::{
+        Array, FromRaw, MemoryExt, ToRaw, ViewExt,
         binary::{Binary, U8},
         correlated::{Delta, Key, Mac},
-        Array, FromRaw, MemoryExt, ToRaw, ViewExt,
     };
     use mpz_ot_core::{
         ideal::rcot::IdealRCOT,
         rcot::{RCOTReceiverOutput, RCOTSenderOutput},
     };
-    use rand::{rngs::StdRng, Rng, SeedableRng};
+    use rand::{Rng, SeedableRng, rngs::StdRng};
 
     use crate::store::{ProverStore, VerifierStore};
 
@@ -52,7 +52,7 @@ mod tests {
         let msg = [69u8; 16];
         let expected_ct = expected_aes(key, msg);
 
-        let mut rcot = IdealRCOT::new(rng.gen(), delta.into_inner());
+        let mut rcot = IdealRCOT::new(rng.r#gen(), delta.into_inner());
 
         let mut prover_store = ProverStore::new();
         let mut verifier_store = VerifierStore::new(delta);

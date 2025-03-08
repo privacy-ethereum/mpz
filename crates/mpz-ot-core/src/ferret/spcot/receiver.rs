@@ -1,4 +1,4 @@
-use blake3::{hash, Hash, Hasher};
+use blake3::{Hash, Hasher, hash};
 use cfg_if::cfg_if;
 use itybity::ToBits;
 use rand::SeedableRng;
@@ -6,16 +6,16 @@ use rand::SeedableRng;
 use rayon::prelude::*;
 
 use mpz_core::{
+    Block,
     aes::FIXED_KEY_AES,
     bitvec::BitVec,
     ggm::GgmTree,
     prg::Prg,
     utils::{slices_from_lengths, slices_from_lengths_mut},
-    Block,
 };
 use zerocopy::IntoBytes;
 
-use crate::{ferret::config::CSP, Derandomize};
+use crate::{Derandomize, ferret::config::CSP};
 
 type Error = SPCOTReceiverError;
 type Result<T, E = Error> = core::result::Result<T, E>;

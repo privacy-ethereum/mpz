@@ -3,8 +3,8 @@
 use async_trait::async_trait;
 
 use mpz_common::{
-    ideal::{call_sync, CallSync},
     Context, Flush,
+    ideal::{CallSync, call_sync},
 };
 use mpz_core::Block;
 use mpz_ot_core::{

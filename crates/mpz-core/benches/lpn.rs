@@ -1,5 +1,5 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use mpz_core::{lpn::LpnEncoder, prg::Prg, Block};
+use criterion::{Criterion, black_box, criterion_group, criterion_main};
+use mpz_core::{Block, lpn::LpnEncoder, prg::Prg};
 use std::time::Duration;
 
 fn criterion_benchmark(c: &mut Criterion) {

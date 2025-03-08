@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use serio::{stream::IoStreamExt, Deserialize};
+use serio::{Deserialize, stream::IoStreamExt};
 
 use mpz_common::{Context, Flush};
 use mpz_fields::Field;

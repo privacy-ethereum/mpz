@@ -1,12 +1,12 @@
-use blake3::{hash, Hash, Hasher};
+use blake3::{Hash, Hasher, hash};
 use cfg_if::cfg_if;
 use rand::{Rng, SeedableRng};
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
 
 use mpz_core::{
-    aes::FIXED_KEY_AES, bitvec::BitVec, ggm::GgmTree, prg::Prg, utils::slices_from_lengths_mut,
-    Block,
+    Block, aes::FIXED_KEY_AES, bitvec::BitVec, ggm::GgmTree, prg::Prg,
+    utils::slices_from_lengths_mut,
 };
 use zerocopy::IntoBytes;
 
@@ -100,7 +100,7 @@ impl SPCOTSender {
         self.vs.resize_with(start + len, || Block::ZERO);
 
         let spcot_lengths: Vec<_> = log2_lengths.iter().map(|length| 1 << length).collect();
-        let seeds: Vec<Block> = (0..log2_lengths.len()).map(|_| rng.gen()).collect();
+        let seeds: Vec<Block> = (0..log2_lengths.len()).map(|_| rng.r#gen()).collect();
         let vs = slices_from_lengths_mut(&mut self.vs[start..], &spcot_lengths);
         let ks = slices_from_lengths_mut(&mut ms, log2_lengths);
 

@@ -1,9 +1,9 @@
 use std::future::Future;
 
-use crossbeam_channel::{unbounded, Receiver, Sender};
-use futures::{channel::oneshot, TryFutureExt};
+use crossbeam_channel::{Receiver, Sender, unbounded};
+use futures::{TryFutureExt, channel::oneshot};
 
-use crate::{context::ErrorKind, Context, ContextError, ThreadId};
+use crate::{Context, ContextError, ThreadId, context::ErrorKind};
 
 type Job = Box<dyn FnOnce(&mut Context) + Send>;
 

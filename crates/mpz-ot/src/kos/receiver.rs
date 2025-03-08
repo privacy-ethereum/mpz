@@ -1,12 +1,12 @@
 use async_trait::async_trait;
-use rand::{thread_rng, Rng};
+use rand::{Rng, thread_rng};
 use serio::SinkExt as _;
 
 use mpz_cointoss::{self as cointoss, cointoss_sender};
-use mpz_common::{future::MaybeDone, Context, ContextError, Flush};
+use mpz_common::{Context, ContextError, Flush, future::MaybeDone};
 use mpz_core::Block;
 use mpz_ot_core::{
-    kos::{receiver_state as state, Receiver as Core, ReceiverConfig, ReceiverError as CoreError},
+    kos::{Receiver as Core, ReceiverConfig, ReceiverError as CoreError, receiver_state as state},
     ot::OTSender,
     rcot::{RCOTReceiver, RCOTReceiverOutput},
 };
@@ -118,7 +118,7 @@ where
             } => {
                 let (receiver, seeds) = {
                     let mut rng = thread_rng();
-                    let seeds = std::array::from_fn(|_| rng.gen());
+                    let seeds = std::array::from_fn(|_| rng.r#gen());
                     (receiver.setup(seeds), seeds)
                 };
 
@@ -141,7 +141,7 @@ where
             ctx.io_mut().send(extend).await?;
         }
 
-        let seed = thread_rng().gen();
+        let seed = thread_rng().r#gen();
 
         // See issue #176.
         let chi_seed = cointoss_sender(ctx, vec![seed]).await?[0];

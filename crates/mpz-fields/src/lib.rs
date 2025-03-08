@@ -15,7 +15,7 @@ use std::{
 
 use hybrid_array::{Array, ArraySize};
 use itybity::{BitLength, FromBitIterator, GetBit, Lsb0, Msb0};
-use rand::{distributions::Standard, prelude::Distribution, Rng};
+use rand::{Rng, distributions::Standard, prelude::Distribution};
 use thiserror::Error;
 use typenum::Unsigned;
 
@@ -121,9 +121,9 @@ pub fn compute_product_repeated<T: Field>(powers: &mut Vec<T>, factor: T, count:
 
 #[cfg(test)]
 mod tests {
-    use super::{compute_product_repeated, Field};
+    use super::{Field, compute_product_repeated};
     use itybity::{GetBit, Lsb0};
-    use mpz_core::{prg::Prg, Block};
+    use mpz_core::{Block, prg::Prg};
     use rand::SeedableRng;
 
     pub(crate) fn test_field_basic<T: Field>() {

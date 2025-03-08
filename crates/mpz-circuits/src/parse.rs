@@ -1,7 +1,7 @@
 use crate::{
+    Circuit, CircuitBuilder,
     components::{Feed, GateType, Node},
     types::ValueType,
-    Circuit, CircuitBuilder,
 };
 use regex::{Captures, Regex};
 use std::collections::HashMap;
@@ -177,8 +177,8 @@ mod tests {
     #[ignore = "expensive"]
     fn test_parse_aes() {
         use aes::{
-            cipher::{BlockEncrypt, KeyInit},
             Aes128,
+            cipher::{BlockEncrypt, KeyInit},
         };
 
         let circ = Circuit::parse(

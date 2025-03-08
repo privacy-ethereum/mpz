@@ -1,16 +1,15 @@
 use std::{collections::VecDeque, mem};
 
 use crate::{
+    TransferId,
     chou_orlandi::{
-        hash_point,
+        SenderError, hash_point,
         msgs::{ReceiverPayload, SenderPayload, SenderSetup},
-        SenderError,
     },
     ot::{OTSender, OTSenderOutput},
-    TransferId,
 };
 
-use mpz_common::future::{new_output, MaybeDone, Sender as OutputSender};
+use mpz_common::future::{MaybeDone, Sender as OutputSender, new_output};
 use mpz_core::Block;
 
 use curve25519_dalek::{
