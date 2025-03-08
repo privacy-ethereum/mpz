@@ -141,7 +141,7 @@ impl Add<&Key> for &Key {
 impl Distribution<Key> for Standard {
     #[inline]
     fn sample<R: rand::Rng + ?Sized>(&self, rng: &mut R) -> Key {
-        Key(rng.gen())
+        Key(rng.r#gen())
     }
 }
 

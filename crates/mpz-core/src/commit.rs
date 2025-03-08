@@ -23,7 +23,7 @@ pub struct Nonce([u8; 32]);
 impl Nonce {
     /// Creates a random 32 byte nonce
     fn random() -> Self {
-        Self(thread_rng().gen())
+        Self(thread_rng().r#gen())
     }
 }
 

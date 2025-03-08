@@ -119,7 +119,7 @@ mod tests {
     fn test_a2m<F: Field>() {
         let mut rng = StdRng::seed_from_u64(0);
 
-        let ideal_role = IdealROLE::<F>::new(rng.gen());
+        let ideal_role = IdealROLE::<F>::new(rng.r#gen());
 
         let sender_input = F::rand(&mut rng);
         let receiver_input = F::rand(&mut rng);
@@ -174,7 +174,7 @@ mod tests {
     fn test_m2a<F: Field>() {
         let mut rng = StdRng::seed_from_u64(0);
 
-        let ideal_role = IdealROLE::<F>::new(rng.gen());
+        let ideal_role = IdealROLE::<F>::new(rng.r#gen());
 
         let sender_input = F::rand(&mut rng);
         let receiver_input = F::rand(&mut rng);

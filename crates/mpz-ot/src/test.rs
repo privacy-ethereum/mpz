@@ -20,8 +20,8 @@ where
     let (mut sender_ctx, mut receiver_ctx) = test_st_context(8);
 
     let mut rng = StdRng::seed_from_u64(0);
-    let msgs = (0..128).map(|_| [rng.gen(), rng.gen()]).collect::<Vec<_>>();
-    let choices = (0..128).map(|_| rng.gen()).collect::<Vec<_>>();
+    let msgs = (0..128).map(|_| [rng.r#gen(), rng.r#gen()]).collect::<Vec<_>>();
+    let choices = (0..128).map(|_| rng.r#gen()).collect::<Vec<_>>();
 
     for _ in 0..cycles {
         let (output_sender, output_receiver) = futures::join! {
@@ -92,8 +92,8 @@ where
     let (mut sender_ctx, mut receiver_ctx) = test_st_context(8);
 
     let mut rng = StdRng::seed_from_u64(0);
-    let keys = (0..128).map(|_| rng.gen()).collect::<Vec<_>>();
-    let choices = (0..128).map(|_| rng.gen()).collect::<Vec<_>>();
+    let keys = (0..128).map(|_| rng.r#gen()).collect::<Vec<_>>();
+    let choices = (0..128).map(|_| rng.r#gen()).collect::<Vec<_>>();
 
     for _ in 0..cycles {
         let (output_sender, output_receiver) = futures::join! {

@@ -118,7 +118,7 @@ where
             } => {
                 let (receiver, seeds) = {
                     let mut rng = thread_rng();
-                    let seeds = std::array::from_fn(|_| rng.gen());
+                    let seeds = std::array::from_fn(|_| rng.r#gen());
                     (receiver.setup(seeds), seeds)
                 };
 
@@ -141,7 +141,7 @@ where
             ctx.io_mut().send(extend).await?;
         }
 
-        let seed = thread_rng().gen();
+        let seed = thread_rng().r#gen();
 
         // See issue #176.
         let chi_seed = cointoss_sender(ctx, vec![seed]).await?[0];

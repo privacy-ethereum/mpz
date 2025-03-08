@@ -5,7 +5,7 @@ use rand::{Rng, SeedableRng};
 
 fn bench_gf2_128_inverse(c: &mut Criterion) {
     let mut rng = Prg::from_seed(Block::ZERO);
-    let a: Gf2_128 = rng.gen();
+    let a: Gf2_128 = rng.r#gen();
 
     c.bench_function("inverse", move |bench| {
         bench.iter(|| {

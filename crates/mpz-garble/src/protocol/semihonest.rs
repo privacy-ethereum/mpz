@@ -1,30 +1,30 @@
 //! [Two Halves Make a Whole \[ZRE15\]](https://eprint.iacr.org/2014/756) protocol with semi-honest security.
 
 mod evaluator;
-mod generator;
+mod garbler;
 
 pub use evaluator::Evaluator;
-pub use generator::Generator;
+pub use garbler::Garbler;
 
 #[cfg(test)]
 mod tests {
     use mpz_circuits::circuits::AES128;
     use mpz_common::context::test_st_context;
     use mpz_memory_core::{
+        Array, MemoryExt, ViewExt,
         binary::{Binary, U8},
         correlated::Delta,
-        Array, MemoryExt, ViewExt,
     };
-    use mpz_ot::ideal::cot::{ideal_cot, IdealCOTReceiver, IdealCOTSender};
+    use mpz_ot::ideal::cot::{IdealCOTReceiver, IdealCOTSender, ideal_cot};
     use mpz_vm_core::{Call, CallableExt, Execute, Vm};
-    use rand::{rngs::StdRng, SeedableRng};
+    use rand::{SeedableRng, rngs::StdRng};
 
     use super::*;
 
     #[test]
     fn test_semihonest_is_vm() {
         fn is_vm<T: Vm<Binary>>() {}
-        is_vm::<Generator<IdealCOTSender>>();
+        is_vm::<Garbler<IdealCOTSender>>();
         is_vm::<Evaluator<IdealCOTReceiver>>();
     }
 
@@ -36,18 +36,18 @@ mod tests {
         let (mut ctx_a, mut ctx_b) = test_st_context(8);
         let (cot_send, cot_recv) = ideal_cot(delta.into_inner());
 
-        let mut gen = Generator::new(cot_send, [0u8; 16], delta);
+        let mut gb = Garbler::new(cot_send, [0u8; 16], delta);
         let mut ev = Evaluator::new(cot_recv);
 
         let (gen_out, ev_out) = futures::join!(
             async {
-                let key: Array<U8, 16> = gen.alloc().unwrap();
-                let msg: Array<U8, 16> = gen.alloc().unwrap();
+                let key: Array<U8, 16> = gb.alloc().unwrap();
+                let msg: Array<U8, 16> = gb.alloc().unwrap();
 
-                gen.mark_private(key).unwrap();
-                gen.mark_blind(msg).unwrap();
+                gb.mark_private(key).unwrap();
+                gb.mark_blind(msg).unwrap();
 
-                let ciphertext: Array<U8, 16> = gen
+                let ciphertext: Array<U8, 16> = gb
                     .call(
                         Call::builder(AES128.clone())
                             .arg(key)
@@ -57,13 +57,13 @@ mod tests {
                     )
                     .unwrap();
 
-                let mut ciphertext = gen.decode(ciphertext).unwrap();
+                let mut ciphertext = gb.decode(ciphertext).unwrap();
 
-                gen.assign(key, [0u8; 16]).unwrap();
-                gen.commit(key).unwrap();
-                gen.commit(msg).unwrap();
+                gb.assign(key, [0u8; 16]).unwrap();
+                gb.commit(key).unwrap();
+                gb.commit(msg).unwrap();
 
-                gen.execute_all(&mut ctx_a).await.unwrap();
+                gb.execute_all(&mut ctx_a).await.unwrap();
                 ciphertext.try_recv().unwrap().unwrap()
             },
             async {
@@ -105,10 +105,10 @@ mod tests {
         let (mut ctx_a, mut ctx_b) = test_st_context(8);
         let (cot_send, cot_recv) = ideal_cot(delta.into_inner());
 
-        let mut gen = Generator::new(cot_send, [0u8; 16], delta);
+        let mut gb = Garbler::new(cot_send, [0u8; 16], delta);
         let mut ev = Evaluator::new(cot_recv);
 
-        gen.flush(&mut ctx_a).await.unwrap();
+        gb.flush(&mut ctx_a).await.unwrap();
         ev.flush(&mut ctx_b).await.unwrap();
     }
 
@@ -120,18 +120,18 @@ mod tests {
         let (mut ctx_a, mut ctx_b) = test_st_context(8);
         let (cot_send, cot_recv) = ideal_cot(delta.into_inner());
 
-        let mut gen = Generator::new(cot_send, [0u8; 16], delta);
+        let mut gb = Garbler::new(cot_send, [0u8; 16], delta);
         let mut ev = Evaluator::new(cot_recv);
 
         let (gen_out, ev_out) = futures::join!(
             async {
-                let key: Array<U8, 16> = gen.alloc().unwrap();
-                let msg: Array<U8, 16> = gen.alloc().unwrap();
+                let key: Array<U8, 16> = gb.alloc().unwrap();
+                let msg: Array<U8, 16> = gb.alloc().unwrap();
 
-                gen.mark_private(key).unwrap();
-                gen.mark_blind(msg).unwrap();
+                gb.mark_private(key).unwrap();
+                gb.mark_blind(msg).unwrap();
 
-                let output: Array<U8, 16> = gen
+                let output: Array<U8, 16> = gb
                     .call(
                         Call::builder(AES128.clone())
                             .arg(key)
@@ -142,7 +142,7 @@ mod tests {
                     .unwrap();
 
                 // Chain the AES calls.
-                let ciphertext: Array<U8, 16> = gen
+                let ciphertext: Array<U8, 16> = gb
                     .call(
                         Call::builder(AES128.clone())
                             .arg(key)
@@ -152,16 +152,16 @@ mod tests {
                     )
                     .unwrap();
 
-                let mut ciphertext = gen.decode(ciphertext).unwrap();
+                let mut ciphertext = gb.decode(ciphertext).unwrap();
 
-                assert!(gen.wants_preprocess());
-                gen.preprocess(&mut ctx_a).await.unwrap();
+                assert!(gb.wants_preprocess());
+                gb.preprocess(&mut ctx_a).await.unwrap();
 
-                gen.assign(key, [0u8; 16]).unwrap();
-                gen.commit(key).unwrap();
-                gen.commit(msg).unwrap();
+                gb.assign(key, [0u8; 16]).unwrap();
+                gb.commit(key).unwrap();
+                gb.commit(msg).unwrap();
 
-                gen.execute_all(&mut ctx_a).await.unwrap();
+                gb.execute_all(&mut ctx_a).await.unwrap();
                 ciphertext.try_recv().unwrap().unwrap()
             },
             async {

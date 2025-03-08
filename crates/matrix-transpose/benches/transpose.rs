@@ -8,7 +8,7 @@ where
     Standard: Distribution<T>,
 {
     let mut rng = thread_rng();
-    (0..elements).map(|_| rng.gen::<T>()).collect()
+    (0..elements).map(|_| rng.r#gen::<T>()).collect()
 }
 
 #[inline]

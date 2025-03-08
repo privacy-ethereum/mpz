@@ -297,7 +297,7 @@ mod tests {
 
     fn test_ideal_role<F: Field>() {
         let mut rng = StdRng::seed_from_u64(0);
-        let mut ideal = IdealROLE::<F>::new(rng.gen());
+        let mut ideal = IdealROLE::<F>::new(rng.r#gen());
 
         let count = 128;
 

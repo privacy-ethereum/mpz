@@ -202,7 +202,7 @@ mod tests {
         let mut rng = Prg::from_seed(Block::ZERO);
 
         for _ in 0..32 {
-            let a = P256(rng.gen());
+            let a = P256(rng.r#gen());
             let bytes: [u8; 32] = a.into();
             let b = P256::try_from(bytes).unwrap();
 

@@ -22,7 +22,7 @@ pub(crate) fn spcot<R: rand::Rng>(
     assert_eq!(lengths.len(), idxs.len());
 
     let total_length = lengths.iter().map(|length| 1 << length).sum();
-    let vs: Vec<Block> = (0..total_length).map(|_| rng.gen()).collect();
+    let vs: Vec<Block> = (0..total_length).map(|_| rng.r#gen()).collect();
     let mut ws = vs.clone();
 
     let mut i = 0;
@@ -55,7 +55,7 @@ mod tests {
     ) -> (Vec<Block>, Vec<Block>) {
         let len_sum: usize = lengths.iter().sum();
 
-        let mut cot = IdealRCOT::new(rng.gen(), sender.delta());
+        let mut cot = IdealRCOT::new(rng.r#gen(), sender.delta());
         cot.alloc(len_sum + CSP);
         cot.flush().unwrap();
 
@@ -112,7 +112,7 @@ mod tests {
     #[test]
     fn test_spcot() {
         let mut rng = StdRng::seed_from_u64(0);
-        let delta = rng.gen();
+        let delta = rng.r#gen();
 
         let mut sender = SPCOTSender::new(delta);
         let mut receiver = SPCOTReceiver::new();
@@ -128,7 +128,7 @@ mod tests {
     #[test]
     fn test_ideal_spcot() {
         let mut rng = StdRng::seed_from_u64(0);
-        let delta = rng.gen();
+        let delta = rng.r#gen();
 
         let idxs: Vec<_> = (0..8).map(|n| rng.gen_range(0..1 << n)).collect();
         let lengths: Vec<_> = (0..8).collect();

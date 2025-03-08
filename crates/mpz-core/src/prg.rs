@@ -149,7 +149,7 @@ impl Prg {
     /// Generate a random bool value.
     #[inline(always)]
     pub fn random_bool(&mut self) -> bool {
-        self.gen()
+        self.r#gen()
     }
 
     /// Fill a bool slice with random bool values.
@@ -161,7 +161,7 @@ impl Prg {
     /// Generate a random byte value.
     #[inline(always)]
     pub fn random_byte(&mut self) -> u8 {
-        self.gen()
+        self.r#gen()
     }
 
     /// Fill a byte slice with random values.
@@ -173,7 +173,7 @@ impl Prg {
     /// Generate a random block.
     #[inline(always)]
     pub fn random_block(&mut self) -> Block {
-        self.gen()
+        self.r#gen()
     }
 
     /// Fill a block slice with random block values.

@@ -108,8 +108,8 @@ impl IdealRCOT {
 
         let count = this.sender_state.alloc;
 
-        let keys = (0..count).map(|_| this.prg.gen()).collect::<Vec<_>>();
-        let choices = (0..count).map(|_| this.prg.gen()).collect::<Vec<_>>();
+        let keys = (0..count).map(|_| this.prg.r#gen()).collect::<Vec<_>>();
+        let choices = (0..count).map(|_| this.prg.r#gen()).collect::<Vec<_>>();
         let msgs = keys
             .iter()
             .zip(&choices)
@@ -269,7 +269,7 @@ impl RCOTReceiver<bool, Block> for IdealRCOT {
 impl Default for IdealRCOT {
     fn default() -> Self {
         let mut rng = ChaCha8Rng::seed_from_u64(0);
-        Self::new(rng.gen(), rng.gen())
+        Self::new(rng.r#gen(), rng.r#gen())
     }
 }
 

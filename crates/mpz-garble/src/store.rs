@@ -1,5 +1,5 @@
 mod evaluator;
-mod generator;
+mod garbler;
 
 pub(crate) use evaluator::EvaluatorStore;
-pub(crate) use generator::GeneratorStore;
+pub(crate) use garbler::GarblerStore;

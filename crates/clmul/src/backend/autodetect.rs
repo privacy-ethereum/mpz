@@ -203,8 +203,8 @@ mod tests {
         use rand_chacha::{rand_core::SeedableRng, ChaCha12Rng};
 
         let mut rng = ChaCha12Rng::from_seed([0; 32]);
-        let x: [u8; 16] = rng.gen();
-        let y: [u8; 16] = rng.gen();
+        let x: [u8; 16] = rng.r#gen();
+        let y: [u8; 16] = rng.r#gen();
 
         let xx = soft::Clmul::new(&x);
         let yy = soft::Clmul::new(&y);

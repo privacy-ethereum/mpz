@@ -52,7 +52,7 @@ mod tests {
         let msg = [69u8; 16];
         let expected_ct = expected_aes(key, msg);
 
-        let mut rcot = IdealRCOT::new(rng.gen(), delta.into_inner());
+        let mut rcot = IdealRCOT::new(rng.r#gen(), delta.into_inner());
 
         let mut prover_store = ProverStore::new();
         let mut verifier_store = VerifierStore::new(delta);

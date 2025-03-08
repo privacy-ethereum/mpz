@@ -45,8 +45,8 @@ mod tests {
         let mut verifier = VerifierStore::new(delta);
         let mut prover = ProverStore::new();
 
-        let keys = (0..128).map(|_| rng.gen()).collect::<Vec<Key>>();
-        let masks = BitVec::from_iter((0..128).map(|_| rng.gen::<bool>()));
+        let keys = (0..128).map(|_| rng.r#gen()).collect::<Vec<Key>>();
+        let masks = BitVec::from_iter((0..128).map(|_| rng.r#gen::<bool>()));
         let macs = keys
             .iter()
             .zip(&masks)

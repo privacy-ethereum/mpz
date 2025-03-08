@@ -137,7 +137,7 @@ mod tests {
     #[tokio::test]
     async fn test_ideal_rot() {
         let mut rng = StdRng::seed_from_u64(0);
-        let (sender, receiver) = ideal_rot(rng.gen());
+        let (sender, receiver) = ideal_rot(rng.r#gen());
         test_rot(sender, receiver, 8).await;
     }
 }

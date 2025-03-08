@@ -74,7 +74,7 @@ where
             let mut prg_0 = Prg::new_with_seed(k0.to_bytes());
             let mut prg_1 = Prg::new_with_seed(k1.to_bytes());
 
-            [prg_0.gen(), prg_1.gen()]
+            [prg_0.r#gen(), prg_1.r#gen()]
         })
         .collect();
     ROTSenderOutput { id, keys }
@@ -148,7 +148,7 @@ where
         .into_iter()
         .map(|msg| {
             let mut prg = Prg::new_with_seed(msg.to_bytes());
-            prg.gen()
+            prg.r#gen()
         })
         .collect();
     ROTReceiverOutput { id, choices, msgs }

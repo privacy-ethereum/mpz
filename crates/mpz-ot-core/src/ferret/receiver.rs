@@ -91,7 +91,7 @@ where
             return Err(ErrorRepr::State("not in initialize state".to_string()).into());
         };
 
-        let seed = self.prg.gen();
+        let seed = self.prg.r#gen();
 
         self.state = State::Extend(Extend {
             public_prg: Prg::from_seed(seed),
@@ -141,7 +141,7 @@ where
         let err = sample_error_indices(&mut self.prg, lpn_type, params.n, params.t);
 
         let (mpcot, spcot_lengths, spcot_idxs) =
-            MPCOTReceiver::new(public_prg.gen(), lpn_type).start_extend(&err, params.n)?;
+            MPCOTReceiver::new(public_prg.r#gen(), lpn_type).start_extend(&err, params.n)?;
 
         let spcot_count: usize = spcot_lengths.iter().sum();
         let masks = &self.choices[self.choices.len() - spcot_count..];
@@ -237,7 +237,7 @@ where
         self.spcot.check(hashed_v)?;
 
         let encoder = LpnEncoder::<10>::new(params.k as u32);
-        let lpn_seed = public_prg.gen();
+        let lpn_seed = public_prg.r#gen();
 
         // Compute z = A * w + r.
         let w = &self.macs[self.macs.len() - params.k..];

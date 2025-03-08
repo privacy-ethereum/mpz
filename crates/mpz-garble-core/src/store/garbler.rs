@@ -14,16 +14,16 @@ use mpz_ot_core::cot::COTSender;
 use utils::filter_drain::FilterDrain;
 
 use crate::{
-    store::{EvaluatorFlush, GeneratorFlush, MacProof},
+    store::{EvaluatorFlush, GarblerFlush, MacProof},
     view::{FlushView, View, ViewError},
 };
 
-type Error = GeneratorStoreError;
+type Error = GarblerStoreError;
 type Result<T> = core::result::Result<T, Error>;
 
-/// Generator memory store.
+/// Garbler memory store.
 #[derive(Debug)]
-pub struct GeneratorStore<COT> {
+pub struct GarblerStore<COT> {
     cot: Arc<Mutex<COT>>,
     prg: Prg,
     key_store: KeyStore,
@@ -34,15 +34,15 @@ pub struct GeneratorStore<COT> {
     pending: bool,
 }
 
-impl<COT> GeneratorStore<COT> {
-    /// Creates a new generator store.
+impl<COT> GarblerStore<COT> {
+    /// Creates a new garbler store.
     pub fn new(seed: [u8; 16], delta: Delta, cot: COT) -> Self {
         Self {
             cot: Arc::new(Mutex::new(cot)),
             prg: Prg::new_with_seed(seed),
             key_store: KeyStore::new(delta),
             data_store: BitStore::new(),
-            view: View::new_generator(),
+            view: View::new_garbler(),
             buffer_decode: Vec::new(),
             pending: false,
         }
@@ -131,14 +131,14 @@ impl<COT> GeneratorStore<COT> {
     }
 }
 
-impl<COT> GeneratorStore<COT>
+impl<COT> GarblerStore<COT>
 where
     COT: COTSender<Block>,
 {
     /// Sends a flush to the evaluator.
     ///
     /// This queues any necessary COTs.
-    pub fn send_flush(&mut self) -> Result<GeneratorFlush> {
+    pub fn send_flush(&mut self) -> Result<GarblerFlush> {
         if self.pending {
             return Err(ErrorRepr::UnexpectedFlush.into());
         }
@@ -184,7 +184,7 @@ where
             mac_commitments.extend(self.key_store.commit(slice)?);
         }
 
-        let flush = GeneratorFlush {
+        let flush = GarblerFlush {
             view,
             macs,
             key_bits,
@@ -236,11 +236,11 @@ where
     }
 }
 
-impl<COT> Memory<Binary> for GeneratorStore<COT> {
+impl<COT> Memory<Binary> for GarblerStore<COT> {
     type Error = Error;
 
     fn alloc_raw(&mut self, size: usize) -> Result<Slice> {
-        let keys = (0..size).map(|_| self.prg.gen()).collect::<Vec<_>>();
+        let keys = (0..size).map(|_| self.prg.r#gen()).collect::<Vec<_>>();
         self.view.alloc_input(size);
         self.key_store.alloc_with(&keys);
         let slice = self.data_store.alloc(size);
@@ -278,7 +278,7 @@ impl<COT> Memory<Binary> for GeneratorStore<COT> {
     }
 }
 
-impl<COT> ViewTrait<Binary> for GeneratorStore<COT>
+impl<COT> ViewTrait<Binary> for GarblerStore<COT>
 where
     COT: COTSender<Block>,
 {
@@ -304,12 +304,12 @@ where
     }
 }
 
-/// Error for [`GeneratorStore`].
+/// Error for [`GarblerStore`].
 #[derive(Debug, thiserror::Error)]
-#[error("generator store error: {}", .0)]
-pub struct GeneratorStoreError(#[from] ErrorRepr);
+#[error("garbler store error: {}", .0)]
+pub struct GarblerStoreError(#[from] ErrorRepr);
 
-impl GeneratorStoreError {
+impl GarblerStoreError {
     fn cot<E>(err: E) -> Self
     where
         E: Into<Box<dyn std::error::Error + Send + Sync + 'static>>,
@@ -339,25 +339,25 @@ enum ErrorRepr {
     },
 }
 
-impl From<KeyStoreError> for GeneratorStoreError {
+impl From<KeyStoreError> for GarblerStoreError {
     fn from(err: KeyStoreError) -> Self {
         Self(ErrorRepr::KeyStore(err))
     }
 }
 
-impl From<StoreError> for GeneratorStoreError {
+impl From<StoreError> for GarblerStoreError {
     fn from(err: StoreError) -> Self {
         Self(ErrorRepr::Store(err))
     }
 }
 
-impl From<DecodeError> for GeneratorStoreError {
+impl From<DecodeError> for GarblerStoreError {
     fn from(err: DecodeError) -> Self {
         Self(ErrorRepr::Decode(err))
     }
 }
 
-impl From<ViewError> for GeneratorStoreError {
+impl From<ViewError> for GarblerStoreError {
     fn from(err: ViewError) -> Self {
         Self(ErrorRepr::View(err))
     }

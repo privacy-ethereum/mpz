@@ -17,7 +17,7 @@ use utils::{
 };
 
 use crate::{
-    store::{EvaluatorFlush, GeneratorFlush, MacProof},
+    store::{EvaluatorFlush, GarblerFlush, MacProof},
     view::{FlushView, View, ViewError},
 };
 
@@ -188,7 +188,7 @@ where
     COT: COTReceiver<bool, Block>,
     COT::Future: Send + 'static,
 {
-    /// Sends a flush to the generator.
+    /// Sends a flush to the garbler.
     ///
     /// This queues any necessary COTs.
     pub fn send_flush(&mut self) -> Result<EvaluatorFlush> {
@@ -218,7 +218,7 @@ where
             None
         };
 
-        // Prove decoded MACs to the generator.
+        // Prove decoded MACs to the garbler.
         let mac_proof = if !view.decode.is_empty() {
             let (bits, proof) = self.mac_store.prove(&view.decode)?;
 
@@ -234,22 +234,22 @@ where
         Ok(flush)
     }
 
-    /// Receives flush from the generator.
+    /// Receives flush from the garbler.
     ///
     /// This expects that the COT receiver has been flushed.
-    pub fn receive_flush(&mut self, flush: GeneratorFlush) -> Result<()> {
+    pub fn receive_flush(&mut self, flush: GarblerFlush) -> Result<()> {
         let Some(PendingFlush { cot }) = self.pending.take() else {
             return Err(ErrorRepr::UnexpectedFlush.into());
         };
 
-        let GeneratorFlush {
+        let GarblerFlush {
             view,
             macs,
             key_bits,
             mac_commitments,
         } = flush;
 
-        // Ensure the generators flush is consistent.
+        // Ensure the garblers flush is consistent.
         if &view != self.view.flush() {
             return Err(ErrorRepr::InconsistentFlush {
                 expected: Box::new(view),

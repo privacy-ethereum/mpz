@@ -46,7 +46,7 @@ mod tests {
     fn test_vole() {
         let mut rng = StdRng::seed_from_u64(0);
         let delta = Delta::random(&mut rng);
-        let mut rcot = IdealRCOT::new(rng.gen(), delta.into_inner());
+        let mut rcot = IdealRCOT::new(rng.r#gen(), delta.into_inner());
 
         rcot.alloc(128);
         rcot.flush().unwrap();
