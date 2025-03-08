@@ -16,7 +16,7 @@ use mpz_ole_core::{
 /// Returns a new ideal ROLE sender and receiver.
 pub fn ideal_role<F: Field>() -> (IdealROLESender<F>, IdealROLEReceiver<F>) {
     let mut rng = StdRng::seed_from_u64(0);
-    let core = Core::new(rng.r#gen());
+    let core = Core::new(rng.random());
     let (sync_0, sync_1) = call_sync();
     (
         IdealROLESender {

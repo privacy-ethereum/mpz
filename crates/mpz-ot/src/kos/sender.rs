@@ -143,7 +143,7 @@ where
             sender.extend(extend)?;
         }
 
-        let seed = thread_rng().r#gen();
+        let seed = rand::rng().random();
 
         // See issue #176.
         let chi_seed = cointoss_receiver(ctx, vec![seed]).await?[0];

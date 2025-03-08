@@ -16,7 +16,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     group.bench_function("aes128", |b| {
         let mut rng = StdRng::seed_from_u64(0);
         let delta = Delta::random(&mut rng);
-        let mut rcot = IdealRCOT::new(rng.r#gen(), delta.into_inner());
+        let mut rcot = IdealRCOT::new(rng.random(), delta.into_inner());
 
         rcot.alloc(AES128.input_len());
         rcot.flush().unwrap();

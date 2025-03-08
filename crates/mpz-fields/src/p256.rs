@@ -10,7 +10,7 @@ use ark_serialize::{
 use hybrid_array::Array;
 use itybity::{BitLength, FromBitIterator, GetBit, Lsb0, Msb0};
 use num_bigint::ToBigUint;
-use rand::{distributions::Standard, prelude::Distribution};
+use rand::{distr::StandardUniform, prelude::Distribution};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use typenum::{U32, U256};
@@ -202,7 +202,7 @@ mod tests {
         let mut rng = Prg::from_seed(Block::ZERO);
 
         for _ in 0..32 {
-            let a = P256(rng.r#gen());
+            let a = P256(rng.random());
             let bytes: [u8; 32] = a.into();
             let b = P256::try_from(bytes).unwrap();
 
