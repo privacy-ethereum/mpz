@@ -8,7 +8,7 @@ use mpz_ot_core::{
     ot::{OTReceiver, OTReceiverOutput},
     rcot::{RCOTSender, RCOTSenderOutput},
 };
-use rand::{Rng, thread_rng};
+use rand::Rng;
 use serio::stream::IoStreamExt as _;
 
 type Error = SenderError;

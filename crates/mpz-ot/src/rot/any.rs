@@ -18,7 +18,7 @@ mod tests {
         foo: [u8; 32],
     }
 
-    impl Distribution<Foo> for Standard {
+    impl Distribution<Foo> for StandardUniform {
         fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Foo {
             Foo { foo: rng.random() }
         }

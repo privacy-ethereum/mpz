@@ -10,7 +10,7 @@ use crate::{
 };
 
 use mpz_common::future::{MaybeDone, Sender as OutputSender, new_output};
-use mpz_core::Block;
+use mpz_core::{Block, rand::Rand0_8CompatExt};
 
 use curve25519_dalek::{
     constants::RISTRETTO_BASEPOINT_TABLE,
@@ -106,7 +106,7 @@ impl Receiver<state::Setup> {
 
         let choices = mem::take(&mut self.choices);
         let private_keys = (0..choices.len())
-            .map(|_| Scalar::random(rng))
+            .map(|_| Scalar::random(&mut rng.compat_by_ref()))
             .collect::<Vec<_>>();
 
         let (blinded_choices, new_keys) =
@@ -263,7 +263,7 @@ pub mod state {
     impl Default for Initialized {
         fn default() -> Self {
             Self {
-                rng: ChaCha20Rng::from_entropy(),
+                rng: ChaCha20Rng::from_os_rng(),
             }
         }
     }

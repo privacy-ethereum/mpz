@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use rand::{Rng, thread_rng};
+use rand::Rng;
 use serio::SinkExt as _;
 
 use mpz_cointoss::{self as cointoss, cointoss_sender};

@@ -9,6 +9,14 @@ pub trait Rand0_8CompatExt {
     {
         Rand0_8CompatWrapper(self)
     }
+
+    /// Wraps `self` in a compatibility wrapper that implements `0.8` traits.
+    fn compat_by_ref(&mut self) -> Rand0_8CompatWrapper<&mut Self>
+    where
+        Self: Sized,
+    {
+        Rand0_8CompatWrapper(self)
+    }
 }
 
 impl<T> Rand0_8CompatExt for T where T: ?Sized {}
@@ -49,3 +57,5 @@ where
         Ok(())
     }
 }
+
+impl<R> rand_core_06::CryptoRng for Rand0_8CompatWrapper<R> where R: rand_core::CryptoRng + ?Sized {}

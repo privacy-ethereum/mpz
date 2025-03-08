@@ -10,7 +10,7 @@ use itybity::{FromBitIterator, IntoBits};
 use mpz_common::future::{MaybeDone, Sender, new_output};
 use mpz_core::{Block, prg::Prg};
 
-use rand::{Rng as _, SeedableRng, thread_rng};
+use rand::{Rng as _, SeedableRng};
 use rand_core::RngCore;
 
 #[cfg(feature = "rayon")]

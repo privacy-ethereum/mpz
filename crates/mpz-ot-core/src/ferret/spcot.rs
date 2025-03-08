@@ -120,7 +120,7 @@ mod tests {
         // Execute twice.
         for _ in 0..2 {
             let lengths: Vec<usize> = (1..8).collect();
-            let idxs: Vec<usize> = (1..8).map(|n| rng.gen_range(0..1 << n)).collect();
+            let idxs: Vec<usize> = (1..8).map(|n| rng.random_range(0..1 << n)).collect();
             execute(&mut rng, &mut sender, &mut receiver, &lengths, &idxs);
         }
     }
@@ -130,7 +130,7 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(0);
         let delta = rng.random();
 
-        let idxs: Vec<_> = (0..8).map(|n| rng.gen_range(0..1 << n)).collect();
+        let idxs: Vec<_> = (0..8).map(|n| rng.random_range(0..1 << n)).collect();
         let lengths: Vec<_> = (0..8).collect();
 
         let (vs, ws) = spcot(&mut rng, &lengths, &idxs, delta);
