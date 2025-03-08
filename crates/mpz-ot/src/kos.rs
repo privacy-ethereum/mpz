@@ -13,14 +13,14 @@ pub use receiver::Receiver;
 pub use sender::Sender;
 
 pub use mpz_ot_core::kos::{
-    msgs, ReceiverConfig, ReceiverConfigBuilder, ReceiverConfigBuilderError, SenderConfig,
-    SenderConfigBuilder, SenderConfigBuilderError,
+    ReceiverConfig, ReceiverConfigBuilder, ReceiverConfigBuilderError, SenderConfig,
+    SenderConfigBuilder, SenderConfigBuilderError, msgs,
 };
 
 #[cfg(test)]
 mod tests {
     use mpz_core::Block;
-    use rand::{rngs::StdRng, SeedableRng};
+    use rand::{SeedableRng, rngs::StdRng};
 
     use super::*;
 

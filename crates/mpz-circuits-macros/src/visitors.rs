@@ -1,6 +1,6 @@
 use syn::{
-    parse::Parse, parse_quote, visit_mut::VisitMut, Expr, FnArg, Ident, ItemFn, Meta, Path, Token,
-    Type,
+    Expr, FnArg, Ident, ItemFn, Meta, Path, Token, Type, parse::Parse, parse_quote,
+    visit_mut::VisitMut,
 };
 
 use crate::map::map_primitive_type;

@@ -2,7 +2,7 @@ use std::{future::Future, pin::Pin};
 
 use uid_mux::UidMux;
 
-use crate::{io::Io, ThreadId};
+use crate::{ThreadId, io::Io};
 
 pub(crate) trait Mux {
     /// Opens a new I/O channel for the given thread.
@@ -36,7 +36,7 @@ where
 #[cfg(any(test, feature = "test-utils"))]
 mod test_utils {
     use super::*;
-    use uid_mux::{test_utils::TestFramedMux, FramedUidMux};
+    use uid_mux::{FramedUidMux, test_utils::TestFramedMux};
 
     impl Mux for TestFramedMux {
         fn open(

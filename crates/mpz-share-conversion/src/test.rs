@@ -1,11 +1,11 @@
 //! Test utilities.
 
-use mpz_common::{context::test_st_context, future::Output, Flush};
+use mpz_common::{Flush, context::test_st_context, future::Output};
 use mpz_fields::Field;
 use mpz_share_conversion_core::{
     A2MOutput, AdditiveToMultiplicative, M2AOutput, MultiplicativeToAdditive, ShareConvert,
 };
-use rand::{rngs::StdRng, SeedableRng};
+use rand::{SeedableRng, rngs::StdRng};
 
 /// Test share conversion.
 pub(crate) async fn test_share_convert<S, R, F>(mut sender: S, mut receiver: R, cycles: usize)

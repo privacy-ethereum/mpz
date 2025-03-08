@@ -2,15 +2,15 @@ use std::ops::Add;
 
 use blake3::{Hash, Hasher};
 use mpz_core::{
-    bitvec::{BitSlice, BitVec},
     Block,
+    bitvec::{BitSlice, BitVec},
 };
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    RangeSet, Slice,
     correlated::{MAC_ONE, MAC_ZERO},
     store::{Store, StoreError},
-    RangeSet, Slice,
 };
 
 type Result<T> = core::result::Result<T, MacStoreError>;

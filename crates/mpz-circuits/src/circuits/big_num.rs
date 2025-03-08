@@ -5,9 +5,9 @@ use std::cell::RefCell;
 use itybity::IntoBits;
 
 use crate::{
+    BuilderState, Node, Tracer,
     ops::binary::{switch_nbit, wrapping_add_nbit, wrapping_sub_nbit},
     types::U8,
-    BuilderState, Node, Tracer,
 };
 
 /// Add two numbers modulo a constant modulus.

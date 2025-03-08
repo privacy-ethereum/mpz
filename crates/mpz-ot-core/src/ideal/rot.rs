@@ -5,14 +5,14 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use mpz_common::future::{new_output, MaybeDone, Sender};
-use mpz_core::{prg::Prg, Block};
+use mpz_common::future::{MaybeDone, Sender, new_output};
+use mpz_core::{Block, prg::Prg};
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 
 use crate::{
-    rot::{ROTReceiver, ROTReceiverOutput, ROTSender, ROTSenderOutput},
     TransferId,
+    rot::{ROTReceiver, ROTReceiverOutput, ROTSender, ROTSenderOutput},
 };
 
 type Error = IdealROTError;
@@ -98,9 +98,9 @@ impl IdealROT {
         let count = this.sender_state.alloc;
 
         let keys = (0..count)
-            .map(|_| [this.prg.gen(), this.prg.gen()])
+            .map(|_| [this.prg.r#gen(), this.prg.r#gen()])
             .collect::<Vec<_>>();
-        let choices = (0..count).map(|_| this.prg.gen()).collect::<Vec<_>>();
+        let choices = (0..count).map(|_| this.prg.r#gen()).collect::<Vec<_>>();
         let msgs = keys
             .iter()
             .zip(&choices)
@@ -253,7 +253,7 @@ impl ROTReceiver<bool, Block> for IdealROT {
 impl Default for IdealROT {
     fn default() -> Self {
         let mut rng = ChaCha8Rng::seed_from_u64(0);
-        Self::new(rng.gen())
+        Self::new(rng.r#gen())
     }
 }
 
@@ -277,7 +277,7 @@ mod tests {
     #[test]
     fn test_ideal_rot() {
         let mut rng = ChaCha8Rng::seed_from_u64(0);
-        let mut ideal = IdealROT::new(rng.gen());
+        let mut ideal = IdealROT::new(rng.r#gen());
 
         let count = 10;
 

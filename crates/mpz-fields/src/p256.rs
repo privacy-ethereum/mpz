@@ -3,7 +3,7 @@
 use std::ops::{Add, Mul, Neg, Sub};
 
 use ark_ff::{BigInt, BigInteger, Field as ArkField, FpConfig, MontBackend, One, Zero};
-use ark_secp256r1::{fq::Fq, FqConfig};
+use ark_secp256r1::{FqConfig, fq::Fq};
 use ark_serialize::{
     CanonicalDeserialize, CanonicalSerialize, Compress, SerializationError, Validate,
 };
@@ -13,7 +13,7 @@ use num_bigint::ToBigUint;
 use rand::{distributions::Standard, prelude::Distribution};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-use typenum::{U256, U32};
+use typenum::{U32, U256};
 
 use crate::{Field, FieldError};
 
@@ -175,7 +175,7 @@ pub struct P256Error(SerializationError);
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mpz_core::{prg::Prg, Block};
+    use mpz_core::{Block, prg::Prg};
     use rand::{Rng, SeedableRng};
 
     use crate::tests::{test_field_basic, test_field_bit_ops, test_field_compute_product_repeated};
@@ -202,7 +202,7 @@ mod tests {
         let mut rng = Prg::from_seed(Block::ZERO);
 
         for _ in 0..32 {
-            let a = P256(rng.gen());
+            let a = P256(rng.r#gen());
             let bytes: [u8; 32] = a.into();
             let b = P256::try_from(bytes).unwrap();
 

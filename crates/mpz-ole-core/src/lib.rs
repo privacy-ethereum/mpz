@@ -161,7 +161,7 @@ mod tests {
         ideal::rot::IdealROT,
         rot::{AnyReceiver, AnySender},
     };
-    use rand::{distributions::Standard, prelude::Distribution, rngs::StdRng, SeedableRng};
+    use rand::{SeedableRng, distributions::Standard, prelude::Distribution, rngs::StdRng};
     use test::assert_ole;
 
     #[test]

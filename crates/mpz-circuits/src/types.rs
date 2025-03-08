@@ -552,12 +552,12 @@ impl Value {
     /// Creates a new value using the provided rng.
     pub fn random<R: Rng>(rng: &mut R, ty: &ValueType) -> Self {
         match ty {
-            ValueType::Bit => Value::Bit(rng.gen()),
-            ValueType::U8 => Value::U8(rng.gen()),
-            ValueType::U16 => Value::U16(rng.gen()),
-            ValueType::U32 => Value::U32(rng.gen()),
-            ValueType::U64 => Value::U64(rng.gen()),
-            ValueType::U128 => Value::U128(rng.gen()),
+            ValueType::Bit => Value::Bit(rng.r#gen()),
+            ValueType::U8 => Value::U8(rng.r#gen()),
+            ValueType::U16 => Value::U16(rng.r#gen()),
+            ValueType::U32 => Value::U32(rng.r#gen()),
+            ValueType::U64 => Value::U64(rng.r#gen()),
+            ValueType::U128 => Value::U128(rng.r#gen()),
             ValueType::Array(ty, len) => Value::Array(
                 (0..*len)
                     .map(|_| Value::random(rng, ty))
@@ -646,7 +646,7 @@ impl BitXor for Value {
                 return Err(TypeError::UnexpectedType {
                     expected: self.value_type(),
                     actual: rhs.value_type(),
-                })
+                });
             }
         })
     }
@@ -673,7 +673,7 @@ impl BitXor<&Value> for &Value {
                 return Err(TypeError::UnexpectedType {
                     expected: self.value_type(),
                     actual: rhs.value_type(),
-                })
+                });
             }
         })
     }
@@ -700,7 +700,7 @@ impl BitXor<&Value> for Value {
                 return Err(TypeError::UnexpectedType {
                     expected: self.value_type(),
                     actual: rhs.value_type(),
-                })
+                });
             }
         })
     }
@@ -727,7 +727,7 @@ impl BitXor<Value> for &Value {
                 return Err(TypeError::UnexpectedType {
                     expected: self.value_type(),
                     actual: rhs.value_type(),
-                })
+                });
             }
         })
     }

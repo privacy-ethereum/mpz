@@ -1,14 +1,14 @@
 use proc_macro::TokenStream;
-use quote::{quote, ToTokens};
+use quote::{ToTokens, quote};
 use syn::{
-    parse::Parse, parse_macro_input, parse_quote, spanned::Spanned, visit_mut::VisitMut, Expr,
-    FnArg, Ident, ItemFn, Meta, Pat, ReturnType, Stmt, Token, Type,
+    Expr, FnArg, Ident, ItemFn, Meta, Pat, ReturnType, Stmt, Token, Type, parse::Parse,
+    parse_macro_input, parse_quote, spanned::Spanned, visit_mut::VisitMut,
 };
 
 use crate::{
+    DEFAULT_SUFFIX,
     traits::IsPrimitiveType,
     visitors::{CallRename, CallRenameConfig, FnSigTypeReplace},
-    DEFAULT_SUFFIX,
 };
 
 struct StripConstArgAttr;

@@ -4,7 +4,7 @@ use std::{cmp::Ordering, ops::Range};
 
 use itybity::ToBits;
 
-use crate::{tkprp::TwoKeyPrp, Block};
+use crate::{Block, tkprp::TwoKeyPrp};
 
 /// Returns the range of nodes at the given layer.
 #[inline]

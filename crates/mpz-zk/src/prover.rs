@@ -1,14 +1,14 @@
 use async_trait::async_trait;
 use blake3::Hasher;
-use mpz_common::{scoped_futures::ScopedFutureExt, Context, Flush};
-use mpz_core::{bitvec::BitVec, Block};
+use mpz_common::{Context, Flush, scoped_futures::ScopedFutureExt};
+use mpz_core::{Block, bitvec::BitVec};
 use mpz_ot::rcot::{RCOTReceiver, RCOTReceiverOutput};
 use mpz_vm_core::{
-    memory::{binary::Binary, correlated::Mac, DecodeFuture, Memory, Repr, Slice, View},
     Call, Callable, Execute, Result as VmResult, VmError,
+    memory::{DecodeFuture, Memory, Repr, Slice, View, binary::Binary, correlated::Mac},
 };
-use mpz_zk_core::{store::ProverStore, Prover as Core, ProverError};
-use serio::{stream::IoStreamExt, SinkExt};
+use mpz_zk_core::{Prover as Core, ProverError, store::ProverStore};
+use serio::{SinkExt, stream::IoStreamExt};
 use utils::filter_drain::FilterDrain;
 
 #[derive(Debug)]

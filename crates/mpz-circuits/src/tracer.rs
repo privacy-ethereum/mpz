@@ -1,9 +1,9 @@
 use std::cell::RefCell;
 
 use crate::{
+    Feed, Node,
     builder::BuilderState,
     types::{BinaryRepr, Bit},
-    Feed, Node,
 };
 
 /// A wrapper type for tracing operations applied to a value.

@@ -3,15 +3,15 @@ use std::sync::{Arc, Mutex};
 use uid_mux::UidMux;
 
 use crate::{
+    ThreadId,
     context::{
-        mt::{
-            spawn::{Spawn, StdSpawn},
-            Multithread,
-        },
         CustomSpawn, MtConfig, SpawnError, ThreadBuilder,
+        mt::{
+            Multithread,
+            spawn::{Spawn, StdSpawn},
+        },
     },
     mux::Mux,
-    ThreadId,
 };
 
 /// Builder for [`Multithread`].

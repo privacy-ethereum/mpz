@@ -6,7 +6,7 @@ use mpz_share_conversion_core::{
     AdditiveToMultiplicative, MultiplicativeToAdditive, Receiver as Core,
     ReceiverError as CoreError,
 };
-use serio::{stream::IoStreamExt, Deserialize, Serialize, SinkExt};
+use serio::{Deserialize, Serialize, SinkExt, stream::IoStreamExt};
 
 /// Share conversion receiver.
 #[derive(Debug)]
