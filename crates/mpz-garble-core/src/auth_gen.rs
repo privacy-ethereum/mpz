@@ -35,104 +35,6 @@ pub enum AuthGeneratorError {
     InvalidInputMacCount { expected: usize, actual: usize },
 }
 
-/// Uses a random triple and derandomization bits to compute the shares of AND of auth bits
-#[inline]
-pub(crate) fn sigma_share(triple: &mut AuthTripleShare, px: bool, py: bool, delta_a: Block) -> AuthBitShare {
-    let mut sigma_share = triple.z.clone();
-
-    if px {
-        sigma_share = sigma_share + triple.y;
-    }
-    
-    if py {
-        sigma_share = sigma_share + triple.x;
-    }
-
-    if px && py {
-        sigma_share.key = sigma_share.key + Key::from(delta_a); 
-    }
-
-    sigma_share
-}
-
-/// Garbles a single AND gate, computing the half-gate tables and output label
-#[inline]
-pub(crate) fn and_gate(
-    lx: Block,
-    ly: Block,
-    sx: AuthBitShare,
-    sy: AuthBitShare,
-    sz: AuthBitShare,
-    ss: AuthBitShare,
-    delta_a: Block,
-    cipher: &FixedKeyAes,  
-    gid: usize,
-) -> (AuthHalfGate, Block) {
-    // Compute 1-bit labels
-    let lx1 = lx ^ delta_a;
-    let ly1 = ly ^ delta_a;
-    
-    // Pre-compute all hashes
-    let j = Block::new((gid as u128).to_be_bytes());
-    let k = Block::new(((gid + 1) as u128).to_be_bytes());
-    // let mut h = [lx, ly, lx1, ly1];
-    // cipher.tccr_many(&[j, k, j, k], &mut h);
-    // let [hx, hy, hx1, hy1] = h;
-
-    let hx = sigma(j, lx, cipher);
-    let hy = sigma(k, ly, cipher);
-    let hx1 = sigma(j, lx1, cipher);
-    let hy1 = sigma(k, ly1, cipher);
-    
-    let g_0 = hx ^ hx1 ^ sy.key.as_block() ^ delta_a.mul_bool(sy.bit());
-              
-    let g_1 = hy ^ hy1 ^ sx.key.as_block() ^ delta_a.mul_bool(sx.bit()) ^ lx;
-    
-    // Compute output label
-    let lz = hx ^ hy ^ sz.key.as_block() ^ delta_a.mul_bool(sz.bit()) ^ 
-            ss.key.as_block() ^ delta_a.mul_bool(ss.bit());
-    
-    // Create half-gate with mask based on lz's LSB
-    let gates = [g_0, g_1];
-    let mask = lz.lsb();
-    
-    (AuthHalfGate::new(gates, mask), lz)
-}
-
-pub(crate) fn check_and(
-    ss: &AuthBitShare,
-    sz: &AuthBitShare,
-    sx: &AuthBitShare,
-    sy: &AuthBitShare,
-    za: bool,
-    zb: bool,
-    zc: bool,
-    delta_a: Block,
-) -> Block {
-    // Start with combined share of sigma and z
-    let mut share = ss.mac.as_block() ^ ss.key.as_block() ^ 
-    delta_a.mul_bool(ss.bit()) ^ 
-    sz.mac.as_block() ^ sz.key.as_block() ^ 
-    delta_a.mul_bool(sz.bit());
-
-    // Apply adjustments based on masked values
-    if za {
-        share = share ^ sy.mac.as_block() ^ sy.key.as_block() ^ 
-        delta_a.mul_bool(sy.bit());
-    }
-
-    if zb {
-        share = share ^ sx.mac.as_block() ^ sx.key.as_block() ^ 
-        delta_a.mul_bool(sx.bit());
-    }
-
-    if (za && zb) != zc {
-        share = share ^ delta_a;
-    }
-
-    share
-}
-
 /// Authenticated garbled circuit generator.
 ///
 /// Responsible for generating and managing authenticated garbled circuits
@@ -487,4 +389,102 @@ impl<'a> AuthGenerator<'a> {
             })
             .collect()
     }
+}
+
+/// Uses a random triple and derandomization bits to compute the shares of AND of auth bits
+#[inline]
+pub(crate) fn sigma_share(triple: &mut AuthTripleShare, px: bool, py: bool, delta_a: Block) -> AuthBitShare {
+    let mut sigma_share = triple.z.clone();
+
+    if px {
+        sigma_share = sigma_share + triple.y;
+    }
+    
+    if py {
+        sigma_share = sigma_share + triple.x;
+    }
+
+    if px && py {
+        sigma_share.key = sigma_share.key + Key::from(delta_a); 
+    }
+
+    sigma_share
+}
+
+/// Garbles a single AND gate, computing the half-gate tables and output label
+#[inline]
+pub(crate) fn and_gate(
+    lx: Block,
+    ly: Block,
+    sx: AuthBitShare,
+    sy: AuthBitShare,
+    sz: AuthBitShare,
+    ss: AuthBitShare,
+    delta_a: Block,
+    cipher: &FixedKeyAes,  
+    gid: usize,
+) -> (AuthHalfGate, Block) {
+    // Compute 1-bit labels
+    let lx1 = lx ^ delta_a;
+    let ly1 = ly ^ delta_a;
+    
+    // Pre-compute all hashes
+    let j = Block::new((gid as u128).to_be_bytes());
+    let k = Block::new(((gid + 1) as u128).to_be_bytes());
+    // let mut h = [lx, ly, lx1, ly1];
+    // cipher.tccr_many(&[j, k, j, k], &mut h);
+    // let [hx, hy, hx1, hy1] = h;
+
+    let hx = sigma(j, lx, cipher);
+    let hy = sigma(k, ly, cipher);
+    let hx1 = sigma(j, lx1, cipher);
+    let hy1 = sigma(k, ly1, cipher);
+    
+    let g_0 = hx ^ hx1 ^ sy.key.as_block() ^ delta_a.mul_bool(sy.bit());
+              
+    let g_1 = hy ^ hy1 ^ sx.key.as_block() ^ delta_a.mul_bool(sx.bit()) ^ lx;
+    
+    // Compute output label
+    let lz = hx ^ hy ^ sz.key.as_block() ^ delta_a.mul_bool(sz.bit()) ^ 
+            ss.key.as_block() ^ delta_a.mul_bool(ss.bit());
+    
+    // Create half-gate with mask based on lz's LSB
+    let gates = [g_0, g_1];
+    let mask = lz.lsb();
+    
+    (AuthHalfGate::new(gates, mask), lz)
+}
+
+pub(crate) fn check_and(
+    ss: &AuthBitShare,
+    sz: &AuthBitShare,
+    sx: &AuthBitShare,
+    sy: &AuthBitShare,
+    za: bool,
+    zb: bool,
+    zc: bool,
+    delta_a: Block,
+) -> Block {
+    // Start with combined share of sigma and z
+    let mut share = ss.mac.as_block() ^ ss.key.as_block() ^ 
+    delta_a.mul_bool(ss.bit()) ^ 
+    sz.mac.as_block() ^ sz.key.as_block() ^ 
+    delta_a.mul_bool(sz.bit());
+
+    // Apply adjustments based on masked values
+    if za {
+        share = share ^ sy.mac.as_block() ^ sy.key.as_block() ^ 
+        delta_a.mul_bool(sy.bit());
+    }
+
+    if zb {
+        share = share ^ sx.mac.as_block() ^ sx.key.as_block() ^ 
+        delta_a.mul_bool(sx.bit());
+    }
+
+    if (za && zb) != zc {
+        share = share ^ delta_a;
+    }
+
+    share
 }

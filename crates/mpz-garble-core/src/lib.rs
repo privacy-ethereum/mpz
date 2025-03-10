@@ -20,7 +20,7 @@ pub use circuit::{AuthHalfGate, EncryptedGate, EncryptedGateBatch, GarbledCircui
 pub use evaluator::{evaluate_garbled_circuits, EncryptedGateBatchConsumer, EncryptedGateConsumer, Evaluator,
     EvaluatorError, EvaluatorOutput,};
 pub use auth_eval::{
-     AuthEvaluator, AuthEvaluatorError, AndGateTable
+     AuthEvaluator, AuthEvaluatorError
 };
 
 pub use garbler::{
@@ -468,7 +468,7 @@ mod tests {
 
         let input = key.iter_lsb0().chain(msg.iter_lsb0()).collect::<Vec<_>>();
 
-        for seed in 0..1 {
+        for seed in 0..2 {
             let config = AuthGarbleConfig::new(AES128.clone(), input.clone(), seed);
             
             let output_bits = auth_garble(config);
@@ -637,7 +637,7 @@ mod tests {
 
 // Next steps:
 
-// 1) Make auth garbling notation consistent with semi-honest garbling
-// 2) Only need to send AND wires for auth
+// 1) Make code more readable - explain protocol intuition (secret-shared garbling) through structure
+// 2) Suffices to send AND wires for auth
 // 3) Output processing for Gen
 // 4) Propagate errors across functions
