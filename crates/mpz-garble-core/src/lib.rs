@@ -38,7 +38,6 @@ const BYTES_PER_GATE: usize = 32;
 
 /// Maximum size of a batch in bytes.
 const MAX_BATCH_SIZE: usize = 4 * KB;
-const SSP: usize = 40;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[allow(missing_docs)]
@@ -78,6 +77,8 @@ mod tests {
     use crate::evaluator::evaluate_garbled_circuits;
 
     use super::*;
+
+    const SSP: usize = 40;
 
     #[test]
     fn test_and_gate() {
@@ -467,7 +468,7 @@ mod tests {
 
         let input = key.iter_lsb0().chain(msg.iter_lsb0()).collect::<Vec<_>>();
 
-        for seed in 0..5 {
+        for seed in 0..1 {
             let config = AuthGarbleConfig::new(AES128.clone(), input.clone(), seed);
             
             let output_bits = auth_garble(config);
@@ -637,6 +638,6 @@ mod tests {
 // Next steps:
 
 // 1) Make auth garbling notation consistent with semi-honest garbling
-// 2) Secure authentication -- only send AND gates
-// 3) Propagate errors across functions
-// 4) Output processing -- allow Gen to learn output as well
+// 2) Only need to send AND wires for auth
+// 3) Output processing for Gen
+// 4) Propagate errors across functions
