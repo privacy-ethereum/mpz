@@ -271,13 +271,11 @@ mod tests {
         //Corrupt an index.
         idxs[idx_count - 1] = idxs[idx_count - 2];
 
-        assert_eq!(
+        assert!(matches!(
             MPCOTReceiver::new(rng.gen(), LpnType::Regular)
                 .start_extend(&idxs, interval_len * idx_count)
-                .unwrap_err()
-                .0
-                .to_string(),
-            ErrorRepr::NotRegular.to_string()
-        );
+                .unwrap_err(),
+            MPCOTReceiverError(ErrorRepr::NotRegular)
+        ));
     }
 }
