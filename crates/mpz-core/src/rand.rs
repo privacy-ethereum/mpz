@@ -19,7 +19,7 @@ pub trait Rand0_8CompatExt {
     }
 }
 
-impl<T> Rand0_8CompatExt for T where T: ?Sized {}
+impl<T> Rand0_8CompatExt for T where T: rand_core::RngCore + ?Sized {}
 
 /// Rand 0.9 compatibility wrapper.
 pub struct Rand0_8CompatWrapper<R: ?Sized>(R);
