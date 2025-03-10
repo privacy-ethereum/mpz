@@ -71,6 +71,8 @@ pub struct AuthEvaluator<'a> {
     pub circ: &'a Circuit,
     /// The input owners for the circuit (Generator or Evaluator)
     pub input_owners: Vec<Party>,
+    /// Gate ID
+    pub gid: usize,
 }
 
 impl<'a> AuthEvaluator<'a> {
@@ -89,6 +91,7 @@ impl<'a> AuthEvaluator<'a> {
             masked_values: Vec::new(),
             circ,
             input_owners,
+            gid: 1,
         }
     }
 
@@ -225,8 +228,9 @@ impl<'a> AuthEvaluator<'a> {
                     self.evaluate_inv_gate(x.id(), z.id());
                 }
                 Gate::And { x, y, z } => {
-                    self.evaluate_and_gate(x.id(), y.id(), z.id(), and_count, &px_vec, &py_vec, &gates, cipher)?;
+                    self.evaluate_and_gate(x.id(), y.id(), z.id(), and_count, &px_vec, &py_vec, &gates, cipher, self.gid)?;
                     and_count += 1;
+                    self.gid += 2;
                 }
             }
         }
@@ -255,7 +259,8 @@ impl<'a> AuthEvaluator<'a> {
         px_vec: &[bool],
         py_vec: &[bool],
         gates: &[AuthHalfGate],
-        cipher: &FixedKeyAes
+        cipher: &FixedKeyAes,
+        gid: usize,
     ) -> Result<(), AuthEvaluatorError> {
         // Get authenticated bit shares for input wires
         let sx = self.auth_bits[x_id];
@@ -290,17 +295,23 @@ impl<'a> AuthEvaluator<'a> {
         // Compute garbled gate values
         let g_0 = gates[and_count].gates[0] ^ sy.mac.as_block();
         let g_1 = gates[and_count].gates[1] ^ sx.mac.as_block();
-        let g_1_xor_lx = g_1 ^ lx;
 
         // Compute output label
-        let sigma_lx = sigma(lx, cipher);
-        let sigma_ly = sigma(ly, cipher);
+        let j = Block::new((gid as u128).to_be_bytes());
+        let k = Block::new(((gid + 1) as u128).to_be_bytes());
+        // let mut h = [lx, ly];
+        // cipher.tccr_many(&[j, k], &mut h);
+        // let [hx, hy] = h;
+
+        let hx = sigma(j, lx, cipher);
+        let hy = sigma(k, ly, cipher);
+
         let sz_mac = sz.mac.as_block();
         let ss_mac = ss.mac.as_block();
         let g0_masked = g_0.mul_bool(masked_x);
-        let g1_masked = g_1_xor_lx.mul_bool(masked_y);
+        let g1_masked = (g_1 ^ lx).mul_bool(masked_y);
 
-        let mut lz = sigma_lx ^ sigma_ly ^ sz_mac ^ ss_mac ^ g0_masked ^ g1_masked;
+        let mut lz = hx ^ hy ^ sz_mac ^ ss_mac ^ g0_masked ^ g1_masked;
 
         // Set output masked value and label
         self.masked_values[z_id] = lz.lsb() ^ gates[and_count].mask;
@@ -517,7 +528,7 @@ impl<'a> AuthEvaluator<'a> {
                 }
                 
                 // Add to hash
-                hash ^= sigma(share, cipher);
+                hash ^= sigma(Block::new((and_count as u128).to_be_bytes()), share, cipher);
                 and_count += 1;
             }
         }

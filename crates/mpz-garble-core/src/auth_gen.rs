@@ -55,6 +55,8 @@ pub struct AuthGenerator<'a> {
     pub circ: &'a Circuit,
     /// The input owners for the circuit (Generator or Evaluator)
     pub input_owners: Vec<Party>,
+    /// Gate ID
+    pub gid: usize,
 }
 
 impl<'a> AuthGenerator<'a> {
@@ -73,6 +75,7 @@ impl<'a> AuthGenerator<'a> {
             masked_values: Vec::new(),
             circ,
             input_owners,
+            gid: 1,
         }
     }
 
@@ -264,11 +267,12 @@ impl<'a> AuthGenerator<'a> {
                 let sz = self.auth_bits[z.id()];
 
                 // Garble the gate and compute output label
-                let (half_gate, lz) = self.garble(lx, ly, sx, sy, sz, self.sigma_bits[and_count], delta_a, cipher);
+                let (half_gate, lz) = self.garble(lx, ly, sx, sy, sz, self.sigma_bits[and_count], delta_a, cipher, self.gid);
                 self.labels[z.id()] = lz;
                 
                 and_gates.push(half_gate);
                 and_count += 1;
+                self.gid += 2;
             }
         }
 
@@ -326,22 +330,31 @@ impl<'a> AuthGenerator<'a> {
         sz: AuthBitShare,
         ss: AuthBitShare,
         delta_a: Block,
-        cipher: &FixedKeyAes,
+        cipher: &FixedKeyAes,  
+        gid: usize,
     ) -> (AuthHalfGate, Block) {
         // Compute 1-bit labels
         let lx1 = lx ^ delta_a;
         let ly1 = ly ^ delta_a;
         
-        // Compute half-gate components using mul_block_bool helper
-        let g_0 = sigma(lx, cipher) ^ sigma(lx1, cipher) ^ 
-                 sy.key.as_block() ^ delta_a.mul_bool(sy.bit());
+        // Pre-compute all hashes
+        let j = Block::new((gid as u128).to_be_bytes());
+        let k = Block::new(((gid + 1) as u128).to_be_bytes());
+        // let mut h = [lx, ly, lx1, ly1];
+        // cipher.tccr_many(&[j, k, j, k], &mut h);
+        // let [hx, hy, hx1, hy1] = h;
+
+        let hx = sigma(j, lx, cipher);
+        let hy = sigma(k, ly, cipher);
+        let hx1 = sigma(j, lx1, cipher);
+        let hy1 = sigma(k, ly1, cipher);
+        
+        let g_0 = hx ^ hx1 ^ sy.key.as_block() ^ delta_a.mul_bool(sy.bit());
                   
-        let g_1 = sigma(ly, cipher) ^ sigma(ly1, cipher) ^ 
-                 sx.key.as_block() ^ delta_a.mul_bool(sx.bit()) ^ lx;
+        let g_1 = hy ^ hy1 ^ sx.key.as_block() ^ delta_a.mul_bool(sx.bit()) ^ lx;
         
         // Compute output label
-        let lz = sigma(lx, cipher) ^ sigma(ly, cipher) ^ 
-                sz.key.as_block() ^ delta_a.mul_bool(sz.bit()) ^ 
+        let lz = hx ^ hy ^ sz.key.as_block() ^ delta_a.mul_bool(sz.bit()) ^ 
                 ss.key.as_block() ^ delta_a.mul_bool(ss.bit());
         
         // Create half-gate with mask based on lz's LSB
@@ -519,8 +532,8 @@ impl<'a> AuthGenerator<'a> {
                     share = share ^ delta_a;
                 }
                 
-                // Update hash
-                hash ^= sigma(share, cipher);
+                // Update hash                            
+                hash ^= sigma(Block::new((and_count as u128).to_be_bytes()), share, cipher);
                 and_count += 1;
             }
         }

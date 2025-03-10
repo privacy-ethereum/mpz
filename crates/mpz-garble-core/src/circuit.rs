@@ -73,8 +73,7 @@ impl AuthHalfGate {
 }
 
 /// Helper function for hashing without tweaks for now.
-pub fn sigma(block: Block, cipher: &FixedKeyAes) -> Block {
-    let tweak = Block::new([0; 16]);
+pub fn sigma(tweak: Block, block: Block, cipher: &FixedKeyAes) -> Block {
     cipher.tccr(tweak, block);
     block
 }

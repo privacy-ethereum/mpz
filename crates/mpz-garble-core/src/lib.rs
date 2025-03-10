@@ -466,11 +466,14 @@ mod tests {
         };
 
         let input = key.iter_lsb0().chain(msg.iter_lsb0()).collect::<Vec<_>>();
-        let config = AuthGarbleConfig::new(AES128.clone(), input, 0);
-        
-        let output_bits = auth_garble(config);
-        let output: Vec<u8> = Vec::from_lsb0_iter(output_bits);
-        assert_eq!(output, expected, "Output mismatch");
+
+        for seed in 0..5 {
+            let config = AuthGarbleConfig::new(AES128.clone(), input.clone(), seed);
+            
+            let output_bits = auth_garble(config);
+            let output: Vec<u8> = Vec::from_lsb0_iter(output_bits);
+            assert_eq!(output, expected, "Output mismatch for seed {}", seed);
+        }
     }
     
     #[test]
@@ -633,7 +636,7 @@ mod tests {
 
 // Next steps:
 
-// 1) Hash tweaks
+// 1) Make auth garbling notation consistent with semi-honest garbling
 // 2) Secure authentication -- only send AND gates
 // 3) Propagate errors across functions
 // 4) Output processing -- allow Gen to learn output as well
