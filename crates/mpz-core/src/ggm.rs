@@ -62,6 +62,8 @@ impl<'a> GgmTree<'a> {
     /// Recovers a partial GGM tree which is missing a leaf at the given
     /// index. Missing nodes in the tree are set to zero.
     ///
+    /// See page 14 of https://eprint.iacr.org/2020/925 for a more detailed explanation.
+    ///
     /// # Panics
     ///
     /// - If the position is out of bounds.
@@ -70,7 +72,8 @@ impl<'a> GgmTree<'a> {
     /// # Arguments
     ///
     /// * `depth` - Depth of the tree.
-    /// * `sums` - Sum of the left or right nodes for each layer.
+    /// * `sums` - Sum of either the left or the right sibling nodes for each
+    ///   layer.
     /// * `idx` - Index of the missing leaf.
     /// * `leaves` - Leaves of the tree.
     pub fn new_partial(depth: usize, sums: &[Block], idx: usize, leaves: &'a mut [Block]) -> Self {
@@ -90,15 +93,18 @@ impl<'a> GgmTree<'a> {
             layer[offset + select as usize] = Block::ZERO;
             layer[offset + !select as usize] = Block::ZERO;
 
+            // If `select` is a left node, we fold all the right nodes and vice versa.
             let value = layer
                 .iter()
                 .skip(!select as usize)
                 .step_by(2)
                 .fold(sum, |acc, value| acc ^ value);
 
+            // Set the value of the sibling.
             layer[offset + !select as usize] = value;
         }
 
+        // An offset in a layer of either the node in the path or its sibling.
         let mut offset = 0;
         for ((select, sum), n) in path.zip(sums).zip(1..depth + 1) {
             if n < depth - 1 {

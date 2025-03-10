@@ -119,7 +119,7 @@ where
             return Err(ErrorRepr::State("not in extend state".to_string()).into());
         };
 
-        // If COTs are empty we haven't bootstrapped from inner COT yet.
+        // If COTs are empty, we haven't bootstrapped from inner COT yet.
         if self.keys.is_empty() {
             let RCOTSenderOutput { keys, .. } = self
                 .cot

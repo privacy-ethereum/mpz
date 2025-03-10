@@ -38,7 +38,7 @@ struct Queued<U, V> {
     sender: Sender<RCOTReceiverOutput<U, V>>,
 }
 
-/// Shared RCOT recver.
+/// Shared RCOT receiver.
 #[derive(Debug)]
 pub struct SharedRCOTReceiver<T, U, V> {
     id: usize,
