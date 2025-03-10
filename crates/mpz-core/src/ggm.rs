@@ -72,7 +72,8 @@ impl<'a> GgmTree<'a> {
     /// # Arguments
     ///
     /// * `depth` - Depth of the tree.
-    /// * `sums` - Sum of either the left or the right sibling nodes for each layer.
+    /// * `sums` - Sum of either the left or the right sibling nodes for each
+    ///   layer.
     /// * `idx` - Index of the missing leaf.
     /// * `leaves` - Leaves of the tree.
     pub fn new_partial(depth: usize, sums: &[Block], idx: usize, leaves: &'a mut [Block]) -> Self {
