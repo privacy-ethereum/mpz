@@ -151,7 +151,7 @@ impl<COT> Callable<Binary> for Garbler<COT> {
             .store
             .try_lock()
             .unwrap()
-            .alloc_output(call.circ().output_len());
+            .alloc_output(call.circ().outputs().len());
         self.call_stack.push((call, slice));
         Ok(slice)
     }
@@ -272,7 +272,7 @@ async fn generate<COT>(
 ) -> Result<()> {
     let (circ, inputs) = call.into_parts();
 
-    let mut input_keys = Vec::with_capacity(circ.input_len());
+    let mut input_keys = Vec::with_capacity(circ.inputs().len());
     {
         let lock = store.lock().await;
         for input in inputs {
@@ -282,7 +282,7 @@ async fn generate<COT>(
 
     let GarblerOutput {
         outputs: output_keys,
-    } = crate::garbler::generate(ctx, circ, delta, input_keys)
+    } = crate::garbler::generate(ctx, circ, delta, &input_keys)
         .await
         .map_err(VmError::execute)?;
 

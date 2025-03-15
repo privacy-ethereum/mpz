@@ -1,10 +1,8 @@
 use core::fmt;
+use std::ops::Range;
 
 use crate::{DEFAULT_BATCH_SIZE, EncryptedGateBatch, circuit::EncryptedGate};
-use mpz_circuits::{
-    Circuit, CircuitError, Gate,
-    types::{BinaryRepr, TypeError},
-};
+use mpz_circuits::{Circuit, Gate};
 use mpz_core::{
     Block,
     aes::{FIXED_KEY_AES, FixedKeyAes},
@@ -15,10 +13,8 @@ use mpz_memory_core::correlated::{Delta, Key};
 #[derive(Debug, thiserror::Error)]
 #[allow(missing_docs)]
 pub enum GarblerError {
-    #[error(transparent)]
-    TypeError(#[from] TypeError),
-    #[error(transparent)]
-    CircuitError(#[from] CircuitError),
+    #[error("input length mismatch: expected {expected}, got {actual}")]
+    InputLength { expected: usize, actual: usize },
     #[error("garbler not finished")]
     NotFinished,
 }
@@ -85,13 +81,13 @@ impl Garbler {
         &'a mut self,
         circ: &'a Circuit,
         delta: Delta,
-        inputs: Vec<Key>,
+        inputs: &[Key],
     ) -> Result<EncryptedGateIter<'a, std::slice::Iter<'a, Gate>>, GarblerError> {
-        if inputs.len() != circ.input_len() {
-            return Err(CircuitError::InvalidInputCount(
-                circ.input_len(),
-                inputs.len(),
-            ))?;
+        if inputs.len() != circ.inputs().len() {
+            return Err(GarblerError::InputLength {
+                expected: circ.inputs().len(),
+                actual: inputs.len(),
+            });
         }
 
         // Expand the buffer to fit the circuit
@@ -99,19 +95,14 @@ impl Garbler {
             self.buffer.resize(circ.feed_count(), Default::default());
         }
 
-        let mut inputs = inputs.into_iter();
-        for input in circ.inputs() {
-            for (node, label) in input.iter().zip(inputs.by_ref()) {
-                self.buffer[node.id()] = label.into();
-            }
-        }
+        self.buffer[..inputs.len()].copy_from_slice(Key::as_blocks(inputs));
 
         Ok(EncryptedGateIter::new(
             delta,
             circ.gates().iter(),
-            circ.outputs(),
             &mut self.buffer,
             circ.and_count(),
+            circ.outputs(),
         ))
     }
 
@@ -126,7 +117,7 @@ impl Garbler {
         &'a mut self,
         circ: &'a Circuit,
         delta: Delta,
-        inputs: Vec<Key>,
+        inputs: &[Key],
     ) -> Result<EncryptedGateBatchIter<'a, std::slice::Iter<'a, Gate>>, GarblerError> {
         self.generate(circ, delta, inputs)
             .map(EncryptedGateBatchIter)
@@ -143,14 +134,14 @@ pub struct EncryptedGateIter<'a, I> {
     labels: &'a mut [Block],
     /// Iterator over the gates.
     gates: I,
-    /// Circuit outputs.
-    outputs: &'a [BinaryRepr],
     /// Current gate id.
     gid: usize,
     /// Number of AND gates generated.
     counter: usize,
     /// Number of AND gates in the circuit.
     and_count: usize,
+    /// Range of the outputs in the buffer.
+    outputs: Range<usize>,
     /// Whether the entire circuit has been garbled.
     complete: bool,
 }
@@ -168,19 +159,19 @@ where
     fn new(
         delta: Delta,
         gates: I,
-        outputs: &'a [BinaryRepr],
         labels: &'a mut [Block],
         and_count: usize,
+        outputs: Range<usize>,
     ) -> Self {
         Self {
             cipher: &(*FIXED_KEY_AES),
             delta,
             gates,
-            outputs,
             labels,
             gid: 1,
             counter: 0,
             and_count,
+            outputs,
             complete: false,
         }
     }
@@ -203,13 +194,9 @@ where
             assert_eq!(self.next(), None);
         }
 
-        let outputs = self
-            .outputs
-            .iter()
-            .flat_map(|output| output.iter().map(|node| Key::from(self.labels[node.id()])))
-            .collect();
-
-        Ok(GarblerOutput { outputs })
+        Ok(GarblerOutput {
+            outputs: Key::from_blocks(self.labels[self.outputs].to_vec()),
+        })
     }
 }
 

@@ -18,7 +18,7 @@ fn criterion_benchmark(c: &mut Criterion) {
         let delta = Delta::random(&mut rng);
         let mut rcot = IdealRCOT::new(rng.random(), delta.into_inner());
 
-        rcot.alloc(AES128.input_len());
+        rcot.alloc(AES128.inputs().len());
         rcot.flush().unwrap();
         let (
             RCOTSenderOutput { mut keys, .. },
@@ -27,7 +27,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                 choices,
                 ..
             },
-        ) = rcot.transfer(AES128.input_len()).unwrap();
+        ) = rcot.transfer(AES128.inputs().len()).unwrap();
         keys.iter_mut().for_each(|key| key.set_lsb(false));
         macs.iter_mut()
             .zip(choices)
