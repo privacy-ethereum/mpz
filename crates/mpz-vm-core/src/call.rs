@@ -30,6 +30,14 @@ impl CallBuilder {
         self
     }
 
+    /// Adds several arguments to the call.
+    pub fn args<T: ToRaw>(mut self, args: impl Iterator<Item = T>) -> Self {
+        for arg in args.into_iter() {
+            self.inputs.push(arg.to_raw());
+        }
+        self
+    }
+
     /// Builds the call.
     pub fn build(self) -> Result<Call, CallError> {
         let input_len = self.inputs.iter().map(|s| s.len()).sum();
