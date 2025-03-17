@@ -73,7 +73,7 @@ impl<COT> Evaluator<COT> {
                 })
                 .map(|(output, (call, garbled_circuit))| {
                     let (circ, inputs) = call.into_parts();
-                    let mut input_macs = Vec::with_capacity(circ.input_len());
+                    let mut input_macs = Vec::with_capacity(circ.inputs().len());
                     for input in inputs {
                         input_macs.extend_from_slice(
                             store
@@ -193,7 +193,7 @@ impl<COT> Callable<Binary> for Evaluator<COT> {
             .store
             .try_lock()
             .unwrap()
-            .alloc_output(call.circ().output_len());
+            .alloc_output(call.circ().outputs().len());
         self.call_stack.push((call, output));
         Ok(output)
     }
@@ -322,7 +322,7 @@ async fn evaluate<COT>(
 ) -> Result<()> {
     let (circ, inputs) = call.into_parts();
 
-    let mut input_macs = Vec::with_capacity(circ.input_len());
+    let mut input_macs = Vec::with_capacity(circ.inputs().len());
     {
         let lock = store.lock().await;
         for input in inputs {
@@ -332,7 +332,7 @@ async fn evaluate<COT>(
 
     let EvaluatorOutput {
         outputs: output_macs,
-    } = crate::evaluator::evaluate(ctx, circ, input_macs)
+    } = crate::evaluator::evaluate(ctx, circ, &input_macs)
         .await
         .map_err(VmError::execute)?;
 

@@ -1,17 +1,17 @@
-use crate::{
-    Circuit, CircuitBuilder,
-    components::{Feed, GateType, Node},
-    types::ValueType,
-};
-use regex::{Captures, Regex};
 use std::collections::HashMap;
 
+use crate::{Circuit, CircuitBuilder, components::GateType};
+use regex::{Captures, Regex};
+
+static HEADER_PATTERN: &str = r"(?m)^(?P<gate_count>\d+)\s+(?P<wire_count>\d+)\s*\n(?P<input_line>\d+(?:\s+\d+)*)\s*\n(?P<output_line>\d+(?:\s+\d+)*)\s*$";
 static GATE_PATTERN: &str = r"(?P<input_count>\d+)\s(?P<output_count>\d+)\s(?P<xref>\d+)\s(?:(?P<yref>\d+)\s)?(?P<zref>\d+)\s(?P<gate>INV|AND|XOR)";
 
 #[derive(Debug, thiserror::Error)]
 pub enum ParseError {
     #[error(transparent)]
     IOError(#[from] std::io::Error),
+    #[error("invalid header")]
+    InvalidHeader,
     #[error(transparent)]
     ParseIntError(#[from] std::num::ParseIntError),
     #[error("uninitialized feed: {0}")]
@@ -30,34 +30,51 @@ impl Circuit {
     /// # Arguments
     ///
     /// * `filename` - The path to the file to parse.
-    /// * `inputs` - The types of the inputs to the circuit.
-    /// * `outputs` - The types of the outputs to the circuit.
     ///
     /// # Returns
     ///
     /// The parsed circuit.
-    pub fn parse(
-        filename: &str,
-        inputs: &[ValueType],
-        outputs: &[ValueType],
-    ) -> Result<Self, ParseError> {
+    pub fn parse(filename: &str) -> Result<Self, ParseError> {
         let file = std::fs::read_to_string(filename)?;
 
-        let builder = CircuitBuilder::new();
+        let mut builder = CircuitBuilder::new();
 
-        let mut feed_ids: Vec<usize> = Vec::new();
-        let mut feed_map: HashMap<usize, Node<Feed>> = HashMap::default();
+        let header_pattern = Regex::new(HEADER_PATTERN).unwrap();
+        let Some(header_captures) = header_pattern.captures(&file) else {
+            return Err(ParseError::InvalidHeader);
+        };
 
-        let mut input_len = 0;
-        for input in inputs {
-            let input = builder.add_input_by_type(input.clone());
-            for (node, old_id) in input.iter().zip(input_len..input_len + input.len()) {
-                feed_map.insert(old_id, *node);
-            }
-            input_len += input.len();
+        let gate_count: usize = header_captures
+            .name("gate_count")
+            .unwrap()
+            .as_str()
+            .parse()?;
+
+        let input_lengths = header_captures
+            .name("input_line")
+            .unwrap()
+            .as_str()
+            .split_whitespace()
+            .skip(1) // skip the count
+            .map(|s| s.parse::<usize>().map_err(ParseError::ParseIntError))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let output_lengths = header_captures
+            .name("output_line")
+            .unwrap()
+            .as_str()
+            .split_whitespace()
+            .skip(1) // skip the count
+            .map(|s| s.parse::<usize>().map_err(ParseError::ParseIntError))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let feed_count = input_lengths.iter().sum::<usize>() + gate_count;
+        let mut feed_map = HashMap::with_capacity(feed_count);
+
+        for i in 0..input_lengths.iter().sum::<usize>() {
+            feed_map.insert(i, builder.add_input());
         }
 
-        let mut state = builder.state().borrow_mut();
         let pattern = Regex::new(GATE_PATTERN).unwrap();
         for cap in pattern.captures_iter(&file) {
             let UncheckedGate {
@@ -66,7 +83,6 @@ impl Circuit {
                 zref,
                 gate_type,
             } = UncheckedGate::parse(cap)?;
-            feed_ids.push(zref);
 
             match gate_type {
                 GateType::Xor => {
@@ -76,8 +92,8 @@ impl Circuit {
                     let new_y = feed_map
                         .get(&yref.unwrap())
                         .ok_or(ParseError::UninitializedFeed(yref.unwrap()))?;
-                    let new_z = state.add_xor_gate(*new_x, *new_y);
-                    feed_map.insert(zref, new_z);
+                    let z = builder.add_xor_gate(*new_x, *new_y);
+                    feed_map.insert(zref, z);
                 }
                 GateType::And => {
                     let new_x = feed_map
@@ -86,33 +102,21 @@ impl Circuit {
                     let new_y = feed_map
                         .get(&yref.unwrap())
                         .ok_or(ParseError::UninitializedFeed(yref.unwrap()))?;
-                    let new_z = state.add_and_gate(*new_x, *new_y);
+                    let new_z = builder.add_and_gate(*new_x, *new_y);
                     feed_map.insert(zref, new_z);
                 }
                 GateType::Inv => {
                     let new_x = feed_map
                         .get(&xref)
                         .ok_or(ParseError::UninitializedFeed(xref))?;
-                    let new_z = state.add_inv_gate(*new_x);
+                    let new_z = builder.add_inv_gate(*new_x);
                     feed_map.insert(zref, new_z);
                 }
             }
         }
-        drop(state);
-        feed_ids.sort();
 
-        for output in outputs.iter().rev() {
-            let feeds = feed_ids
-                .drain(feed_ids.len() - output.len()..)
-                .map(|id| {
-                    *feed_map
-                        .get(&id)
-                        .expect("Old feed should be mapped to new feed")
-                })
-                .collect::<Vec<Node<Feed>>>();
-
-            let output = output.to_bin_repr(&feeds).unwrap();
-            builder.add_output(output);
+        for i in (feed_count - output_lengths.iter().sum::<usize>())..feed_count {
+            builder.add_output(*feed_map.get(&i).unwrap());
         }
 
         Ok(builder.build()?)
@@ -154,22 +158,17 @@ impl UncheckedGate {
 
 #[cfg(test)]
 mod tests {
-    use mpz_circuits_macros::evaluate;
+    use itybity::{FromBitIterator, ToBits};
 
     use super::*;
 
     #[test]
     fn test_parse_adder_64() {
-        let circ = Circuit::parse(
-            "circuits/bristol/adder64_reverse.txt",
-            &[ValueType::U64, ValueType::U64],
-            &[ValueType::U64],
-        )
-        .unwrap();
-
-        let output: u64 = evaluate!(circ, fn(1u64, 2u64) -> u64).unwrap();
-
-        assert_eq!(output, 3);
+        let circ = Circuit::parse("circuits/bristol/adder64_reverse.txt").unwrap();
+        let (a, b) = (59u64, 101312320u64);
+        let output =
+            u64::from_lsb0_iter(circ.evaluate(a.iter_lsb0().chain(b.iter_lsb0())).unwrap());
+        assert_eq!(output, a + b);
     }
 
     #[test]
@@ -181,23 +180,15 @@ mod tests {
             cipher::{BlockEncrypt, KeyInit},
         };
 
-        let circ = Circuit::parse(
-            "circuits/bristol/aes_128_reverse.txt",
-            &[
-                ValueType::Array(Box::new(ValueType::U8), 16),
-                ValueType::Array(Box::new(ValueType::U8), 16),
-            ],
-            &[ValueType::Array(Box::new(ValueType::U8), 16)],
-        )
-        .unwrap()
-        .reverse_input(0)
-        .reverse_input(1)
-        .reverse_output(0);
+        let circ = Circuit::parse("circuits/bristol/aes_128_reverse.txt").unwrap();
 
         let key = [0u8; 16];
         let msg = [69u8; 16];
 
-        let ciphertext = evaluate!(circ, fn(key, msg) -> [u8; 16]).unwrap();
+        let ciphertext = <[u8; 16]>::from_lsb0_iter(
+            circ.evaluate(key.iter_lsb0().chain(msg.iter_lsb0()))
+                .unwrap(),
+        );
 
         let aes = Aes128::new_from_slice(&key).unwrap();
         let mut expected = msg.into();
@@ -213,19 +204,7 @@ mod tests {
     fn test_parse_sha() {
         use sha2::compress256;
 
-        let circ = Circuit::parse(
-            "circuits/bristol/sha256_reverse.txt",
-            &[
-                ValueType::Array(Box::new(ValueType::U8), 64),
-                ValueType::Array(Box::new(ValueType::U32), 8),
-            ],
-            &[ValueType::Array(Box::new(ValueType::U32), 8)],
-        )
-        .unwrap()
-        .reverse_inputs()
-        .reverse_input(0)
-        .reverse_input(1)
-        .reverse_output(0);
+        let circ = Circuit::parse("circuits/bristol/sha256_reverse.txt").unwrap();
 
         static SHA2_INITIAL_STATE: [u32; 8] = [
             0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab,
@@ -234,7 +213,10 @@ mod tests {
 
         let msg = [69u8; 64];
 
-        let output = evaluate!(circ, fn(SHA2_INITIAL_STATE, msg) -> [u32; 8]).unwrap();
+        let output = <[u32; 8]>::from_lsb0_iter(
+            circ.evaluate(msg.iter_lsb0().chain(SHA2_INITIAL_STATE.iter_lsb0()))
+                .unwrap(),
+        );
 
         let mut expected = SHA2_INITIAL_STATE;
         compress256(&mut expected, &[msg.into()]);

@@ -44,7 +44,7 @@ pub async fn receive_garbled_circuit(
 pub async fn evaluate(
     ctx: &mut Context,
     circ: Arc<Circuit>,
-    inputs: Vec<Mac>,
+    inputs: &[Mac],
 ) -> Result<EvaluatorOutput, EvaluatorError> {
     let mut ev = EvaluatorCore::default();
     let mut ev_consumer = ev.evaluate_batched(&circ, inputs)?;
