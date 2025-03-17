@@ -152,6 +152,7 @@ pub struct KeyStore {
     delta: Delta,
     /// Key for public 1 MAC.
     public_one: Key,
+    /// Keys used for either OT or for transfering MACs directly.
     used: RangeSet,
 }
 
@@ -160,6 +161,7 @@ impl KeyStore {
     #[inline]
     pub fn new(delta: Delta) -> Self {
         let mut public_one = Key(MAC_ONE ^ delta.as_block());
+        // By definition, LSB(public_one) == 0. We set it here again for expliciteness.
         public_one.0.set_lsb(false);
         Self {
             keys: Store::default(),
@@ -200,8 +202,6 @@ impl KeyStore {
     }
 
     /// Allocates memory with the given keys.
-    ///
-    /// The provided keys are marked as used.
     #[inline]
     pub fn alloc_with(&mut self, keys: &[Key]) -> Slice {
         self.keys.alloc_with(keys)
