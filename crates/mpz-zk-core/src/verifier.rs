@@ -37,9 +37,9 @@ impl Verifier {
         input_keys: &[Key],
         gate_keys: &[Key],
     ) -> Result<VerifierExecute> {
-        if input_keys.len() != circ.input_len() {
+        if input_keys.len() != circ.inputs().len() {
             return Err(ErrorRepr::InputKeyCount {
-                expected: circ.input_len(),
+                expected: circ.inputs().len(),
                 actual: input_keys.len(),
             }
             .into());
@@ -53,18 +53,10 @@ impl Verifier {
 
         let check_idx = self.check.lock().unwrap().reserve(circ.and_count());
 
-        let mut keys = vec![Key::default(); input_keys.len()];
-        let mut input_keys = input_keys.iter();
-        for input in circ.inputs() {
-            for (node, key) in input.iter().zip(input_keys.by_ref()) {
-                keys[node.id()] = *key;
-            }
-        }
-
         Ok(VerifierExecute::new(
             circ,
             self.delta,
-            keys,
+            input_keys.to_vec(),
             gate_keys.to_vec(),
             self.check.clone(),
             check_idx,
@@ -169,20 +161,13 @@ impl VerifierExecute {
             return Err(ErrorRepr::Incomplete.into());
         }
 
-        let outputs = self
-            .circ
-            .outputs()
-            .iter()
-            .flat_map(|output| output.iter().map(|node| self.keys[node.id()]))
-            .collect();
-
         // Flush check state.
         self.check
             .lock()
             .unwrap()
             .write(self.check_idx, &self.triples, &self.adjust);
 
-        Ok(outputs)
+        Ok(self.keys[self.circ.outputs()].to_vec())
     }
 }
 

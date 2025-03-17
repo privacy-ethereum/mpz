@@ -25,9 +25,9 @@ impl Prover {
         gate_masks: &'a [bool],
         gate_macs: &'a [Mac],
     ) -> Result<ProverExecute> {
-        if input_macs.len() != circ.input_len() {
+        if input_macs.len() != circ.inputs().len() {
             return Err(ErrorRepr::InputMacCount {
-                expected: circ.input_len(),
+                expected: circ.inputs().len(),
                 actual: input_macs.len(),
             }
             .into());
@@ -47,17 +47,9 @@ impl Prover {
 
         let check_idx = self.check.lock().unwrap().reserve(circ.and_count());
 
-        let mut macs = vec![Mac::default(); input_macs.len()];
-        let mut input_macs = input_macs.iter();
-        for input in circ.inputs() {
-            for (node, mac) in input.iter().zip(input_macs.by_ref()) {
-                macs[node.id()] = *mac;
-            }
-        }
-
         Ok(ProverExecute::new(
             circ,
-            macs,
+            input_macs.to_vec(),
             gate_masks.to_vec(),
             gate_macs.to_vec(),
             self.check.clone(),
@@ -168,20 +160,13 @@ impl ProverExecute {
             return Err(ErrorRepr::Incomplete.into());
         }
 
-        let outputs = self
-            .circ
-            .outputs()
-            .iter()
-            .flat_map(|output| output.iter().map(|node| self.macs[node.id()]))
-            .collect();
-
         // Flush check state.
         self.check
             .lock()
             .unwrap()
             .write(self.check_idx, &self.triples, &self.adjust);
 
-        Ok(outputs)
+        Ok(self.macs[self.circ.outputs()].to_vec())
     }
 }
 
