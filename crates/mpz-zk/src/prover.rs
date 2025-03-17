@@ -272,7 +272,9 @@ where
         Ok(())
     }
 
-    fn mark_blind_raw(&mut self, slice: Slice) -> VmResult<()> {
-        self.store.mark_blind_raw(slice).map_err(VmError::view)
+    fn mark_blind_raw(&mut self, _slice: Slice) -> VmResult<()> {
+        Err(VmError::view(
+            "marking as blind is not allowed for zk prover",
+        ))
     }
 }
