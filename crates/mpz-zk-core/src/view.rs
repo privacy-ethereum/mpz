@@ -245,8 +245,8 @@ impl View {
 
         self.decode.all |= &undecoded;
 
-        let input = range.intersection(&self.input.all);
-        let output = range.intersection(&self.output.all);
+        let input = undecoded.intersection(&self.input.all);
+        let output = undecoded.intersection(&self.output.all);
 
         let provable_input = match self.role {
             Role::Prover => input.intersection(self.vis.private()),
