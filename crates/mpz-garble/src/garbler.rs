@@ -26,7 +26,7 @@ pub async fn generate(
     ctx: &mut Context,
     circ: Arc<Circuit>,
     delta: Delta,
-    inputs: Vec<Key>,
+    inputs: &[Key],
 ) -> Result<GarblerOutput, GarblerError> {
     let mut gb = GarblerCore::default();
     let mut gb_iter = gb.generate_batched(&circ, delta, inputs)?;

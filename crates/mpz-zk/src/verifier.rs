@@ -196,7 +196,7 @@ where
     OT: RCOTSender<Block>,
 {
     fn call_raw(&mut self, call: Call) -> VmResult<Slice> {
-        let output = self.store.alloc_output(call.circ().output_len());
+        let output = self.store.alloc_output(call.circ().outputs().len());
 
         let mut count = call.circ().and_count();
 

@@ -5,14 +5,8 @@ use mpz_memory_core::{Slice, ToRaw};
 
 #[derive(Debug, thiserror::Error)]
 pub enum CallError {
-    #[error("input count mismatch: expected {expected}, got {actual}")]
-    InputCount { expected: usize, actual: usize },
-    #[error("input length mismatch: input {idx} expected {expected}, got {actual}")]
-    InputLength {
-        idx: usize,
-        expected: usize,
-        actual: usize,
-    },
+    #[error("input length mismatch: expected {expected}, got {actual}")]
+    InputLength { expected: usize, actual: usize },
 }
 
 #[derive(Debug)]
@@ -22,35 +16,28 @@ pub struct CallBuilder {
 }
 
 impl CallBuilder {
+    /// Creates a new call builder.
     pub fn new(circ: Arc<Circuit>) -> Self {
-        let input_len = circ.inputs().len();
         Self {
             circ,
-            inputs: Vec::with_capacity(input_len),
+            inputs: Vec::new(),
         }
     }
 
+    /// Adds an argument to the call.
     pub fn arg<T: ToRaw>(mut self, arg: T) -> Self {
         self.inputs.push(arg.to_raw());
         self
     }
 
+    /// Builds the call.
     pub fn build(self) -> Result<Call, CallError> {
-        if self.circ.inputs().len() != self.inputs.len() {
-            return Err(CallError::InputCount {
+        let input_len = self.inputs.iter().map(|s| s.len()).sum();
+        if self.circ.inputs().len() != input_len {
+            return Err(CallError::InputLength {
                 expected: self.circ.inputs().len(),
-                actual: self.inputs.len(),
+                actual: input_len,
             });
-        }
-
-        for (idx, (slice, input)) in self.inputs.iter().zip(self.circ.inputs()).enumerate() {
-            if slice.len() != input.len() {
-                return Err(CallError::InputLength {
-                    idx,
-                    expected: input.len(),
-                    actual: slice.len(),
-                });
-            }
         }
 
         Ok(Call {

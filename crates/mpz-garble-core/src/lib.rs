@@ -43,7 +43,7 @@ mod tests {
         cipher::{BlockEncrypt, KeyInit},
     };
     use itybity::{FromBitIterator, IntoBitIterator, ToBits};
-    use mpz_circuits::{CircuitBuilder, circuits::AES128};
+    use mpz_circuits::circuits::{AES128, xor};
     use mpz_core::{Block, aes::FIXED_KEY_AES};
     use rand::{Rng, SeedableRng, rngs::StdRng};
     use rand_chacha::ChaCha12Rng;
@@ -90,7 +90,7 @@ mod tests {
         };
 
         let delta = Delta::random(&mut rng);
-        let input_keys = (0..AES128.input_len())
+        let input_keys = (0..AES128.inputs().len())
             .map(|_| rng.random())
             .collect::<Vec<Key>>();
 
@@ -103,8 +103,8 @@ mod tests {
         let mut gb = Garbler::default();
         let mut ev = Evaluator::default();
 
-        let mut gb_iter = gb.generate_batched(&AES128, delta, input_keys).unwrap();
-        let mut ev_consumer = ev.evaluate_batched(&AES128, input_macs).unwrap();
+        let mut gb_iter = gb.generate_batched(&AES128, delta, &input_keys).unwrap();
+        let mut ev_consumer = ev.evaluate_batched(&AES128, &input_macs).unwrap();
 
         for batch in gb_iter.by_ref() {
             ev_consumer.next(batch);
@@ -150,7 +150,7 @@ mod tests {
         };
 
         let delta = Delta::random(&mut rng);
-        let input_keys = (0..AES128.input_len())
+        let input_keys = (0..AES128.inputs().len())
             .map(|_| rng.random())
             .collect::<Vec<Key>>();
 
@@ -161,9 +161,7 @@ mod tests {
             .collect::<Vec<_>>();
 
         let mut gb = Garbler::default();
-        let mut gb_iter = gb
-            .generate_batched(&AES128, delta, input_keys.clone())
-            .unwrap();
+        let mut gb_iter = gb.generate_batched(&AES128, delta, &input_keys).unwrap();
 
         let mut gates = Vec::new();
         for batch in gb_iter.by_ref() {
@@ -211,12 +209,7 @@ mod tests {
     fn test_garble_no_and() {
         let mut rng = StdRng::seed_from_u64(0);
 
-        let builder = CircuitBuilder::new();
-        let a = builder.add_input::<u8>();
-        let b = builder.add_input::<u8>();
-        let c = a ^ b;
-        builder.add_output(c);
-        let circ = builder.build().unwrap();
+        let circ = xor(8);
         assert_eq!(circ.and_count(), 0);
 
         let a = 1u8;
@@ -224,7 +217,7 @@ mod tests {
         let expected = a ^ b;
 
         let delta = Delta::random(&mut rng);
-        let input_keys = (0..circ.input_len())
+        let input_keys = (0..circ.inputs().len())
             .map(|_| rng.random())
             .collect::<Vec<Key>>();
 
@@ -237,8 +230,8 @@ mod tests {
         let mut gb = Garbler::default();
         let mut ev = Evaluator::default();
 
-        let mut gb_iter = gb.generate_batched(&circ, delta, input_keys).unwrap();
-        let mut ev_consumer = ev.evaluate_batched(&circ, input_macs).unwrap();
+        let mut gb_iter = gb.generate_batched(&circ, delta, &input_keys).unwrap();
+        let mut ev_consumer = ev.evaluate_batched(&circ, &input_macs).unwrap();
 
         for batch in gb_iter.by_ref() {
             ev_consumer.next(batch);
