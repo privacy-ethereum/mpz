@@ -31,7 +31,7 @@ impl CallBuilder {
     }
 
     /// Adds several arguments to the call.
-    pub fn args<T: ToRaw>(mut self, args: impl Iterator<Item = T>) -> Self {
+    pub fn args<T: ToRaw>(mut self, args: impl IntoIterator<Item = T>) -> Self {
         for arg in args.into_iter() {
             self.inputs.push(arg.to_raw());
         }
