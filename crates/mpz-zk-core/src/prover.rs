@@ -233,6 +233,10 @@ where
                     mac.set_pointer(!mac.pointer());
                     self.macs[z.id()] = mac;
                 }
+                Gate::Id { x, z } => {
+                    let mac = self.macs[x.id()];
+                    self.macs[z.id()] = mac;
+                }
             }
         }
 

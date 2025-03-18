@@ -241,6 +241,13 @@ where
                     x.adjust(true, &self.delta);
                     self.keys[node_z.id()] = x;
                 }
+                Gate::Id {
+                    x: node_x,
+                    z: node_z,
+                } => {
+                    let x = self.keys[node_x.id()];
+                    self.keys[node_z.id()] = x;
+                }
             }
         }
     }
