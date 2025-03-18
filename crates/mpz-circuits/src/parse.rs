@@ -112,6 +112,13 @@ impl Circuit {
                     let new_z = builder.add_inv_gate(*new_x);
                     feed_map.insert(zref, new_z);
                 }
+                GateType::Id => {
+                    let new_x = feed_map
+                        .get(&xref)
+                        .ok_or(ParseError::UninitializedFeed(xref))?;
+                    let new_z = builder.add_id_gate(*new_x);
+                    feed_map.insert(zref, new_z);
+                }
             }
         }
 

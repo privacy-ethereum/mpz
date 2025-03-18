@@ -20,6 +20,8 @@ pub enum Gate {
     },
     /// Inverter gate.
     Inv { x: Node<Sink>, z: Node<Feed> },
+    /// Identity gate.
+    Id { x: Node<Sink>, z: Node<Feed> },
 }
 
 impl Gate {
@@ -29,6 +31,7 @@ impl Gate {
             Gate::Xor { .. } => GateType::Xor,
             Gate::And { .. } => GateType::And,
             Gate::Inv { .. } => GateType::Inv,
+            Gate::Id { .. } => GateType::Id,
         }
     }
 
@@ -38,6 +41,7 @@ impl Gate {
             Gate::Xor { x, .. } => *x,
             Gate::And { x, .. } => *x,
             Gate::Inv { x, .. } => *x,
+            Gate::Id { x, .. } => *x,
         }
     }
 
@@ -47,6 +51,7 @@ impl Gate {
             Gate::Xor { y, .. } => Some(*y),
             Gate::And { y, .. } => Some(*y),
             Gate::Inv { .. } => None,
+            Gate::Id { .. } => None,
         }
     }
 
@@ -56,6 +61,7 @@ impl Gate {
             Gate::Xor { z, .. } => *z,
             Gate::And { z, .. } => *z,
             Gate::Inv { z, .. } => *z,
+            Gate::Id { z, .. } => *z,
         }
     }
 
@@ -77,6 +83,10 @@ impl Gate {
                 x.id -= offset;
                 z.id -= offset;
             }
+            Gate::Id { x, z } => {
+                x.id -= offset;
+                z.id -= offset;
+            }
         }
     }
 }
@@ -90,6 +100,8 @@ pub enum GateType {
     And,
     /// Inverter gate.
     Inv,
+    /// Identity gate.
+    Id,
 }
 
 /// A feed in a circuit.
