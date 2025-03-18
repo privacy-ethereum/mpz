@@ -205,6 +205,13 @@ where
                     let x = self.labels[node_x.id()];
                     self.labels[node_z.id()] = x;
                 }
+                Gate::Id {
+                    x: node_x,
+                    z: node_z,
+                } => {
+                    let x = self.labels[node_x.id()];
+                    self.labels[node_z.id()] = x;
+                }
             }
         }
 

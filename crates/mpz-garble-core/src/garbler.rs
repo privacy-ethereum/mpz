@@ -250,6 +250,13 @@ where
                     let x_0 = self.labels[node_x.id()];
                     self.labels[node_z.id()] = x_0 ^ self.delta.as_block();
                 }
+                Gate::Id {
+                    x: node_x,
+                    z: node_z,
+                } => {
+                    let x_0 = self.labels[node_x.id()];
+                    self.labels[node_z.id()] = x_0;
+                }
             }
         }
 

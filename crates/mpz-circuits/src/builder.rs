@@ -155,14 +155,38 @@ impl CircuitBuilder {
         if x.id() == 0 {
             self.get_const_one()
         } else if x.id() == 1 {
-            return self.get_const_zero();
+            self.get_const_zero()
         } else {
             let out = self.add_feed();
             self.gates.push(Gate::Inv {
                 x: x.into(),
                 z: out,
             });
-            return out;
+            out
+        }
+    }
+
+    /// Adds an identity gate to the circuit.
+    ///
+    /// # Arguments
+    ///
+    /// * `x` - The input to the gate.
+    ///
+    /// # Returns
+    ///
+    /// The output of the gate.
+    pub fn add_id_gate(&mut self, x: Node<Feed>) -> Node<Feed> {
+        if x.id() == 0 {
+            self.get_const_zero()
+        } else if x.id() == 1 {
+            self.get_const_one()
+        } else {
+            let out = self.add_feed();
+            self.gates.push(Gate::Id {
+                x: x.into(),
+                z: out,
+            });
+            out
         }
     }
 
@@ -194,7 +218,10 @@ impl CircuitBuilder {
         // Map all gate output nodes.
         self.gates.iter_mut().for_each(|gate| {
             match gate {
-                Gate::And { z, .. } | Gate::Xor { z, .. } | Gate::Inv { z, .. } => {
+                Gate::And { z, .. }
+                | Gate::Xor { z, .. }
+                | Gate::Inv { z, .. }
+                | Gate::Id { z, .. } => {
                     // If the ID is zero then this gate output is not in the last layer of the circuit. So we just give it the next available ID.
                     let id = if id_map[z.id()] == 0 {
                         let id = next_id;
@@ -216,6 +243,7 @@ impl CircuitBuilder {
                 Gate::And { x, y, .. } => (x, Some(y)),
                 Gate::Xor { x, y, .. } => (x, Some(y)),
                 Gate::Inv { x, .. } => (x, None),
+                Gate::Id { x, .. } => (x, None),
             };
 
             x.id = id_map[x.id()];
