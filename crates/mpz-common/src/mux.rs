@@ -23,10 +23,7 @@ where
     ) -> Pin<Box<dyn Future<Output = Result<Io, std::io::Error>> + Send>> {
         let mux = self.clone();
         Box::pin(async move {
-            let io = mux
-                .open(&id)
-                .await
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+            let io = mux.open(&id).await.map_err(std::io::Error::other)?;
 
             Ok(Io::from_io(io))
         })
@@ -45,10 +42,7 @@ mod test_utils {
         ) -> Pin<Box<dyn Future<Output = Result<Io, std::io::Error>> + Send>> {
             let mux = self.clone();
             Box::pin(async move {
-                let io = mux
-                    .open_framed(&id)
-                    .await
-                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                let io = mux.open_framed(&id).await.map_err(std::io::Error::other)?;
 
                 Ok(Io::from_channel(io))
             })

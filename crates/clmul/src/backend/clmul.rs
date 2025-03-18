@@ -136,8 +136,8 @@ mod tests {
     /// which in turn adapted it from the EMP toolkit's implementation.
     fn clmul128(a: u128, b: u128) -> (u128, u128) {
         unsafe {
-            let x = std::mem::transmute(a);
-            let y = std::mem::transmute(b);
+            let x = std::mem::transmute::<u128, std::arch::x86_64::__m128i>(a);
+            let y = std::mem::transmute::<u128, std::arch::x86_64::__m128i>(b);
             let zero = _mm_clmulepi64_si128(x, y, 0x00);
             let one = _mm_clmulepi64_si128(x, y, 0x10);
             let two = _mm_clmulepi64_si128(x, y, 0x01);

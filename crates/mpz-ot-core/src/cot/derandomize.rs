@@ -359,8 +359,8 @@ mod tests {
         sender.alloc(count).unwrap();
         receiver.alloc(count).unwrap();
 
-        let _ = sender.queue_send_cot(&keys).unwrap();
-        let _ = receiver.queue_recv_cot(&choices).unwrap();
+        std::mem::drop(sender.queue_send_cot(&keys).unwrap());
+        std::mem::drop(receiver.queue_recv_cot(&choices).unwrap());
 
         for _ in 0..8 {
             sender.alloc(count).unwrap();

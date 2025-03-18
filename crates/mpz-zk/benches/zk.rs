@@ -54,7 +54,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                                 )
                                 .unwrap();
 
-                            let _ = prover.decode(ciphertext).unwrap();
+                            std::mem::drop(prover.decode(ciphertext).unwrap());
                         }
 
                         async {
@@ -84,7 +84,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                                 )
                                 .unwrap();
 
-                            let _ = verifier.decode(ciphertext).unwrap();
+                            std::mem::drop(verifier.decode(ciphertext).unwrap());
                         }
 
                         async {

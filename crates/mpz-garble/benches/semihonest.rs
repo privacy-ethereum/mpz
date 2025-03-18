@@ -126,7 +126,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                             )
                             .unwrap();
 
-                        let _ = gen.decode(ciphertext).unwrap();
+                        std::mem::drop(gen.decode(ciphertext).unwrap());
                     }
 
                     gen.flush(&mut ctx_gen).await.unwrap();
@@ -154,7 +154,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                             )
                             .unwrap();
 
-                        let _ = ev.decode(ciphertext).unwrap();
+                        std::mem::drop(ev.decode(ciphertext).unwrap());
                     }
 
                     ev.flush(&mut ctx_ev).await.unwrap();

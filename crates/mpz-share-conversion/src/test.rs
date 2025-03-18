@@ -26,10 +26,10 @@ where
     MultiplicativeToAdditive::alloc(&mut sender, count).unwrap();
     MultiplicativeToAdditive::alloc(&mut receiver, count).unwrap();
 
-    let _ = sender.queue_to_multiplicative(&sender_input).unwrap();
-    let _ = receiver.queue_to_multiplicative(&receiver_input).unwrap();
-    let _ = sender.queue_to_additive(&sender_input).unwrap();
-    let _ = receiver.queue_to_additive(&receiver_input).unwrap();
+    std::mem::drop(sender.queue_to_multiplicative(&sender_input).unwrap());
+    std::mem::drop(receiver.queue_to_multiplicative(&receiver_input).unwrap());
+    std::mem::drop(sender.queue_to_additive(&sender_input).unwrap());
+    std::mem::drop(receiver.queue_to_additive(&receiver_input).unwrap());
 
     for _ in 0..cycles {
         AdditiveToMultiplicative::alloc(&mut sender, count).unwrap();
