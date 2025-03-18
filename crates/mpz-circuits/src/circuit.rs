@@ -85,6 +85,11 @@ impl Circuit {
 
                     wires[z.id] = !x;
                 }
+                Gate::Id { x, z } => {
+                    let x = wires[x.id];
+
+                    wires[z.id] = x;
+                }
             }
         }
 
