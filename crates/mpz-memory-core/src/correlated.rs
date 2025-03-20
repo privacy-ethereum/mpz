@@ -55,11 +55,13 @@
 
 mod keys;
 mod macs;
+mod auth;
 
 use std::{ops::BitXor, sync::LazyLock};
 
 pub use keys::{Key, KeyStore, KeyStoreError};
 pub use macs::{Mac, MacStore, MacStoreError};
+pub use auth::{AuthBit, AuthBitStore, AuthBitStoreError};
 
 use mpz_core::{
 <<<<<<< HEAD

@@ -1,10 +1,15 @@
 //! Memory stores.
 
 mod evaluator;
+mod auth_eval;
 mod generator;
+mod auth_gen;
+
 
 pub use evaluator::{EvaluatorStore, EvaluatorStoreError};
+pub use auth_eval::{AuthEvalStore, AuthEvalStoreError};
 pub use generator::{GeneratorStore, GeneratorStoreError};
+pub use auth_gen::{AuthGenStore, AuthGenStoreError};
 
 use blake3::Hash;
 use mpz_core::bitvec::BitVec;
