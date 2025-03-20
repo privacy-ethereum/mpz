@@ -6,15 +6,15 @@ use mpz_core::{
 };
 
 use crate::{
-    correlated::{Delta, Key, Mac},
-    store::{Store, StoreError},
+    correlated::{Delta, Key, Mac, MacStore, KeyStore, MacStoreError, KeyStoreError},
+    store::{BitStore, StoreError},
     RangeSet, Slice,
 };
 
 type Result<T> = core::result::Result<T, AuthBitStoreError>;
 
 /// A store for authenticated bits, consisting of a bool value, a MAC, and a Key.
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy)]
 pub struct AuthBit {
     value: bool,
     mac: Mac,
@@ -54,17 +54,21 @@ impl AuthBit {
 }
 
 /// A linear store which manages authenticated bits.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct AuthBitStore {
-    bits: Store<AuthBit>,
+    bits: BitStore,
+    macs: MacStore,
+    keys: KeyStore,
 }
 
 impl AuthBitStore {
     /// Creates a new authenticated bit store.
     #[inline]
-    pub fn new() -> Self {
+    pub fn new(delta: Delta) -> Self {
         Self {
-            bits: Store::default(),
+            bits: BitStore::new(),
+            macs: MacStore::new(),
+            keys: KeyStore::new(delta),
         }
     }
 
@@ -83,57 +87,65 @@ impl AuthBitStore {
     /// Allocates uninitialized memory.
     #[inline]
     pub fn alloc(&mut self, len: usize) -> Slice {
-        self.bits.alloc(len)
+        self.bits.alloc(len);
+        self.macs.alloc(len);
+        self.keys.alloc(len)
     }
 
-    /// Allocates memory with the given authenticated bits.
+    /// Allocates bits.
     #[inline]
-    pub fn alloc_with(&mut self, bits: &[AuthBit]) -> Slice {
+    pub fn alloc_bits(&mut self, bits: &BitSlice) -> Slice {
         self.bits.alloc_with(bits)
     }
 
-    /// Returns authenticated bits if they are set.
+    /// Allocates bits.
     #[inline]
-    pub fn try_get(&self, slice: Slice) -> Result<&[AuthBit]> {
+    pub fn alloc_macs(&mut self, macs: &[Mac]) -> Slice {
+        self.macs.alloc_with(macs)
+    }
+
+    /// Allocates keys.
+    #[inline]
+    pub fn alloc_keys(&mut self, keys: &[Key]) -> Slice {
+        self.keys.alloc_with(keys)
+    }
+
+    /// Returns bits if they are set.
+    #[inline]
+    pub fn try_get_bits(&self, slice: Slice) -> Result<&BitSlice> {
         self.bits.try_get(slice).map_err(From::from)
+    }
+
+    /// Returns bits if they are set.
+    #[inline]
+    pub fn try_get_macs(&self, slice: Slice) -> Result<&[Mac]> {
+        self.macs.try_get(slice).map_err(From::from)
+    }
+
+    /// Returns keys if they are set.
+    #[inline]
+    pub fn try_get_keys(&self, slice: Slice) -> Result<&[Key]> {
+        self.keys.try_get(slice).map_err(From::from)
     }
 
     /// Sets authenticated bits, returning an error if they are already set.
     #[inline]
-    pub fn try_set(&mut self, slice: Slice, bits: &[AuthBit]) -> Result<()> {
+    pub fn try_set_bits(&mut self, slice: Slice, bits: &BitSlice) -> Result<()> {
         self.bits.try_set(slice, bits).map_err(From::from)
     }
 
-    /// Returns the values of the authenticated bits if they are set.
-    pub fn try_get_values(&self, slice: Slice) -> Result<impl Iterator<Item = bool> + '_> {
-        self.bits
-            .try_get(slice)
-            .map(|bits| bits.iter().map(|bit| bit.value()))
-            .map_err(From::from)
+    /// Sets authenticated bits, returning an error if they are already set.
+    #[inline]
+    pub fn try_set_macs(&mut self, slice: Slice, macs: &[Mac]) -> Result<()> {
+        self.macs.try_set(slice, macs).map_err(From::from)
     }
 
-    /// Adjusts the authenticated bits for the given range.
-    ///
-    /// # Panics
-    ///
-    /// Panics if the data is not the same length as the range.
-    pub fn adjust(&mut self, slice: Slice, data: &BitSlice) -> Result<()> {
-        assert_eq!(
-            slice.size,
-            data.len(),
-            "data is not the same length as the range"
-        );
-
-        self.bits
-            .try_get_slice_mut(slice)?
-            .iter_mut()
-            .zip(data)
-            .for_each(|(bit, value)| {
-                bit.set_value(*value);
-            });
-
-        Ok(())
+    /// Sets authenticated bits, returning an error if they are already set.
+    #[inline]
+    pub fn try_set_keys(&mut self, slice: Slice, keys: &[Key]) -> Result<()> {
+        self.keys.try_set(slice, keys).map_err(From::from)
     }
+
 }
 
 /// Error for [`AuthBitStore`].
@@ -145,6 +157,10 @@ pub enum AuthBitStoreError {
     Uninit(Slice),
     #[error("authenticated bits are already set: {}", .0)]
     AlreadySet(Slice),
+    #[error("authenticated bits are already assigned: {}", .0)]
+    AlreadyAssigned(Slice),
+    #[error("authenticated bits verification failed")]
+    Verify,
 }
 
 impl From<StoreError> for AuthBitStoreError {
@@ -157,31 +173,27 @@ impl From<StoreError> for AuthBitStoreError {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_adjust() {
-        let mut store = AuthBitStore::new();
-        
-        let auth_bits = vec![
-            AuthBit::new(false, Mac::default(), Key::default()),
-            AuthBit::new(true, Mac::default(), Key::default()),
-        ];
-
-        let slice = store.alloc_with(&auth_bits);
-        let data = BitVec::from_iter([true, false]);
-
-        store.adjust(slice, &data).unwrap();
-
-        let values = store
-            .try_get(slice)
-            .unwrap()
-            .iter()
-            .map(|bit| bit.value())
-            .collect::<Vec<_>>();
-
-        assert_eq!(values, vec![true, false]);
+impl From<MacStoreError> for AuthBitStoreError {
+    fn from(err: MacStoreError) -> Self {
+        match err {
+            MacStoreError::InvalidSlice(slice) => Self::InvalidSlice(slice),
+            MacStoreError::Uninit(slice) => Self::Uninit(slice),
+            MacStoreError::AlreadySet(slice) => Self::AlreadySet(slice),
+            MacStoreError::AlreadyAssigned(slice) => Self::AlreadyAssigned(slice),
+            MacStoreError::Verify => Self::Verify,
+        }
     }
 }
+
+impl From<KeyStoreError> for AuthBitStoreError {
+    fn from(err: KeyStoreError) -> Self {
+        match err {
+            KeyStoreError::InvalidSlice(slice) => Self::InvalidSlice(slice),
+            KeyStoreError::Uninit(slice) => Self::Uninit(slice),
+            KeyStoreError::AlreadySet(slice) => Self::AlreadySet(slice),
+            KeyStoreError::AlreadyAssigned(slice) => Self::AlreadyAssigned(slice),
+            KeyStoreError::Verify => Self::Verify,
+        }
+    }
+}
+

@@ -3,14 +3,15 @@ use std::sync::Arc;
 use rand::Rng;
 use tokio::sync::{Mutex, OwnedMutexGuard};
 
-use mpz_core::{bitvec::BitVec, prg::Prg, Block};
+use mpz_common::future::Output;
+use mpz_core::{bitvec::{BitVec, BitSlice}, prg::Prg, Block};
 use mpz_memory_core::{
     binary::Binary,
     correlated::{Delta, Mac, Key, KeyStore, KeyStoreError, AuthBitStore, AuthBitStoreError, AuthBit},
     store::{BitStore, StoreError},
     DecodeError, DecodeFuture, DecodeOp, Memory, Slice, View as ViewTrait,
 };
-use mpz_ot_core::cot::COTSender;
+use mpz_ot_core::cot::{COTSender, COTReceiver, COTReceiverOutput};
 use utils::filter_drain::FilterDrain;
 
 use crate::{
@@ -21,18 +22,31 @@ use crate::{
 type Error = AuthGenStoreError;
 type Result<T> = core::result::Result<T, Error>;
 
+struct PendingFlush {
+    cot: Option<Box<dyn Output<COTReceiverOutput<Block>> + Send>>,
+}
+
+impl std::fmt::Debug for PendingFlush {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PendingFlush").finish_non_exhaustive()
+    }
+}
+
 /// Authenticated generator memory store.
 #[derive(Debug)]
 pub struct AuthGenStore<COT> {
     cot: Arc<Mutex<COT>>,
     prg: Prg,
+    // I suspect we can remove key_store since labels are used to authenticate masked data
     key_store: KeyStore,
     mask_store: AuthBitStore,
+    masked_value_store: BitStore,
     data_store: BitStore,
     view: View,
     buffer_decode: Vec<DecodeOp<BitVec>>,
     // Whether the store is waiting for a flush.
     pending: bool,
+    pending_flush: Option<PendingFlush>,
 }
 
 
@@ -43,11 +57,13 @@ impl<COT> AuthGenStore<COT> {
             cot: Arc::new(Mutex::new(cot)),
             prg: Prg::new_with_seed(seed),
             key_store: KeyStore::new(delta),
-            mask_store: AuthBitStore::default(),
+            mask_store: AuthBitStore::new(delta),
+            masked_value_store: BitStore::new(),
             data_store: BitStore::new(),
             view: View::new_generator(),
             buffer_decode: Vec::new(),
             pending: false,
+            pending_flush: None,
         }
     }
 
@@ -98,8 +114,18 @@ impl<COT> AuthGenStore<COT> {
     }
 
     /// Returns masks if they are set.
-    pub fn try_get_masks(&self, slice: Slice) -> Result<&[AuthBit]> {
-        self.mask_store.try_get(slice).map_err(Error::from)
+    pub fn try_get_mask_bits(&self, slice: Slice) -> Result<&BitSlice> {
+        self.mask_store.try_get_bits(slice).map_err(Error::from)
+    }
+
+    /// Returns masks if they are set.
+    pub fn try_get_mask_macs(&self, slice: Slice) -> Result<&[Mac]> {
+        self.mask_store.try_get_macs(slice).map_err(Error::from)
+    }
+
+    /// Returns masks if they are set.
+    pub fn try_get_mask_keys(&self, slice: Slice) -> Result<&[Key]> {
+        self.mask_store.try_get_keys(slice).map_err(Error::from)
     }
 
     /// Allocates uninitialized memory for output values.
@@ -107,13 +133,16 @@ impl<COT> AuthGenStore<COT> {
         self.view.alloc_output(len);
         self.key_store.alloc(len);
         self.data_store.alloc(len);
+        self.masked_value_store.alloc(len);
         self.mask_store.alloc(len)
     }
 
-    /// Sets the keys for output data.
-    pub fn set_output(&mut self, slice: Slice, keys: &[Key], masks: &[AuthBit]) -> Result<()> {
+    /// Sets the keys and masks for output data.
+    pub fn set_output(&mut self, slice: Slice, keys: &[Key], mask_bits: &BitSlice, mask_macs: &[Mac], mask_keys: &[Key]) -> Result<()> {
         self.key_store.try_set(slice, keys)?;
-        self.mask_store.try_set(slice, masks)?;
+        self.mask_store.try_set_bits(slice, mask_bits)?;
+        self.mask_store.try_set_macs(slice, mask_macs)?;
+        self.mask_store.try_set_keys(slice, mask_keys)?;
         self.view.set_preprocessed(slice.to_range())?;
 
         Ok(())
@@ -148,32 +177,25 @@ impl<COT> AuthGenStore<COT> {
 
 impl<COT> AuthGenStore<COT>
 where
-    COT: COTSender<Block>,
+    COT: COTSender<Block> + COTReceiver<bool, Block>,
+    <COT as COTReceiver<bool, Block>>::Future: Send + 'static,
 {
     /// Sends a flush to the evaluator.
     ///
     /// This queues any necessary COTs.
-    pub fn send_flush(&mut self) -> Result<GeneratorFlush> {
-        if self.pending {
+    pub fn send_flush(&mut self) -> Result<()> {
+        if self.pending || self.pending_flush.is_some() {
             return Err(ErrorRepr::UnexpectedFlush.into());
         }
 
         let view = self.view.flush().clone();
 
-        // Collect MACs.
-        let mut macs = Vec::with_capacity(view.macs.len());
-        for range in view.macs.iter_ranges() {
-            let slice = Slice::from_range_unchecked(range);
-            let data = self.data_store.try_get(slice)?;
-            macs.extend(self.key_store.authenticate(slice, data)?);
-        }
-
         // Send keys for OT.
         if !view.ot.is_empty() {
-            let mut keys = Vec::with_capacity(view.ot.len());
+            let keys = (0..view.ot.len()).map(|_| self.prg.gen()).collect::<Vec<_>>();
             for range in view.ot.iter_ranges() {
                 let slice = Slice::from_range_unchecked(range);
-                keys.extend_from_slice(self.key_store.oblivious_transfer(slice)?);
+                self.mask_store.try_set_keys(slice, &keys)?;
             }
 
             // Queue COT, we don't need the output here.
@@ -185,66 +207,56 @@ where
                 .map_err(Error::cot)?;
         }
 
-        // Collect key bits.
-        let mut key_bits = BitVec::with_capacity(view.decode_info.len());
-        for range in view.decode_info.iter_ranges() {
-            let slice = Slice::from_range_unchecked(range);
-            key_bits.extend(self.key_store.try_get_bits(slice)?);
-        }
+        let cot = if !view.ot.is_empty() {
+            // Collect the choices for oblivious transfer.
+            let choices = (0..view.ot.len()).map(|_| self.prg.gen::<bool>()).collect::<Vec<bool>>();
+            for range in view.ot.iter_ranges() {
+                let slice = Slice::from_range_unchecked(range);
+                self.mask_store.try_set_bits(slice, &BitVec::from_iter(choices.iter()))?;
+            }
 
-        // Collect MAC commitments.
-        let mut mac_commitments = Vec::with_capacity(view.decode_info.len());
-        for range in view.decode_info.iter_ranges() {
-            let slice = Slice::from_range_unchecked(range);
-            mac_commitments.extend(self.key_store.commit(slice)?);
-        }
-
-        let flush = GeneratorFlush {
-            view,
-            macs,
-            key_bits,
-            mac_commitments,
+            let output = self
+                .cot
+                .try_lock()
+                .unwrap()
+                .queue_recv_cot(&choices)
+                .map_err(Error::cot)?;
+            Some(Box::new(output) as Box<dyn Output<COTReceiverOutput<Block>> + Send>)
+        } else {
+            None
         };
 
         self.pending = true;
+        self.pending_flush = Some(PendingFlush { cot });
 
-        Ok(flush)
+        Ok(())
     }
 
     /// Receives a flush from the evaluator.
-    pub fn receive_flush(&mut self, flush: EvaluatorFlush) -> Result<()> {
+    pub fn receive_flush(&mut self) -> Result<()> {
         if !self.pending {
             return Err(ErrorRepr::UnexpectedFlush.into());
         }
 
-        let EvaluatorFlush {
-            view,
-            mac_proof: macs,
-        } = flush;
+        let Some(PendingFlush { cot }) = self.pending_flush.take() else {
+            return Err(ErrorRepr::UnexpectedFlush.into());
+        };
 
-        // Ensure the evaluators view is consistent.
-        if &view != self.view.flush() {
-            return Err(ErrorRepr::InconsistentFlush {
-                expected: self.view.flush().clone(),
-                actual: view.clone(),
-            }
-            .into());
-        }
+        let view = self.view.flush().clone();
 
-        // Verify MACs and store the data.
-        if let Some(MacProof { mut bits, proof }) = macs {
-            self.key_store.verify(&view.decode, &mut bits, proof)?;
-
-            let mut i = 0;
-            for range in view.decode.iter_ranges() {
+        // Receive the MACs via COT.
+        if let Some(mut cot) = cot {
+            let COTReceiverOutput { msgs: macs, .. } = cot
+                .try_recv()
+                .map_err(Error::cot)?
+                .ok_or_else(|| Error::cot("COT output is not ready"))?;
+            let macs = Mac::from_blocks(macs);
+            for range in view.ot.iter_ranges() {
                 let slice = Slice::from_range_unchecked(range);
-                self.data_store.try_set(slice, &bits[i..i + slice.len()])?;
-                i += slice.len();
+                self.mask_store.try_set_macs(slice, &macs)?;
             }
         }
-
-        self.view.complete_flush(view);
-        self.flush_decode()?;
+        
         self.pending = false;
 
         Ok(())
@@ -256,11 +268,7 @@ impl<COT> Memory<Binary> for AuthGenStore<COT> {
 
     fn alloc_raw(&mut self, size: usize) -> Result<Slice> {
         let keys = (0..size).map(|_| self.prg.gen()).collect::<Vec<_>>();
-
-        // Move mask allocation to receive_flush: Queue COTs, run fpre logic to generate auth bits. Try set mask store there (like evaluator does with MACs)
-        let masks = (0..size).map(|_| AuthBit::new(false, Mac::default(), Key::default())).collect::<Vec<_>>();
-        self.mask_store.alloc_with(&masks);
-        
+        self.mask_store.alloc(size);
         self.view.alloc_input(size);
         self.key_store.alloc_with(&keys);
         let slice = self.data_store.alloc(size);

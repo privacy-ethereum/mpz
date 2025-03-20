@@ -1,16 +1,18 @@
+use rand::Rng;
+
 use std::sync::Arc;
 
 use tokio::sync::{Mutex, OwnedMutexGuard};
 
 use mpz_common::future::Output;
-use mpz_core::{bitvec::BitVec, Block};
+use mpz_core::{bitvec::{BitVec, BitSlice}, Block, prg::Prg};
 use mpz_memory_core::{
     binary::Binary,
-    correlated::{Mac, MacCommitment, MacCommitmentError, MacStore, MacStoreError, COMMIT_CIPHER, AuthBitStore, AuthBit, AuthBitStoreError},
+    correlated::{Key, Delta, Mac, MacCommitment, MacCommitmentError, MacStore, MacStoreError, COMMIT_CIPHER, AuthBitStore, AuthBit, AuthBitStoreError},
     store::{BitStore, Store, StoreError},
     DecodeError, DecodeFuture, DecodeOp, Memory, Slice, View as ViewTrait,
 };
-use mpz_ot_core::cot::{COTReceiver, COTReceiverOutput};
+use mpz_ot_core::cot::{COTReceiver, COTReceiverOutput, COTSender};
 use utils::{
     filter_drain::FilterDrain,
     range::{Difference, Intersection},
@@ -38,8 +40,12 @@ impl std::fmt::Debug for PendingFlush {
 #[derive(Debug)]
 pub struct AuthEvalStore<COT> {
     cot: Arc<Mutex<COT>>,
+    prg: Prg,
+    // I suspect we can remove mac_store since labels are used to authenticate masked data
     mac_store: MacStore,
     mask_store: AuthBitStore,
+    masked_value_store: BitStore,
+    // key bits and commitments aren't needed in auth garbling
     key_bit_store: BitStore,
     // TODO: We need a sparse store as this takes up a lot of space.
     commit_store: Store<MacCommitment>,
@@ -55,11 +61,13 @@ impl<COT> AuthEvalStore<COT> {
     /// # Argument
     ///
     /// * `cot` - Correlated OT receiver.
-    pub fn new(cot: COT) -> Self {
+    pub fn new(seed: [u8; 16], delta: Delta,cot: COT) -> Self {
         Self {
             cot: Arc::new(Mutex::new(cot)),
+            prg: Prg::new_with_seed(seed),
             mac_store: MacStore::default(),
-            mask_store: AuthBitStore::default(),
+            mask_store: AuthBitStore::new(delta),
+            masked_value_store: BitStore::default(),
             key_bit_store: BitStore::default(),
             commit_store: Store::default(),
             data_store: BitStore::default(),
@@ -93,6 +101,7 @@ impl<COT> AuthEvalStore<COT> {
         self.key_bit_store.alloc(size);
         self.commit_store.alloc(size);
         self.data_store.alloc(size);
+        self.masked_value_store.alloc(size);
         self.mask_store.alloc(size)
     }
 
@@ -117,15 +126,28 @@ impl<COT> AuthEvalStore<COT> {
     }
 
     /// Returns the masks for a slice.
-    pub fn try_get_masks(&self, slice: Slice) -> Result<&[AuthBit]> {
-        self.mask_store.try_get(slice).map_err(Error::from)
+    pub fn try_get_mask_bits(&self, slice: Slice) -> Result<&BitSlice> {
+        self.mask_store.try_get_bits(slice).map_err(Error::from)
     }
 
+    /// Returns the masks for a slice.
+    pub fn try_get_mask_macs(&self, slice: Slice) -> Result<&[Mac]> {
+        self.mask_store.try_get_macs(slice).map_err(Error::from)
+    }
+
+    /// Returns the masks for a slice.
+    pub fn try_get_mask_keys(&self, slice: Slice) -> Result<&[Key]> {
+        self.mask_store.try_get_keys(slice).map_err(Error::from)
+    }
+    
+
     /// Sets the MACs for a slice corresponding to output.
-    pub fn set_output(&mut self, slice: Slice, macs: &[Mac], masks: &[AuthBit]) -> Result<()> {
+    pub fn set_output(&mut self, slice: Slice, macs: &[Mac], mask_bits: &BitSlice, mask_macs: &[Mac], mask_keys: &[Key]) -> Result<()> {
         self.view.set_output(slice.to_range())?;
         self.mac_store.try_set(slice, macs)?;
-        self.mask_store.try_set(slice, masks)?;
+        self.mask_store.try_set_bits(slice, mask_bits)?;
+        self.mask_store.try_set_macs(slice, mask_macs)?;
+        self.mask_store.try_set_keys(slice, mask_keys)?;
 
         Ok(())
     }
@@ -200,26 +222,35 @@ impl<COT> AuthEvalStore<COT> {
 
 impl<COT> AuthEvalStore<COT>
 where
-    COT: COTReceiver<bool, Block>,
-    COT::Future: Send + 'static,
+    COT: COTReceiver<bool, Block> + COTSender<Block>,
+    <COT as COTReceiver<bool, Block>>::Future: Send + 'static,
 {
     /// Sends a flush to the generator.
     ///
     /// This queues any necessary COTs.
-    pub fn send_flush(&mut self) -> Result<EvaluatorFlush> {
+    pub fn send_flush(&mut self) -> Result<()> {
         if self.pending.is_some() {
             return Err(ErrorRepr::UnexpectedFlush.into());
         }
 
         let view = self.view.flush().clone();
 
+        // Send keys for OT.
+        if !view.ot.is_empty() {
+            let keys = (0..view.ot.len()).map(|_| self.prg.gen()).collect::<Vec<_>>();
+
+            // Queue COT, we don't need the output here.
+            _ = self
+                .cot
+                .try_lock()
+                .unwrap()
+                .queue_send_cot(Key::as_blocks(&keys))
+                .map_err(Error::cot)?;
+        }
+
         let cot = if !view.ot.is_empty() {
             // Collect the choices for oblivious transfer.
-            let mut choices: Vec<_> = Vec::with_capacity(view.ot.len());
-            for range in view.ot.iter_ranges() {
-                let slice = Slice::from_range_unchecked(range);
-                choices.extend(self.data_store.try_get(slice)?.iter().by_vals());
-            }
+            let choices: Vec<bool> = (0..view.ot.len()).map(|_| self.prg.gen()).collect::<Vec<_>>();
 
             let output = self
                 .cot
@@ -227,59 +258,25 @@ where
                 .unwrap()
                 .queue_recv_cot(&choices)
                 .map_err(Error::cot)?;
-
             Some(Box::new(output) as Box<dyn Output<COTReceiverOutput<Block>> + Send>)
         } else {
             None
         };
 
-        // Prove decoded MACs to the generator.
-        let mac_proof = if !view.decode.is_empty() {
-            let (bits, proof) = self.mac_store.prove(&view.decode)?;
 
-            Some(MacProof { bits, proof })
-        } else {
-            None
-        };
-
-        let flush = EvaluatorFlush { view, mac_proof };
 
         self.pending = Some(PendingFlush { cot });
 
-        Ok(flush)
+        Ok(())
     }
 
     /// Receives flush from the generator.
     ///
     /// This expects that the COT receiver has been flushed.
-    pub fn receive_flush(&mut self, flush: GeneratorFlush) -> Result<()> {
+    pub fn receive_flush(&mut self) -> Result<()> {
         let Some(PendingFlush { cot }) = self.pending.take() else {
             return Err(ErrorRepr::UnexpectedFlush.into());
         };
-
-        let GeneratorFlush {
-            view,
-            macs,
-            key_bits,
-            mac_commitments,
-        } = flush;
-
-        // Ensure the generators flush is consistent.
-        if &view != self.view.flush() {
-            return Err(ErrorRepr::InconsistentFlush {
-                expected: view,
-                actual: self.view.flush().clone(),
-            }
-            .into());
-        }
-
-        // Receive the MACs.
-        let mut i = 0;
-        for range in view.macs.iter_ranges() {
-            let slice = Slice::from_range_unchecked(range);
-            self.mac_store.try_set(slice, &macs[i..i + slice.len()])?;
-            i += slice.len();
-        }
 
         // Receive the MACs via COT.
         if let Some(mut cot) = cot {
@@ -288,28 +285,7 @@ where
                 .map_err(Error::cot)?
                 .ok_or_else(|| Error::cot("COT output is not ready"))?;
             let macs = Mac::from_blocks(macs);
-
-            i = 0;
-            for range in view.ot.iter_ranges() {
-                let slice = Slice::from_range_unchecked(range);
-                self.mac_store.try_set(slice, &macs[i..i + slice.len()])?;
-                i += slice.len();
-            }
         }
-
-        // Receive the decode info.
-        i = 0;
-        for range in view.decode_info.iter_ranges() {
-            let slice = Slice::from_range_unchecked(range);
-            self.key_bit_store
-                .try_set(slice, &key_bits[i..i + slice.len()])?;
-            self.commit_store
-                .try_set(slice, &mac_commitments[i..i + slice.len()])?;
-            i += slice.len();
-        }
-
-        self.view.complete_flush(view);
-        self.flush_decode()?;
 
         Ok(())
     }
