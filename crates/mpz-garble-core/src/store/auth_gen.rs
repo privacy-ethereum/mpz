@@ -34,8 +34,9 @@ impl std::fmt::Debug for PendingFlush {
 
 /// Authenticated generator memory store.
 #[derive(Debug)]
-pub struct AuthGenStore<COT> {
-    cot: Arc<Mutex<COT>>,
+pub struct AuthGenStore<S, R> {
+    cot_sender: Arc<Mutex<S>>,
+    cot_receiver: Arc<Mutex<R>>,
     prg: Prg,
     // I suspect we can remove key_store since labels are used to authenticate masked data
     key_store: KeyStore,
@@ -50,11 +51,17 @@ pub struct AuthGenStore<COT> {
 }
 
 
-impl<COT> AuthGenStore<COT> {
+impl<S, R> AuthGenStore<S, R>
+where
+    S: COTSender<Block>,
+    R: COTReceiver<bool, Block>,
+    R::Future: Send + 'static,
+{
     /// Creates a new generator store.
-    pub fn new(seed: [u8; 16], delta: Delta, cot: COT) -> Self {
+    pub fn new(seed: [u8; 16], delta: Delta, cot_sender: S, cot_receiver: R) -> Self {
         Self {
-            cot: Arc::new(Mutex::new(cot)),
+            cot_sender: Arc::new(Mutex::new(cot_sender)),
+            cot_receiver: Arc::new(Mutex::new(cot_receiver)),
             prg: Prg::new_with_seed(seed),
             key_store: KeyStore::new(delta),
             mask_store: AuthBitStore::new(delta),
@@ -73,8 +80,13 @@ impl<COT> AuthGenStore<COT> {
     }
 
     /// Returns a lock on the COT sender.
-    pub fn acquire_cot(&self) -> OwnedMutexGuard<COT> {
-        Mutex::try_lock_owned(self.cot.clone()).unwrap()
+    pub fn acquire_cot_sender(&self) -> OwnedMutexGuard<S> {
+        Mutex::try_lock_owned(self.cot_sender.clone()).unwrap()
+    }
+
+    /// Returns a lock on the COT sender.
+    pub fn acquire_cot_receiver(&self) -> OwnedMutexGuard<R> {
+        Mutex::try_lock_owned(self.cot_receiver.clone()).unwrap()
     }
 
     /// Returns the COT sender.
@@ -82,10 +94,22 @@ impl<COT> AuthGenStore<COT> {
     /// # Panics
     ///
     /// Panics if a lock to the sender is still held.
-    pub fn into_inner(self) -> COT {
-        Arc::try_unwrap(self.cot)
+    pub fn into_inner_sender(self) -> S {
+        Arc::try_unwrap(self.cot_sender)
             .map_err(|_| ())
             .expect("sender lock should be dropped")
+            .into_inner()
+    }
+
+    /// Returns the COT receiver.
+    ///
+    /// # Panics
+    ///
+    /// Panics if a lock to the receiver is still held.
+    pub fn into_inner_receiver(self) -> R {
+        Arc::try_unwrap(self.cot_receiver)
+            .map_err(|_| ())
+            .expect("receiver lock should be dropped")
             .into_inner()
     }
 
@@ -175,10 +199,11 @@ impl<COT> AuthGenStore<COT> {
     }
 }
 
-impl<COT> AuthGenStore<COT>
+impl<S, R> AuthGenStore<S, R>
 where
-    COT: COTSender<Block> + COTReceiver<bool, Block>,
-    <COT as COTReceiver<bool, Block>>::Future: Send + 'static,
+    S: COTSender<Block>,
+    R: COTReceiver<bool, Block>,
+    R::Future: Send + 'static,
 {
     /// Sends a flush to the evaluator.
     ///
@@ -200,7 +225,7 @@ where
 
             // Queue COT, we don't need the output here.
             _ = self
-                .cot
+                .cot_sender
                 .try_lock()
                 .unwrap()
                 .queue_send_cot(Key::as_blocks(&keys))
@@ -216,7 +241,7 @@ where
             }
 
             let output = self
-                .cot
+                .cot_receiver
                 .try_lock()
                 .unwrap()
                 .queue_recv_cot(&choices)
@@ -346,7 +371,8 @@ where
     }
 }
 
-impl<COT> Memory<Binary> for AuthGenStore<COT> {
+impl<S, R> Memory<Binary> for AuthGenStore<S, R>
+{
     type Error = Error;
 
     fn alloc_raw(&mut self, size: usize) -> Result<Slice> {
@@ -392,9 +418,9 @@ impl<COT> Memory<Binary> for AuthGenStore<COT> {
     }
 }
 
-impl<COT> ViewTrait<Binary> for AuthGenStore<COT>
+impl<S, R> ViewTrait<Binary> for AuthGenStore<S, R>
 where
-    COT: COTSender<Block>,
+    S: COTSender<Block>
 {
     type Error = Error;
 
@@ -408,7 +434,7 @@ where
 
     fn mark_blind_raw(&mut self, slice: Slice) -> Result<()> {
         // Allocate COTs for blind data.
-        self.cot
+        self.cot_sender
             .try_lock()
             .unwrap()
             .alloc(slice.len())

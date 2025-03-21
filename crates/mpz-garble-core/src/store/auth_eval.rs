@@ -38,8 +38,9 @@ impl std::fmt::Debug for PendingFlush {
 
 /// Authenticated evaluator memory store.
 #[derive(Debug)]
-pub struct AuthEvalStore<COT> {
-    cot: Arc<Mutex<COT>>,
+pub struct AuthEvalStore<S, R> {
+    cot_sender: Arc<Mutex<S>>,
+    cot_receiver: Arc<Mutex<R>>,
     prg: Prg,
     // I suspect we can remove mac_store since labels are used to authenticate masked data
     mac_store: MacStore,
@@ -55,15 +56,18 @@ pub struct AuthEvalStore<COT> {
     pending: Option<PendingFlush>,
 }
 
-impl<COT> AuthEvalStore<COT> {
+impl<S, R> AuthEvalStore<S, R>
+{
     /// Creates a new evaluator store.
     ///
     /// # Argument
     ///
-    /// * `cot` - Correlated OT receiver.
-    pub fn new(seed: [u8; 16], delta: Delta,cot: COT) -> Self {
+    /// * `cot_sender` - Correlated OT sender.
+    /// * `cot_receiver` - Correlated OT receiver.
+    pub fn new(seed: [u8; 16], delta: Delta, cot_sender: S, cot_receiver: R) -> Self {
         Self {
-            cot: Arc::new(Mutex::new(cot)),
+            cot_sender: Arc::new(Mutex::new(cot_sender)),
+            cot_receiver: Arc::new(Mutex::new(cot_receiver)),
             prg: Prg::new_with_seed(seed),
             mac_store: MacStore::default(),
             mask_store: AuthBitStore::new(delta),
@@ -77,9 +81,26 @@ impl<COT> AuthEvalStore<COT> {
         }
     }
 
-    /// Returns a lock on the COT receiver.
-    pub fn acquire_cot(&self) -> OwnedMutexGuard<COT> {
-        Mutex::try_lock_owned(self.cot.clone()).unwrap()
+    /// Returns a lock on the COT sender.
+    pub fn acquire_cot_sender(&self) -> OwnedMutexGuard<S> {
+        Mutex::try_lock_owned(self.cot_sender.clone()).unwrap()
+    }
+
+    /// Returns a lock on the COT sender.
+    pub fn acquire_cot_receiver(&self) -> OwnedMutexGuard<R> {
+        Mutex::try_lock_owned(self.cot_receiver.clone()).unwrap()
+    }
+
+    /// Returns the COT sender.
+    ///
+    /// # Panics
+    ///
+    /// Panics if a lock to the sender is still held.
+    pub fn into_inner_sender(self) -> S {
+        Arc::try_unwrap(self.cot_sender)
+            .map_err(|_| ())
+            .expect("sender lock should be dropped")
+            .into_inner()
     }
 
     /// Returns the COT receiver.
@@ -87,8 +108,8 @@ impl<COT> AuthEvalStore<COT> {
     /// # Panics
     ///
     /// Panics if a lock to the receiver is still held.
-    pub fn into_inner(self) -> COT {
-        Arc::try_unwrap(self.cot)
+    pub fn into_inner_receiver(self) -> R {
+        Arc::try_unwrap(self.cot_receiver)
             .map_err(|_| ())
             .expect("receiver lock should be dropped")
             .into_inner()
@@ -220,10 +241,11 @@ impl<COT> AuthEvalStore<COT> {
     }
 }
 
-impl<COT> AuthEvalStore<COT>
+impl<S, R> AuthEvalStore<S, R>
 where
-    COT: COTReceiver<bool, Block> + COTSender<Block>,
-    <COT as COTReceiver<bool, Block>>::Future: Send + 'static,
+    S: COTSender<Block>,
+    R: COTReceiver<bool, Block>,
+    R::Future: Send + 'static,
 {
     /// Sends a flush to the generator.
     ///
@@ -241,7 +263,7 @@ where
 
             // Queue COT, we don't need the output here.
             _ = self
-                .cot
+                .cot_sender
                 .try_lock()
                 .unwrap()
                 .queue_send_cot(Key::as_blocks(&keys))
@@ -253,7 +275,7 @@ where
             let choices: Vec<bool> = (0..view.ot.len()).map(|_| self.prg.gen()).collect::<Vec<_>>();
 
             let output = self
-                .cot
+                .cot_receiver
                 .try_lock()
                 .unwrap()
                 .queue_recv_cot(&choices)
@@ -368,7 +390,8 @@ where
     }
 }
 
-impl<COT> Memory<Binary> for AuthEvalStore<COT> {
+impl<S, R> Memory<Binary> for AuthEvalStore<S, R>
+{
     type Error = Error;
 
     fn alloc_raw(&mut self, size: usize) -> Result<Slice> {
@@ -414,9 +437,10 @@ impl<COT> Memory<Binary> for AuthEvalStore<COT> {
     }
 }
 
-impl<COT> ViewTrait<Binary> for AuthEvalStore<COT>
+impl<S, R> ViewTrait<Binary> for AuthEvalStore<S, R>
 where
-    COT: COTReceiver<bool, Block>,
+    S: COTSender<Block>,
+    R: COTReceiver<bool, Block>,
 {
     type Error = Error;
 
@@ -426,7 +450,7 @@ where
 
     fn mark_private_raw(&mut self, slice: Slice) -> Result<()> {
         // Allocate COTs for private data.
-        self.cot
+        self.cot_receiver
             .try_lock()
             .unwrap()
             .alloc(slice.len())
