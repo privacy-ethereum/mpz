@@ -146,6 +146,41 @@ impl AuthBitStore {
         self.keys.try_set(slice, keys).map_err(From::from)
     }
 
+    /// Proves MACs.
+    ///
+    /// # Arguments
+    ///
+    /// * `ranges` - Ranges to prove.
+    pub fn prove_share(&self, ranges: &RangeSet) -> Result<(BitVec, Vec<Mac>)> {
+        let mut bits = BitVec::with_capacity(ranges.len());
+        let mut macs = Vec::with_capacity(ranges.len());
+        for range in ranges.iter_ranges() {
+            let slice = Slice::from_range_unchecked(range);
+            let slice_bits = self.bits.try_get(slice)?;
+            let slice_macs = self.macs.try_get(slice)?;    
+            for (bit, mac) in slice_bits.iter().zip(slice_macs) {
+                bits.push(*bit);
+                macs.push(*mac);
+            }
+        }
+
+        Ok((bits, macs))
+    }
+
+    pub fn check_share(&mut self, ranges: &RangeSet, bits: &BitVec, macs: &[Mac]) -> Result<()> {
+        let mut expected_macs = Vec::with_capacity(ranges.len());
+        for range in ranges.iter_ranges() {
+            let slice = Slice::from_range_unchecked(range);
+            expected_macs.extend(self.keys.authenticate(slice, bits)?);
+        }
+
+        if expected_macs != macs {
+            return Err(AuthBitStoreError::Verify);
+        }
+        
+        Ok(())
+    }
+
 }
 
 /// Error for [`AuthBitStore`].

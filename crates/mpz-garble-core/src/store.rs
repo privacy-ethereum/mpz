@@ -32,6 +32,19 @@ pub struct GeneratorFlush {
     mac_commitments: Vec<MacCommitment>,
 }
 
+/// Flush message sent by the generator.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AuthGenFlush {
+    /// Flush view.
+    view: FlushView,
+    /// Share proof.
+    share_proof: Option<ShareProof>,
+    /// Half masked inputs.
+    half_masked_inputs: Vec<bool>,
+    /// Labels.
+    labels: Vec<Mac>,
+}
+
 /// Flush message sent by the evaluator.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(try_from = "validation::EvaluatorFlushUnchecked")]
@@ -42,12 +55,30 @@ pub struct EvaluatorFlush {
     mac_proof: Option<MacProof>,
 }
 
+/// Flush message sent by the evaluator.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AuthEvalFlush {
+    /// Flush view.
+    view: FlushView,
+    /// Share proof.
+    share_proof: Option<ShareProof>,
+    /// Half masked inputs.
+    half_masked_inputs: Vec<bool>,
+}
+
 /// MAC proof sent from the evaluator to the generator to prove
 /// the output of a circuit.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MacProof {
     bits: BitVec,
     proof: Hash,
+}
+
+/// Share proof sent from the generator to the evaluator to prove inputs shares
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ShareProof {
+    bits: BitVec,
+    macs: Vec<Mac>,
 }
 
 mod validation {
