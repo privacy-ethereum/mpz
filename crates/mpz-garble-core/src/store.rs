@@ -16,7 +16,7 @@ use mpz_core::bitvec::BitVec;
 use mpz_memory_core::correlated::{Mac, MacCommitment};
 use serde::{Deserialize, Serialize};
 
-use crate::view::FlushView;
+use crate::view::{AuthFlushView, FlushView};
 
 /// Flush message sent by the generator.
 #[derive(Debug, Serialize, Deserialize)]
@@ -36,7 +36,7 @@ pub struct GeneratorFlush {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AuthGenFlush {
     /// Flush view.
-    view: FlushView,
+    view: AuthFlushView,
     /// Share proof.
     share_proof: Option<ShareProof>,
     /// Half masked inputs.
@@ -59,7 +59,7 @@ pub struct EvaluatorFlush {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AuthEvalFlush {
     /// Flush view.
-    view: FlushView,
+    view: AuthFlushView,
     /// Share proof.
     share_proof: Option<ShareProof>,
     /// Half masked inputs.

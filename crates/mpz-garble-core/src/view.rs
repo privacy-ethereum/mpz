@@ -17,6 +17,18 @@ struct InputView {
 }
 
 #[derive(Debug, Default)]
+struct AuthInputView {
+    /// Ranges which have been assigned.
+    assigned: RangeSet,
+    /// Ranges which have been masked.
+    preprocessed: RangeSet,
+    /// Ranges which are fully committed in both parties views.
+    complete: RangeSet,
+    /// All input ranges.
+    all: RangeSet,
+}
+
+#[derive(Debug, Default)]
 struct OutputView {
     /// Output ranges which are preprocessed but not executed.
     preprocessed: RangeSet,
@@ -28,6 +40,18 @@ struct OutputView {
 
 #[derive(Debug, Default)]
 struct DecodeView {
+    /// Ranges which have decode info sent.
+    decode_info: RangeSet,
+    /// Ranges which have already been decoded.
+    complete: RangeSet,
+    /// All ranges which are to be decoded.
+    all: RangeSet,
+}
+
+#[derive(Debug, Default)]
+struct AuthDecodeView {
+    /// Ranges which have masked outputs sent.
+    masked_outputs: RangeSet,
     /// Ranges which have decode info sent.
     decode_info: RangeSet,
     /// Ranges which have already been decoded.
@@ -63,6 +87,56 @@ impl FlushView {
         self.macs.clear();
         self.ot.clear();
         self.decode_info.clear();
+        self.decode.clear();
+    }
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
+pub(crate) struct AuthFlushView {
+
+    // gen_masks, gen_reveal, gen_check correspond to generator's input wires
+    // eval_masks, eval_reveal, eval_check correspond to evaluator's input wires
+
+    /// Ranges for which both the generator and evaluator send gen input masks via COTs. 
+    pub(crate) gen_masks: RangeSet,
+    /// Ranges for which both the generator and evaluator send eval input masks via COTs. 
+    pub(crate) eval_masks: RangeSet,
+    /// Ranges for which the evaluator is to send share and MACs for gen's inputs.
+    pub(crate) gen_reveal: RangeSet,
+    /// Ranges for which the generator is to send share and MACs for eval's inputs.
+    pub(crate) eval_reveal: RangeSet,
+    /// Ranges for which the generator is to check MACs and store bits for own inputs.
+    pub(crate) gen_check: RangeSet,
+    /// Ranges for which the evaluator is to check MACs and store bits for own inputs.
+    pub(crate) eval_check: RangeSet,
+    /// Ranges for which masked labels are sent.
+    pub(crate) masked_values: RangeSet,
+    /// Ranges for which mask share and MACs are sent for decoding.
+    pub(crate) decode: RangeSet,
+}
+
+impl AuthFlushView {
+    /// Returns `true` if the flush state is empty.
+    pub(crate) fn is_empty(&self) -> bool {
+        self.gen_masks.is_empty()
+            && self.eval_masks.is_empty()
+            && self.gen_reveal.is_empty()
+            && self.eval_reveal.is_empty()
+            && self.gen_check.is_empty()
+            && self.eval_check.is_empty()
+            && self.masked_values.is_empty()
+            && self.decode.is_empty()
+    }
+
+    /// Clears the flush state.
+    fn clear(&mut self) {
+        self.gen_masks.clear();
+        self.eval_masks.clear();
+        self.gen_reveal.clear();
+        self.eval_reveal.clear();
+        self.gen_check.clear();
+        self.eval_check.clear();
+        self.masked_values.clear();
         self.decode.clear();
     }
 }
@@ -316,6 +390,264 @@ impl View {
 }
 
 impl ViewTrait<Binary> for View {
+    type Error = ViewError;
+
+    fn mark_public_raw(&mut self, slice: Slice) -> Result<(), Self::Error> {
+        self.mark_public(slice.to_range())
+    }
+
+    fn mark_private_raw(&mut self, slice: Slice) -> Result<(), Self::Error> {
+        self.mark_private(slice.to_range())
+    }
+
+    fn mark_blind_raw(&mut self, slice: Slice) -> Result<(), Self::Error> {
+        self.mark_blind(slice.to_range())
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct AuthView {
+    role: Role,
+    len: usize,
+    input: AuthInputView,
+    output: OutputView,
+    vis: VisibilityView,
+    decode: AuthDecodeView,
+    flush: AuthFlushView,
+}
+
+impl AuthView {
+    pub(crate) fn new_generator() -> Self {
+        Self {
+            role: Role::Generator,
+            len: 0,
+            input: AuthInputView::default(),
+            output: OutputView::default(),
+            vis: VisibilityView::new(),
+            decode: AuthDecodeView::default(),
+            flush: AuthFlushView::default(),
+        }
+    }
+
+    pub(crate) fn new_evaluator() -> Self {
+        Self {
+            role: Role::Evaluator,
+            len: 0,
+            input: AuthInputView::default(),
+            output: OutputView::default(),
+            vis: VisibilityView::new(),
+            decode: AuthDecodeView::default(),
+            flush: AuthFlushView::default(),
+        }
+    }
+
+    fn alloc(&mut self, size: usize) -> Range {
+        let range = self.len..self.len + size;
+        self.len += size;
+        self.vis.alloc(size);
+        range
+    }
+
+    pub(crate) fn wants_flush(&self) -> bool {
+        !self.flush.is_empty()
+    }
+
+    pub(crate) fn flush(&self) -> &AuthFlushView {
+        &self.flush
+    }
+
+    pub(crate) fn alloc_input(&mut self, size: usize) {
+        let range = self.alloc(size);
+
+        self.input.all |= &range;
+    }
+
+    pub(crate) fn alloc_output(&mut self, size: usize) {
+        let range = self.alloc(size);
+
+        self.output.all |= &range;
+    }
+
+    fn mark_public(&mut self, range: Range) -> Result<()> {
+        if self.vis.is_set_any(range.clone()) {
+            return Err(ErrorRepr::VisibilityAlreadySet { range }.into());
+        } else if !range.is_disjoint(&self.output.all) {
+            return Err(ErrorRepr::VisibilityOutput { range }.into());
+        }
+
+        self.vis.set_public(range);
+
+        Ok(())
+    }
+
+    fn mark_private(&mut self, range: Range) -> Result<()> {
+        if self.vis.is_set_any(range.clone()) {
+            return Err(ErrorRepr::VisibilityAlreadySet { range }.into());
+        } else if !range.is_disjoint(&self.output.all) {
+            return Err(ErrorRepr::VisibilityOutput { range }.into());
+        }
+
+        self.vis.set_private(range);
+
+        Ok(())
+    }
+
+    fn mark_blind(&mut self, range: Range) -> Result<()> {
+        if self.vis.is_set_any(range.clone()) {
+            return Err(ErrorRepr::VisibilityAlreadySet { range }.into());
+        } else if !range.is_disjoint(&self.output.all) {
+            return Err(ErrorRepr::VisibilityOutput { range }.into());
+        }
+
+        self.vis.set_blind(range);
+
+        Ok(())
+    }
+
+    pub(crate) fn assign(&mut self, range: Range) -> Result<()> {
+        if !self.vis.is_visible(range.clone()) {
+            return Err(ErrorRepr::VisibilityAssign { range }.into());
+        } else if !range.is_disjoint(&self.output.all) {
+            return Err(ErrorRepr::OutputAssign { range }.into());
+        }
+
+        self.input.assigned |= range;
+
+        Ok(())
+    }
+
+    /// Marks an output range as preprocessed.
+    pub(crate) fn set_preprocessed(&mut self, range: Range) -> Result<()> {
+        // Assert is output.
+        if !range.is_subset(&self.output.all) {
+            return Err(ErrorRepr::NotOutput { range }.into());
+        }
+
+        self.output.preprocessed |= &range;
+        // If marked for decoding, transfer decode info.
+        self.flush.masked_values |= range.intersection(&self.decode.all) - &self.decode.complete;
+
+        Ok(())
+    }
+
+    /// Marks an output range as complete.
+    pub(crate) fn set_output(&mut self, range: Range) -> Result<()> {
+        // Assert is output.
+        if !range.is_subset(&self.output.all) {
+            return Err(ErrorRepr::NotOutput { range }.into());
+        }
+
+        self.output.preprocessed |= &range;
+        self.output.complete |= &range;
+        // If marked for decoding, transfer decode info.
+        self.flush.masked_values |= range.intersection(&self.decode.all) - &self.decode.complete;
+        // If decoding info transferred, prove MACs.
+        self.flush.decode |= range.intersection(&self.decode.complete);
+
+        Ok(())
+    }
+
+    pub(crate) fn is_committed(&self, range: Range) -> bool {
+        range.is_subset(&self.input.complete) || range.is_subset(&self.output.complete)
+    }
+
+    pub(crate) fn commit(&mut self, range: Range) -> Result<()> {
+        // Assert visibility is set.
+        if !self.vis.is_set(range.clone()) {
+            return Err(ErrorRepr::VisibilityNotSet { range }.into());
+        }
+
+        // Assert not output data.
+        if !range.is_disjoint(&self.output.all) {
+            return Err(ErrorRepr::OutputCommit { range }.into());
+        }
+
+        // Assert not committed.
+        if !range.is_disjoint(&self.input.complete) {
+            return Err(ErrorRepr::AlreadyCommitted { range }.into());
+        }
+
+        let blind = range.intersection(self.vis.blind());
+        let private = range.intersection(self.vis.private());
+        let public = range.intersection(self.vis.public());
+
+        // Assert visible data is assigned.
+        if !public.is_subset(&self.input.assigned) {
+            return Err(ErrorRepr::NotAssigned { range }.into());
+        } else if !private.is_subset(&self.input.assigned) {
+            return Err(ErrorRepr::NotAssigned { range }.into());
+        }
+
+        match self.role {
+            Role::Generator => {
+                // Send MACs for visible data.
+                self.flush.gen_masks |= private;
+                // Send MACs with OT for blind data.
+                self.flush.eval_masks |= blind;
+            }
+            Role::Evaluator => {
+                // Receive MACs for public and blind data.
+                self.flush.gen_masks |= blind;
+                // Receive MACs with OT for private data.
+                self.flush.eval_masks |= private;
+            }
+        }
+
+        Ok(())
+    }
+
+    pub(crate) fn decode(&mut self, range: Range) -> Result<()> {
+        // Ignore already decoded data.
+        let undecoded = range.difference(&self.decode.complete);
+        if undecoded.is_empty() {
+            return Ok(());
+        }
+
+        self.decode.all |= &undecoded;
+
+        let output = range.intersection(&self.output.all);
+        let input = range.intersection(&self.input.all);
+
+        // Transfer decode info: Once masks are set (input is complete), parties can now send decode info.
+        // TODO: Gen's decode info for input/outputs and eval's decode info for inputs/outputs.
+        // For output decoding, eval also needs to send masked values and labels. 
+
+        // Transfer decode info for inputs and outputs that are complete. This involes sending mask share and MACs for input and output data.
+        // Using the masked values, parties can now decode the data.
+        let decodable_input = input.intersection(&self.input.complete);
+        let decodable_output = output.intersection(&self.output.complete);
+        self.flush.decode |= decodable_input | decodable_output;
+
+        Ok(())
+    }
+
+    pub(crate) fn complete_flush(&mut self, view: AuthFlushView) {
+        self.input.preprocessed |= &view.gen_check;
+        self.input.preprocessed |= &view.eval_check;
+
+        self.input.complete |= &view.masked_values.intersection(&self.input.all);
+        self.output.complete |= &view.masked_values.intersection(&self.output.all); // maybe set this in set_output?
+
+        self.decode.masked_outputs |= &view.masked_values.intersection(&self.output.all);
+        self.decode.complete |= &view.decode;
+
+        self.flush.clear();
+
+        // Reveal opposite shares for inputs whose auth bits have been set.
+        self.flush.gen_reveal |= view.gen_masks;
+        self.flush.eval_reveal |= view.eval_masks;
+        // Check shares and store masked values for input whose opposite shares have been sent.
+        self.flush.gen_check |= view.gen_reveal;
+        self.flush.eval_check |= view.eval_reveal;
+        
+        // Decode inputs if their masked values have been sent and want to be decoded.
+        self.flush.decode |= view.masked_values.intersection(&self.decode.all);
+        // Decode outputs if their masked values have been sent and want to be decoded.
+        self.flush.decode |= view.masked_values.intersection(&self.decode.all);
+    }
+}
+
+impl ViewTrait<Binary> for AuthView {
     type Error = ViewError;
 
     fn mark_public_raw(&mut self, slice: Slice) -> Result<(), Self::Error> {

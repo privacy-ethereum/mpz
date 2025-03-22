@@ -20,7 +20,7 @@ use utils::{
 
 use crate::{
     store::{ShareProof, AuthEvalFlush, AuthGenFlush},
-    view::{FlushView, View, ViewError},
+    view::{AuthFlushView, AuthView, ViewError},
 };
 
 type Error = AuthEvalStoreError;
@@ -51,9 +51,10 @@ pub struct AuthEvalStore<S, R> {
     // TODO: We need a sparse store as this takes up a lot of space.
     commit_store: Store<MacCommitment>,
     data_store: BitStore,
-    view: View,
+    view: AuthView,
     buffer_decode: Vec<DecodeOp<BitVec>>,
-    pending: Option<PendingFlush>,
+    pending: bool,
+    pending_flush: Option<PendingFlush>,
 }
 
 impl<S, R> AuthEvalStore<S, R>
@@ -75,9 +76,10 @@ impl<S, R> AuthEvalStore<S, R>
             key_bit_store: BitStore::default(),
             commit_store: Store::default(),
             data_store: BitStore::default(),
-            view: View::new_evaluator(),
+            view: AuthView::new_evaluator(),
             buffer_decode: Vec::default(),
-            pending: None,
+            pending: false,
+            pending_flush: None,
         }
     }
 
@@ -251,16 +253,21 @@ where
     ///
     /// This queues any necessary COTs.
     pub fn send_flush(&mut self) -> Result<AuthEvalFlush> {
-        if self.pending.is_some() {
+        if self.pending {
             return Err(ErrorRepr::UnexpectedFlush.into());
         }
 
         let view = self.view.flush().clone();
 
-        // Send keys for OT.
-        if !view.ot.is_empty() {
-            let keys = (0..view.ot.len()).map(|_| self.prg.gen()).collect::<Vec<_>>();
-
+        // Send OT keys for masks.
+        let masks = view.gen_masks.clone() | view.eval_masks.clone();
+        if !masks.is_empty() {
+            let keys = (0..masks.len()).map(|_| self.prg.gen()).collect::<Vec<_>>();
+            // Store keys in mask store.
+            for range in masks.iter_ranges() {
+                let slice = Slice::from_range_unchecked(range);
+                self.mask_store.try_set_keys(slice, &keys)?;
+            }
             // Queue COT, we don't need the output here.
             _ = self
                 .cot_sender
@@ -270,10 +277,14 @@ where
                 .map_err(Error::cot)?;
         }
 
-        let cot = if !view.ot.is_empty() {
+        // Send OT choices for masks, box the output to receive Macs as a future.
+        let cot = if !masks.is_empty() {
             // Collect the choices for oblivious transfer.
-            let choices: Vec<bool> = (0..view.ot.len()).map(|_| self.prg.gen()).collect::<Vec<_>>();
-
+            let choices: Vec<bool> = (0..masks.len()).map(|_| self.prg.gen()).collect::<Vec<_>>();
+            for range in masks.iter_ranges() {
+                let slice = Slice::from_range_unchecked(range);
+                self.mask_store.try_set_bits(slice, &BitVec::from_iter(choices.iter()))?;
+            }
             let output = self
                 .cot_receiver
                 .try_lock()
@@ -285,19 +296,19 @@ where
             None
         };
 
-        self.pending = Some(PendingFlush { cot });
-
-        // Prove Gen's share of Eval input wires. Change to correct view.
-        let share_proof = if !view.macs.is_empty() {
-            let (bits, macs) = self.mask_store.prove_share(&view.macs)?;
+        // Prove Eval's share of Gen input wires
+        let share_proof = if !view.gen_reveal.is_empty() {
+            let (bits, macs) = self.mask_store.prove_share(&view.gen_reveal)?;
+            // TODO: set masked_value_store here
 
             Some(ShareProof { bits, macs })
         } else {
             None
         };
 
-        let mut half_masked_inputs = Vec::with_capacity(view.ot.len());
-        for range in view.ot.iter_ranges() {
+        // Send half masked inputs corresponding to Eval's input wires
+        let mut half_masked_inputs = Vec::with_capacity(view.eval_check.len());
+        for range in view.eval_check.iter_ranges() {
             let slice = Slice::from_range_unchecked(range);
             let mask_bits = self.mask_store.try_get_bits(slice)?;
             let data_bits = self.data_store.try_get(slice)?;
@@ -305,7 +316,7 @@ where
             half_masked_inputs.extend(mask_bits.iter().zip(data_bits.iter()).map(|(m, d)| *m ^ *d));
         }
 
-        let slice = Slice::from_range_unchecked(view.ot.iter_ranges().next().unwrap());
+        let slice = Slice::from_range_unchecked(view.eval_check.iter_ranges().next().unwrap());
         self.masked_value_store.try_set(slice, &BitVec::from_iter(&half_masked_inputs))?;
 
 
@@ -315,6 +326,9 @@ where
             half_masked_inputs,
         };
 
+        self.pending = true;
+        self.pending_flush = Some(PendingFlush { cot });
+
         Ok(flush)
     }
 
@@ -322,13 +336,30 @@ where
     ///
     /// This expects that the COT receiver has been flushed.
     pub fn receive_flush(&mut self, flush: AuthGenFlush) -> Result<()> {
-        let Some(PendingFlush { cot }) = self.pending.take() else {
+        if !self.pending {
+            return Err(ErrorRepr::UnexpectedFlush.into());
+        }
+
+        let Some(PendingFlush { cot }) = self.pending_flush.take() else {
             return Err(ErrorRepr::UnexpectedFlush.into());
         };
 
-        let AuthGenFlush { view, share_proof, half_masked_inputs, labels } = flush;
+        let AuthGenFlush { 
+            view, 
+            share_proof, 
+            half_masked_inputs, 
+            labels 
+        } = flush;
 
-        // Handle COT section
+        if &view != self.view.flush() {
+            return Err(ErrorRepr::InconsistentFlush {
+                expected: self.view.flush().clone(),
+                actual: view,
+            }.into());
+        }
+
+        // Receive OT macs for masks, expects COT to be flushed.
+        let masks = view.gen_masks.clone() | view.eval_masks.clone();
         let mut i = 0;
         if let Some(mut cot) = cot {
             let COTReceiverOutput { msgs: macs, .. } = cot
@@ -336,19 +367,20 @@ where
                 .map_err(Error::cot)?
                 .ok_or_else(|| Error::cot("COT output is not ready"))?;
             let macs = Mac::from_blocks(macs);
-            for range in view.ot.iter_ranges() {
+            for range in masks.iter_ranges() {
                 let slice = Slice::from_range_unchecked(range);
                 self.mask_store.try_set_macs(slice, &macs[i..i + slice.len()])?;
                 i += slice.len();
             }
         }
 
-        // Handle share proof and masked updates for view.ot
+        // Check Gen's share of Eval input wires
         let ShareProof { bits, macs } = share_proof.unwrap();
-        self.mask_store.check_share(&view.ot, &bits, &macs)?;
-
+        self.mask_store.check_share(&view.eval_check, &bits, &macs)?;
+        
+        // Set masked_value_store using received bits - move into helper function
         i = 0;
-        for range in view.ot.iter_ranges() {
+        for range in view.eval_check.iter_ranges() {
             let slice = Slice::from_range_unchecked(range);
             let current_masked = self.masked_value_store.try_get(slice)?;
             let mut final_masked = current_masked.to_bitvec();
@@ -362,9 +394,9 @@ where
             i += slice.len();
         }
 
-        // Handle masked updates for view.macs
+        // Update masked_value_store using received half masked inputs for Gen's input wires
         i = 0;
-        for range in view.macs.iter_ranges() {
+        for range in view.gen_check.iter_ranges() {
             let slice = Slice::from_range_unchecked(range);
             let mask_share = self.mask_store.try_get_bits(slice)?;
             
@@ -380,12 +412,15 @@ where
 
         // Store MAC labels
         let mut i = 0;
-        for range in view.macs.iter_ranges() {
+        for range in view.masked_values.iter_ranges() {
             let slice = Slice::from_range_unchecked(range);
             self.mac_store.try_set(slice, &labels[i..i + slice.len()])?;
             i += slice.len();
         }
 
+        self.view.complete_flush(view);
+        self.flush_decode()?;
+        self.pending = false;
         Ok(())
     }
 }
@@ -400,6 +435,7 @@ impl<S, R> Memory<Binary> for AuthEvalStore<S, R>
         self.commit_store.alloc(size);
         self.key_bit_store.alloc(size);
         self.mask_store.alloc(size);
+        self.masked_value_store.alloc(size);
         let slice = self.data_store.alloc(size);
         Ok(slice)
     }
@@ -449,7 +485,13 @@ where
     }
 
     fn mark_private_raw(&mut self, slice: Slice) -> Result<()> {
-        // Allocate COTs for private data.
+        // Allocate both sender and receiver COTs for private data.
+        self.cot_sender
+            .try_lock()
+            .unwrap()
+            .alloc(slice.len())
+            .map_err(Error::cot)?;
+
         self.cot_receiver
             .try_lock()
             .unwrap()
@@ -460,6 +502,19 @@ where
     }
 
     fn mark_blind_raw(&mut self, slice: Slice) -> Result<()> {
+        // Allocate both sender and receiver COTs for blind data.
+        self.cot_sender
+            .try_lock()
+            .unwrap()
+            .alloc(slice.len())
+            .map_err(Error::cot)?;
+
+        self.cot_receiver
+            .try_lock()
+            .unwrap()
+            .alloc(slice.len())
+            .map_err(Error::cot)?;
+
         self.view.mark_blind_raw(slice).map_err(Error::from)
     }
 }
@@ -496,8 +551,8 @@ enum ErrorRepr {
     UnexpectedFlush,
     #[error("inconsistent flush: expected={expected:?}, actual={actual:?}")]
     InconsistentFlush {
-        expected: FlushView,
-        actual: FlushView,
+        expected: AuthFlushView,
+        actual: AuthFlushView,
     },
     #[error("invalid MAC commitment: {0}")]
     MacCommitment(#[from] MacCommitmentError),
