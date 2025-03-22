@@ -12,6 +12,7 @@ pub use generator::{GeneratorStore, GeneratorStoreError};
 pub use auth_gen::{AuthGenStore, AuthGenStoreError};
 
 use blake3::Hash;
+use mpz_circuits::types::Bit;
 use mpz_core::bitvec::BitVec;
 use mpz_memory_core::correlated::{Mac, MacCommitment};
 use serde::{Deserialize, Serialize};
@@ -40,7 +41,7 @@ pub struct AuthGenFlush {
     /// Share proof.
     share_proof: Option<ShareProof>,
     /// Half masked inputs.
-    half_masked_inputs: Vec<bool>,
+    half_masked_inputs: BitVec,
     /// Labels.
     labels: Vec<Mac>,
 }
@@ -63,7 +64,7 @@ pub struct AuthEvalFlush {
     /// Share proof.
     share_proof: Option<ShareProof>,
     /// Half masked inputs.
-    half_masked_inputs: Vec<bool>,
+    half_masked_inputs: BitVec,
 }
 
 /// MAC proof sent from the evaluator to the generator to prove

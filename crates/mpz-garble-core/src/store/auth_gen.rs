@@ -257,7 +257,14 @@ where
         // Prove Gen's share of Eval input wires.
         let share_proof = if !view.eval_reveal.is_empty() {
             let (bits, macs) = self.mask_store.prove_share(&view.eval_reveal)?;
-            // TODO: set masked_value_store here
+            // Set masked_value_store using sent bits
+            let mut i = 0;
+            for range in view.eval_reveal.iter_ranges() {
+                let slice = Slice::from_range_unchecked(range);
+                self.masked_value_store
+                    .try_set(slice, &bits[i..i + slice.len()])?;
+                i += slice.len();
+            }
 
             Some(ShareProof { bits, macs })
         } else {
@@ -265,17 +272,21 @@ where
         };
 
         // Send half masked inputs corresponding to Gen's input wires. 
-        let mut half_masked_inputs = Vec::with_capacity(view.gen_check.len());
-        for range in view.gen_check.iter_ranges() {
+        let mut half_masked_inputs = BitVec::with_capacity(view.gen_reveal.len());
+        for range in view.gen_reveal.iter_ranges() {
             let slice = Slice::from_range_unchecked(range);
             let mask_bits = self.mask_store.try_get_bits(slice)?;
             let data_bits = self.data_store.try_get(slice)?;
-            // XOR mask bits with data bits
-            half_masked_inputs.extend(mask_bits.iter().zip(data_bits.iter()).map(|(m, d)| *m ^ *d));
+            
+            // might be a cleaner way to do this
+            let mut half_masked = mask_bits.to_bitvec();
+            for (mut half_masked_bit, data_bit) in half_masked.iter_mut().zip(data_bits) {
+                *half_masked_bit ^= *data_bit;
+            }
+            
+            self.masked_value_store.try_set(slice, &half_masked)?;
+            half_masked_inputs.extend_from_bitslice(&half_masked);
         }
-
-        let slice = Slice::from_range_unchecked(view.gen_check.iter_ranges().next().unwrap());
-        self.masked_value_store.try_set(slice, &BitVec::from_iter(&half_masked_inputs))?;
 
         // for both gen and eval's input wires here
         let mut labels = Vec::with_capacity(view.masked_values.len());
@@ -340,35 +351,19 @@ where
         let ShareProof { bits, macs } = share_proof.unwrap();
         self.mask_store.check_share(&view.gen_check, &bits, &macs)?;
 
-        // Set masked_value_store using received bits - move into helper function
-        i = 0;
+        // Update masked values of gen's input wires with share proof bits
+        let mut i = 0;
         for range in view.gen_check.iter_ranges() {
             let slice = Slice::from_range_unchecked(range);
-            let current_masked = self.masked_value_store.try_get(slice)?;
-            let mut final_masked = current_masked.to_bitvec();
-            
-            // XOR current masked values with bits from share proof
-            for (mut bit, share_bit) in final_masked.iter_mut().zip(&bits[i..i + slice.len()]) {
-                *bit ^= *share_bit;
-            }
-            
-            self.masked_value_store.try_set(slice, &final_masked)?;
+            self.masked_value_store.update_xor(slice, &bits[i..i + slice.len()])?;
             i += slice.len();
         }
 
-        // Update masked_value_store using received half masked inputs for Eval's input wires
+        // Update masked values with eval's half masked inputs
         i = 0;
         for range in view.eval_check.iter_ranges() {
             let slice = Slice::from_range_unchecked(range);
-            let mask_share = self.mask_store.try_get_bits(slice)?;
-            
-            let final_masked = BitVec::from_iter(
-                mask_share.iter()
-                    .zip(&half_masked_inputs[i..i + slice.len()])
-                    .map(|(a, b)| *a ^ *b)
-            );
-            
-            self.masked_value_store.try_set(slice, &final_masked)?;
+            self.masked_value_store.update_xor(slice, &half_masked_inputs[i..i + slice.len()])?;
             i += slice.len();
         }
 
