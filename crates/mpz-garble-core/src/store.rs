@@ -44,6 +44,8 @@ pub struct AuthGenFlush {
     half_masked_inputs: BitVec,
     /// Labels.
     labels: Vec<Mac>,
+    /// Decode share proof.
+    decode_share_proof: Option<ShareProof>,
 }
 
 /// Flush message sent by the evaluator.
@@ -65,6 +67,8 @@ pub struct AuthEvalFlush {
     share_proof: Option<ShareProof>,
     /// Half masked inputs.
     half_masked_inputs: BitVec,
+    /// Decode share proof.
+    decode_share_proof: Option<ShareProof>,
 }
 
 /// MAC proof sent from the evaluator to the generator to prove
@@ -244,6 +248,105 @@ mod tests {
         assert_eq!(val_b_gen, val_b_ev);
         assert_eq!(val_c_gen, val_c_ev);
         assert_eq!(val_a_gen, val_a);
+        assert_eq!(val_b_gen, val_b);
+        assert_eq!(val_c_gen, val_c);
+    }
+
+    #[test]
+    // TODO: handle public inputs - same as private inputs but auto decoded (so still requires auth bits)
+    fn test_auth_store_decode() {
+        let mut rng = StdRng::seed_from_u64(0);
+        let delta_a = Delta::random(&mut rng).set_lsb(true);
+        let delta_b = Delta::random(&mut rng).set_lsb(false);
+        let cot_gen = IdealCOT::new(delta_a.into_inner());
+        let cot_eval = IdealCOT::new(delta_b.into_inner());
+        let mut gen = AuthGenStore::new(rng.gen(), delta_a, cot_gen.clone(), cot_eval.clone());
+        let mut ev = AuthEvalStore::new(rng.gen(), delta_b, cot_eval.clone(), cot_gen.clone());
+
+        // let val_a = [0u8; 16];
+        let val_b = [42u8; 16];
+        let val_c = [69u8; 16];
+
+        // let ref_a_gen: Array<U8, 16> = gen.alloc().unwrap();
+        // gen.mark_public(ref_a_gen).unwrap();
+        let ref_b_gen: Array<U8, 16> = gen.alloc().unwrap();
+        gen.mark_private(ref_b_gen).unwrap();
+        let ref_c_gen: Array<U8, 16> = gen.alloc().unwrap();
+        gen.mark_blind(ref_c_gen).unwrap();
+
+        // let ref_a_ev: Array<U8, 16> = ev.alloc().unwrap();
+        // ev.mark_public(ref_a_ev).unwrap();
+        let ref_b_ev: Array<U8, 16> = ev.alloc().unwrap();
+        ev.mark_blind(ref_b_ev).unwrap();
+        let ref_c_ev: Array<U8, 16> = ev.alloc().unwrap();
+        ev.mark_private(ref_c_ev).unwrap();
+
+        // gen.assign(ref_a_gen, val_a).unwrap();
+        gen.assign(ref_b_gen, val_b).unwrap();
+
+        // ev.assign(ref_a_ev, val_a).unwrap();
+        ev.assign(ref_c_ev, val_c).unwrap();
+
+        // gen.commit(ref_a_gen).unwrap();
+        gen.commit(ref_b_gen).unwrap();
+        gen.commit(ref_c_gen).unwrap();
+
+        // ev.commit(ref_a_ev).unwrap();
+        ev.commit(ref_b_ev).unwrap();
+        ev.commit(ref_c_ev).unwrap();
+
+        assert!(gen.wants_flush());
+        assert!(ev.wants_flush());
+
+        let gen_flush = gen.send_flush().unwrap();
+        let ev_flush = ev.send_flush().unwrap();
+
+        gen.acquire_cot_sender().flush().unwrap();
+        ev.acquire_cot_sender().flush().unwrap();
+
+        gen.receive_flush(ev_flush).unwrap();
+        ev.receive_flush(gen_flush).unwrap();
+
+        // let mut fut_a_gen = gen.decode(ref_a_gen).unwrap();
+        let mut fut_b_gen = gen.decode(ref_b_gen).unwrap();
+        let mut fut_c_gen = gen.decode(ref_c_gen).unwrap();
+
+        // let mut fut_a_ev = ev.decode(ref_a_ev).unwrap();
+        let mut fut_b_ev = ev.decode(ref_b_ev).unwrap();
+        let mut fut_c_ev = ev.decode(ref_c_ev).unwrap();
+
+        assert!(gen.wants_flush());
+        assert!(ev.wants_flush());
+
+        let gen_flush = gen.send_flush().unwrap();
+        let ev_flush = ev.send_flush().unwrap();
+
+        gen.receive_flush(ev_flush).unwrap();
+        ev.receive_flush(gen_flush).unwrap();
+
+        assert!(gen.wants_flush());
+        assert!(ev.wants_flush());
+
+        let gen_flush = gen.send_flush().unwrap();
+        let ev_flush = ev.send_flush().unwrap();
+
+        gen.receive_flush(ev_flush).unwrap();
+        ev.receive_flush(gen_flush).unwrap();
+
+        assert!(!gen.wants_flush());
+        assert!(!ev.wants_flush());
+
+        // let val_a_gen = fut_a_gen.try_recv().unwrap().unwrap();
+        // let val_a_ev = fut_a_ev.try_recv().unwrap().unwrap();
+        let val_b_gen = fut_b_gen.try_recv().unwrap().unwrap();
+        let val_b_ev = fut_b_ev.try_recv().unwrap().unwrap();
+        let val_c_gen = fut_c_gen.try_recv().unwrap().unwrap();
+        let val_c_ev = fut_c_ev.try_recv().unwrap().unwrap();
+
+        // assert_eq!(val_a_gen, val_a_ev);
+        assert_eq!(val_b_gen, val_b_ev);
+        assert_eq!(val_c_gen, val_c_ev);
+        // assert_eq!(val_a_gen, val_a);
         assert_eq!(val_b_gen, val_b);
         assert_eq!(val_c_gen, val_c);
     }

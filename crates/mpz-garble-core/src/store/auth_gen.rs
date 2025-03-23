@@ -265,13 +265,13 @@ where
                     .try_set(slice, &bits[i..i + slice.len()])?;
                 i += slice.len();
             }
-
             Some(ShareProof { bits, macs })
         } else {
             None
         };
 
         // Send half masked inputs corresponding to Gen's input wires. 
+        let mut temp = true;
         let mut half_masked_inputs = BitVec::with_capacity(view.gen_reveal.len());
         for range in view.gen_reveal.iter_ranges() {
             let slice = Slice::from_range_unchecked(range);
@@ -286,21 +286,39 @@ where
             
             self.masked_value_store.try_set(slice, &half_masked)?;
             half_masked_inputs.extend_from_bitslice(&half_masked);
+            if temp {
+                println!("reached 1");
+            }
+            temp = false;
         }
 
         // for both gen and eval's input wires here
-        let mut labels = Vec::with_capacity(view.masked_values.len());
-        for range in view.masked_values.iter_ranges() {
+        temp = true;
+        let mut labels = Vec::with_capacity(view.labels.len());
+        for range in view.labels.iter_ranges() {
             let slice = Slice::from_range_unchecked(range);
             let data = self.masked_value_store.try_get(slice)?;
             labels.extend(self.key_store.authenticate(slice, data)?);
+            if temp {
+                println!("reached 2");
+            }
+            temp = false;
         }
+        // Prove Gen's share of Gen's input wires for decoding.
+        let decode_share_proof = if !view.gen_decode_info.is_empty() {
+            let (bits, macs) = self.mask_store.prove_share(&view.gen_decode_info)?;
+
+            Some(ShareProof { bits, macs })
+        } else {
+            None
+        };
 
         let flush = AuthGenFlush {
             view,
             share_proof,
             half_masked_inputs,
             labels,
+            decode_share_proof,
         };
 
         self.pending = true;
@@ -323,6 +341,7 @@ where
             view,
             share_proof,
             half_masked_inputs,
+            decode_share_proof,
         } = flush;
 
         if &view != self.view.flush() {
@@ -348,25 +367,41 @@ where
             }
         }
 
-        let ShareProof { bits, macs } = share_proof.unwrap();
-        self.mask_store.check_share(&view.gen_check, &bits, &macs)?;
+        if let Some(ShareProof { bits, macs }) = share_proof {
+            self.mask_store.check_share(&view.gen_reveal, &bits, &macs)?;
 
-        // Update masked values of gen's input wires with share proof bits
-        let mut i = 0;
-        for range in view.gen_check.iter_ranges() {
-            let slice = Slice::from_range_unchecked(range);
-            self.masked_value_store.update_xor(slice, &bits[i..i + slice.len()])?;
-            i += slice.len();
+            // Update masked values of gen's input wires with share proof bits
+            let mut i = 0;
+            for range in view.gen_reveal.iter_ranges() {
+                let slice = Slice::from_range_unchecked(range);
+                    self.masked_value_store.update_xor(slice, &bits[i..i + slice.len()])?;
+                    i += slice.len();
+            }
         }
 
         // Update masked values with eval's half masked inputs
         i = 0;
-        for range in view.eval_check.iter_ranges() {
+        for range in view.eval_reveal.iter_ranges() {
             let slice = Slice::from_range_unchecked(range);
             self.masked_value_store.update_xor(slice, &half_masked_inputs[i..i + slice.len()])?;
             i += slice.len();
         }
 
+        if let Some(ShareProof { bits, macs }) = decode_share_proof {
+            self.mask_store.check_share(&view.eval_decode_info, &bits, &macs)?;
+
+            // Decode eval's input wires.
+            let mut i = 0;
+            for range in view.eval_decode_info.iter_ranges() {
+                let slice = Slice::from_range_unchecked(range);
+                self.data_store.try_set(slice, &bits[i..i + slice.len()])?;
+                self.data_store.update_xor(slice, self.masked_value_store.try_get(slice)?)?;
+                self.data_store.update_xor(slice, self.mask_store.try_get_bits(slice)?)?;
+                i += slice.len();
+            }
+        }
+
+        println!("Gen's complete flush");
         self.view.complete_flush(view);
         self.flush_decode()?;
         self.pending = false;

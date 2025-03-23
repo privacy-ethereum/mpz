@@ -20,7 +20,7 @@ struct InputView {
 struct AuthInputView {
     /// Ranges which have been assigned.
     assigned: RangeSet,
-    /// Ranges which have been masked.
+    /// Ranges which have auth bits set in both parties views.
     preprocessed: RangeSet,
     /// Ranges which are fully committed in both parties views.
     complete: RangeSet,
@@ -38,20 +38,10 @@ struct OutputView {
     all: RangeSet,
 }
 
+// Decode_info is range of data which has been "decoded" i.e. MACs have been checked and bits have been stored in data store.
+// Decode is the range of data for which this decoded value has been sent to the future output.
 #[derive(Debug, Default)]
 struct DecodeView {
-    /// Ranges which have decode info sent.
-    decode_info: RangeSet,
-    /// Ranges which have already been decoded.
-    complete: RangeSet,
-    /// All ranges which are to be decoded.
-    all: RangeSet,
-}
-
-#[derive(Debug, Default)]
-struct AuthDecodeView {
-    /// Ranges which have masked outputs sent.
-    masked_outputs: RangeSet,
     /// Ranges which have decode info sent.
     decode_info: RangeSet,
     /// Ranges which have already been decoded.
@@ -105,14 +95,16 @@ pub(crate) struct AuthFlushView {
     pub(crate) gen_reveal: RangeSet,
     /// Ranges for which the generator is to send share and MACs for eval's inputs.
     pub(crate) eval_reveal: RangeSet,
-    /// Ranges for which the generator is to check MACs and store bits for own inputs.
-    pub(crate) gen_check: RangeSet,
-    /// Ranges for which the evaluator is to check MACs and store bits for own inputs.
-    pub(crate) eval_check: RangeSet,
     /// Ranges for which masked labels are sent.
-    pub(crate) masked_values: RangeSet,
-    /// Ranges for which mask share and MACs are sent for decoding.
-    pub(crate) decode: RangeSet,
+    pub(crate) labels: RangeSet,
+    /// Ranges for which gen is to send MACs for decoding.
+    pub(crate) gen_decode_info: RangeSet,
+    /// Ranges for which eval is to send MACs for decoding.
+    pub(crate) eval_decode_info: RangeSet,
+    /// Ranges which gen is to decode i.e. check MACs and store bits in data store.
+    pub(crate) gen_decode: RangeSet,
+    /// Ranges which eval is to decode i.e. check MACs and store bits in data store.
+    pub(crate) eval_decode: RangeSet,
 }
 
 impl AuthFlushView {
@@ -122,10 +114,11 @@ impl AuthFlushView {
             && self.eval_masks.is_empty()
             && self.gen_reveal.is_empty()
             && self.eval_reveal.is_empty()
-            && self.gen_check.is_empty()
-            && self.eval_check.is_empty()
-            && self.masked_values.is_empty()
-            && self.decode.is_empty()
+            && self.labels.is_empty()
+            && self.gen_decode_info.is_empty()
+            && self.eval_decode_info.is_empty()
+            && self.gen_decode.is_empty()
+            && self.eval_decode.is_empty()
     }
 
     /// Clears the flush state.
@@ -134,10 +127,11 @@ impl AuthFlushView {
         self.eval_masks.clear();
         self.gen_reveal.clear();
         self.eval_reveal.clear();
-        self.gen_check.clear();
-        self.eval_check.clear();
-        self.masked_values.clear();
-        self.decode.clear();
+        self.labels.clear();
+        self.gen_decode_info.clear();
+        self.eval_decode_info.clear();
+        self.gen_decode.clear();
+        self.eval_decode.clear();
     }
 }
 
@@ -412,7 +406,7 @@ pub(crate) struct AuthView {
     input: AuthInputView,
     output: OutputView,
     vis: VisibilityView,
-    decode: AuthDecodeView,
+    decode: DecodeView,
     flush: AuthFlushView,
 }
 
@@ -424,7 +418,7 @@ impl AuthView {
             input: AuthInputView::default(),
             output: OutputView::default(),
             vis: VisibilityView::new(),
-            decode: AuthDecodeView::default(),
+            decode: DecodeView::default(),
             flush: AuthFlushView::default(),
         }
     }
@@ -436,7 +430,7 @@ impl AuthView {
             input: AuthInputView::default(),
             output: OutputView::default(),
             vis: VisibilityView::new(),
-            decode: AuthDecodeView::default(),
+            decode: DecodeView::default(),
             flush: AuthFlushView::default(),
         }
     }
@@ -525,7 +519,7 @@ impl AuthView {
 
         self.output.preprocessed |= &range;
         // If marked for decoding, transfer decode info.
-        self.flush.masked_values |= range.intersection(&self.decode.all) - &self.decode.complete;
+        self.flush.labels |= range.intersection(&self.decode.all) - &self.decode.complete;
 
         Ok(())
     }
@@ -540,9 +534,10 @@ impl AuthView {
         self.output.preprocessed |= &range;
         self.output.complete |= &range;
         // If marked for decoding, transfer decode info.
-        self.flush.masked_values |= range.intersection(&self.decode.all) - &self.decode.complete;
+        self.flush.labels |= range.intersection(&self.decode.all) - &self.decode.complete;
         // If decoding info transferred, prove MACs.
-        self.flush.decode |= range.intersection(&self.decode.complete);
+        self.flush.gen_decode |= range.intersection(&self.decode.complete);
+        self.flush.eval_decode |= range.intersection(&self.decode.complete);
 
         Ok(())
     }
@@ -605,45 +600,59 @@ impl AuthView {
 
         self.decode.all |= &undecoded;
 
-        let output = range.intersection(&self.output.all);
-        let input = range.intersection(&self.input.all);
+        // let output = range.intersection(&self.output.complete);
+        // let input = range.intersection(&self.input.preprocessed);
+        
+        // let decodable_gen_input = match self.role {
+        //     Role::Generator => input.intersection(self.vis.private()),
+        //     Role::Evaluator => input.intersection(self.vis.blind()),
+        // };
 
-        // Transfer decode info: Once masks are set (input is complete), parties can now send decode info.
-        // TODO: Gen's decode info for input/outputs and eval's decode info for inputs/outputs.
-        // For output decoding, eval also needs to send masked values and labels. 
+        // let decodable_eval_input = match self.role {
+        //     Role::Generator => input.intersection(self.vis.blind()),
+        //     Role::Evaluator => input.intersection(self.vis.private()),
+        // };
 
-        // Transfer decode info for inputs and outputs that are complete. This involes sending mask share and MACs for input and output data.
-        // Using the masked values, parties can now decode the data.
-        let decodable_input = input.intersection(&self.input.complete);
-        let decodable_output = output.intersection(&self.output.complete);
-        self.flush.decode |= decodable_input | decodable_output;
+        // let decodable_output = output;
+        // self.flush.gen_decode_info |= decodable_gen_input | &decodable_output;
+        // self.flush.eval_decode_info |= decodable_eval_input | &decodable_output;
 
         Ok(())
     }
 
     pub(crate) fn complete_flush(&mut self, view: AuthFlushView) {
-        self.input.preprocessed |= &view.gen_check;
-        self.input.preprocessed |= &view.eval_check;
+        self.input.complete |= &view.gen_reveal;
+        self.input.complete |= &view.eval_reveal;
+        
+        println!("gen_masks: {:?}", &view.gen_masks);
+        println!("eval_masks: {:?}", &view.eval_masks);
+        println!("gen_reveal: {:?}", &view.gen_reveal);
+        println!("eval_reveal: {:?}", &view.eval_reveal);
+        println!("labels: {:?}", &view.labels);
+        println!("gen_decode_info: {:?}", &view.gen_decode_info);
+        println!("eval_decode_info: {:?}", &view.eval_decode_info);
+        println!("gen_decode: {:?}", &view.gen_decode);
+        println!("eval_decode: {:?}", &view.eval_decode);
 
-        self.input.complete |= &view.masked_values.intersection(&self.input.all);
-        self.output.complete |= &view.masked_values.intersection(&self.output.all); // maybe set this in set_output?
-
-        self.decode.masked_outputs |= &view.masked_values.intersection(&self.output.all);
-        self.decode.complete |= &view.decode;
+        self.decode.decode_info |= view.gen_decode_info.clone() | view.eval_decode_info.clone(); // irrelevant for input decoding?
+        self.decode.complete |= view.gen_decode.clone() | view.eval_decode.clone();
 
         self.flush.clear();
 
-        // Reveal opposite shares for inputs whose auth bits have been set.
+        // Reveal opposite shares for inputs whose auth bits have been set, send own half masked inputs, check opposite shares.
         self.flush.gen_reveal |= view.gen_masks;
         self.flush.eval_reveal |= view.eval_masks;
-        // Check shares and store masked values for input whose opposite shares have been sent.
-        self.flush.gen_check |= view.gen_reveal;
-        self.flush.eval_check |= view.eval_reveal;
+
+        // send masked labels, can be done in parallel with decode info
+        self.flush.labels |= view.gen_reveal.clone() | view.eval_reveal.clone();
         
-        // Decode inputs if their masked values have been sent and want to be decoded.
-        self.flush.decode |= view.masked_values.intersection(&self.decode.all);
-        // Decode outputs if their masked values have been sent and want to be decoded.
-        self.flush.decode |= view.masked_values.intersection(&self.decode.all);
+        // Send decode info for inputs and outputs if their masked values have been sent and want to be decoded.
+        self.flush.gen_decode_info |= view.gen_reveal.intersection(&self.decode.all);
+        self.flush.eval_decode_info |= view.eval_reveal.intersection(&self.decode.all);
+        
+        // Decode inputs and outputs (set data store values) if the decode info has been received and verified.
+        // self.flush.gen_decode |= view.gen_decode_info.intersection(&self.decode.all);
+        // self.flush.eval_decode |= view.eval_decode_info.intersection(&self.decode.all);
     }
 }
 
