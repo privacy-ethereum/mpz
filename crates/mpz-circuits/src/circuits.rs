@@ -86,6 +86,7 @@ mod tests {
     #[cfg(feature = "aes")]
     fn test_aes128() {
         use aes::cipher::{BlockEncrypt, KeyInit};
+        use rand::{Rng, SeedableRng, rngs::StdRng};
 
         fn aes_128(key: [u8; 16], msg: [u8; 16]) -> [u8; 16] {
             use aes::Aes128;
@@ -96,8 +97,10 @@ mod tests {
             ciphertext.into()
         }
 
-        let key = [0u8; 16];
-        let msg = [69u8; 16];
+        let mut rng = StdRng::seed_from_u64(0);
+
+        let key: [u8; 16] = rng.random();
+        let msg: [u8; 16] = rng.random();
         let ciphertext: [u8; 16] = evaluate!(AES128, key, msg).unwrap();
         let expected = aes_128(key, msg);
         assert_eq!(ciphertext, expected);
