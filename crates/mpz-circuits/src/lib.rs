@@ -39,7 +39,7 @@ pub use once_cell;
 #[macro_export]
 macro_rules! evaluate {
     ($circuit:expr, $($arg:expr),+ $(,)?) => {{
-        use itybity::{ToBits, FromBitIterator};
+        use $crate::itybity::{ToBits, FromBitIterator};
         let input = std::iter::empty()
             $(.chain($arg.iter_lsb0()))*;
         $circuit.evaluate(input).map(|output| FromBitIterator::from_lsb0_iter(output))
