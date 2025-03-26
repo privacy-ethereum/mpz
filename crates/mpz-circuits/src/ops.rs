@@ -122,15 +122,12 @@ pub fn add_mod(
     assert_eq!(a.len(), modulus.len());
 
     // Tack on an extra bit to absorb overflow
-    let a = std::iter::once(builder.get_const_zero())
-        .chain(a.iter().copied())
-        .collect::<Vec<_>>();
-    let b = std::iter::once(builder.get_const_zero())
-        .chain(b.iter().copied())
-        .collect::<Vec<_>>();
-    let modulus = std::iter::once(builder.get_const_zero())
-        .chain(modulus.iter().copied())
-        .collect::<Vec<_>>();
+    let mut a = a.to_vec();
+    a.push(builder.get_const_zero());
+    let mut b = b.to_vec();
+    b.push(builder.get_const_zero());
+    let mut modulus = modulus.to_vec();
+    modulus.push(builder.get_const_zero());
 
     let sum = wrapping_add(builder, &a, &b);
 
@@ -140,7 +137,7 @@ pub fn add_mod(
     let sum_reduced = switch(builder, &rem, &sum, underflow);
 
     // Pop off the extra bit
-    sum_reduced[1..].to_vec()
+    sum_reduced[..sum_reduced.len() - 1].to_vec()
 }
 
 /// Switch between two nbit values.
