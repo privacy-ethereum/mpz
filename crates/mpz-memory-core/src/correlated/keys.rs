@@ -200,8 +200,6 @@ impl KeyStore {
     }
 
     /// Allocates memory with the given keys.
-    ///
-    /// The provided keys are marked as used.
     #[inline]
     pub fn alloc_with(&mut self, keys: &[Key]) -> Slice {
         self.keys.alloc_with(keys)
