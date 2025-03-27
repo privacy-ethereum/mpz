@@ -40,13 +40,13 @@ mod tests {
         ideal::rcot::IdealRCOT,
         rcot::{RCOTReceiverOutput, RCOTSenderOutput},
     };
-    use rand::{rngs::StdRng, Rng, SeedableRng};
+    use rand::{Rng, SeedableRng, rngs::StdRng};
 
     #[test]
     fn test_vole() {
         let mut rng = StdRng::seed_from_u64(0);
         let delta = Delta::random(&mut rng);
-        let mut rcot = IdealRCOT::new(rng.gen(), delta.into_inner());
+        let mut rcot = IdealRCOT::new(rng.random(), delta.into_inner());
 
         rcot.alloc(128);
         rcot.flush().unwrap();

@@ -1,6 +1,6 @@
 //! An implementation of Pseudo Random Permutation (PRP) based on AES.
 
-use crate::{aes::AesEncryptor, Block};
+use crate::{Block, aes::AesEncryptor};
 
 /// Pseudo Random Permutation (PRP) based on AES.
 pub struct Prp(AesEncryptor);

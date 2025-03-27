@@ -22,7 +22,7 @@ pub(crate) fn spcot<R: rand::Rng>(
     assert_eq!(lengths.len(), idxs.len());
 
     let total_length = lengths.iter().map(|length| 1 << length).sum();
-    let vs: Vec<Block> = (0..total_length).map(|_| rng.gen()).collect();
+    let vs: Vec<Block> = (0..total_length).map(|_| rng.random()).collect();
     let mut ws = vs.clone();
 
     let mut i = 0;
@@ -44,7 +44,7 @@ mod tests {
         test::assert_spcot,
     };
     use mpz_core::utils::slices_from_lengths;
-    use rand::{rngs::StdRng, Rng, SeedableRng};
+    use rand::{Rng, SeedableRng, rngs::StdRng};
 
     fn execute<R: Rng>(
         rng: &mut R,
@@ -55,7 +55,7 @@ mod tests {
     ) -> (Vec<Block>, Vec<Block>) {
         let len_sum: usize = lengths.iter().sum();
 
-        let mut cot = IdealRCOT::new(rng.gen(), sender.delta());
+        let mut cot = IdealRCOT::new(rng.random(), sender.delta());
         cot.alloc(len_sum + CSP);
         cot.flush().unwrap();
 
@@ -112,7 +112,7 @@ mod tests {
     #[test]
     fn test_spcot() {
         let mut rng = StdRng::seed_from_u64(0);
-        let delta = rng.gen();
+        let delta = rng.random();
 
         let mut sender = SPCOTSender::new(delta);
         let mut receiver = SPCOTReceiver::new();
@@ -120,7 +120,7 @@ mod tests {
         // Execute twice.
         for _ in 0..2 {
             let lengths: Vec<usize> = (1..8).collect();
-            let idxs: Vec<usize> = (1..8).map(|n| rng.gen_range(0..1 << n)).collect();
+            let idxs: Vec<usize> = (1..8).map(|n| rng.random_range(0..1 << n)).collect();
             execute(&mut rng, &mut sender, &mut receiver, &lengths, &idxs);
         }
     }
@@ -128,9 +128,9 @@ mod tests {
     #[test]
     fn test_ideal_spcot() {
         let mut rng = StdRng::seed_from_u64(0);
-        let delta = rng.gen();
+        let delta = rng.random();
 
-        let idxs: Vec<_> = (0..8).map(|n| rng.gen_range(0..1 << n)).collect();
+        let idxs: Vec<_> = (0..8).map(|n| rng.random_range(0..1 << n)).collect();
         let lengths: Vec<_> = (0..8).collect();
 
         let (vs, ws) = spcot(&mut rng, &lengths, &idxs, delta);

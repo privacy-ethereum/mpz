@@ -16,12 +16,11 @@ use core::fmt;
 use std::sync::{Arc, Mutex};
 
 use futures::{AsyncRead, AsyncWrite};
-use scoped_futures::ScopedBoxFuture;
 
 use crate::{
+    ThreadId,
     context::mt::{MtConfig, ThreadBuilder, Threads},
     io::Io,
-    ThreadId,
 };
 
 /// A thread context.
@@ -98,7 +97,7 @@ impl Context {
         weight: W,
     ) -> Result<Vec<R>, ContextError>
     where
-        F: for<'b> Fn(&'b mut Self, T) -> ScopedBoxFuture<'static, 'b, R> + Clone + Send + 'static,
+        F: for<'b> AsyncFn(&'b mut Self, T) -> R + Clone + Send + 'static,
         T: Send + 'static,
         R: Send + 'static,
         W: Fn(&T) -> usize + Send + 'static,
@@ -118,8 +117,8 @@ impl Context {
     /// executed sequentially.
     pub async fn join<'a, A, B, RA, RB>(&'a mut self, a: A, b: B) -> Result<(RA, RB), ContextError>
     where
-        A: for<'b> FnOnce(&'b mut Self) -> ScopedBoxFuture<'a, 'b, RA> + Send + 'static,
-        B: for<'b> FnOnce(&'b mut Self) -> ScopedBoxFuture<'a, 'b, RB> + Send + 'static,
+        A: for<'b> AsyncFnOnce(&'b mut Self) -> RA + Send + 'static,
+        B: for<'b> AsyncFnOnce(&'b mut Self) -> RB + Send + 'static,
         RA: Send + 'static,
         RB: Send + 'static,
     {
@@ -146,8 +145,8 @@ impl Context {
         b: B,
     ) -> Result<Result<(RA, RB), E>, ContextError>
     where
-        A: for<'b> FnOnce(&'b mut Self) -> ScopedBoxFuture<'a, 'b, Result<RA, E>> + Send + 'static,
-        B: for<'b> FnOnce(&'b mut Self) -> ScopedBoxFuture<'a, 'b, Result<RB, E>> + Send + 'static,
+        A: for<'b> AsyncFnOnce(&'b mut Self) -> Result<RA, E> + Send + 'static,
+        B: for<'b> AsyncFnOnce(&'b mut Self) -> Result<RB, E> + Send + 'static,
         RA: Send + 'static,
         RB: Send + 'static,
         E: Send + 'static,
@@ -169,9 +168,9 @@ impl Context {
         c: C,
     ) -> Result<Result<(RA, RB, RC), E>, ContextError>
     where
-        A: for<'b> FnOnce(&'b mut Self) -> ScopedBoxFuture<'a, 'b, Result<RA, E>> + Send + 'static,
-        B: for<'b> FnOnce(&'b mut Self) -> ScopedBoxFuture<'a, 'b, Result<RB, E>> + Send + 'static,
-        C: for<'b> FnOnce(&'b mut Self) -> ScopedBoxFuture<'a, 'b, Result<RC, E>> + Send + 'static,
+        A: for<'b> AsyncFnOnce(&'b mut Self) -> Result<RA, E> + Send + 'static,
+        B: for<'b> AsyncFnOnce(&'b mut Self) -> Result<RB, E> + Send + 'static,
+        C: for<'b> AsyncFnOnce(&'b mut Self) -> Result<RC, E> + Send + 'static,
         RA: Send + 'static,
         RB: Send + 'static,
         RC: Send + 'static,
@@ -195,10 +194,10 @@ impl Context {
         d: D,
     ) -> Result<Result<(RA, RB, RC, RD), E>, ContextError>
     where
-        A: for<'b> FnOnce(&'b mut Self) -> ScopedBoxFuture<'a, 'b, Result<RA, E>> + Send + 'static,
-        B: for<'b> FnOnce(&'b mut Self) -> ScopedBoxFuture<'a, 'b, Result<RB, E>> + Send + 'static,
-        C: for<'b> FnOnce(&'b mut Self) -> ScopedBoxFuture<'a, 'b, Result<RC, E>> + Send + 'static,
-        D: for<'b> FnOnce(&'b mut Self) -> ScopedBoxFuture<'a, 'b, Result<RD, E>> + Send + 'static,
+        A: for<'b> AsyncFnOnce(&'b mut Self) -> Result<RA, E> + Send + 'static,
+        B: for<'b> AsyncFnOnce(&'b mut Self) -> Result<RB, E> + Send + 'static,
+        C: for<'b> AsyncFnOnce(&'b mut Self) -> Result<RC, E> + Send + 'static,
+        D: for<'b> AsyncFnOnce(&'b mut Self) -> Result<RD, E> + Send + 'static,
         RA: Send + 'static,
         RB: Send + 'static,
         RC: Send + 'static,

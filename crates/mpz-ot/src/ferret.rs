@@ -14,7 +14,7 @@ mod tests {
     use super::*;
     use crate::ideal::rcot::ideal_rcot;
     use mpz_core::lpn::LpnParameters;
-    use rand::{rngs::StdRng, Rng, SeedableRng};
+    use rand::{Rng, SeedableRng, rngs::StdRng};
     use rstest::*;
 
     #[rstest]
@@ -25,9 +25,9 @@ mod tests {
         use crate::test::test_rcot;
 
         let mut rng = StdRng::seed_from_u64(0);
-        let delta = rng.gen();
+        let delta = rng.random();
 
-        let (cot_sender, cot_receiver) = ideal_rcot(rng.gen(), delta);
+        let (cot_sender, cot_receiver) = ideal_rcot(rng.random(), delta);
 
         let mut builder = FerretConfig::builder();
 
@@ -40,8 +40,8 @@ mod tests {
 
         let config = builder.build().unwrap();
 
-        let sender = Sender::new(config.clone(), rng.gen(), cot_sender);
-        let receiver = Receiver::new(config, rng.gen(), cot_receiver);
+        let sender = Sender::new(config.clone(), rng.random(), cot_sender);
+        let receiver = Receiver::new(config, rng.random(), cot_receiver);
 
         test_rcot(sender, receiver, 20_000, 2).await;
     }

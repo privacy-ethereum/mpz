@@ -3,17 +3,19 @@
 use std::ops::{Add, Mul, Neg, Sub};
 
 use ark_ff::{BigInt, BigInteger, Field as ArkField, FpConfig, MontBackend, One, Zero};
-use ark_secp256r1::{fq::Fq, FqConfig};
+use ark_secp256r1::{FqConfig, fq::Fq};
 use ark_serialize::{
     CanonicalDeserialize, CanonicalSerialize, Compress, SerializationError, Validate,
 };
 use hybrid_array::Array;
 use itybity::{BitLength, FromBitIterator, GetBit, Lsb0, Msb0};
+use mpz_core::rand::Rand0_8CompatExt;
 use num_bigint::ToBigUint;
-use rand::{distributions::Standard, prelude::Distribution};
+use rand::{distr::StandardUniform, prelude::Distribution};
+use rand_08::Rng as _;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-use typenum::{U256, U32};
+use typenum::{U32, U256};
 
 use crate::{Field, FieldError};
 
@@ -67,9 +69,9 @@ impl TryFrom<Array<u8, U32>> for P256 {
     }
 }
 
-impl Distribution<P256> for Standard {
+impl Distribution<P256> for StandardUniform {
     fn sample<R: rand::Rng + ?Sized>(&self, rng: &mut R) -> P256 {
-        P256(self.sample(rng))
+        P256(rng.compat().r#gen::<Fq>())
     }
 }
 
@@ -175,7 +177,7 @@ pub struct P256Error(SerializationError);
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mpz_core::{prg::Prg, Block};
+    use mpz_core::{Block, prg::Prg};
     use rand::{Rng, SeedableRng};
 
     use crate::tests::{test_field_basic, test_field_bit_ops, test_field_compute_product_repeated};
@@ -202,7 +204,7 @@ mod tests {
         let mut rng = Prg::from_seed(Block::ZERO);
 
         for _ in 0..32 {
-            let a = P256(rng.gen());
+            let a: P256 = rng.random();
             let bytes: [u8; 32] = a.into();
             let b = P256::try_from(bytes).unwrap();
 

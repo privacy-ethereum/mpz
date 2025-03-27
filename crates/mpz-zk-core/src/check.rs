@@ -5,8 +5,8 @@ use std::mem;
 use blake3::Hasher;
 use cfg_if::cfg_if;
 use mpz_core::{
-    bitvec::{BitSlice, BitVec},
     Block,
+    bitvec::{BitSlice, BitVec},
 };
 use serde::{Deserialize, Serialize};
 use zerocopy::IntoBytes;

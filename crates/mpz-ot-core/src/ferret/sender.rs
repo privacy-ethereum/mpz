@@ -3,22 +3,22 @@ use std::{collections::VecDeque, sync::Arc};
 use rand::{Rng, SeedableRng};
 use tokio::sync::{Mutex, OwnedMutexGuard};
 
-use mpz_common::future::{new_output, MaybeDone, Sender as OutputSender};
+use mpz_common::future::{MaybeDone, Sender as OutputSender, new_output};
 use mpz_core::{
+    Block,
     lpn::{LpnEncoder, LpnParameters},
     prg::Prg,
-    Block,
 };
 
 use crate::{
+    TransferId,
     ferret::{
-        config::CSP,
-        mpcot::{sender_state as mpcot_state, MPCOTSender, MPCOTSenderError},
-        spcot::{SPCOTSender, SPCOTSenderError},
         FerretConfig, Init, ReceiverCheck, ReceiverExtend, SenderCheck, SenderExtend,
+        config::CSP,
+        mpcot::{MPCOTSender, MPCOTSenderError, sender_state as mpcot_state},
+        spcot::{SPCOTSender, SPCOTSenderError},
     },
     rcot::{RCOTSender, RCOTSenderOutput},
-    TransferId,
 };
 
 type Error = SenderError;
@@ -133,7 +133,7 @@ where
 
         let params = self.config.select_params(self.keys.len(), self.alloc);
 
-        let (mpcot, spcot_lengths) = MPCOTSender::new(public_prg.gen(), self.config.lpn_type())
+        let (mpcot, spcot_lengths) = MPCOTSender::new(public_prg.random(), self.config.lpn_type())
             .start_extend(params.t, params.n)?;
 
         self.state = State::Extending(Extending {
@@ -235,7 +235,7 @@ where
         };
 
         let encoder = LpnEncoder::<10>::new(params.k as u32);
-        let lpn_seed = public_prg.gen();
+        let lpn_seed = public_prg.random();
 
         // Compute y = A * v + s
         let v = &self.keys[self.keys.len() - params.k..];

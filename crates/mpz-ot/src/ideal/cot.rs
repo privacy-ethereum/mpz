@@ -3,8 +3,8 @@
 use async_trait::async_trait;
 
 use mpz_common::{
-    ideal::{call_sync, CallSync},
     Context, Flush,
+    ideal::{CallSync, call_sync},
 };
 use mpz_core::Block;
 use mpz_ot_core::{
@@ -122,7 +122,7 @@ pub struct IdealCOTError(#[from] CoreError);
 
 #[cfg(test)]
 mod tests {
-    use rand::{rngs::StdRng, Rng, SeedableRng};
+    use rand::{Rng, SeedableRng, rngs::StdRng};
 
     use super::*;
     use crate::test::test_cot;
@@ -130,7 +130,7 @@ mod tests {
     #[tokio::test]
     async fn test_ideal_cot() {
         let mut rng = StdRng::seed_from_u64(0);
-        let (sender, receiver) = ideal_cot(rng.gen());
+        let (sender, receiver) = ideal_cot(rng.random());
         test_cot(sender, receiver, 8).await;
     }
 }

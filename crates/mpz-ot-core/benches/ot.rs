@@ -1,6 +1,6 @@
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
 use itybity::ToBits;
-use mpz_core::{lpn::LpnType, Block};
+use mpz_core::{Block, lpn::LpnType};
 use mpz_ot_core::{
     chou_orlandi,
     ferret::{self, FerretConfig},
@@ -19,7 +19,7 @@ fn chou_orlandi(c: &mut Criterion) {
         group.bench_with_input(BenchmarkId::from_parameter(n), &n, |b, &n| {
             let msgs = vec![[Block::ONES; 2]; n];
             let mut rng = ChaCha12Rng::seed_from_u64(0);
-            let choices = (0..n).map(|_| rng.gen()).collect::<Vec<bool>>();
+            let choices = (0..n).map(|_| rng.random()).collect::<Vec<bool>>();
             b.iter(|| {
                 let sender = chou_orlandi::Sender::default();
                 let receiver = chou_orlandi::Receiver::default();
@@ -49,7 +49,8 @@ fn kos(c: &mut Criterion) {
             let delta = Block::random(&mut rng);
             let chi_seed = Block::random(&mut rng);
 
-            let receiver_seeds: [[Block; 2]; 128] = std::array::from_fn(|_| [rng.gen(), rng.gen()]);
+            let receiver_seeds: [[Block; 2]; 128] =
+                std::array::from_fn(|_| [rng.random(), rng.random()]);
             let sender_seeds: [Block; 128] = delta
                 .iter_lsb0()
                 .zip(receiver_seeds)
@@ -101,9 +102,9 @@ fn ferret(c: &mut Criterion) {
                 let config = builder.build().unwrap();
 
                 b.iter(|| {
-                    let cot = IdealRCOT::new(rng.gen(), delta);
-                    let mut sender = ferret::Sender::new(rng.gen(), config.clone(), cot.clone());
-                    let mut receiver = ferret::Receiver::new(rng.gen(), config.clone(), cot);
+                    let cot = IdealRCOT::new(rng.random(), delta);
+                    let mut sender = ferret::Sender::new(rng.random(), config.clone(), cot.clone());
+                    let mut receiver = ferret::Receiver::new(rng.random(), config.clone(), cot);
 
                     let init = receiver.initialize().unwrap();
                     sender.initialize(init).unwrap();

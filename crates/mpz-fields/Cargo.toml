@@ -1,7 +1,7 @@
 [package]
 name = "mpz-fields"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 [lints]
 workspace = true
@@ -23,6 +23,7 @@ itybity.workspace = true
 typenum.workspace = true
 hybrid-array.workspace = true
 thiserror.workspace = true
+rand_08.workspace = true
 
 [dev-dependencies]
 ghash_rc.workspace = true

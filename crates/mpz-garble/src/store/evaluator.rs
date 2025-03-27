@@ -1,13 +1,13 @@
 use async_trait::async_trait;
-use mpz_common::{scoped_futures::ScopedFutureExt, Context, ContextError, Flush};
-use mpz_core::{bitvec::BitVec, Block};
+use mpz_common::{Context, ContextError, Flush};
+use mpz_core::{Block, bitvec::BitVec};
 use mpz_garble_core::{
-    store::{EvaluatorStore as Core, EvaluatorStoreError as CoreError},
     Mac,
+    store::{EvaluatorStore as Core, EvaluatorStoreError as CoreError},
 };
-use mpz_memory_core::{binary::Binary, DecodeFuture, Memory, Slice, View};
+use mpz_memory_core::{DecodeFuture, Memory, Slice, View, binary::Binary};
 use mpz_ot::cot::COTReceiver;
-use serio::{stream::IoStreamExt, SinkExt};
+use serio::{SinkExt, stream::IoStreamExt};
 
 type Error = EvaluatorStoreError;
 type Result<T, E = Error> = core::result::Result<T, E>;
@@ -114,14 +114,11 @@ where
 
             let (flush, ()) = ctx
                 .try_join(
-                    |ctx| {
-                        async move {
-                            ctx.io_mut().send(flush).await?;
-                            ctx.io_mut().expect_next().await.map_err(Error::from)
-                        }
-                        .scope_boxed()
+                    async |ctx| {
+                        ctx.io_mut().send(flush).await?;
+                        ctx.io_mut().expect_next().await.map_err(Error::from)
                     },
-                    |ctx| async move { cot.flush(ctx).await.map_err(Error::cot) }.scope_boxed(),
+                    async move |ctx| cot.flush(ctx).await.map_err(Error::cot),
                 )
                 .await??;
 

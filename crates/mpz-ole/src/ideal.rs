@@ -1,22 +1,22 @@
 //! Ideal ROLE.
 
 use async_trait::async_trait;
-use rand::{rngs::StdRng, Rng, SeedableRng};
+use rand::{Rng, SeedableRng, rngs::StdRng};
 
 use mpz_common::{
-    ideal::{call_sync, CallSync},
     Context, Flush,
+    ideal::{CallSync, call_sync},
 };
 use mpz_fields::Field;
 use mpz_ole_core::{
-    ideal::{IdealROLE as Core, IdealROLEError},
     ROLEReceiver, ROLESender, ROLESenderOutput,
+    ideal::{IdealROLE as Core, IdealROLEError},
 };
 
 /// Returns a new ideal ROLE sender and receiver.
 pub fn ideal_role<F: Field>() -> (IdealROLESender<F>, IdealROLEReceiver<F>) {
     let mut rng = StdRng::seed_from_u64(0);
-    let core = Core::new(rng.gen());
+    let core = Core::new(rng.random());
     let (sync_0, sync_1) = call_sync();
     (
         IdealROLESender {

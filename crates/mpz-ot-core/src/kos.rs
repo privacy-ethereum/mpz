@@ -21,8 +21,8 @@ pub use config::{
 };
 pub use error::{ReceiverError, SenderError};
 use mpz_core::Block;
-pub use receiver::{state as receiver_state, Receiver};
-pub use sender::{state as sender_state, Sender};
+pub use receiver::{Receiver, state as receiver_state};
+pub use sender::{Sender, state as sender_state};
 use serde::{Deserialize, Serialize};
 
 /// Computational security parameter
@@ -95,27 +95,32 @@ mod tests {
     #[fixture]
     fn choices() -> Vec<bool> {
         let mut rng = ChaCha12Rng::seed_from_u64(0);
-        (0..128).map(|_| rng.gen()).collect()
+        (0..128).map(|_| rng.random()).collect()
     }
 
     #[fixture]
     fn data() -> Vec<[Block; 2]> {
         let mut rng = ChaCha12Rng::seed_from_u64(1);
         (0..128)
-            .map(|_| [rng.gen::<[u8; 16]>().into(), rng.gen::<[u8; 16]>().into()])
+            .map(|_| {
+                [
+                    rng.random::<[u8; 16]>().into(),
+                    rng.random::<[u8; 16]>().into(),
+                ]
+            })
             .collect()
     }
 
     #[fixture]
     fn delta() -> Block {
         let mut rng = ChaCha12Rng::seed_from_u64(2);
-        rng.gen::<[u8; 16]>().into()
+        rng.random::<[u8; 16]>().into()
     }
 
     #[fixture]
     fn receiver_seeds() -> [[Block; 2]; CSP] {
         let mut rng = ChaCha12Rng::seed_from_u64(3);
-        std::array::from_fn(|_| [rng.gen(), rng.gen()])
+        std::array::from_fn(|_| [rng.random(), rng.random()])
     }
 
     #[fixture]
@@ -132,7 +137,7 @@ mod tests {
     #[fixture]
     fn chi_seed() -> Block {
         let mut rng = ChaCha12Rng::seed_from_u64(4);
-        rng.gen::<[u8; 16]>().into()
+        rng.random::<[u8; 16]>().into()
     }
 
     #[fixture]

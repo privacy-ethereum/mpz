@@ -8,7 +8,7 @@ pub use sender::RandomizeRCOTSender;
 
 #[cfg(test)]
 mod tests {
-    use rand::{rngs::StdRng, Rng, SeedableRng};
+    use rand::{Rng, SeedableRng, rngs::StdRng};
 
     use crate::{ideal::rcot::ideal_rcot, test::test_rot};
 
@@ -17,7 +17,7 @@ mod tests {
     #[tokio::test]
     async fn test_randomize_rcot() {
         let mut rng = StdRng::seed_from_u64(0);
-        let (sender, receiver) = ideal_rcot(rng.gen(), rng.gen());
+        let (sender, receiver) = ideal_rcot(rng.random(), rng.random());
         test_rot(
             RandomizeRCOTSender::new(sender),
             RandomizeRCOTReceiver::new(receiver),

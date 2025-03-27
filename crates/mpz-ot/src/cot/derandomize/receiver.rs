@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use mpz_common::{Context, ContextError, Flush};
 use mpz_core::Block;
 use mpz_ot_core::cot::{DerandCOTReceiver as Core, DerandCOTReceiverError as CoreError};
-use serio::{stream::IoStreamExt, SinkExt};
+use serio::{SinkExt, stream::IoStreamExt};
 
 use crate::{cot::COTReceiver, rcot::RCOTReceiver};
 

@@ -16,7 +16,7 @@ use std::{
 };
 
 use futures::Future;
-use serio::{stream::IoStreamExt, IoDuplex, SinkExt};
+use serio::{IoDuplex, SinkExt, stream::IoStreamExt};
 use tokio::sync::Mutex as TokioMutex;
 
 /// The error type for [`Syncer`].

@@ -4,14 +4,13 @@ mod worker;
 
 use std::sync::{Arc, Mutex};
 
-use futures::{stream::FuturesUnordered, FutureExt, StreamExt as _};
+use futures::{FutureExt, StreamExt as _, stream::FuturesUnordered};
 use pollster::FutureExt as _;
-use scoped_futures::ScopedBoxFuture;
 use worker::{Handle, Worker};
 
 use crate::{
-    context::ErrorKind, load_balance::distribute_by_weight, mux::Mux, Context, ContextError,
-    ThreadId,
+    Context, ContextError, ThreadId, context::ErrorKind, load_balance::distribute_by_weight,
+    mux::Mux,
 };
 
 pub use builder::{MultithreadBuilder, MultithreadBuilderError};
@@ -146,7 +145,7 @@ pub(crate) async fn map<F, T, R, W>(
     weight: W,
 ) -> Result<Vec<R>, ContextError>
 where
-    F: for<'b> Fn(&'b mut Context, T) -> ScopedBoxFuture<'static, 'b, R> + Clone + Send + 'static,
+    F: for<'b> AsyncFn(&'b mut Context, T) -> R + Clone + Send + 'static,
     T: Send + 'static,
     R: Send + 'static,
     W: Fn(&T) -> usize + Send + 'static,
@@ -187,8 +186,8 @@ pub(crate) async fn join<'a, A, B, RA, RB>(
     b: B,
 ) -> Result<(RA, RB), ContextError>
 where
-    A: for<'b> FnOnce(&'b mut Context) -> ScopedBoxFuture<'a, 'b, RA> + Send + 'static,
-    B: for<'b> FnOnce(&'b mut Context) -> ScopedBoxFuture<'a, 'b, RB> + Send + 'static,
+    A: for<'b> AsyncFnOnce(&'b mut Context) -> RA + Send + 'static,
+    B: for<'b> AsyncFnOnce(&'b mut Context) -> RB + Send + 'static,
     RA: Send + 'static,
     RB: Send + 'static,
 {
@@ -208,8 +207,8 @@ pub(crate) async fn try_join<'a, A, B, RA, RB, E>(
     b: B,
 ) -> Result<Result<(RA, RB), E>, ContextError>
 where
-    A: for<'b> FnOnce(&'b mut Context) -> ScopedBoxFuture<'a, 'b, Result<RA, E>> + Send + 'static,
-    B: for<'b> FnOnce(&'b mut Context) -> ScopedBoxFuture<'a, 'b, Result<RB, E>> + Send + 'static,
+    A: for<'b> AsyncFnOnce(&'b mut Context) -> Result<RA, E> + Send + 'static,
+    B: for<'b> AsyncFnOnce(&'b mut Context) -> Result<RB, E> + Send + 'static,
     RA: Send + 'static,
     RB: Send + 'static,
     E: Send + 'static,
@@ -252,9 +251,9 @@ pub(crate) async fn try_join3<'a, A, B, C, RA, RB, RC, E>(
     c: C,
 ) -> Result<Result<(RA, RB, RC), E>, ContextError>
 where
-    A: for<'b> FnOnce(&'b mut Context) -> ScopedBoxFuture<'a, 'b, Result<RA, E>> + Send + 'static,
-    B: for<'b> FnOnce(&'b mut Context) -> ScopedBoxFuture<'a, 'b, Result<RB, E>> + Send + 'static,
-    C: for<'b> FnOnce(&'b mut Context) -> ScopedBoxFuture<'a, 'b, Result<RC, E>> + Send + 'static,
+    A: for<'b> AsyncFnOnce(&'b mut Context) -> Result<RA, E> + Send + 'static,
+    B: for<'b> AsyncFnOnce(&'b mut Context) -> Result<RB, E> + Send + 'static,
+    C: for<'b> AsyncFnOnce(&'b mut Context) -> Result<RC, E> + Send + 'static,
     RA: Send + 'static,
     RB: Send + 'static,
     RC: Send + 'static,
@@ -308,10 +307,10 @@ pub(crate) async fn try_join4<'a, A, B, C, D, RA, RB, RC, RD, E>(
     d: D,
 ) -> Result<Result<(RA, RB, RC, RD), E>, ContextError>
 where
-    A: for<'b> FnOnce(&'b mut Context) -> ScopedBoxFuture<'a, 'b, Result<RA, E>> + Send + 'static,
-    B: for<'b> FnOnce(&'b mut Context) -> ScopedBoxFuture<'a, 'b, Result<RB, E>> + Send + 'static,
-    C: for<'b> FnOnce(&'b mut Context) -> ScopedBoxFuture<'a, 'b, Result<RC, E>> + Send + 'static,
-    D: for<'b> FnOnce(&'b mut Context) -> ScopedBoxFuture<'a, 'b, Result<RD, E>> + Send + 'static,
+    A: for<'b> AsyncFnOnce(&'b mut Context) -> Result<RA, E> + Send + 'static,
+    B: for<'b> AsyncFnOnce(&'b mut Context) -> Result<RB, E> + Send + 'static,
+    C: for<'b> AsyncFnOnce(&'b mut Context) -> Result<RC, E> + Send + 'static,
+    D: for<'b> AsyncFnOnce(&'b mut Context) -> Result<RD, E> + Send + 'static,
     RA: Send + 'static,
     RB: Send + 'static,
     RC: Send + 'static,

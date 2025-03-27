@@ -1,7 +1,7 @@
 [package]
 name = "mpz-circuits"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 [lints]
 workspace = true
@@ -17,8 +17,6 @@ aes = []
 sha2 = ["dep:sha2"]
 
 [dependencies]
-mpz-circuits-macros = { path = "../mpz-circuits-macros" }
-
 sha2 = { workspace = true, features = ["compress"], optional = true }
 
 serde = { workspace = true, optional = true, features = ["derive"] }
@@ -34,8 +32,3 @@ itybity.workspace = true
 [dev-dependencies]
 aes.workspace = true
 criterion.workspace = true
-
-[[bench]]
-name = "sha256"
-harness = false
-

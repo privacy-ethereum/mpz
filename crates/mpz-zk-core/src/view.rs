@@ -1,4 +1,4 @@
-use mpz_memory_core::{binary::Binary, view::VisibilityView, Slice, View as ViewTrait};
+use mpz_memory_core::{Slice, View as ViewTrait, binary::Binary, view::VisibilityView};
 use serde::{Deserialize, Serialize};
 use utils::range::{Difference, Disjoint, Intersection, Subset, Union};
 

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use mpz_circuits::{Circuit, CircuitBuilder};
+use mpz_circuits::circuits::xor;
 use mpz_memory_core::{Memory, MemoryExt, MemoryType, Repr, View, ViewExt};
 
 use crate::{Call, Callable, CallableExt, VmError};
@@ -26,7 +26,7 @@ pub trait OneTimePad<T: MemoryType>:
         self.commit(otp_ref)?;
 
         let masked: R = self.call(
-            Call::builder(build_otp(size))
+            Call::builder(Arc::new(xor(size)))
                 .arg(value)
                 .arg(otp_ref)
                 .build()
@@ -51,7 +51,7 @@ pub trait OneTimePad<T: MemoryType>:
         self.commit(otp_ref)?;
 
         let masked: R = self.call(
-            Call::builder(build_otp(size))
+            Call::builder(Arc::new(xor(size)))
                 .arg(value)
                 .arg(otp_ref)
                 .build()
@@ -69,30 +69,11 @@ where
 {
 }
 
-/// Builds a circuit for applying one-time pads.
-fn build_otp(size: usize) -> Arc<Circuit> {
-    let builder = CircuitBuilder::new();
-
-    let input = builder.add_vec_input::<bool>(size);
-    let otp = builder.add_vec_input::<bool>(size);
-    let output: Vec<_> = input
-        .into_iter()
-        .zip(otp)
-        .map(|(a, b)| (a ^ b).to_inner())
-        .collect();
-
-    builder.add_output(output);
-
-    let circ = builder.build().expect("circuit should be valid");
-
-    Arc::new(circ)
-}
-
 #[cfg(test)]
 mod tests {
     use mpz_memory_core::{
-        binary::{Binary, U8},
         Vector,
+        binary::{Binary, U8},
     };
 
     use super::*;

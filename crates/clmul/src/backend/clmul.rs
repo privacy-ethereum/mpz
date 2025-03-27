@@ -59,30 +59,32 @@ impl ClmulX86 {
     #[inline]
     #[target_feature(enable = "pclmulqdq")]
     unsafe fn clmul_unsafe(self, x: Self) -> (ClmulX86, ClmulX86) {
-        let h = self.0;
-        let y = x.0;
+        unsafe {
+            let h = self.0;
+            let y = x.0;
 
-        let h0 = h;
-        let h1 = _mm_shuffle_epi32(h, 0x0E);
-        let h2 = _mm_xor_si128(h0, h1);
-        let y0 = y;
+            let h0 = h;
+            let h1 = _mm_shuffle_epi32(h, 0x0E);
+            let h2 = _mm_xor_si128(h0, h1);
+            let y0 = y;
 
-        // Multiply values partitioned to 64-bit parts
-        let y1 = _mm_shuffle_epi32(y, 0x0E);
-        let y2 = _mm_xor_si128(y0, y1);
-        let t0 = _mm_clmulepi64_si128(y0, h0, 0x00);
-        let t1 = _mm_clmulepi64_si128(y, h, 0x11);
-        let t2 = _mm_clmulepi64_si128(y2, h2, 0x00);
-        let t2 = _mm_xor_si128(t2, _mm_xor_si128(t0, t1));
-        let v0 = t0;
-        let v1 = _mm_xor_si128(_mm_shuffle_epi32(t0, 0x0E), t2);
-        let v2 = _mm_xor_si128(t1, _mm_shuffle_epi32(t2, 0x0E));
-        let v3 = _mm_shuffle_epi32(t1, 0x0E);
+            // Multiply values partitioned to 64-bit parts
+            let y1 = _mm_shuffle_epi32(y, 0x0E);
+            let y2 = _mm_xor_si128(y0, y1);
+            let t0 = _mm_clmulepi64_si128(y0, h0, 0x00);
+            let t1 = _mm_clmulepi64_si128(y, h, 0x11);
+            let t2 = _mm_clmulepi64_si128(y2, h2, 0x00);
+            let t2 = _mm_xor_si128(t2, _mm_xor_si128(t0, t1));
+            let v0 = t0;
+            let v1 = _mm_xor_si128(_mm_shuffle_epi32(t0, 0x0E), t2);
+            let v2 = _mm_xor_si128(t1, _mm_shuffle_epi32(t2, 0x0E));
+            let v3 = _mm_shuffle_epi32(t1, 0x0E);
 
-        (
-            ClmulX86(_mm_unpacklo_epi64(v0, v1)),
-            ClmulX86(_mm_unpacklo_epi64(v2, v3)),
-        )
+            (
+                ClmulX86(_mm_unpacklo_epi64(v0, v1)),
+                ClmulX86(_mm_unpacklo_epi64(v2, v3)),
+            )
+        }
     }
 
     #[inline(always)]
@@ -94,31 +96,33 @@ impl ClmulX86 {
     #[inline]
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     unsafe fn reduce_gcm_unsafe(x: &Self, y: &Self) -> ClmulX86 {
-        let tmp3 = x.0;
-        let tmp6 = y.0;
-        let xmmmask = _mm_setr_epi32(-1, 0x0, 0x0, 0x0);
-        let tmp7 = _mm_srli_epi32(tmp6, 31);
-        let tmp8 = _mm_srli_epi32(tmp6, 30);
-        let tmp9 = _mm_srli_epi32(tmp6, 25);
+        unsafe {
+            let tmp3 = x.0;
+            let tmp6 = y.0;
+            let xmmmask = _mm_setr_epi32(-1, 0x0, 0x0, 0x0);
+            let tmp7 = _mm_srli_epi32(tmp6, 31);
+            let tmp8 = _mm_srli_epi32(tmp6, 30);
+            let tmp9 = _mm_srli_epi32(tmp6, 25);
 
-        let tmp7 = _mm_xor_si128(tmp7, tmp8);
-        let tmp7 = _mm_xor_si128(tmp7, tmp9);
+            let tmp7 = _mm_xor_si128(tmp7, tmp8);
+            let tmp7 = _mm_xor_si128(tmp7, tmp9);
 
-        let tmp8 = _mm_shuffle_epi32(tmp7, 147);
+            let tmp8 = _mm_shuffle_epi32(tmp7, 147);
 
-        let tmp7 = _mm_and_si128(xmmmask, tmp8);
-        let tmp8 = _mm_andnot_si128(xmmmask, tmp8);
-        let tmp3 = _mm_xor_si128(tmp3, tmp8);
-        let tmp6 = _mm_xor_si128(tmp6, tmp7);
+            let tmp7 = _mm_and_si128(xmmmask, tmp8);
+            let tmp8 = _mm_andnot_si128(xmmmask, tmp8);
+            let tmp3 = _mm_xor_si128(tmp3, tmp8);
+            let tmp6 = _mm_xor_si128(tmp6, tmp7);
 
-        let tmp10 = _mm_slli_epi32(tmp6, 1);
-        let tmp3 = _mm_xor_si128(tmp3, tmp10);
-        let tmp11 = _mm_slli_epi32(tmp6, 2);
-        let tmp3 = _mm_xor_si128(tmp3, tmp11);
-        let tmp12 = _mm_slli_epi32(tmp6, 7);
-        let tmp3 = _mm_xor_si128(tmp3, tmp12);
+            let tmp10 = _mm_slli_epi32(tmp6, 1);
+            let tmp3 = _mm_xor_si128(tmp3, tmp10);
+            let tmp11 = _mm_slli_epi32(tmp6, 2);
+            let tmp3 = _mm_xor_si128(tmp3, tmp11);
+            let tmp12 = _mm_slli_epi32(tmp6, 7);
+            let tmp3 = _mm_xor_si128(tmp3, tmp12);
 
-        ClmulX86(_mm_xor_si128(tmp3, tmp6))
+            ClmulX86(_mm_xor_si128(tmp3, tmp6))
+        }
     }
 }
 
@@ -126,7 +130,7 @@ impl ClmulX86 {
 mod tests {
     use super::ClmulX86;
     use rand::Rng;
-    use rand_chacha::{rand_core::SeedableRng, ChaCha12Rng};
+    use rand_chacha::{ChaCha12Rng, rand_core::SeedableRng};
     use std::arch::x86_64::*;
 
     /// Carryless multiplication. Reference implementation.
@@ -160,8 +164,8 @@ mod tests {
         }
 
         let mut rng = ChaCha12Rng::from_seed([0; 32]);
-        let a: [u8; 16] = rng.gen();
-        let b: [u8; 16] = rng.gen();
+        let a: [u8; 16] = rng.random();
+        let b: [u8; 16] = rng.random();
 
         let (r_0, r_1) = ClmulX86::new(&a).clmul(ClmulX86::new(&b));
         let (ref_0, ref_1) = clmul128(u128::from_le_bytes(a), u128::from_le_bytes(b));

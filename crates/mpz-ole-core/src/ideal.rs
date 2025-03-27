@@ -5,13 +5,13 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use mpz_common::future::{new_output, MaybeDone, Output, Sender};
-use mpz_core::{prg::Prg, Block};
+use mpz_common::future::{MaybeDone, Output, Sender, new_output};
+use mpz_core::{Block, prg::Prg};
 use mpz_fields::Field;
 
 use crate::{
-    test::role_shares, OLEId, OLEShare, ROLEReceiver, ROLEReceiverOutput, ROLESender,
-    ROLESenderOutput,
+    OLEId, OLEShare, ROLEReceiver, ROLEReceiverOutput, ROLESender, ROLESenderOutput,
+    test::role_shares,
 };
 
 type Error = IdealROLEError;
@@ -279,7 +279,7 @@ impl IdealROLEError {
 #[cfg(test)]
 mod tests {
     use mpz_fields::{gf2_128::Gf2_128, p256::P256};
-    use rand::{rngs::StdRng, Rng, SeedableRng};
+    use rand::{Rng, SeedableRng, rngs::StdRng};
 
     use super::*;
 
@@ -297,7 +297,7 @@ mod tests {
 
     fn test_ideal_role<F: Field>() {
         let mut rng = StdRng::seed_from_u64(0);
-        let mut ideal = IdealROLE::<F>::new(rng.gen());
+        let mut ideal = IdealROLE::<F>::new(rng.random());
 
         let count = 128;
 

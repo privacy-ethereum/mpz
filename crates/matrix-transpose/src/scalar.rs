@@ -24,12 +24,14 @@ where
     }
     for _ in 0..rounds {
         for k in 0..half {
-            write_reference
-                .add(2 * k)
-                .copy_from_nonoverlapping(read_reference.add(k), 1);
-            write_reference
-                .add(2 * k + 1)
-                .copy_from_nonoverlapping(read_reference.add(half + k), 1);
+            unsafe {
+                write_reference
+                    .add(2 * k)
+                    .copy_from_nonoverlapping(read_reference.add(k), 1);
+                write_reference
+                    .add(2 * k + 1)
+                    .copy_from_nonoverlapping(read_reference.add(half + k), 1);
+            }
         }
         std::mem::swap(&mut write_reference, &mut read_reference);
     }

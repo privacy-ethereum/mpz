@@ -1,17 +1,16 @@
 use std::{collections::VecDeque, mem};
 
 use crate::{
+    TransferId,
     chou_orlandi::{
-        hash_point,
+        SenderError, hash_point,
         msgs::{ReceiverPayload, SenderPayload, SenderSetup},
-        SenderError,
     },
     ot::{OTSender, OTSenderOutput},
-    TransferId,
 };
 
-use mpz_common::future::{new_output, MaybeDone, Sender as OutputSender};
-use mpz_core::Block;
+use mpz_common::future::{MaybeDone, Sender as OutputSender, new_output};
+use mpz_core::{Block, rand::Rand0_8CompatExt};
 
 use curve25519_dalek::{
     constants::RISTRETTO_BASEPOINT_TABLE, ristretto::RistrettoPoint, scalar::Scalar,
@@ -56,7 +55,7 @@ impl Sender {
     pub fn new_with_seed(seed: [u8; 32]) -> Self {
         let mut rng = ChaCha20Rng::from_seed(seed);
 
-        let private_key = Scalar::random(&mut rng);
+        let private_key = Scalar::random(&mut rng.compat_by_ref());
         let public_key = &private_key * RISTRETTO_BASEPOINT_TABLE;
         let state = state::Initialized {
             private_key,
@@ -237,8 +236,8 @@ pub mod state {
 
     impl Default for Initialized {
         fn default() -> Self {
-            let mut rng = ChaCha20Rng::from_entropy();
-            let private_key = Scalar::random(&mut rng);
+            let mut rng = ChaCha20Rng::from_os_rng();
+            let private_key = Scalar::random(&mut rng.compat_by_ref());
             let public_key = &private_key * RISTRETTO_BASEPOINT_TABLE;
             Initialized {
                 private_key,

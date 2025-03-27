@@ -161,7 +161,7 @@ mod tests {
         ideal::rot::IdealROT,
         rot::{AnyReceiver, AnySender},
     };
-    use rand::{distributions::Standard, prelude::Distribution, rngs::StdRng, SeedableRng};
+    use rand::{SeedableRng, distr::StandardUniform, prelude::Distribution, rngs::StdRng};
     use test::assert_ole;
 
     #[test]
@@ -176,7 +176,7 @@ mod tests {
 
     fn test_ole<F: Field>()
     where
-        Standard: Distribution<F>,
+        StandardUniform: Distribution<F>,
     {
         let count = 8;
         let mut rng = StdRng::seed_from_u64(0);

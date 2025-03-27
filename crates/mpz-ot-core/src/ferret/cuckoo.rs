@@ -2,7 +2,7 @@
 
 use std::array::from_fn;
 
-use mpz_core::{aes::AesEncryptor, Block};
+use mpz_core::{Block, aes::AesEncryptor};
 
 pub(crate) const HASH_NUM: u32 = 3;
 const TRIAL_NUM: usize = 100;
@@ -166,14 +166,14 @@ fn hash_to_index(hash: &AesEncryptor, range: usize, value: u32) -> usize {
 mod tests {
     use super::*;
     use mpz_core::aes::AesEncryptor;
-    use rand::{rngs::StdRng, Rng, SeedableRng};
+    use rand::{Rng, SeedableRng, rngs::StdRng};
 
     #[test]
     fn test_cuckoo_buckets() {
         let mut rng = StdRng::seed_from_u64(0);
         const NUM: usize = 50;
 
-        let hashes = from_fn(|_| AesEncryptor::new(rng.gen()));
+        let hashes = from_fn(|_| AesEncryptor::new(rng.random()));
 
         let input: [usize; NUM] = std::array::from_fn(|i| i);
         let cuckoo = CuckooHash::new(&hashes, &input).unwrap();

@@ -3,14 +3,14 @@
 use async_trait::async_trait;
 
 use mpz_common::{
-    ideal::{call_sync, CallSync},
     Context, Flush,
+    ideal::{CallSync, call_sync},
 };
 use mpz_core::Block;
 use mpz_fields::Field;
 use mpz_share_conversion_core::ideal::{
-    ideal_share_convert as core_ideal_share_convert, IdealShareConvertError,
-    IdealShareConvertReceiver as CoreReceiver, IdealShareConvertSender as CoreSender,
+    IdealShareConvertError, IdealShareConvertReceiver as CoreReceiver,
+    IdealShareConvertSender as CoreSender, ideal_share_convert as core_ideal_share_convert,
 };
 
 use crate::{AdditiveToMultiplicative, MultiplicativeToAdditive};

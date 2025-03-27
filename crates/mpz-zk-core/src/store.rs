@@ -70,11 +70,11 @@ mod tests {
     use blake3::Hasher;
     use mpz_core::bitvec::BitVec;
     use mpz_memory_core::{
+        Array, MemoryExt, ViewExt,
         binary::U8,
         correlated::{Delta, Key},
-        Array, MemoryExt, ViewExt,
     };
-    use rand::{rngs::StdRng, Rng, SeedableRng};
+    use rand::{Rng, SeedableRng, rngs::StdRng};
 
     use super::*;
 
@@ -88,8 +88,8 @@ mod tests {
         let mut verifier = VerifierStore::new(delta);
         let mut prover = ProverStore::new();
 
-        let keys = (0..128).map(|_| rng.gen()).collect::<Vec<Key>>();
-        let masks = BitVec::from_iter((0..128).map(|_| rng.gen::<bool>()));
+        let keys = (0..128).map(|_| rng.random()).collect::<Vec<Key>>();
+        let masks = BitVec::from_iter((0..128).map(|_| rng.random::<bool>()));
         let macs = keys
             .iter()
             .zip(&masks)

@@ -6,8 +6,8 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use mpz_common::future::{new_output, MaybeDone, Sender};
-use mpz_core::{prg::Prg, Block};
+use mpz_common::future::{MaybeDone, Sender, new_output};
+use mpz_core::{Block, prg::Prg};
 use mpz_fields::Field;
 
 use crate::{A2MOutput, AdditiveToMultiplicative, M2AOutput, MultiplicativeToAdditive};
@@ -337,7 +337,7 @@ impl IdealShareConvertError {
 mod tests {
     use mpz_common::future::Output;
     use mpz_fields::{gf2_128::Gf2_128, p256::P256};
-    use rand::{rngs::StdRng, SeedableRng};
+    use rand::{SeedableRng, rngs::StdRng};
 
     use super::*;
 

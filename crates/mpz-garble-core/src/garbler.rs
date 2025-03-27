@@ -1,25 +1,21 @@
 use core::fmt;
+use std::ops::Range;
 
-use crate::{circuit::EncryptedGate, EncryptedGateBatch, DEFAULT_BATCH_SIZE};
-use mpz_circuits::{
-    types::{BinaryRepr, TypeError},
-    Circuit, CircuitError, Gate,
-};
+use crate::{DEFAULT_BATCH_SIZE, EncryptedGateBatch, circuit::EncryptedGate};
+use mpz_circuits::{Circuit, Gate};
 use mpz_core::{
-    aes::{FixedKeyAes, FIXED_KEY_AES},
     Block,
+    aes::{FIXED_KEY_AES, FixedKeyAes},
 };
 use mpz_memory_core::correlated::{Delta, Key};
 
 /// Errors that can occur during garbled circuit generation.
 #[derive(Debug, thiserror::Error)]
 #[allow(missing_docs)]
-pub enum GeneratorError {
-    #[error(transparent)]
-    TypeError(#[from] TypeError),
-    #[error(transparent)]
-    CircuitError(#[from] CircuitError),
-    #[error("generator not finished")]
+pub enum GarblerError {
+    #[error("input length mismatch: expected {expected}, got {actual}")]
+    InputLength { expected: usize, actual: usize },
+    #[error("garbler not finished")]
     NotFinished,
 }
 
@@ -46,7 +42,7 @@ pub(crate) fn and_gate(
 
     let [hx_0, hy_0, hx_1, hy_1] = h;
 
-    // Garbled row of generator half-gate
+    // Garbled row of garbler half-gate
     let t_g = hx_0 ^ hx_1 ^ (Block::SELECT_MASK[p_b as usize] & delta);
     let w_g = hx_0 ^ (Block::SELECT_MASK[p_a as usize] & t_g);
 
@@ -59,21 +55,21 @@ pub(crate) fn and_gate(
     (z_0, EncryptedGate::new([t_g, t_e]))
 }
 
-/// Output of the generator.
+/// Output of the garbler.
 #[derive(Debug)]
-pub struct GeneratorOutput {
+pub struct GarblerOutput {
     /// Output keys of the circuit.
     pub outputs: Vec<Key>,
 }
 
-/// Garbled circuit generator.
+/// Garbler.
 #[derive(Debug, Default)]
-pub struct Generator {
+pub struct Garbler {
     /// Buffer for the 0-bit labels.
     buffer: Vec<Block>,
 }
 
-impl Generator {
+impl Garbler {
     /// Returns an iterator over the encrypted gates of a circuit.
     ///
     /// # Arguments
@@ -85,13 +81,13 @@ impl Generator {
         &'a mut self,
         circ: &'a Circuit,
         delta: Delta,
-        inputs: Vec<Key>,
-    ) -> Result<EncryptedGateIter<'a, std::slice::Iter<'a, Gate>>, GeneratorError> {
-        if inputs.len() != circ.input_len() {
-            return Err(CircuitError::InvalidInputCount(
-                circ.input_len(),
-                inputs.len(),
-            ))?;
+        inputs: &[Key],
+    ) -> Result<EncryptedGateIter<'a, std::slice::Iter<'a, Gate>>, GarblerError> {
+        if inputs.len() != circ.inputs().len() {
+            return Err(GarblerError::InputLength {
+                expected: circ.inputs().len(),
+                actual: inputs.len(),
+            });
         }
 
         // Expand the buffer to fit the circuit
@@ -99,19 +95,14 @@ impl Generator {
             self.buffer.resize(circ.feed_count(), Default::default());
         }
 
-        let mut inputs = inputs.into_iter();
-        for input in circ.inputs() {
-            for (node, label) in input.iter().zip(inputs.by_ref()) {
-                self.buffer[node.id()] = label.into();
-            }
-        }
+        self.buffer[..inputs.len()].copy_from_slice(Key::as_blocks(inputs));
 
         Ok(EncryptedGateIter::new(
             delta,
             circ.gates().iter(),
-            circ.outputs(),
             &mut self.buffer,
             circ.and_count(),
+            circ.outputs(),
         ))
     }
 
@@ -126,8 +117,8 @@ impl Generator {
         &'a mut self,
         circ: &'a Circuit,
         delta: Delta,
-        inputs: Vec<Key>,
-    ) -> Result<EncryptedGateBatchIter<'a, std::slice::Iter<'a, Gate>>, GeneratorError> {
+        inputs: &[Key],
+    ) -> Result<EncryptedGateBatchIter<'a, std::slice::Iter<'a, Gate>>, GarblerError> {
         self.generate(circ, delta, inputs)
             .map(EncryptedGateBatchIter)
     }
@@ -143,14 +134,14 @@ pub struct EncryptedGateIter<'a, I> {
     labels: &'a mut [Block],
     /// Iterator over the gates.
     gates: I,
-    /// Circuit outputs.
-    outputs: &'a [BinaryRepr],
     /// Current gate id.
     gid: usize,
     /// Number of AND gates generated.
     counter: usize,
     /// Number of AND gates in the circuit.
     and_count: usize,
+    /// Range of the outputs in the buffer.
+    outputs: Range<usize>,
     /// Whether the entire circuit has been garbled.
     complete: bool,
 }
@@ -168,24 +159,24 @@ where
     fn new(
         delta: Delta,
         gates: I,
-        outputs: &'a [BinaryRepr],
         labels: &'a mut [Block],
         and_count: usize,
+        outputs: Range<usize>,
     ) -> Self {
         Self {
             cipher: &(*FIXED_KEY_AES),
             delta,
             gates,
-            outputs,
             labels,
             gid: 1,
             counter: 0,
             and_count,
+            outputs,
             complete: false,
         }
     }
 
-    /// Returns `true` if the generator has more encrypted gates to generate.
+    /// Returns `true` if the garbler has more encrypted gates to generate.
     #[inline]
     pub fn has_gates(&self) -> bool {
         self.counter != self.and_count
@@ -193,9 +184,9 @@ where
 
     /// Returns the encoded outputs of the circuit, and the hash of the
     /// encrypted gates if present.
-    pub fn finish(mut self) -> Result<GeneratorOutput, GeneratorError> {
+    pub fn finish(mut self) -> Result<GarblerOutput, GarblerError> {
         if self.has_gates() {
-            return Err(GeneratorError::NotFinished);
+            return Err(GarblerError::NotFinished);
         }
 
         // Finish computing any "free" gates.
@@ -203,13 +194,9 @@ where
             assert_eq!(self.next(), None);
         }
 
-        let outputs = self
-            .outputs
-            .iter()
-            .flat_map(|output| output.iter().map(|node| Key::from(self.labels[node.id()])))
-            .collect();
-
-        Ok(GeneratorOutput { outputs })
+        Ok(GarblerOutput {
+            outputs: Key::from_blocks(self.labels[self.outputs].to_vec()),
+        })
     }
 }
 
@@ -263,6 +250,13 @@ where
                     let x_0 = self.labels[node_x.id()];
                     self.labels[node_z.id()] = x_0 ^ self.delta.as_block();
                 }
+                Gate::Id {
+                    x: node_x,
+                    z: node_z,
+                } => {
+                    let x_0 = self.labels[node_x.id()];
+                    self.labels[node_z.id()] = x_0;
+                }
             }
         }
 
@@ -270,7 +264,7 @@ where
     }
 }
 
-/// Iterator returned by [`Generator::generate_batched`].
+/// Iterator returned by [`Garbler::generate_batched`].
 #[derive(Debug)]
 pub struct EncryptedGateBatchIter<'a, I: Iterator, const N: usize = DEFAULT_BATCH_SIZE>(
     EncryptedGateIter<'a, I>,
@@ -280,14 +274,14 @@ impl<'a, I, const N: usize> EncryptedGateBatchIter<'a, I, N>
 where
     I: Iterator<Item = &'a Gate>,
 {
-    /// Returns `true` if the generator has more encrypted gates to generate.
+    /// Returns `true` if the garbler has more encrypted gates to generate.
     pub fn has_gates(&self) -> bool {
         self.0.has_gates()
     }
 
     /// Returns the encoded outputs of the circuit, and the hash of the
     /// encrypted gates if present.
-    pub fn finish(self) -> Result<GeneratorOutput, GeneratorError> {
+    pub fn finish(self) -> Result<GarblerOutput, GarblerError> {
         self.0.finish()
     }
 }

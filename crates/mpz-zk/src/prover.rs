@@ -1,14 +1,14 @@
 use async_trait::async_trait;
 use blake3::Hasher;
-use mpz_common::{scoped_futures::ScopedFutureExt, Context, Flush};
-use mpz_core::{bitvec::BitVec, Block};
+use mpz_common::{Context, Flush};
+use mpz_core::{Block, bitvec::BitVec};
 use mpz_ot::rcot::{RCOTReceiver, RCOTReceiverOutput};
 use mpz_vm_core::{
-    memory::{binary::Binary, correlated::Mac, DecodeFuture, Memory, Repr, Slice, View},
     Call, Callable, Execute, Result as VmResult, VmError,
+    memory::{DecodeFuture, Memory, Repr, Slice, View, binary::Binary, correlated::Mac},
 };
-use mpz_zk_core::{store::ProverStore, Prover as Core, ProverError};
-use serio::{stream::IoStreamExt, SinkExt};
+use mpz_zk_core::{Prover as Core, ProverError, store::ProverStore};
+use serio::{SinkExt, stream::IoStreamExt};
 use utils::filter_drain::FilterDrain;
 
 #[derive(Debug)]
@@ -155,25 +155,22 @@ where
             let outputs = ctx
                 .map(
                     tasks,
-                    |ctx, (mut execute, output)| {
-                        async move {
-                            let mut iter = execute.iter();
-                            loop {
-                                // Stream the `adjust` bits to avoid buffering them in memory.
-                                let adjust: BitVec = BitVec::from_iter(iter.by_ref().take(8000));
+                    async move |ctx, (mut execute, output)| {
+                        let mut iter = execute.iter();
+                        loop {
+                            // Stream the `adjust` bits to avoid buffering them in memory.
+                            let adjust: BitVec = BitVec::from_iter(iter.by_ref().take(8000));
 
-                                if !adjust.is_empty() {
-                                    ctx.io_mut().send(adjust).await?;
-                                } else {
-                                    break;
-                                }
+                            if !adjust.is_empty() {
+                                ctx.io_mut().send(adjust).await?;
+                            } else {
+                                break;
                             }
-
-                            let output_macs = execute.finish().map_err(VmError::execute)?;
-
-                            Ok((output, output_macs))
                         }
-                        .scope_boxed()
+
+                        let output_macs = execute.finish().map_err(VmError::execute)?;
+
+                        Ok((output, output_macs))
                     },
                     |(execute, _)| execute.and_count(),
                 )
@@ -211,7 +208,7 @@ where
     OT: RCOTReceiver<bool, Block>,
 {
     fn call_raw(&mut self, call: Call) -> VmResult<Slice> {
-        let output = self.store.alloc_output(call.circ().output_len());
+        let output = self.store.alloc_output(call.circ().outputs().len());
 
         let mut count = call.circ().and_count();
 

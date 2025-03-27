@@ -8,13 +8,10 @@ use utils::{
     range::{Disjoint, RangeSet},
 };
 
-use mpz_common::{
-    scoped_futures::{ScopedBoxFuture, ScopedFutureExt},
-    Context, Flush,
-};
-use mpz_core::{bitvec::BitVec, Block};
-use mpz_garble_core::{evaluate_garbled_circuits, EvaluatorOutput, GarbledCircuit};
-use mpz_memory_core::{binary::Binary, DecodeFuture, Memory, Slice, View};
+use mpz_common::{Context, Flush};
+use mpz_core::{Block, bitvec::BitVec};
+use mpz_garble_core::{EvaluatorOutput, GarbledCircuit, evaluate_garbled_circuits};
+use mpz_memory_core::{DecodeFuture, Memory, Slice, View, binary::Binary};
 use mpz_ot::cot::COTReceiver;
 use mpz_vm_core::{Call, Callable, Execute, Result, VmError};
 
@@ -76,7 +73,7 @@ impl<COT> Evaluator<COT> {
                 })
                 .map(|(output, (call, garbled_circuit))| {
                     let (circ, inputs) = call.into_parts();
-                    let mut input_macs = Vec::with_capacity(circ.input_len());
+                    let mut input_macs = Vec::with_capacity(circ.inputs().len());
                     for input in inputs {
                         input_macs.extend_from_slice(
                             store
@@ -196,7 +193,7 @@ impl<COT> Callable<Binary> for Evaluator<COT> {
             .store
             .try_lock()
             .unwrap()
-            .alloc_output(call.circ().output_len());
+            .alloc_output(call.circ().outputs().len());
         self.call_stack.push((call, output));
         Ok(output)
     }
@@ -234,16 +231,6 @@ where
     }
 
     async fn preprocess(&mut self, ctx: &mut Context) -> Result<()> {
-        let f = scope_closure(|ctx, (call, output): (Call, Slice)| {
-            async move {
-                let garbled_circuit = receive_garbled_circuit(ctx, call.circ())
-                    .await
-                    .map_err(VmError::execute)?;
-                Ok::<_, VmError>((call, output, garbled_circuit))
-            }
-            .scope_boxed()
-        });
-
         while !self.call_stack.is_empty() {
             let calls = self.take_preprocess_calls();
 
@@ -252,7 +239,16 @@ where
             }
 
             let outputs = ctx
-                .map(calls, f, |(call, _)| call.circ().and_count())
+                .map(
+                    calls,
+                    async move |ctx, (call, output): (Call, Slice)| {
+                        let garbled_circuit = receive_garbled_circuit(ctx, call.circ())
+                            .await
+                            .map_err(VmError::execute)?;
+                        Ok::<_, VmError>((call, output, garbled_circuit))
+                    },
+                    |(call, _)| call.circ().and_count(),
+                )
                 .await
                 .map_err(VmError::execute)?;
 
@@ -286,11 +282,6 @@ where
             self.execute_preprocessed()?;
         }
 
-        let store = self.store.clone();
-        let f = scope_closure(move |ctx, (call, output): (Call, Slice)| {
-            evaluate(ctx, store.clone(), call, output).scope_boxed()
-        });
-
         while !self.call_stack.is_empty() {
             let calls = self.take_execute_calls();
 
@@ -298,8 +289,15 @@ where
                 break;
             }
 
+            let store = self.store.clone();
             let outputs = ctx
-                .map(calls, f.clone(), |(call, _)| call.circ().and_count())
+                .map(
+                    calls,
+                    async move |ctx, (call, output): (Call, Slice)| {
+                        evaluate(ctx, store.clone(), call, output).await
+                    },
+                    |(call, _)| call.circ().and_count(),
+                )
                 .await
                 .map_err(VmError::execute)?;
 
@@ -316,17 +314,6 @@ where
     }
 }
 
-// This is required to help the compiler infer the correct lifetimes.
-fn scope_closure<Ctx, F, R>(f: F) -> F
-where
-    F: for<'a> Fn(&'a mut Ctx, (Call, Slice)) -> ScopedBoxFuture<'static, 'a, Result<R>>
-        + Clone
-        + Send
-        + 'static,
-{
-    f
-}
-
 async fn evaluate<COT>(
     ctx: &mut Context,
     store: Arc<Mutex<EvaluatorStore<COT>>>,
@@ -335,7 +322,7 @@ async fn evaluate<COT>(
 ) -> Result<()> {
     let (circ, inputs) = call.into_parts();
 
-    let mut input_macs = Vec::with_capacity(circ.input_len());
+    let mut input_macs = Vec::with_capacity(circ.inputs().len());
     {
         let lock = store.lock().await;
         for input in inputs {
@@ -345,7 +332,7 @@ async fn evaluate<COT>(
 
     let EvaluatorOutput {
         outputs: output_macs,
-    } = crate::evaluator::evaluate(ctx, circ, input_macs)
+    } = crate::evaluator::evaluate(ctx, circ, &input_macs)
         .await
         .map_err(VmError::execute)?;
 

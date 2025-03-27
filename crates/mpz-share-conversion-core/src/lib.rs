@@ -102,9 +102,9 @@ pub struct RecvM2A<F> {
 mod tests {
     use super::*;
 
-    use mpz_fields::{gf2_128::Gf2_128, p256::P256, Field};
+    use mpz_fields::{Field, gf2_128::Gf2_128, p256::P256};
     use mpz_ole_core::ideal::IdealROLE;
-    use rand::{rngs::StdRng, Rng, SeedableRng};
+    use rand::{Rng, SeedableRng, rngs::StdRng};
 
     #[test]
     fn test_a2m_p256() {
@@ -119,7 +119,7 @@ mod tests {
     fn test_a2m<F: Field>() {
         let mut rng = StdRng::seed_from_u64(0);
 
-        let ideal_role = IdealROLE::<F>::new(rng.gen());
+        let ideal_role = IdealROLE::<F>::new(rng.random());
 
         let sender_input = F::rand(&mut rng);
         let receiver_input = F::rand(&mut rng);
@@ -174,7 +174,7 @@ mod tests {
     fn test_m2a<F: Field>() {
         let mut rng = StdRng::seed_from_u64(0);
 
-        let ideal_role = IdealROLE::<F>::new(rng.gen());
+        let ideal_role = IdealROLE::<F>::new(rng.random());
 
         let sender_input = F::rand(&mut rng);
         let receiver_input = F::rand(&mut rng);

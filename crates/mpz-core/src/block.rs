@@ -3,9 +3,9 @@
 use bytemuck::{Pod, Zeroable};
 use clmul::Clmul;
 use core::ops::{BitAnd, BitAndAssign, BitXor, BitXorAssign};
-use generic_array::{typenum::consts::U16, GenericArray};
+use generic_array::{GenericArray, typenum::consts::U16};
 use itybity::{BitIterable, BitLength, FromBitIterator, GetBit, Lsb0, Msb0};
-use rand::{distributions::Standard, prelude::Distribution, CryptoRng, Rng};
+use rand::{CryptoRng, Rng, distr::StandardUniform, prelude::Distribution};
 use serde::{Deserialize, Serialize};
 use std::{
     fmt::{Debug, Display},
@@ -60,19 +60,19 @@ impl Block {
     /// Generate a random block using the provided RNG
     #[inline]
     pub fn random<R: Rng + CryptoRng + ?Sized>(rng: &mut R) -> Self {
-        Self::new(rng.gen())
+        Self::new(rng.random())
     }
 
     /// Generate a random array of blocks using the provided RNG
     #[inline]
     pub fn random_array<const N: usize, R: Rng + CryptoRng>(rng: &mut R) -> [Self; N] {
-        std::array::from_fn(|_| rng.gen::<[u8; 16]>().into())
+        std::array::from_fn(|_| rng.random::<[u8; 16]>().into())
     }
 
     /// Generate a random vector of blocks using the provided RNG
     #[inline]
     pub fn random_vec<R: Rng + CryptoRng + ?Sized>(rng: &mut R, n: usize) -> Vec<Self> {
-        (0..n).map(|_| rng.gen::<[u8; 16]>().into()).collect()
+        (0..n).map(|_| rng.random::<[u8; 16]>().into()).collect()
     }
 
     /// Carry-less multiplication of two blocks, without the reduction step.
@@ -216,6 +216,13 @@ impl Display for Block {
         }
         f.write_str(")")?;
         Ok(())
+    }
+}
+
+impl AsRef<[u8]> for Block {
+    #[inline(always)]
+    fn as_ref(&self) -> &[u8] {
+        self.0.as_ref()
     }
 }
 
@@ -444,9 +451,9 @@ impl BitAndAssign<&Block> for Block {
     }
 }
 
-impl Distribution<Block> for Standard {
+impl Distribution<Block> for StandardUniform {
     fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> Block {
-        Block::new(rng.gen())
+        Block::new(rng.random())
     }
 }
 
@@ -519,9 +526,9 @@ mod tests {
         let mut c = (Block::ZERO, Block::ZERO);
         let mut d = Block::ZERO;
         for i in 0..SIZE {
-            let r: [u8; 16] = rng.gen();
+            let r: [u8; 16] = rng.random();
             a.push(Block::from(r));
-            let r: [u8; 16] = rng.gen();
+            let r: [u8; 16] = rng.random();
             b.push(Block::from(r));
 
             let z = a[i].clmul(b[i]);
@@ -541,7 +548,7 @@ mod tests {
         use rand::{Rng, SeedableRng};
         use rand_chacha::ChaCha12Rng;
         let mut rng = ChaCha12Rng::from_seed([0; 32]);
-        let mut x: [u8; 16] = rng.gen();
+        let mut x: [u8; 16] = rng.random();
         let bx = Block::sigma(Block::from(x));
         let (xl, xr) = x.split_at_mut(8);
 

@@ -8,8 +8,8 @@
 //! use mpz_core::Block;
 //!
 //! # fn main() -> Result<(), CointossError> {
-//! let sender_seeds = (0..8).map(|_| Block::random(&mut thread_rng())).collect();
-//! let receiver_seeds = (0..8).map(|_| Block::random(&mut thread_rng())).collect();
+//! let sender_seeds = (0..8).map(|_| Block::random(&mut rand::rng())).collect();
+//! let receiver_seeds = (0..8).map(|_| Block::random(&mut rand::rng())).collect();
 //!
 //! let sender = Sender::new(sender_seeds);
 //! let receiver = Receiver::new(receiver_seeds);
@@ -38,8 +38,8 @@ pub mod msgs;
 mod receiver;
 mod sender;
 
-pub use receiver::{receiver_state, Receiver};
-pub use sender::{sender_state, Sender};
+pub use receiver::{Receiver, receiver_state};
+pub use sender::{Sender, sender_state};
 
 /// A coin-toss error.
 #[derive(Debug, thiserror::Error)]

@@ -1,6 +1,6 @@
 use std::array::from_fn;
 
-use mpz_core::{aes::AesEncryptor, lpn::LpnType, prg::Prg, utils::slices_from_lengths, Block};
+use mpz_core::{Block, aes::AesEncryptor, lpn::LpnType, prg::Prg, utils::slices_from_lengths};
 use rand_core::SeedableRng;
 
 use crate::ferret::cuckoo::{Buckets, CuckooHash, CuckooHashError};

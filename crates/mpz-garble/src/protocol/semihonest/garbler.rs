@@ -4,31 +4,28 @@ use async_trait::async_trait;
 use tokio::sync::Mutex;
 use utils::filter_drain::FilterDrain;
 
-use mpz_common::{
-    scoped_futures::{ScopedBoxFuture, ScopedFutureExt},
-    Context, Flush,
-};
-use mpz_core::{bitvec::BitVec, Block};
-use mpz_garble_core::GeneratorOutput;
-use mpz_memory_core::{binary::Binary, correlated::Delta, DecodeFuture, Memory, Slice, View};
+use mpz_common::{Context, Flush};
+use mpz_core::{Block, bitvec::BitVec};
+use mpz_garble_core::GarblerOutput;
+use mpz_memory_core::{DecodeFuture, Memory, Slice, View, binary::Binary, correlated::Delta};
 use mpz_ot::cot::COTSender;
 use mpz_vm_core::{Call, Callable, Execute, Result, VmError};
 
-use crate::store::GeneratorStore;
+use crate::store::GarblerStore;
 
-/// Semi-honest generator.
+/// Semi-honest garbler.
 #[derive(Debug)]
-pub struct Generator<COT> {
-    store: Arc<Mutex<GeneratorStore<COT>>>,
+pub struct Garbler<COT> {
+    store: Arc<Mutex<GarblerStore<COT>>>,
     call_stack: Vec<(Call, Slice)>,
     preprocessed: Vec<(Vec<Slice>, Slice)>,
 }
 
-impl<COT> Generator<COT> {
-    /// Creates a new generator.
+impl<COT> Garbler<COT> {
+    /// Creates a new garbler.
     pub fn new(cot: COT, seed: [u8; 16], delta: Delta) -> Self {
         Self {
-            store: Arc::new(Mutex::new(GeneratorStore::new(seed, delta, cot))),
+            store: Arc::new(Mutex::new(GarblerStore::new(seed, delta, cot))),
             call_stack: Vec::new(),
             preprocessed: Vec::new(),
         }
@@ -73,7 +70,7 @@ impl<COT> Generator<COT> {
     }
 }
 
-impl<COT> Memory<Binary> for Generator<COT> {
+impl<COT> Memory<Binary> for Garbler<COT> {
     type Error = VmError;
 
     fn alloc_raw(&mut self, size: usize) -> Result<Slice> {
@@ -117,7 +114,7 @@ impl<COT> Memory<Binary> for Generator<COT> {
     }
 }
 
-impl<COT> View<Binary> for Generator<COT>
+impl<COT> View<Binary> for Garbler<COT>
 where
     COT: COTSender<Block>,
 {
@@ -148,20 +145,20 @@ where
     }
 }
 
-impl<COT> Callable<Binary> for Generator<COT> {
+impl<COT> Callable<Binary> for Garbler<COT> {
     fn call_raw(&mut self, call: Call) -> Result<Slice> {
         let slice = self
             .store
             .try_lock()
             .unwrap()
-            .alloc_output(call.circ().output_len());
+            .alloc_output(call.circ().outputs().len());
         self.call_stack.push((call, slice));
         Ok(slice)
     }
 }
 
 #[async_trait]
-impl<COT> Execute for Generator<COT>
+impl<COT> Execute for Garbler<COT>
 where
     COT: COTSender<Block> + Flush + Send + 'static,
 {
@@ -187,10 +184,6 @@ where
 
     async fn preprocess(&mut self, ctx: &mut Context) -> Result<()> {
         let delta = *self.store.try_lock().unwrap().delta();
-        let store = self.store.clone();
-        let f = scope_closure(move |ctx: &mut Context, (call, output): (Call, Slice)| {
-            generate(ctx, store.clone(), delta, call, output, Mode::Preprocess).scope_boxed()
-        });
 
         while !self.call_stack.is_empty() {
             let calls = self.take_preprocess_calls();
@@ -204,8 +197,15 @@ where
                 }
             }
 
+            let store = self.store.clone();
             let outputs = ctx
-                .map(calls, f.clone(), |(call, _)| call.circ().and_count())
+                .map(
+                    calls,
+                    async move |ctx: &mut Context, (call, output): (Call, Slice)| {
+                        generate(ctx, store.clone(), delta, call, output, Mode::Preprocess).await
+                    },
+                    |(call, _)| call.circ().and_count(),
+                )
                 .await
                 .map_err(VmError::execute)?;
 
@@ -228,10 +228,6 @@ where
 
     async fn execute(&mut self, ctx: &mut Context) -> Result<()> {
         let delta = *self.store.try_lock().unwrap().delta();
-        let store = self.store.clone();
-        let f = scope_closure(move |ctx: &mut Context, (call, output): (Call, Slice)| {
-            generate(ctx, store.clone(), delta, call, output, Mode::Execute).scope_boxed()
-        });
 
         while !self.call_stack.is_empty() {
             let calls = self.take_execute_calls();
@@ -240,8 +236,15 @@ where
                 break;
             }
 
+            let store = self.store.clone();
             let outputs = ctx
-                .map(calls, f.clone(), |(call, _)| call.circ().and_count())
+                .map(
+                    calls,
+                    async move |ctx: &mut Context, (call, output): (Call, Slice)| {
+                        generate(ctx, store.clone(), delta, call, output, Mode::Execute).await
+                    },
+                    |(call, _)| call.circ().and_count(),
+                )
                 .await
                 .map_err(VmError::execute)?;
 
@@ -254,17 +257,6 @@ where
     }
 }
 
-// This is required to help the compiler infer the correct lifetimes :(
-fn scope_closure<Ctx, F, R>(f: F) -> F
-where
-    F: for<'a> Fn(&'a mut Ctx, (Call, Slice)) -> ScopedBoxFuture<'static, 'a, R>
-        + Clone
-        + Send
-        + 'static,
-{
-    f
-}
-
 enum Mode {
     Preprocess,
     Execute,
@@ -272,7 +264,7 @@ enum Mode {
 
 async fn generate<COT>(
     ctx: &mut Context,
-    store: Arc<Mutex<GeneratorStore<COT>>>,
+    store: Arc<Mutex<GarblerStore<COT>>>,
     delta: Delta,
     call: Call,
     output: Slice,
@@ -280,7 +272,7 @@ async fn generate<COT>(
 ) -> Result<()> {
     let (circ, inputs) = call.into_parts();
 
-    let mut input_keys = Vec::with_capacity(circ.input_len());
+    let mut input_keys = Vec::with_capacity(circ.inputs().len());
     {
         let lock = store.lock().await;
         for input in inputs {
@@ -288,9 +280,9 @@ async fn generate<COT>(
         }
     }
 
-    let GeneratorOutput {
+    let GarblerOutput {
         outputs: output_keys,
-    } = crate::generator::generate(ctx, circ, delta, input_keys)
+    } = crate::garbler::generate(ctx, circ, delta, &input_keys)
         .await
         .map_err(VmError::execute)?;
 

@@ -1,5 +1,5 @@
 use blake3::Hasher;
-use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
+use criterion::{Criterion, Throughput, black_box, criterion_group, criterion_main};
 use mpz_circuits::circuits::AES128;
 use mpz_memory_core::correlated::{Delta, Key, Mac};
 use mpz_ot_core::{
@@ -7,7 +7,7 @@ use mpz_ot_core::{
     rcot::{RCOTReceiverOutput, RCOTSenderOutput},
 };
 use mpz_zk_core::{Prover, Verifier};
-use rand::{rngs::StdRng, Rng, SeedableRng};
+use rand::{Rng, SeedableRng, rngs::StdRng};
 
 fn criterion_benchmark(c: &mut Criterion) {
     let mut group = c.benchmark_group("zk-core");
@@ -16,9 +16,9 @@ fn criterion_benchmark(c: &mut Criterion) {
     group.bench_function("aes128", |b| {
         let mut rng = StdRng::seed_from_u64(0);
         let delta = Delta::random(&mut rng);
-        let mut rcot = IdealRCOT::new(rng.gen(), delta.into_inner());
+        let mut rcot = IdealRCOT::new(rng.random(), delta.into_inner());
 
-        rcot.alloc(AES128.input_len());
+        rcot.alloc(AES128.inputs().len());
         rcot.flush().unwrap();
         let (
             RCOTSenderOutput { mut keys, .. },
@@ -27,7 +27,7 @@ fn criterion_benchmark(c: &mut Criterion) {
                 choices,
                 ..
             },
-        ) = rcot.transfer(AES128.input_len()).unwrap();
+        ) = rcot.transfer(AES128.inputs().len()).unwrap();
         keys.iter_mut().for_each(|key| key.set_lsb(false));
         macs.iter_mut()
             .zip(choices)

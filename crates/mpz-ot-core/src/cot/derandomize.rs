@@ -1,13 +1,13 @@
 use std::{collections::VecDeque, mem};
 
-use mpz_common::future::{new_output, MaybeDone, Sender};
-use mpz_core::{bitvec::BitVec, Block};
+use mpz_common::future::{MaybeDone, Sender, new_output};
+use mpz_core::{Block, bitvec::BitVec};
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    Derandomize,
     cot::{COTReceiver, COTReceiverOutput, COTSender, COTSenderOutput},
     rcot::{RCOTReceiver, RCOTReceiverOutput, RCOTSender, RCOTSenderOutput},
-    Derandomize,
 };
 
 /// COT adjustment message.
@@ -337,7 +337,7 @@ impl DerandCOTReceiverError {
 #[cfg(test)]
 mod tests {
     use mpz_common::future::Output;
-    use rand::{rngs::StdRng, Rng, SeedableRng};
+    use rand::{Rng, SeedableRng, rngs::StdRng};
 
     use crate::{ideal::rcot::IdealRCOT, test::assert_cot};
 
@@ -347,13 +347,13 @@ mod tests {
     fn test_derandomize_cot() {
         let mut rng = StdRng::seed_from_u64(0);
         let delta = Block::random(&mut rng);
-        let rcot = IdealRCOT::new(rng.gen(), delta);
+        let rcot = IdealRCOT::new(rng.random(), delta);
 
         let mut sender = DerandCOTSender::new(rcot.clone());
         let mut receiver = DerandCOTReceiver::new(rcot);
 
         let count = 10;
-        let choices = (0..count).map(|_| rng.gen()).collect::<Vec<_>>();
+        let choices = (0..count).map(|_| rng.random()).collect::<Vec<_>>();
         let keys: Vec<_> = (0..count).map(|_| Block::random(&mut rng)).collect();
 
         sender.alloc(count).unwrap();
