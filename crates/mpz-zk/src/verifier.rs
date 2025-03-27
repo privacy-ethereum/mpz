@@ -249,8 +249,10 @@ where
         self.store.mark_public_raw(slice).map_err(VmError::view)
     }
 
-    fn mark_private_raw(&mut self, slice: Slice) -> VmResult<()> {
-        self.store.mark_private_raw(slice).map_err(VmError::view)
+    fn mark_private_raw(&mut self, _slice: Slice) -> VmResult<()> {
+        Err(VmError::view(
+            "marking as private is not allowed for zk verifier",
+        ))
     }
 
     fn mark_blind_raw(&mut self, slice: Slice) -> VmResult<()> {
