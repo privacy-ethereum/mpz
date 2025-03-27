@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use crate::view::FlushView;
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(try_from = "validation::ProverFlushUnchecked")]
 pub struct ProverFlush {
     view: FlushView,
     adjust: BitVec,
@@ -20,6 +21,48 @@ pub struct ProverFlush {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct VerifierFlush {
     view: FlushView,
+}
+
+mod validation {
+    use super::*;
+
+    #[derive(Debug, Deserialize)]
+    pub(super) struct ProverFlushUnchecked {
+        view: FlushView,
+        adjust: BitVec,
+        mac_proof: Option<(BitVec, Hash)>,
+    }
+
+    impl TryFrom<ProverFlushUnchecked> for ProverFlush {
+        type Error = String;
+
+        fn try_from(value: ProverFlushUnchecked) -> Result<Self, Self::Error> {
+            let ProverFlushUnchecked {
+                view,
+                adjust,
+                mac_proof,
+            } = value;
+
+            if view.commit.len() != adjust.len() {
+                return Err("prover sent flush with invalid number of adjustment bits".to_string());
+            }
+
+            let mac_proof_bits = match mac_proof {
+                Some(ref proof) => proof.0.len(),
+                None => 0,
+            };
+
+            if view.prove.len() != mac_proof_bits {
+                return Err("prover sent flush with invalid number of mac proof bits".to_string());
+            }
+
+            Ok(ProverFlush {
+                view,
+                adjust,
+                mac_proof,
+            })
+        }
+    }
 }
 
 #[cfg(test)]
