@@ -268,7 +268,7 @@ mod tests {
             .map(|i| rng.gen_range(interval_len * i..interval_len * (i + 1)))
             .collect();
 
-        //Corrupt an index.
+        // Corrupt an index.
         idxs[idx_count - 1] = idxs[idx_count - 2];
 
         assert!(matches!(
