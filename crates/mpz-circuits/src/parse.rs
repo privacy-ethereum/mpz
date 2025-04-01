@@ -23,26 +23,22 @@ pub enum ParseError {
 }
 
 impl Circuit {
-    /// Parses a circuit in Bristol-fashion format from a file.
-    ///
-    /// See `https://nigelsmart.github.io/MPC-Circuits/` for more information.
+    /// Parses a circuit in Bristol-fashion format from a string.
     ///
     /// # Arguments
     ///
-    /// * `filename` - The path to the file to parse.
+    /// * `circuit_str` - The string containing the Bristol circuit description.
     /// * `inputs` - The types of the inputs to the circuit.
     /// * `outputs` - The types of the outputs to the circuit.
     ///
     /// # Returns
     ///
     /// The parsed circuit.
-    pub fn parse(
-        filename: &str,
+    pub fn parse_str(
+        circuit_str: &str,
         inputs: &[ValueType],
         outputs: &[ValueType],
     ) -> Result<Self, ParseError> {
-        let file = std::fs::read_to_string(filename)?;
-
         let builder = CircuitBuilder::new();
 
         let mut feed_ids: Vec<usize> = Vec::new();
@@ -59,7 +55,7 @@ impl Circuit {
 
         let mut state = builder.state().borrow_mut();
         let pattern = Regex::new(GATE_PATTERN).unwrap();
-        for cap in pattern.captures_iter(&file) {
+        for cap in pattern.captures_iter(circuit_str) {
             let UncheckedGate {
                 xref,
                 yref,
@@ -116,6 +112,16 @@ impl Circuit {
         }
 
         Ok(builder.build()?)
+    }
+
+    /// Parses a circuit in Bristol-fashion format from a file path.
+    pub fn parse(
+        filename: &str,
+        inputs: &[ValueType],
+        outputs: &[ValueType],
+    ) -> Result<Self, ParseError> {
+        let file_content = std::fs::read_to_string(filename)?;
+        Self::parse_str(&file_content, inputs, outputs)
     }
 }
 
