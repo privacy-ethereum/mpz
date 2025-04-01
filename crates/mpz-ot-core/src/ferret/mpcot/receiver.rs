@@ -82,6 +82,8 @@ impl MPCOTReceiver<state::Initialized> {
 
                         idxs.push(pos);
                     } else {
+                        // Acc.to p.10 "if T[j] is empty ... then the receiver's input p_j can
+                        // point to this extra cell".
                         idxs.push(bucket_length);
                     }
 
@@ -101,6 +103,7 @@ impl MPCOTReceiver<state::Initialized> {
             }
             Initialized::Regular => {
                 let count = idxs.len();
+                // The length of each interval.
                 let k = len / count;
                 if len % count != 0 {
                     return Err(ErrorRepr::Params {
@@ -249,3 +252,30 @@ pub(crate) mod state {
 }
 
 use state::{Extension, Initialized};
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rand::{rngs::StdRng, Rng, SeedableRng};
+
+    #[test]
+    fn test_indices_not_regular() {
+        let mut rng = StdRng::seed_from_u64(0);
+
+        let interval_len = 8;
+        let idx_count = 4;
+        let mut idxs: Vec<_> = (0..idx_count)
+            .map(|i| rng.gen_range(interval_len * i..interval_len * (i + 1)))
+            .collect();
+
+        //Corrupt an index.
+        idxs[idx_count - 1] = idxs[idx_count - 2];
+
+        assert!(matches!(
+            MPCOTReceiver::new(rng.gen(), LpnType::Regular)
+                .start_extend(&idxs, interval_len * idx_count)
+                .unwrap_err(),
+            MPCOTReceiverError(ErrorRepr::NotRegular)
+        ));
+    }
+}

@@ -86,8 +86,8 @@ impl<const D: usize> LpnEncoder<D> {
     /// # Arguments
     ///
     /// * `seed` - The seed for PRP.
-    /// * `x` - Secret vector with length `k`.
     /// * `y` - Error vector with length `n`, this is actually `e` in LPN.
+    /// * `x` - Secret vector with length `k`.
     ///
     /// # Panics
     ///

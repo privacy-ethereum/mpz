@@ -73,7 +73,7 @@ mod tests {
         prover.commit(b_p).unwrap();
 
         let mut b_v = verifier.decode(b_v).unwrap();
-        let _ = prover.decode(b_p).unwrap();
+        std::mem::drop(prover.decode(b_p).unwrap());
 
         assert!(verifier.wants_keys());
         assert!(prover.wants_macs());
