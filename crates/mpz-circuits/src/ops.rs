@@ -25,6 +25,18 @@ pub fn full_adder(
     (sum, c_out)
 }
 
+/// Binary full-adder which does not compute the carry-out bit.
+pub fn full_adder_no_carry_out(
+    builder: &mut CircuitBuilder,
+    a: Node<Feed>,
+    b: Node<Feed>,
+    c_in: Node<Feed>,
+) -> Node<Feed> {
+    // SUM = A ⊕ B ⊕ C_IN
+    let a_b = builder.add_xor_gate(a, b);
+    builder.add_xor_gate(a_b, c_in)
+}
+
 /// Binary half-adder.
 pub fn half_adder(
     builder: &mut CircuitBuilder,
@@ -58,13 +70,13 @@ pub fn wrapping_add(
                 let (sum_0, c_out_0) = half_adder(builder, *a, *b);
                 c_out = c_out_0;
                 sum_0
-            } else if n < len {
+            } else if n < len - 1 {
                 let (sum_n, c_out_n) = full_adder(builder, *a, *b, c_out);
                 c_out = c_out_n;
                 sum_n
             } else {
-                // no carry out
-                builder.add_xor_gate(*a, *b)
+                // On the last iteration we don't compute the carry-out bit.
+                full_adder_no_carry_out(builder, *a, *b, c_out)
             }
         })
         .collect()
