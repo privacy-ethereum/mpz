@@ -72,6 +72,28 @@ impl AuthHalfGate {
     }
 }
 
+/// A batch of authenticated half gates.
+///
+/// # Parameters
+///
+/// - `N`: The size of a batch.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AuthHalfGateBatch<const N: usize = DEFAULT_BATCH_SIZE>(
+    #[serde(with = "serde_arrays")] [AuthHalfGate; N],
+);
+
+impl<const N: usize> AuthHalfGateBatch<N> {
+    /// Creates a new batch of authenticated half gates.
+    pub fn new(batch: [AuthHalfGate; N]) -> Self {
+        Self(batch)
+    }
+
+    /// Returns the inner array.
+    pub fn into_array(self) -> [AuthHalfGate; N] {
+        self.0
+    }
+}
+
 /// Helper function for hashing without tweaks for now.
 pub fn sigma(tweak: Block, block: Block, cipher: &FixedKeyAes) -> Block {
     cipher.tccr(tweak, block);

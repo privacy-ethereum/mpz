@@ -154,17 +154,23 @@ mod tests {
             outputs: output_macs,
         } = ev_consumer.finish().unwrap();
 
+        // Generator sends decoding bits to Evaluator
+        let decoding_bits: Vec<bool> = output_keys.iter()
+            .map(|key| key.pointer())
+            .collect();
+
         assert!(output_keys
             .iter()
             .zip(&output_macs)
             .zip(expected.iter_lsb0())
             .all(|((key, mac), bit)| &key.auth(bit, &delta) == mac));
 
+        // Evaluator decrypts the output by XORing mac pointer with decoding bits
         let output: Vec<u8> = Vec::from_lsb0_iter(
             output_macs
                 .into_iter()
-                .zip(output_keys)
-                .map(|(mac, key)| mac.pointer() ^ key.pointer()),
+                .enumerate()
+                .map(|(i, mac)| mac.pointer() ^ decoding_bits[i]),
         );
 
         assert_eq!(output, expected);
@@ -280,6 +286,10 @@ mod tests {
             outputs: output_macs,
             outputs: output_macs,
         } = ev_consumer.finish().unwrap();
+
+        let decoding_bits: Vec<bool> = output_keys.iter()
+            .map(|key| key.pointer())
+            .collect();
 
         assert!(output_keys
             .iter()

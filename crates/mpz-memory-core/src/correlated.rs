@@ -125,6 +125,15 @@ impl Delta {
         Self::new(rng.random())
     }
 
+    #[inline]
+    pub fn mul_bool(self, value: bool) -> Block {
+        if value {
+            self.0
+        } else {
+            Block::ZERO
+        }
+    }
+
     /// Returns the inner block
     #[inline]
     pub fn as_block(&self) -> &Block {

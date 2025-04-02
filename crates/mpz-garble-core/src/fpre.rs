@@ -420,7 +420,7 @@ impl FpreGen {
     }
 
     fn triple_combine_1(
-        self: &Self,
+        self: &mut Self,
         seed: u64,
         bucket_size: usize,
     ) -> Vec<bool> {
@@ -436,15 +436,17 @@ impl FpreGen {
             let idx = rng.gen_range(0..=i);
             location.swap(i, idx);
         }
+
+        self.location = location;
     
         let mut data = vec![false; total];
     
         for i in 0..n {
-            let base_idx = location[i*bucket_size + 0];    
+            let base_idx = self.location[i*bucket_size + 0];    
             let y_base = self.leaky_shares[base_idx].y.bit();
     
             for j in 1..bucket_size {
-                let idx_j = location[i*bucket_size + j];
+                let idx_j = self.location[i*bucket_size + j];
                 let y_j = self.leaky_shares[idx_j].y.bit();
                 data[i*bucket_size + j] = y_base ^ y_j;
             }
@@ -459,19 +461,8 @@ impl FpreGen {
         data: Vec<bool>,
         data_recv: Vec<bool>,
     ) {
-
         let total = self.leaky_shares.len();
-        assert_eq!(total % bucket_size, 0,
-            "total length must be multiple of bucket_size");
         let n = total / bucket_size;
-        
-        // Fisher–Yates shuffle in place
-        let mut rng = ChaCha12Rng::seed_from_u64(seed);
-        let mut location: Vec<usize> = (0..total).collect();
-        for i in (0..total).rev() {
-            let idx = rng.gen_range(0..=i);
-            location.swap(i, idx);
-        }
 
         let mut final_data = vec![false; total];
         for i in 0..total {
@@ -479,14 +470,14 @@ impl FpreGen {
         }
     
         for i in 0..n {
-            let base_idx = location[i*bucket_size + 0];
+            let base_idx = self.location[i*bucket_size + 0];
     
             // Start with a "copy" of the first triple in the bucket
             let mut combined_share = self.leaky_shares[base_idx].clone();
     
             // For j in [1..bucket_size], merge x and z wires, keep y same as base
             for j in 1..bucket_size {
-                let idx_j = location[i*bucket_size + j];
+                let idx_j = self.location[i*bucket_size + j];
     
                 combined_share.x = combined_share.x + self.leaky_shares[idx_j].x;
     
@@ -585,7 +576,7 @@ impl FpreEval {
     }
 
     fn triple_combine_1(
-        self: &Self,
+        self: &mut Self,
         seed: u64,
         bucket_size: usize,
     ) -> Vec<bool> {
@@ -601,15 +592,17 @@ impl FpreEval {
             let idx = rng.gen_range(0..=i);
             location.swap(i, idx);
         }
+
+        self.location = location;
     
         let mut data = vec![false; total];
     
         for i in 0..n {
-            let base_idx = location[i*bucket_size + 0];    
+            let base_idx = self.location[i*bucket_size + 0];    
             let y_base = self.leaky_shares[base_idx].y.bit();
     
             for j in 1..bucket_size {
-                let idx_j = location[i*bucket_size + j];
+                let idx_j = self.location[i*bucket_size + j];
                 let y_j = self.leaky_shares[idx_j].y.bit();
                 data[i*bucket_size + j] = y_base ^ y_j;
             }
@@ -629,14 +622,6 @@ impl FpreEval {
         assert_eq!(total % bucket_size, 0,
             "total length must be multiple of bucket_size");
         let n = total / bucket_size;
-        
-        // Fisher–Yates shuffle in place
-        let mut rng = ChaCha12Rng::seed_from_u64(seed);
-        let mut location: Vec<usize> = (0..total).collect();
-        for i in (0..total).rev() {
-            let idx = rng.gen_range(0..=i);
-            location.swap(i, idx);
-        }
 
         let mut final_data = vec![false; total];
         for i in 0..total {
@@ -644,14 +629,14 @@ impl FpreEval {
         }
 
         for i in 0..n {
-            let base_idx = location[i*bucket_size + 0];
+            let base_idx = self.location[i*bucket_size + 0];
     
             // Start with a "copy" of the first triple in the bucket
             let mut combined_share = self.leaky_shares[base_idx].clone();
     
             // For j in [1..bucket_size], merge x and z wires, keep y same as base
             for j in 1..bucket_size {
-                let idx_j = location[i*bucket_size + j];
+                let idx_j = self.location[i*bucket_size + j];
     
                 combined_share.x = combined_share.x + self.leaky_shares[idx_j].x;
     

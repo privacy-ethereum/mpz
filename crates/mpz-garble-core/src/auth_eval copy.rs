@@ -488,7 +488,7 @@ pub(crate) fn and_gate(
 
     // Compute masked value
     let zc = lz.lsb() ^ gates.mask;
-    // lz.set_lsb(zc);
+    lz.set_lsb(zc);
     
     (lz, zc)
 }
