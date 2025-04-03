@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::{Circuit, CircuitBuilder, components::GateType};
+use crate::{components::GateType, Circuit, CircuitBuilder};
 use regex::{Captures, Regex};
 
 static HEADER_PATTERN: &str = r"(?m)^(?P<gate_count>\d+)\s+(?P<wire_count>\d+)\s*\n(?P<input_line>\d+(?:\s+\d+)*)\s*\n(?P<output_line>\d+(?:\s+\d+)*)\s*$";
@@ -23,24 +23,22 @@ pub enum ParseError {
 }
 
 impl Circuit {
-    /// Parses a circuit in Bristol-fashion format from a file.
+    /// Parses a circuit in Bristol-fashion format from a string.
     ///
     /// See `https://nigelsmart.github.io/MPC-Circuits/` for more information.
     ///
     /// # Arguments
     ///
-    /// * `filename` - The path to the file to parse.
+    /// * `circuit_str` - The string containing the circuit description.
     ///
     /// # Returns
     ///
     /// The parsed circuit.
-    pub fn parse(filename: &str) -> Result<Self, ParseError> {
-        let file = std::fs::read_to_string(filename)?;
-
+    pub fn parse_str(circuit_str: &str) -> Result<Self, ParseError> {
         let mut builder = CircuitBuilder::new();
 
         let header_pattern = Regex::new(HEADER_PATTERN).unwrap();
-        let Some(header_captures) = header_pattern.captures(&file) else {
+        let Some(header_captures) = header_pattern.captures(&circuit_str) else {
             return Err(ParseError::InvalidHeader);
         };
 
@@ -76,7 +74,7 @@ impl Circuit {
         }
 
         let pattern = Regex::new(GATE_PATTERN).unwrap();
-        for cap in pattern.captures_iter(&file) {
+        for cap in pattern.captures_iter(&circuit_str) {
             let UncheckedGate {
                 xref,
                 yref,
@@ -127,6 +125,22 @@ impl Circuit {
         }
 
         Ok(builder.build()?)
+    }
+
+    /// Parses a circuit in Bristol-fashion format from a file.
+    ///
+    /// See `https://nigelsmart.github.io/MPC-Circuits/` for more information.
+    ///
+    /// # Arguments
+    ///
+    /// * `filename` - Path to the file containing the circuit description.
+    ///
+    /// # Returns
+    ///
+    /// The parsed circuit.
+    pub fn parse(filename: &str) -> Result<Self, ParseError> {
+        let file = std::fs::read_to_string(filename)?;
+        Self::parse_str(&file)
     }
 }
 
@@ -183,8 +197,8 @@ mod tests {
     #[ignore = "expensive"]
     fn test_parse_aes() {
         use aes::{
-            Aes128,
             cipher::{BlockEncrypt, KeyInit},
+            Aes128,
         };
 
         let circ = Circuit::parse("circuits/bristol/aes_128_reverse.txt").unwrap();
