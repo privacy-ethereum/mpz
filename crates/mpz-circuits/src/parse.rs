@@ -38,7 +38,7 @@ impl Circuit {
         let mut builder = CircuitBuilder::new();
 
         let header_pattern = Regex::new(HEADER_PATTERN).unwrap();
-        let Some(header_captures) = header_pattern.captures(&circuit_str) else {
+        let Some(header_captures) = header_pattern.captures(circuit_str) else {
             return Err(ParseError::InvalidHeader);
         };
 
@@ -74,7 +74,7 @@ impl Circuit {
         }
 
         let pattern = Regex::new(GATE_PATTERN).unwrap();
-        for cap in pattern.captures_iter(&circuit_str) {
+        for cap in pattern.captures_iter(circuit_str) {
             let UncheckedGate {
                 xref,
                 yref,
