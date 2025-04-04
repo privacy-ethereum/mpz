@@ -8,6 +8,7 @@ use std::iter::zip;
 
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha12Rng;
+use rand::rngs::StdRng;
 
 use mpz_memory_core::correlated::{Delta, Key, Mac};
 
@@ -383,6 +384,7 @@ impl FpreGen {
                 z: auth_bits[3 * i + 2].clone(),
             });
         }
+        println!("leaky triples: {:?}", self.leaky_shares[42]);
     }
 
     fn triple_check_1(&mut self) -> (Vec<Block>, Vec<Block>) {
@@ -445,6 +447,7 @@ impl FpreGen {
         }
 
         self.location = location;
+        println!("gen location: {:?}", self.location[42]);
     
         let mut data = vec![false; total];
     
@@ -538,6 +541,7 @@ impl FpreEval {
                 z: auth_bits[3 * i + 2].clone(),
             });
         }
+        println!("leaky triples: {:?}", self.leaky_shares[0]);
     }
 
     fn triple_check_1(&mut self) -> (Vec<Block>, Vec<Block>) {
@@ -601,7 +605,8 @@ impl FpreEval {
         }
 
         self.location = location;
-    
+        println!("eval location: {:?}", self.location[42]);
+
         let mut data = vec![false; total];
     
         for i in 0..n {
@@ -736,30 +741,46 @@ pub fn fpre(
     num_and: usize,
     bucket_size: usize,
     seed: u64,
+    rng: &mut StdRng,
 ) -> (FpreGen, FpreEval) {
 
-    let mut rng = ChaCha12Rng::seed_from_u64(seed);
-
     // need to set LSB of deltas to XOR to 1 for an optimization
-    let delta_a = Delta::random(&mut rng).set_lsb(true);
-    let delta_b = Delta::random(&mut rng).set_lsb(false);
+    let delta_a = Delta::random(rng).set_lsb(true);
+    let delta_b = Delta::random(rng).set_lsb(false);
+
+    println!("delta_a: {:?}", delta_a);
+    println!("delta_b: {:?}", delta_b);
 
     let mut fpre_gen = FpreGen::new(num_wires, num_and, delta_a);
     let mut fpre_eval = FpreEval::new(num_wires, num_and, delta_b);
 
-    let (gen_shares, eval_shares) = 
-        bit_shares_from_cot(num_wires+num_and, delta_a, delta_b)
+    // Calculate total number of shares needed
+    let num_wires_shares = num_wires + num_and;
+    let num_and_shares = num_and*(3*bucket_size);
+    let total_shares = num_wires_shares + num_and_shares;
+
+    // Get all shares in one call
+    let (gen_all_shares, eval_all_shares) = 
+        bit_shares_from_cot(total_shares, delta_a, delta_b)
         .unwrap();
 
-    fpre_gen.set_bits(gen_shares);
-    fpre_eval.set_bits(eval_shares);
+    // Split into input and AND shares
+    let (gen_wire_shares, gen_and_shares) = {
+        let (wire, and) = gen_all_shares.split_at(num_wires_shares);
+        (wire.to_vec(), and.to_vec())
+    };
+    let (eval_wire_shares, eval_and_shares) = {
+        let (wire, and) = eval_all_shares.split_at(num_wires_shares);
+        (wire.to_vec(), and.to_vec())
+    };
 
-    let (gen_shares, eval_shares) = 
-            bit_shares_from_cot(3*num_and*bucket_size, delta_a, delta_b)
-            .unwrap();
+    println!("gen wire shares: {:?}", gen_wire_shares[42]);
 
-    fpre_gen.set_faulty_triples(gen_shares);
-    fpre_eval.set_faulty_triples(eval_shares);
+    fpre_gen.set_bits(gen_wire_shares);
+    fpre_eval.set_bits(eval_wire_shares);
+
+    fpre_gen.set_faulty_triples(gen_and_shares);
+    fpre_eval.set_faulty_triples(eval_and_shares);
 
     let (c_gen, mut g_gen) = fpre_gen.triple_check_1();
     let (c_eval, mut g_eval) = fpre_eval.triple_check_1();
@@ -784,7 +805,7 @@ pub fn fpre(
     }
 
     // Comm 4: coin-tossing to agree on a seed
-    let seed = rand::thread_rng().gen();
+    let seed = 0;
 
     let data_gen = fpre_gen.triple_combine_1(seed, bucket_size);
     let data_eval = fpre_eval.triple_combine_1(seed, bucket_size);
@@ -835,7 +856,8 @@ mod tests {
         let num_and = 6000;
         let bucket_size = 5;
 
-        let (fpre_gen, fpre_eval) = fpre(num_wires, num_and, bucket_size, 0);
+        let mut rng = StdRng::seed_from_u64(0);
+        let (fpre_gen, fpre_eval) = fpre(num_wires, num_and, bucket_size, 0, &mut rng);
 
         verify_fpre(fpre_gen, fpre_eval);
     }

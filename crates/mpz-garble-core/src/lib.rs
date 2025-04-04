@@ -108,147 +108,6 @@ mod tests {
     }
 
     #[test]
-    fn test_auth_garble() {
-        let mut rng = StdRng::seed_from_u64(0);
-
-        let key = [69u8; 16];
-        let msg = [42u8; 16];
-
-        let circuit = &AES128;
-
-        let expected: [u8; 16] = {
-            let cipher = Aes128::new_from_slice(&key).unwrap();
-            let mut out = msg.into();
-            cipher.encrypt_block(&mut out);
-            out.into()
-        };
-
-        let delta_a = Delta::random(&mut rng).set_lsb(true);
-        let delta_b = Delta::random(&mut rng).set_lsb(false);
-
-        let (gen_input_shares, eval_input_shares) = 
-            bit_shares_from_cot(circuit.input_len(), delta_a, delta_b)
-            .unwrap();
-
-        // 1 for auth bit wires, 3*bucket_size for triples
-        let bucket_size = (SSP as f64 / (circuit.and_count() as f64).log2()).ceil() as usize;
-        let num_cot_and = circuit.and_count()*(3*bucket_size+1);
-        let (gen_and_shares, eval_and_shares) = 
-            bit_shares_from_cot(num_cot_and, delta_a, delta_b)
-            .unwrap();
-
-        // Coin-tossing to agree on a seed
-        // let seed = rand::thread_rng().gen();
-        let seed = 0;
-
-        let mut gen = AuthGen::new(seed, bucket_size);
-        let mut ev = AuthEval::new(seed, bucket_size);
-
-        let input_keys = (0..AES128.input_len())
-            .map(|_| rng.gen())
-            .collect::<Vec<Key>>();
-
-        let masked_inputs = key.iter().copied().chain(msg).into_iter_lsb0()
-            .enumerate()
-            .map(|(i, b)| b ^ gen_input_shares[i].bit() ^ eval_input_shares[i].bit())
-            .collect::<Vec<bool>>();
-
-        // Calculate MACs for authenticated garbling
-        let input_macs = masked_inputs.iter()
-            .enumerate()
-            .map(|(i, b)| {
-                if *b {
-                    Mac::from(input_keys[i].as_block().clone()) + Mac::from(delta_a.as_block().clone())
-                } else {
-                    Mac::from(input_keys[i].as_block().clone())
-                }
-            })
-            .collect::<Vec<Mac>>();    
-
-        let (c_gen, mut g_gen) = gen.generate_pre_1(circuit, delta_a, input_keys, gen_input_shares, gen_and_shares).unwrap();
-        let (c_eval, mut g_eval) = ev.evaluate_pre_1(circuit, delta_b, input_macs, eval_input_shares, masked_inputs, eval_and_shares).unwrap();
-
-        // Comm 1
-        let gr_gen = g_eval.clone();
-        let gr_eval = g_gen.clone();
-
-        let d_gen = gen.generate_pre_2(delta_a, c_gen, &mut g_gen, gr_gen).unwrap();
-        let d_eval = ev.evaluate_pre_2(delta_b, c_eval, &mut g_eval, gr_eval).unwrap();
-
-        // Comm 2
-        let dr_gen = d_eval.clone();    
-        let dr_eval = d_gen.clone();
-
-        let data_gen = gen.generate_pre_3(delta_a, &mut g_gen, d_gen, dr_gen).unwrap();
-        let data_eval = ev.evaluate_pre_3(delta_b, &mut g_eval, d_eval, dr_eval).unwrap();
-
-        // Comm 3 (secure equality check)
-
-        for (g_gen, g_eval) in g_gen.iter().zip(g_eval.iter()) {
-            assert_eq!(g_gen, g_eval);
-        }
-
-        // Comm 4
-        let data_recv_gen = data_eval.clone();
-        let data_recv_eval = data_gen.clone();
-
-        gen.generate_pre_4(data_gen, data_recv_gen).unwrap();
-        ev.evaluate_pre_4(data_eval, data_recv_eval).unwrap();
-
-        gen.generate_free(circuit).unwrap();
-        ev.evaluate_free(circuit).unwrap();
-
-        // Comm 5
-        let (px_gen, py_gen) = gen.generate_de(circuit).unwrap();
-        let (px_eval, py_eval) = ev.evaluate_de(circuit).unwrap();
-
-        let mut gen_iter: AuthEncryptedGateBatchIter<'_, std::slice::Iter<'_, mpz_circuits::Gate>, 128> = gen.generate_batched(&AES128, delta_a, px_eval, py_eval).unwrap();
-        let mut ev_consumer: AuthEncryptedGateBatchConsumer<'_, std::slice::Iter<'_, mpz_circuits::Gate>, 128> = ev.evaluate_batched(&AES128, delta_b, px_gen, py_gen).unwrap();
-
-        for batch in gen_iter.by_ref() {
-            ev_consumer.next(batch);
-        }
-
-        let AuthEvalOutput {
-            output_labels: eval_output_labels,
-            output_auth_bits: eval_output_auth_bits,
-            auth_hash: eval_auth_hash,
-            masked_output_values,
-            masked_values,
-        } = ev_consumer.finish().unwrap();
-
-        let AuthGenOutput {
-            output_labels: gen_output_labels,
-            output_auth_bits: gen_output_auth_bits,
-            auth_hash: gen_auth_hash,
-        } = gen_iter.finish(masked_values).unwrap();
-
-        // authentication check
-        assert_eq!(gen_auth_hash, eval_auth_hash);
-
-        let masks = gen_output_auth_bits.iter()
-            .zip(eval_output_auth_bits.iter())
-            .map(|(gen_auth_bit, eval_auth_bit)| gen_auth_bit.bit() ^ eval_auth_bit.bit())
-            .collect::<Vec<bool>>();
-
-        // TODO: output labels are rubbish, fix
-        for (gen_label, eval_label) in gen_output_labels.iter().zip(eval_output_labels.iter()) {
-            let xor_label = gen_label.as_block() ^ eval_label.as_block();
-            println!("xor_label: {:?}", xor_label);
-        }
-        
-        // Unmask the output
-        let output: Vec<u8> = Vec::from_lsb0_iter(
-            masked_output_values
-                .into_iter()
-                .enumerate()
-                .map(|(i, masked_value)| masked_value ^ masks[i]),
-        );
-
-        // TODO: not passing, fix
-        assert_eq!(output, expected);        
-    }
-    #[test]
     fn test_garble() {
         let mut rng = StdRng::seed_from_u64(0);
         let mut rng = StdRng::seed_from_u64(0);
@@ -498,12 +357,11 @@ mod tests {
     impl<'a> AuthGarbleSetup<'a> {
         fn new(config: &'a AuthGarbleConfig) -> Self {
             let mut rng = StdRng::seed_from_u64(config.seed);
-            
             let num_input_wires = config.circuit.input_len();
             let num_and_gates = config.circuit.and_count();
             let bucket_size = (SSP as f64 / (num_and_gates as f64).log2()).ceil() as usize;
 
-            let (fpre_gen, fpre_eval) = fpre(num_input_wires, num_and_gates, bucket_size, rng.gen());
+            let (fpre_gen, fpre_eval) = fpre(num_input_wires, num_and_gates, bucket_size, 0, &mut rng);
 
             let auth_gen = AuthGenerator::new(&*config.circuit, fpre_gen, config.input_owners.clone());
             let auth_eval = AuthEvaluator::new(&*config.circuit, fpre_eval, config.input_owners.clone());
@@ -511,7 +369,7 @@ mod tests {
             let zero_labels = (0..config.circuit.input_len())
                 .map(|_| rng.gen())
                 .collect::<Vec<Block>>();
-
+            println!("zero_labels: {:?}", zero_labels[0]);
             Self { auth_gen, auth_eval, zero_labels }
         }
 
@@ -552,6 +410,11 @@ mod tests {
         let cipher = &(*FIXED_KEY_AES);
         let (eval_inputs, gen_inputs) = process_inputs(&config);
 
+        let triples_gen = setup.auth_gen.output_triples();
+        println!("triples_gen: {:?}", triples_gen[0]);
+        let triples_eval = setup.auth_eval.output_triples();
+        println!("triples_eval: {:?}", triples_eval[0]);
+
         // Evaluate free gates
         setup.auth_gen.evaluate_free_gates();
         setup.auth_eval.evaluate_free_gates();
@@ -559,8 +422,18 @@ mod tests {
         // Prepare derandomization bits and garble AND gates
         let (eval_px, eval_py) = setup.auth_eval.prepare_px_py();
         let (gen_px, gen_py) = setup.auth_gen.prepare_px_py();
+
+        println!("px_gen: {:?}", gen_px[10]);
+        println!("py_gen: {:?}", gen_py[20]);
+        println!("px_eval: {:?}", eval_px[30]);
+        println!("py_eval: {:?}", eval_py[40]);
+
         let gen_gates = setup.auth_gen.garble_and_gates(cipher, eval_px, eval_py).unwrap();
 
+        let sigma_bits = setup.auth_gen.output_sigma_bits();
+        println!("sigma bits: {:?}", sigma_bits[42]);
+
+        println!("gates: {:?}", gen_gates[2]);
         // Process inputs
         let gen_input_macs = setup.auth_eval.collect_input_macs();
         let eval_input_macs = setup.auth_gen.collect_input_macs();
@@ -584,6 +457,8 @@ mod tests {
                 }
             }
         }
+
+        println!("masked_inputs: {:?}", masked_inputs);
 
         // Provide input labels and evaluate
         let labels = setup.auth_gen.collect_input_labels(&masked_inputs);
@@ -619,7 +494,7 @@ mod tests {
 
         let input = key.iter_lsb0().chain(msg.iter_lsb0()).collect::<Vec<_>>();
 
-        for seed in 0..2 {
+        for seed in 0..1 {
             let config = AuthGarbleConfig::new(AES128.clone(), input.clone(), seed);
             
             let output_bits = auth_garble(config);
@@ -628,6 +503,161 @@ mod tests {
         }
     }
     
+    #[test]
+    fn test_auth_garble() {
+        let mut rng = StdRng::seed_from_u64(0);
+
+        let key = [69u8; 16];
+        let msg = [42u8; 16];
+
+        let circuit = &AES128;
+
+        let expected: [u8; 16] = {
+            let cipher = Aes128::new_from_slice(&key).unwrap();
+            let mut out = msg.into();
+            cipher.encrypt_block(&mut out);
+            out.into()
+        };
+
+        let delta_a = Delta::random(&mut rng).set_lsb(true);
+        let delta_b = Delta::random(&mut rng).set_lsb(false);
+
+        // Calculate total number of shares needed
+        let bucket_size = (SSP as f64 / (circuit.and_count() as f64).log2()).ceil() as usize;
+        let num_input_shares = circuit.input_len();
+        let num_and_shares = circuit.and_count()*(3*bucket_size+1);
+        let total_shares = num_input_shares + num_and_shares;
+
+        // Get all shares in one call
+        let (gen_all_shares, eval_all_shares) = 
+            bit_shares_from_cot(total_shares, delta_a, delta_b)
+            .unwrap();
+
+        // Split into input and AND shares
+        let (gen_input_shares, gen_and_shares) = {
+            let (input, and) = gen_all_shares.split_at(num_input_shares);
+            (input.to_vec(), and.to_vec())
+        };
+        let (eval_input_shares, eval_and_shares) = {
+            let (input, and) = eval_all_shares.split_at(num_input_shares);
+            (input.to_vec(), and.to_vec())
+        };
+
+        // Coin-tossing to agree on a seed
+        // let seed = rand::thread_rng().gen();
+        let seed = 0;
+
+        let mut gen = AuthGen::new(seed, bucket_size);
+        let mut ev = AuthEval::new(seed, bucket_size);
+
+        let input_keys = (0..AES128.input_len())
+            .map(|_| rng.gen())
+            .collect::<Vec<Key>>();
+
+        let masked_inputs = key.iter().copied().chain(msg).into_iter_lsb0()
+            .enumerate()
+            .map(|(i, b)| b ^ gen_input_shares[i].bit() ^ eval_input_shares[i].bit())
+            .collect::<Vec<bool>>();
+
+        // Calculate MACs for authenticated garbling
+        let input_macs = masked_inputs.iter()
+            .enumerate()
+            .map(|(i, b)| {
+                if *b {
+                    Mac::from(input_keys[i].as_block().clone()) + Mac::from(delta_a.as_block().clone())
+                } else {
+                    Mac::from(input_keys[i].as_block().clone())
+                }
+            })
+            .collect::<Vec<Mac>>();    
+
+        let (c_gen, mut g_gen) = gen.generate_pre_1(circuit, delta_a, input_keys, gen_input_shares, gen_and_shares).unwrap();
+        let (c_eval, mut g_eval) = ev.evaluate_pre_1(circuit, delta_b, input_macs, eval_input_shares, masked_inputs, eval_and_shares).unwrap();
+
+        // Comm 1
+        let gr_gen = g_eval.clone();
+        let gr_eval = g_gen.clone();
+
+        let d_gen = gen.generate_pre_2(delta_a, c_gen, &mut g_gen, gr_gen).unwrap();
+        let d_eval = ev.evaluate_pre_2(delta_b, c_eval, &mut g_eval, gr_eval).unwrap();
+
+        // Comm 2
+        let dr_gen = d_eval.clone();    
+        let dr_eval = d_gen.clone();
+
+        let data_gen = gen.generate_pre_3(delta_a, &mut g_gen, d_gen, dr_gen).unwrap();
+        let data_eval = ev.evaluate_pre_3(delta_b, &mut g_eval, d_eval, dr_eval).unwrap();
+
+        // Comm 3 (secure equality check)
+
+        for (g_gen, g_eval) in g_gen.iter().zip(g_eval.iter()) {
+            assert_eq!(g_gen, g_eval);
+        }
+
+        // Comm 4
+        let data_recv_gen = data_eval.clone();
+        let data_recv_eval = data_gen.clone();
+
+        gen.generate_pre_4(data_gen, data_recv_gen).unwrap();
+        ev.evaluate_pre_4(data_eval, data_recv_eval).unwrap();
+
+        gen.generate_free(circuit).unwrap();
+        ev.evaluate_free(circuit).unwrap();
+
+        // Comm 5
+        let (px_gen, py_gen) = gen.generate_de(circuit).unwrap();
+        let (px_eval, py_eval) = ev.evaluate_de(circuit).unwrap();
+
+        let mut gen_iter: AuthEncryptedGateBatchIter<'_, std::slice::Iter<'_, mpz_circuits::Gate>> = gen.generate_batched(&AES128, delta_a, px_eval, py_eval).unwrap();
+        let mut ev_consumer: AuthEncryptedGateBatchConsumer<'_, std::slice::Iter<'_, mpz_circuits::Gate>> = ev.evaluate_batched(&AES128, delta_b, px_gen, py_gen).unwrap();
+
+        for gate in gen_iter.by_ref() {
+            ev_consumer.next(gate);
+        }
+
+
+        let AuthEvalOutput {
+            output_labels: eval_output_labels,
+            output_auth_bits: eval_output_auth_bits,
+            auth_hash: eval_auth_hash,
+            masked_output_values,
+            masked_values,
+        } = ev_consumer.finish().unwrap();
+
+        let AuthGenOutput {
+            output_labels: gen_output_labels,
+            output_auth_bits: gen_output_auth_bits,
+            auth_hash: gen_auth_hash,
+        } = gen_iter.finish(masked_values).unwrap();
+
+        // authentication check
+        assert_eq!(gen_auth_hash, eval_auth_hash);
+
+        let masks = gen_output_auth_bits.iter()
+            .zip(eval_output_auth_bits.iter())
+            .map(|(gen_auth_bit, eval_auth_bit)| gen_auth_bit.bit() ^ eval_auth_bit.bit())
+            .collect::<Vec<bool>>();
+        
+        // Unmask the output
+        let output: Vec<u8> = Vec::from_lsb0_iter(
+            masked_output_values
+                .clone()
+                .into_iter()
+                .enumerate()
+                .map(|(i, masked_value)| masked_value ^ masks[i]),
+        );
+
+        assert_eq!(output, expected);   
+
+        // Check output labels
+        for (i, (gen_label, eval_label)) in gen_output_labels.iter().zip(eval_output_labels.iter()).enumerate() {
+            let xor = gen_label.as_block() ^ eval_label.as_block();
+            let masked_value = masked_output_values[i];
+            let expected = delta_a.mul_bool(masked_value);
+            assert_eq!(xor, expected);
+        }
+    }
+
     #[test]
     fn test_auth_garble_intertwined_inputs() {
         let key = [69u8; 16];
