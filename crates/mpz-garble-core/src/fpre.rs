@@ -127,7 +127,9 @@ fn build_share(rng: &mut ChaCha12Rng, bit: bool, delta: &Delta) -> AuthBitShare 
 /// Represents an auth bit [x] = [r]+[s] where [r] is known to gen, auth by eval and [s] is known to eval, auth by gen.
 #[derive(Debug, Clone)]
 pub struct AuthBit {
+    /// Generator's share of the auth bit
     pub gen_share: AuthBitShare,  
+    /// Evaluator's share of the auth bit
     pub eval_share: AuthBitShare,
 }
 
@@ -137,7 +139,8 @@ impl AuthBit {
         self.gen_share.bit() ^ self.eval_share.bit()
     }
 
-    fn verify(&self, delta_a: &Delta, delta_b: &Delta) {
+    /// verify auth bits
+    pub fn verify(&self, delta_a: &Delta, delta_b: &Delta) {
         // Reconstruct shares for testing
         let r = AuthBitShare {
             key: self.eval_share.key,
@@ -157,13 +160,17 @@ impl AuthBit {
 /// A triple ([x], [y], [z]) of auth bits such that z = x & y.
 #[derive(Debug, Clone)]
 pub struct AuthTriple {
+    /// x component of the triple
     pub x: AuthBit,
+    /// y component of the triple
     pub y: AuthBit,
+    /// z component of the triple
     pub z: AuthBit,
 }
 
 impl AuthTriple {
-    fn verify(&self, delta_a: &Delta, delta_b: &Delta) {
+    /// verify auth triples
+    pub fn verify(&self, delta_a: &Delta, delta_b: &Delta) {
         let x = self.x.full_bit();
         let y = self.y.full_bit();
         let z = self.z.full_bit();
@@ -653,7 +660,7 @@ impl FpreEval {
 }
 
 /// Generate auth bit shares using ideal COT
-fn bit_shares_from_cot(
+pub fn bit_shares_from_cot(
     length: usize,
     delta_a: Delta,
     delta_b: Delta,
@@ -822,7 +829,6 @@ fn verify_fpre(fpre_gen: FpreGen, fpre_eval: FpreEval){
 mod tests {
     use super::*;
 
-    // Need to fix secure generation with new LSB convention
     #[test]
     fn test_fpre(){
         let num_wires = 10000;

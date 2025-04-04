@@ -19,7 +19,7 @@ use mpz_memory_core::correlated::{Key, Mac, Delta};
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha12Rng;
 
-const SELECT_MASK: [Block; 2] = [Block::ZERO, Block::ONE];
+const SELECT_MASK: [Block; 2] = [Block::ZERO, Block::ONES];
 /// Errors that can occur during authenticated garbled circuit generation.
 #[derive(Debug, thiserror::Error)]
 #[allow(missing_docs)]
@@ -62,7 +62,7 @@ pub(crate) fn sigma_share(
     triple: &mut AuthTripleShare, 
     px: bool, 
     py: bool, 
-    delta_a: &Block
+    delta: &Block
 ) -> AuthBitShare {
     let mut sigma_share = triple.z.clone();
 
@@ -75,7 +75,7 @@ pub(crate) fn sigma_share(
     }
 
     if px && py {
-        sigma_share.key = sigma_share.key + Key::from(*delta_a); 
+        sigma_share.key = sigma_share.key + Key::from(*delta); 
     }
 
     sigma_share
@@ -89,39 +89,72 @@ pub(crate) fn and_gate(
     sy: &AuthBitShare,
     sz: &AuthBitShare,
     ss: &AuthBitShare,
-    delta_a: &Block,
+    delta: &Block,
     cipher: &FixedKeyAes,  
     gid: usize,
 ) -> (AuthHalfGate, Block) {
     // Compute 1-bit labels
-    let lx1 = lx ^ delta_a;
-    let ly1 = ly ^ delta_a;
+    let lx1 = lx ^ delta;
+    let ly1 = ly ^ delta;
     
     // Pre-compute all hashes
     let j = Block::new((gid as u128).to_be_bytes());
     let k = Block::new(((gid + 1) as u128).to_be_bytes());
-    // let mut h = [lx, ly, lx1, ly1];
-    // cipher.tccr_many(&[j, k, j, k], &mut h);
-    // let [hx, hy, hx1, hy1] = h;
-
-    let hx = sigma(j, *lx, cipher);
-    let hy = sigma(k, *ly, cipher);
-    let hx1 = sigma(j, lx1, cipher);
-    let hy1 = sigma(k, ly1, cipher);
     
-    let g_0 = hx ^ hx1 ^ sy.key.as_block() ^ delta_a.mul_bool(sy.bit());
+    let mut h = [*lx, *ly, lx1, ly1];
+    cipher.tccr_many(&[j, k, j, k], &mut h);
+    let [hx, hy, hx1, hy1] = h;
+
+    // let hx = sigma(j, *lx, cipher);
+    // let hy = sigma(k, *ly, cipher);
+    // let hx1 = sigma(j, lx1, cipher);
+    // let hy1 = sigma(k, ly1, cipher);
+    
+    let g_0 = hx ^ hx1 ^ sy.key.as_block() ^ delta.mul_bool(sy.bit());
               
-    let g_1 = hy ^ hy1 ^ sx.key.as_block() ^ delta_a.mul_bool(sx.bit()) ^ lx;
+    let g_1 = hy ^ hy1 ^ sx.key.as_block() ^ delta.mul_bool(sx.bit()) ^ lx;
     
     // Compute output label
-    let lz = hx ^ hy ^ sz.key.as_block() ^ delta_a.mul_bool(sz.bit()) ^ 
-            ss.key.as_block() ^ delta_a.mul_bool(ss.bit());
+    let lz = hx ^ hy ^ sz.key.as_block() ^ delta.mul_bool(sz.bit()) ^ 
+            ss.key.as_block() ^ delta.mul_bool(ss.bit());
     
     // Create half-gate with mask based on lz's LSB
     let gates = [g_0, g_1];
     let mask = lz.lsb();
     
     (AuthHalfGate::new(gates, mask), lz)
+}
+
+pub(crate) fn check_and(
+    ss: &AuthBitShare,
+    sz: &AuthBitShare,
+    sx: &AuthBitShare,
+    sy: &AuthBitShare,
+    za: bool,
+    zb: bool,
+    zc: bool,
+    delta: Block,
+) -> Block {
+    // Start with combined share of sigma and z
+    let mut share = (ss.mac.as_block() ^ ss.key.as_block() ^ delta.mul_bool(ss.bit())) ^
+                   (sz.mac.as_block() ^ sz.key.as_block() ^ delta.mul_bool(sz.bit()));
+
+    // Apply adjustments based on masked values
+    if za {
+        share = share ^ sy.mac.as_block() ^ sy.key.as_block() ^ 
+        delta.mul_bool(sy.bit());
+    }
+
+    if zb {
+        share = share ^ sx.mac.as_block() ^ sx.key.as_block() ^ 
+        delta.mul_bool(sx.bit());
+    }
+
+    if (za && zb) != zc {
+        share = share ^ delta;
+    }
+
+    share
 }
 
 /// Output of the generator.
@@ -147,12 +180,29 @@ pub struct AuthGen {
     leaky_triples: Vec<AuthTripleShare>,
     permutation: Vec<usize>,
     seed: u64, // via secure coin toss
+    bucket_size: usize,
 }
 
 // TODO: separate the pre-processing from the generation into func ind, func dep
+// TODO: set input labels at the end
 
 impl AuthGen {
 
+    /// Create a new AuthGen with seed from coin-tossing
+    pub fn new(seed: u64, bucket_size: usize) -> Self {
+        Self {
+            labels: vec![],
+            auth_bits: vec![],
+            sigma_bits: vec![],
+            masked_values: vec![],
+            triples: vec![],
+            leaky_triples: vec![],
+            permutation: vec![],
+            seed,
+            bucket_size,
+        }
+    }
+    
     /// 1) Sets input auth bits and labels.
     /// 2) Uses auth bits from COT to set wire auth bits and output faulty triples.
     pub fn generate_pre_1<'a>(
@@ -262,7 +312,7 @@ impl AuthGen {
         }
 
         let total = self.leaky_triples.len();
-        let bucket_size = total / self.triples.len();
+        let bucket_size = self.bucket_size;
         assert_eq!(total % bucket_size, 0,
             "total length must be multiple of bucket_size");
         let n = total / bucket_size;
@@ -300,7 +350,7 @@ impl AuthGen {
     ) -> Result<(), AuthGeneratorError> {
 
         let total = self.leaky_triples.len();
-        let bucket_size = total / self.triples.len();
+        let bucket_size = self.bucket_size;
         assert_eq!(total % bucket_size, 0,
             "total length must be multiple of bucket_size");
         let n = total / bucket_size;
@@ -332,6 +382,11 @@ impl AuthGen {
             self.triples.push(combined_share);
         }
         Ok(())
+    }
+
+    /// Returns the output triples for debugging
+    pub fn output_triples(&self) -> Vec<AuthTripleShare> {
+        self.triples.clone()
     }
 
     /// Generates the free gates for the circuit.
@@ -419,8 +474,11 @@ impl AuthGen {
                 and_count += 1;
             }
         }
+
+        self.masked_values.resize(circ.feed_count(), false);
         Ok(AuthEncryptedGateIter::new(
             delta,
+            circ.gates().iter(),
             circ.gates().iter(),
             circ.outputs(),
             &mut self.labels,
@@ -430,6 +488,19 @@ impl AuthGen {
             circ.and_count(),
         ))
     }
+
+    /// Returns an iterator over the batched encrypted gates of a circuit.
+    pub fn generate_batched<'a>(
+        &'a mut self,
+        circ: &'a Circuit,
+        delta: Delta,
+        px: Vec<bool>,
+        py: Vec<bool>,
+    ) -> Result<AuthEncryptedGateBatchIter<'_, std::slice::Iter<'_, Gate>>, AuthGeneratorError> {
+        self.generate(circ, delta, px, py)
+            .map(AuthEncryptedGateBatchIter)
+    }
+    
 }
 
 /// Iterator over the encrypted gates of a circuit.
@@ -448,6 +519,8 @@ pub struct AuthEncryptedGateIter<'a, I> {
     masked_values: &'a mut [bool],
     /// Iterator over the gates.
     gates: I,
+    /// Iterator over the gates.
+    gates2: I,
     /// Circuit outputs.
     outputs: &'a [BinaryRepr],
     /// Current gate id.
@@ -473,6 +546,7 @@ where
     fn new(
         delta: Delta,
         gates: I,
+        gates2: I,
         outputs: &'a [BinaryRepr],
         labels: &'a mut [Block],
         auth_bits: &'a mut [AuthBitShare],
@@ -484,6 +558,7 @@ where
             cipher: &(*FIXED_KEY_AES),
             delta,
             gates,
+            gates2,
             outputs,
             labels,
             auth_bits,
@@ -517,24 +592,33 @@ where
             assert_eq!(self.next(), None);
         }
 
-        let (output_labels, output_auth_bits): (Vec<_>, Vec<_>) = self
-            .outputs
-            .iter()
-            .flat_map(|output| output.iter().map(|node| {
-                let key = Key::from(self.labels[node.id()]);
-                let auth_bit = self.auth_bits[node.id()];
-                (key, auth_bit)
-            }))
-            .unzip();
+        // let (output_labels, output_auth_bits): (Vec<_>, Vec<_>) = self
+        //     .outputs
+        //     .iter()
+        //     .flat_map(|output| output.iter().map(|node| {
+        //         let key = Key::from(self.labels[node.id()]);
+        //         let auth_bit = self.auth_bits[node.id()];
+        //         (key, auth_bit)
+        //     }))
+        //     .unzip();
 
+        let mut output_labels = Vec::new();
+        let mut output_auth_bits = Vec::new();
 
-        // TODO: Set intermediate masked values
+        for output in self.outputs.iter() {
+            for node in output.iter() {
+                output_labels.push(Key::from(self.labels[node.id()]));
+                output_auth_bits.push(self.auth_bits[node.id()]);
+            }
+        }
+
+        self.masked_values.copy_from_slice(&masked_values);
 
         let mut auth_hash = Block::ZERO;
         let mut and_count = 0;
         let delta = self.delta.as_block();
         
-        for gate in self.gates {
+        for gate in self.gates2 {
             if let Gate::And { x, y, z } = gate {
                 let ss = &self.sigma_bits[and_count];
                 let sz = &self.auth_bits[z.id()];
@@ -549,7 +633,7 @@ where
                 let share = check_and(ss, sz, sx, sy, za, zb, zc, *delta);
                 
                 // Update hash                            
-                auth_hash ^= sigma(Block::new((and_count as u128).to_be_bytes()), share, self.cipher);
+                auth_hash ^= self.cipher.tccr(Block::new((and_count as u128).to_be_bytes()), share);
                 and_count += 1;
             }
         }
@@ -564,7 +648,6 @@ where
 {
     type Item = AuthHalfGate;
 
-    // Check this. It doesn't make sense that only AND gates are done here for half-gates...
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         while let Some(gate) = self.gates.next() {
@@ -587,6 +670,14 @@ where
                     
                     self.gid += 2;
                     self.counter += 1;
+
+                    // If we have generated all AND gates, we can compute
+                    // the rest of the "free" gates.
+                    if !self.has_gates() {
+                        assert!(self.next().is_none());
+
+                        self.complete = true;
+                    }
 
                     return Some(half_gate);
                 }
@@ -991,7 +1082,7 @@ impl<'a> AuthGenerator<'a> {
                 let share = check_and(ss, sz, sx, sy, za, zb, zc, delta_a);
                 
                 // Update hash                            
-                hash ^= sigma(Block::new((and_count as u128).to_be_bytes()), share, cipher);
+                hash ^= cipher.tccr(Block::new((and_count as u128).to_be_bytes()), share);
                 and_count += 1;
             }
         }
@@ -1012,39 +1103,4 @@ impl<'a> AuthGenerator<'a> {
             })
             .collect()
     }
-}
-
-
-pub(crate) fn check_and(
-    ss: &AuthBitShare,
-    sz: &AuthBitShare,
-    sx: &AuthBitShare,
-    sy: &AuthBitShare,
-    za: bool,
-    zb: bool,
-    zc: bool,
-    delta_a: Block,
-) -> Block {
-    // Start with combined share of sigma and z
-    let mut share = ss.mac.as_block() ^ ss.key.as_block() ^ 
-    delta_a.mul_bool(ss.bit()) ^ 
-    sz.mac.as_block() ^ sz.key.as_block() ^ 
-    delta_a.mul_bool(sz.bit());
-
-    // Apply adjustments based on masked values
-    if za {
-        share = share ^ sy.mac.as_block() ^ sy.key.as_block() ^ 
-        delta_a.mul_bool(sy.bit());
-    }
-
-    if zb {
-        share = share ^ sx.mac.as_block() ^ sx.key.as_block() ^ 
-        delta_a.mul_bool(sx.bit());
-    }
-
-    if (za && zb) != zc {
-        share = share ^ delta_a;
-    }
-
-    share
 }

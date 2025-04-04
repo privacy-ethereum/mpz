@@ -96,6 +96,5 @@ impl<const N: usize> AuthHalfGateBatch<N> {
 
 /// Helper function for hashing without tweaks for now.
 pub fn sigma(tweak: Block, block: Block, cipher: &FixedKeyAes) -> Block {
-    cipher.tccr(tweak, block);
-    block
+    cipher.tccr(tweak, block)
 }
