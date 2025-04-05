@@ -42,16 +42,18 @@ pub enum AuthGeneratorError {
     InvalidInputMacCount { expected: usize, actual: usize },
 }
 
-// insecure hash function
-fn h2d(a: Block, b: Block) -> Block {
+// hash helper
+fn h2d(a: Block, b: Block, cipher: &FixedKeyAes) -> Block {
     let mut d = [a, a ^ b];
+    cipher.cr_many( &mut d);
     d[0] = d[0] ^ d[1]; 
     return d[0] ^ b;
 }
 
-// insecure hash function
-fn h2(a: Block, b: Block) -> Block {
+// hash helper
+fn h2(a: Block, b: Block, cipher: &FixedKeyAes) -> Block {
     let mut d = [a, b];
+    cipher.cr_many(&mut d);
     d[0] = d[0] ^ d[1];
     d[0] = d[0] ^ a;
     return d[0] ^ b;
@@ -169,8 +171,8 @@ pub struct AuthGenOutput {
 }
 
 /// Garbled circuit generator.
-#[derive(Debug, Default)]
 pub struct AuthGen {
+    cipher: &'static FixedKeyAes,
     labels: Vec<Block>, 
     auth_bits: Vec<AuthBitShare>,
     sigma_bits: Vec<AuthBitShare>,
@@ -191,6 +193,7 @@ impl AuthGen {
     /// Create a new AuthGen with seed from coin-tossing
     pub fn new(seed: u64, bucket_size: usize) -> Self {
         Self {
+            cipher: &(*FIXED_KEY_AES),
             labels: vec![],
             auth_bits: vec![],
             sigma_bits: vec![],
@@ -209,31 +212,25 @@ impl AuthGen {
         &'a mut self, 
         circ: &'a Circuit,
         delta: Delta,
-        input_labels: Vec<Key>,
         input_auth_bits: Vec<AuthBitShare>,
         shares: Vec<AuthBitShare>,
     ) -> Result<(Vec<Block>, Vec<Block>), AuthGeneratorError> {
 
-        if input_labels.len() != circ.input_len() || input_auth_bits.len() != circ.input_len() {
+        if input_auth_bits.len() != circ.input_len() {
             return Err(CircuitError::InvalidInputCount(
                 circ.input_len(),
-                input_labels.len(),
+                input_auth_bits.len(),
             ))?;
         }
 
         // Expand the buffer to fit the circuit
         if circ.feed_count() > self.labels.len() {
-            self.labels.resize(circ.feed_count(), Default::default());
             self.auth_bits.resize(circ.feed_count(), Default::default());
         }
 
         // Set input labels and auth bits
-        let mut input_labels_iter = input_labels.into_iter();
         let mut input_auth_bits_iter = input_auth_bits.into_iter();
         for input in circ.inputs() {
-            for (node, label) in input.iter().zip(input_labels_iter.by_ref()) {
-                self.labels[node.id()] = label.into();
-            }
             for (node, auth_bit) in input.iter().zip(input_auth_bits_iter.by_ref()) {
                 self.auth_bits[node.id()] = auth_bit;
             }
@@ -269,7 +266,7 @@ impl AuthGen {
                 ^ self.leaky_triples[i].y.key.as_block().clone()
                 ^ (SELECT_MASK[self.leaky_triples[i].y.bit() as usize] & delta.as_block());
 
-            g[i] = c[i] ^ h2d(self.leaky_triples[i].x.key.into(), delta.into_inner());
+            g[i] = c[i] ^ h2d(self.leaky_triples[i].x.key.into(), delta.into_inner(), self.cipher);
         }
         Ok((c, g))
     }
@@ -286,7 +283,7 @@ impl AuthGen {
         let mut d = vec![false; length];
 
         for i in 0..length {
-            let mut s = h2(self.leaky_triples[i].x.mac.as_block().clone(), self.leaky_triples[i].x.key.as_block().clone());
+            let mut s = h2(self.leaky_triples[i].x.mac.as_block().clone(), self.leaky_triples[i].x.key.as_block().clone(), self.cipher);
             s = s ^ self.leaky_triples[i].z.mac.as_block().clone() ^ self.leaky_triples[i].z.key.as_block().clone();
             s = s ^ SELECT_MASK[self.leaky_triples[i].x.bit() as usize] & (gr[i] ^ c[i]);
             g[i] = s ^ SELECT_MASK[self.leaky_triples[i].z.bit() as usize] & delta.as_block();
@@ -442,10 +439,31 @@ impl AuthGen {
         &'a mut self,
         circ: &'a Circuit,
         delta: Delta,
+        input_labels: Vec<Key>,
         px: Vec<bool>, // received
         py: Vec<bool>, // received
     ) -> Result<AuthEncryptedGateIter<'_, std::slice::Iter<'_, Gate>>, AuthGeneratorError> {
-        // Validate inputs
+        
+        if input_labels.len() != circ.input_len() {
+            return Err(CircuitError::InvalidInputCount(
+                circ.input_len(),
+                input_labels.len(),
+            ))?;
+        }
+
+        // Expand the buffer to fit the circuit
+        if circ.feed_count() > self.labels.len() {
+            self.labels.resize(circ.feed_count(), Default::default());
+        }
+
+        // Set input labels
+        let mut input_labels_iter = input_labels.into_iter();
+        for input in circ.inputs() {
+            for (node, label) in input.iter().zip(input_labels_iter.by_ref()) {
+                self.labels[node.id()] = label.into();
+            }
+        }
+        
         if px.len().min(py.len()) < circ.and_count() {
             return Err(AuthGeneratorError::InvalidPxPyCount {
                 expected: circ.and_count(),
@@ -495,10 +513,11 @@ impl AuthGen {
         &'a mut self,
         circ: &'a Circuit,
         delta: Delta,
+        input_labels: Vec<Key>,
         px: Vec<bool>,
         py: Vec<bool>,
     ) -> Result<AuthEncryptedGateBatchIter<'_, std::slice::Iter<'_, Gate>>, AuthGeneratorError> {
-        self.generate(circ, delta, px, py)
+        self.generate(circ, delta, input_labels, px, py)
             .map(AuthEncryptedGateBatchIter)
     }
     

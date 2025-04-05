@@ -40,16 +40,18 @@ pub enum AuthEvaluatorError {
     InvalidOutputMacCount { expected: usize, actual: usize },
 }
 
-// insecure hash function
-fn h2d(a: Block, b: Block) -> Block {
+// hash helper
+fn h2d(a: Block, b: Block, cipher: &FixedKeyAes) -> Block {
     let mut d = [a, a ^ b];
+    cipher.cr_many( &mut d);
     d[0] = d[0] ^ d[1]; 
     return d[0] ^ b;
 }
 
-// insecure hash function
-fn h2(a: Block, b: Block) -> Block {
+// hash helper
+fn h2(a: Block, b: Block, cipher: &FixedKeyAes) -> Block {
     let mut d = [a, b];
+    cipher.cr_many(&mut d);
     d[0] = d[0] ^ d[1];
     d[0] = d[0] ^ a;
     return d[0] ^ b;
@@ -166,8 +168,8 @@ pub struct AuthEvalOutput {
 }
 
 /// Garbled circuit evaluator.
-#[derive(Debug, Default)]
 pub struct AuthEval {
+    cipher: &'static FixedKeyAes,
     labels: Vec<Block>, 
     auth_bits: Vec<AuthBitShare>,
     sigma_bits: Vec<AuthBitShare>,
@@ -186,6 +188,7 @@ impl AuthEval {
     /// Create a new AuthEval with seed from coin-tossing
     pub fn new(seed: u64, bucket_size: usize) -> Self {
         Self {
+            cipher: &(*FIXED_KEY_AES),
             labels: vec![],
             auth_bits: vec![],
             sigma_bits: vec![],
@@ -204,39 +207,27 @@ impl AuthEval {
         &'a mut self, 
         circ: &'a Circuit,
         delta: Delta,
-        input_labels: Vec<Mac>,
         input_auth_bits: Vec<AuthBitShare>,
-        masked_inputs: Vec<bool>,
         shares: Vec<AuthBitShare>,
     ) -> Result<(Vec<Block>, Vec<Block>), AuthEvaluatorError> {
 
-        if input_labels.len() != circ.input_len() || input_auth_bits.len() != circ.input_len() || masked_inputs.len() != circ.input_len() {
+        if input_auth_bits.len() != circ.input_len() {
             return Err(CircuitError::InvalidInputCount(
                 circ.input_len(),
-                input_labels.len(),
+                input_auth_bits.len(),
             ))?;
         }
 
         // Expand the buffer to fit the circuit
         if circ.feed_count() > self.labels.len() {
-            self.labels.resize(circ.feed_count(), Default::default());
             self.auth_bits.resize(circ.feed_count(), Default::default());
-            self.masked_values.resize(circ.feed_count(), false);
         }
 
         // Set input labels and auth bits
-        let mut input_labels_iter = input_labels.into_iter();
         let mut input_auth_bits_iter = input_auth_bits.into_iter();
-        let mut masked_inputs_iter = masked_inputs.into_iter();
         for input in circ.inputs() {
-            for (node, label) in input.iter().zip(input_labels_iter.by_ref()) {
-                self.labels[node.id()] = label.into();
-            }
             for (node, auth_bit) in input.iter().zip(input_auth_bits_iter.by_ref()) {
                 self.auth_bits[node.id()] = auth_bit;
-            }
-            for (node, masked_input) in input.iter().zip(masked_inputs_iter.by_ref()) {
-                self.masked_values[node.id()] = masked_input;
             }
         }
 
@@ -271,7 +262,7 @@ impl AuthEval {
                 ^ self.leaky_triples[i].y.key.as_block().clone()
                 ^ (SELECT_MASK[self.leaky_triples[i].y.bit() as usize] & delta.as_block());
 
-            g[i] = c[i] ^ h2d(self.leaky_triples[i].x.key.into(), delta.into_inner());
+            g[i] = c[i] ^ h2d(self.leaky_triples[i].x.key.into(), delta.into_inner(), self.cipher);
         }
         Ok((c, g))
     }
@@ -288,7 +279,7 @@ impl AuthEval {
         let mut d = vec![false; length];
 
         for i in 0..length {
-            let mut s = h2(self.leaky_triples[i].x.mac.as_block().clone(), self.leaky_triples[i].x.key.as_block().clone());
+            let mut s = h2(self.leaky_triples[i].x.mac.as_block().clone(), self.leaky_triples[i].x.key.as_block().clone(), self.cipher);
             s = s ^ self.leaky_triples[i].z.mac.as_block().clone() ^ self.leaky_triples[i].z.key.as_block().clone();
             s = s ^ SELECT_MASK[self.leaky_triples[i].x.bit() as usize] & (gr[i] ^ c[i]);
             g[i] = s ^ SELECT_MASK[self.leaky_triples[i].z.bit() as usize] & delta.as_block();
@@ -444,10 +435,37 @@ impl AuthEval {
         &'a mut self,
         circ: &'a Circuit,
         delta: Delta,
+        input_labels: Vec<Mac>,
+        masked_inputs: Vec<bool>,
         px: Vec<bool>, // received
         py: Vec<bool>, // received
     ) -> Result<AuthEncryptedGateConsumer<'_, std::slice::Iter<'_, Gate>>, AuthEvaluatorError> {
-        // Validate inputs
+        
+        if input_labels.len() != circ.input_len() || masked_inputs.len() != circ.input_len() {
+            return Err(CircuitError::InvalidInputCount(
+                circ.input_len(),
+                input_labels.len(),
+            ))?;
+        }
+
+        // Expand the buffer to fit the circuit
+        if circ.feed_count() > self.labels.len() {
+            self.labels.resize(circ.feed_count(), Default::default());
+            self.masked_values.resize(circ.feed_count(), false);
+        }
+
+        // Set input labels and auth bits
+        let mut input_labels_iter = input_labels.into_iter();
+        let mut masked_inputs_iter = masked_inputs.into_iter();
+        for input in circ.inputs() {
+            for (node, label) in input.iter().zip(input_labels_iter.by_ref()) {
+                self.labels[node.id()] = label.into();
+            }
+            for (node, masked_input) in input.iter().zip(masked_inputs_iter.by_ref()) {
+                self.masked_values[node.id()] = masked_input;
+            }
+        }
+        
         if px.len().min(py.len()) < circ.and_count() {
             return Err(AuthEvaluatorError::InvalidPxPyCount {
                 expected: circ.and_count(),
@@ -503,10 +521,12 @@ impl AuthEval {
         &'a mut self,
         circ: &'a Circuit,
         delta: Delta,
+        input_labels: Vec<Mac>, 
+        masked_inputs: Vec<bool>,
         px: Vec<bool>,
         py: Vec<bool>,
     ) -> Result<AuthEncryptedGateBatchConsumer<'_, std::slice::Iter<'_, Gate>>, AuthEvaluatorError> {
-        self.evaluate(circ, delta, px, py).map(AuthEncryptedGateBatchConsumer)
+        self.evaluate(circ, delta, input_labels, masked_inputs, px, py).map(AuthEncryptedGateBatchConsumer)
     }
     
 }

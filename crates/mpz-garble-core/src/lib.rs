@@ -571,8 +571,8 @@ mod tests {
             })
             .collect::<Vec<Mac>>();    
 
-        let (c_gen, mut g_gen) = gen.generate_pre_1(circuit, delta_a, input_keys, gen_input_shares, gen_and_shares).unwrap();
-        let (c_eval, mut g_eval) = ev.evaluate_pre_1(circuit, delta_b, input_macs, eval_input_shares, masked_inputs, eval_and_shares).unwrap();
+        let (c_gen, mut g_gen) = gen.generate_pre_1(circuit, delta_a, gen_input_shares, gen_and_shares).unwrap();
+        let (c_eval, mut g_eval) = ev.evaluate_pre_1(circuit, delta_b, eval_input_shares, eval_and_shares).unwrap();
 
         // Comm 1
         let gr_gen = g_eval.clone();
@@ -608,8 +608,8 @@ mod tests {
         let (px_gen, py_gen) = gen.generate_de(circuit).unwrap();
         let (px_eval, py_eval) = ev.evaluate_de(circuit).unwrap();
 
-        let mut gen_iter: AuthEncryptedGateBatchIter<'_, std::slice::Iter<'_, mpz_circuits::Gate>> = gen.generate_batched(&AES128, delta_a, px_eval, py_eval).unwrap();
-        let mut ev_consumer: AuthEncryptedGateBatchConsumer<'_, std::slice::Iter<'_, mpz_circuits::Gate>> = ev.evaluate_batched(&AES128, delta_b, px_gen, py_gen).unwrap();
+        let mut gen_iter: AuthEncryptedGateBatchIter<'_, std::slice::Iter<'_, mpz_circuits::Gate>> = gen.generate_batched(&AES128, delta_a, input_keys, px_eval, py_eval).unwrap();
+        let mut ev_consumer: AuthEncryptedGateBatchConsumer<'_, std::slice::Iter<'_, mpz_circuits::Gate>> = ev.evaluate_batched(&AES128, delta_b, input_macs, masked_inputs, px_gen, py_gen).unwrap();
 
         for gate in gen_iter.by_ref() {
             ev_consumer.next(gate);
