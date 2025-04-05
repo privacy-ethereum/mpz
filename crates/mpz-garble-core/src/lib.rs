@@ -11,11 +11,12 @@ mod evaluator;
 mod auth_eval;
 mod garbler;
 mod auth_gen;
-mod fpre;
+/// Module for free pre-processing functionality in garbled circuits
+pub mod fpre;
 pub mod store;
 pub(crate) mod view;
 
-pub use circuit::{AuthHalfGate, EncryptedGate, EncryptedGateBatch, GarbledCircuit};
+pub use circuit::{AuthHalfGate, AuthHalfGateBatch, EncryptedGate, EncryptedGateBatch, GarbledCircuit, AuthGarbledCircuit};
 
 pub use evaluator::{evaluate_garbled_circuits, EncryptedGateBatchConsumer, EncryptedGateConsumer, Evaluator,
     EvaluatorError, EvaluatorOutput,};
@@ -32,6 +33,9 @@ pub use fpre::{Fpre, FpreError, fpre, bit_shares_from_cot, AuthBit, AuthTriple};
 pub use mpz_memory_core::correlated::{Delta, Key, Mac};
 
 pub use mpz_circuits::Circuit;
+
+/// Statistical security parameter for authenticated garbling
+pub const SSP: usize = 40;
 
 const KB: usize = 1024;
 const BYTES_PER_GATE: usize = 32;

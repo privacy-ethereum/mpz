@@ -25,6 +25,8 @@ mpz-vm-core = { workspace = true }
 tlsn-utils.workspace = true
 serio.workspace = true
 
+aes = { workspace = true, features = [] }
+cipher.workspace = true
 async-trait.workspace = true
 rand.workspace = true
 thiserror.workspace = true

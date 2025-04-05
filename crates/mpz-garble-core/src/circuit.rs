@@ -12,6 +12,13 @@ pub struct GarbledCircuit {
     pub gates: Vec<EncryptedGate>,
 }
 
+/// A garbled circuit.
+#[derive(Debug, Clone)]
+pub struct AuthGarbledCircuit {
+    /// Encrypted gates.
+    pub gates: Vec<AuthHalfGate>,
+}
+
 /// Encrypted gate truth table
 ///
 /// For the half-gate garbling scheme a truth table will typically have 2 rows,

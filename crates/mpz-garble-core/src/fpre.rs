@@ -46,8 +46,11 @@ fn h2(a: Block, b: Block) -> Block {
 /// (key, mac) pair with bit = mac.pointer()
 #[derive(Debug, Clone, Default, Copy)]
 pub struct AuthBitShare {
+    /// Key
     pub key: Key,
+    /// MAC
     pub mac: Mac,
+    /// Value
     pub value: bool,
 }
 
@@ -184,8 +187,11 @@ impl AuthTriple {
 /// Per-party triple share: x,y,z each an `AuthBitShare`.
 #[derive(Debug, Clone)]
 pub struct AuthTripleShare {
+    /// x component of the triple
     pub x: AuthBitShare,
+    /// y component of the triple
     pub y: AuthBitShare,
+    /// z component of the triple
     pub z: AuthBitShare,
 }
 
@@ -348,16 +354,24 @@ impl Fpre {
 /// Fpre data from the generator's perspective.
 #[derive(Debug)]
 pub struct FpreGen {
+    /// number of input wires
     pub num_input: usize,
+    /// number of AND gates
     pub num_and: usize,
+    /// generator's global correlation
     pub delta_a: Delta,
+    /// wire shares
     pub wire_shares: Vec<AuthBitShare>,
+    /// triple shares
     pub triple_shares: Vec<AuthTripleShare>,
+    /// leaky shares
     pub leaky_shares: Vec<AuthTripleShare>,
+    /// location
     pub location: Vec<usize>,
 }
 
 impl FpreGen {
+    /// Creates a new FpreGen with given `num_input`, `num_and`, and `delta_a`.
     pub fn new(num_input: usize, num_and: usize, delta_a: Delta) -> Self {
         Self {
             num_input,
@@ -370,10 +384,12 @@ impl FpreGen {
         }
     }
 
+    /// Sets the wire shares for the FpreGen.
     pub fn set_bits(&mut self, auth_bits: Vec<AuthBitShare>) {
         self.wire_shares = auth_bits;
     }
 
+    /// Sets the faulty triples for the FpreGen.
     pub fn set_faulty_triples(&mut self, auth_bits: Vec<AuthBitShare>) {
         let length = auth_bits.len() / 3;
         for i in 0..length {
@@ -505,16 +521,24 @@ impl FpreGen {
 /// Fpre data from the evaluator's perspective.
 #[derive(Debug)]
 pub struct FpreEval {
+    /// number of input wires
     pub num_input: usize,
+    /// number of AND gates
     pub num_and: usize,
+    /// evaluator's global correlation
     pub delta_b: Delta,
+    /// wire shares
     pub wire_shares: Vec<AuthBitShare>,
+    /// triple shares
     pub triple_shares: Vec<AuthTripleShare>,
+    /// leaky shares
     pub leaky_shares: Vec<AuthTripleShare>,
+    /// location
     pub location: Vec<usize>,
 }
 
 impl FpreEval {
+    /// Creates a new FpreEval with given `num_input`, `num_and`, and `delta_b`.
     pub fn new(num_input: usize, num_and: usize, delta_b: Delta) -> Self {
         Self {
             num_input,
@@ -527,10 +551,12 @@ impl FpreEval {
         }   
     }
 
+    /// Sets the wire shares for the FpreEval.
     pub fn set_bits(&mut self, auth_bits: Vec<AuthBitShare>) {
         self.wire_shares = auth_bits;
     }
 
+    /// Sets the faulty triples for the FpreEval.
     pub fn set_faulty_triples(&mut self, auth_bits: Vec<AuthBitShare>) {
         let length = auth_bits.len() / 3;
         for i in 0..length {
