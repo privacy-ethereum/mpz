@@ -22,21 +22,14 @@
 mod context;
 #[cfg(any(test, feature = "cpu"))]
 pub mod cpu;
-#[cfg(any(test, feature = "executor"))]
-pub mod executor;
 #[cfg(any(test, feature = "future"))]
 pub mod future;
 mod id;
 #[cfg(any(test, feature = "ideal"))]
 pub mod ideal;
-<<<<<<< HEAD
 pub mod io;
 pub(crate) mod load_balance;
 mod mux;
-=======
-#[cfg(any(test, feature = "executor"))]
-pub(crate) mod load_balance;
->>>>>>> 50828d7 (feat: garble vm (#191))
 #[cfg(feature = "sync")]
 pub mod sync;
 mod task;
