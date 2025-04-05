@@ -22,11 +22,7 @@ pub trait COTSender<T> {
     /// Error type.
     type Error: std::error::Error + Send + Sync + 'static;
     /// Future type.
-<<<<<<< HEAD
     type Future: Output<COTSenderOutput>;
-=======
-    type Future: Output<Ok = COTSenderOutput>;
->>>>>>> b81b562 (feat: lazy ot (#186))
 
     /// Allocates `count` COTs for preprocessing.
     fn alloc(&mut self, count: usize) -> Result<(), Self::Error>;
@@ -41,11 +37,7 @@ pub trait COTSender<T> {
     ///
     /// # Arguments
     ///
-<<<<<<< HEAD
     /// * `keys` - Keys corresponding to the choice bit value 0 to send.
-=======
-    /// * `keys` - Keys to send.
->>>>>>> b81b562 (feat: lazy ot (#186))
     fn queue_send_cot(&mut self, keys: &[T]) -> Result<Self::Future, Self::Error>;
 }
 
@@ -63,11 +55,7 @@ pub trait COTReceiver<T, U> {
     /// Error type.
     type Error: std::error::Error + Send + Sync + 'static;
     /// Future type.
-<<<<<<< HEAD
     type Future: Output<COTReceiverOutput<U>>;
-=======
-    type Future: Output<Ok = COTReceiverOutput<U>>;
->>>>>>> b81b562 (feat: lazy ot (#186))
 
     /// Allocates `count` COTs for preprocessing.
     fn alloc(&mut self, count: usize) -> Result<(), Self::Error>;

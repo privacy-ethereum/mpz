@@ -2,15 +2,9 @@ use async_trait::async_trait;
 use mpz_common::{Context, Flush};
 use mpz_core::Block;
 use mpz_ot_core::rot::{AnyReceiver as Core, ROTReceiver, ROTReceiverOutput};
-<<<<<<< HEAD
 use rand::{distr::StandardUniform, prelude::Distribution};
 
 /// A ROT receiver which receives any type implementing `rand` traits.
-=======
-use rand::{distributions::Standard, prelude::Distribution};
-
-/// A ROT receiver which recvs any type implementing `rand` traits.
->>>>>>> b81b562 (feat: lazy ot (#186))
 #[derive(Debug)]
 pub struct AnyReceiver<T> {
     core: Core<T>,
@@ -33,11 +27,7 @@ impl<T> AnyReceiver<T> {
 impl<T, U> ROTReceiver<bool, U> for AnyReceiver<T>
 where
     T: ROTReceiver<bool, Block>,
-<<<<<<< HEAD
     StandardUniform: Distribution<U>,
-=======
-    Standard: Distribution<U>,
->>>>>>> b81b562 (feat: lazy ot (#186))
 {
     type Error = T::Error;
     type Future = <Core<T> as ROTReceiver<bool, U>>::Future;
@@ -60,16 +50,9 @@ where
 }
 
 #[async_trait]
-<<<<<<< HEAD
 impl<T> Flush for AnyReceiver<T>
 where
     T: Flush + Send,
-=======
-impl<Ctx, T> Flush<Ctx> for AnyReceiver<T>
-where
-    Ctx: Context,
-    T: Flush<Ctx> + Send,
->>>>>>> b81b562 (feat: lazy ot (#186))
 {
     type Error = T::Error;
 
@@ -77,11 +60,7 @@ where
         self.core.rot().wants_flush()
     }
 
-<<<<<<< HEAD
     async fn flush(&mut self, ctx: &mut Context) -> Result<(), Self::Error> {
-=======
-    async fn flush(&mut self, ctx: &mut Ctx) -> Result<(), Self::Error> {
->>>>>>> b81b562 (feat: lazy ot (#186))
         self.core.rot_mut().flush(ctx).await
     }
 }

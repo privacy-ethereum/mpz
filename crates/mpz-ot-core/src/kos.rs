@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 //! Correlated random oblivious transfer extension protocol with leakage based
 //! on [`KOS15`](https://eprint.iacr.org/archive/2015/546/1433798896.pdf).
 //!
@@ -9,9 +8,6 @@
 //!
 //! Note that (temporarily) we reference an older version of the KOS15 paper
 //! from 2015 which **DOES NOT** include important security fixes.
-=======
-//! An implementation of the [`KOS15`](https://eprint.iacr.org/2015/546.pdf) oblivious transfer extension protocol.
->>>>>>> b81b562 (feat: lazy ot (#186))
 
 mod config;
 mod error;
@@ -25,13 +21,8 @@ pub use config::{
 };
 pub use error::{ReceiverError, SenderError};
 use mpz_core::Block;
-<<<<<<< HEAD
 pub use receiver::{Receiver, state as receiver_state};
 pub use sender::{Sender, state as sender_state};
-=======
-pub use receiver::{state as receiver_state, Receiver};
-pub use sender::{state as sender_state, Sender};
->>>>>>> b81b562 (feat: lazy ot (#186))
 use serde::{Deserialize, Serialize};
 
 /// Computational security parameter
@@ -104,48 +95,32 @@ mod tests {
     #[fixture]
     fn choices() -> Vec<bool> {
         let mut rng = ChaCha12Rng::seed_from_u64(0);
-<<<<<<< HEAD
         (0..128).map(|_| rng.random()).collect()
-=======
-        (0..128).map(|_| rng.gen()).collect()
->>>>>>> b81b562 (feat: lazy ot (#186))
     }
 
     #[fixture]
     fn data() -> Vec<[Block; 2]> {
         let mut rng = ChaCha12Rng::seed_from_u64(1);
         (0..128)
-<<<<<<< HEAD
             .map(|_| {
                 [
                     rng.random::<[u8; 16]>().into(),
                     rng.random::<[u8; 16]>().into(),
                 ]
             })
-=======
-            .map(|_| [rng.gen::<[u8; 16]>().into(), rng.gen::<[u8; 16]>().into()])
->>>>>>> b81b562 (feat: lazy ot (#186))
             .collect()
     }
 
     #[fixture]
     fn delta() -> Block {
         let mut rng = ChaCha12Rng::seed_from_u64(2);
-<<<<<<< HEAD
         rng.random::<[u8; 16]>().into()
-=======
-        rng.gen::<[u8; 16]>().into()
->>>>>>> b81b562 (feat: lazy ot (#186))
     }
 
     #[fixture]
     fn receiver_seeds() -> [[Block; 2]; CSP] {
         let mut rng = ChaCha12Rng::seed_from_u64(3);
-<<<<<<< HEAD
         std::array::from_fn(|_| [rng.random(), rng.random()])
-=======
-        std::array::from_fn(|_| [rng.gen(), rng.gen()])
->>>>>>> b81b562 (feat: lazy ot (#186))
     }
 
     #[fixture]
@@ -162,11 +137,7 @@ mod tests {
     #[fixture]
     fn chi_seed() -> Block {
         let mut rng = ChaCha12Rng::seed_from_u64(4);
-<<<<<<< HEAD
         rng.random::<[u8; 16]>().into()
-=======
-        rng.gen::<[u8; 16]>().into()
->>>>>>> b81b562 (feat: lazy ot (#186))
     }
 
     #[fixture]

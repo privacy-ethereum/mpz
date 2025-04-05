@@ -5,24 +5,14 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-<<<<<<< HEAD
 use mpz_common::future::{MaybeDone, Sender, new_output};
 use mpz_core::{Block, prg::Prg};
-=======
-use mpz_common::future::{new_output, MaybeDone, Sender};
-use mpz_core::{prg::Prg, Block};
->>>>>>> b81b562 (feat: lazy ot (#186))
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 
 use crate::{
-<<<<<<< HEAD
     TransferId,
     rot::{ROTReceiver, ROTReceiverOutput, ROTSender, ROTSenderOutput},
-=======
-    rot::{ROTReceiver, ROTReceiverOutput, ROTSender, ROTSenderOutput},
-    TransferId,
->>>>>>> b81b562 (feat: lazy ot (#186))
 };
 
 type Error = IdealROTError;
@@ -78,10 +68,7 @@ impl IdealROT {
     }
 
     /// Returns `count` random ROTs.
-<<<<<<< HEAD
     #[allow(clippy::type_complexity)]
-=======
->>>>>>> b81b562 (feat: lazy ot (#186))
     pub fn transfer(
         &mut self,
         count: usize,
@@ -95,11 +82,7 @@ impl IdealROT {
         let sender_count = this.sender_state.alloc;
         let receiver_count = this.receiver_state.alloc;
 
-<<<<<<< HEAD
         sender_count > 0 || receiver_count > 0
-=======
-        sender_count > 0 && receiver_count > 0 && sender_count == receiver_count
->>>>>>> b81b562 (feat: lazy ot (#186))
     }
 
     /// Flushes the functionality.
@@ -115,15 +98,9 @@ impl IdealROT {
         let count = this.sender_state.alloc;
 
         let keys = (0..count)
-<<<<<<< HEAD
             .map(|_| [this.prg.random(), this.prg.random()])
             .collect::<Vec<_>>();
         let choices = (0..count).map(|_| this.prg.random()).collect::<Vec<_>>();
-=======
-            .map(|_| [this.prg.gen(), this.prg.gen()])
-            .collect::<Vec<_>>();
-        let choices = (0..count).map(|_| this.prg.gen()).collect::<Vec<_>>();
->>>>>>> b81b562 (feat: lazy ot (#186))
         let msgs = keys
             .iter()
             .zip(&choices)
@@ -291,17 +268,6 @@ impl IdealROTError {
     }
 }
 
-/// Error for [`IdealROT`].
-#[derive(Debug, thiserror::Error)]
-#[error("ideal ROT error: {0}")]
-pub struct IdealROTError(String);
-
-impl IdealROTError {
-    fn new(msg: impl Into<String>) -> Self {
-        IdealROTError(msg.into())
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use crate::test::assert_rot;
@@ -311,11 +277,7 @@ mod tests {
     #[test]
     fn test_ideal_rot() {
         let mut rng = ChaCha8Rng::seed_from_u64(0);
-<<<<<<< HEAD
         let mut ideal = IdealROT::new(rng.random());
-=======
-        let mut ideal = IdealROT::new(rng.gen());
->>>>>>> b81b562 (feat: lazy ot (#186))
 
         let count = 10;
 

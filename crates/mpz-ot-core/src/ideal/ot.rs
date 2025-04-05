@@ -5,21 +5,12 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-<<<<<<< HEAD
 use mpz_common::future::{MaybeDone, Output, Sender, new_output};
 use mpz_core::Block;
 
 use crate::{
     TransferId,
     ot::{OTReceiver, OTReceiverOutput, OTSender, OTSenderOutput},
-=======
-use mpz_common::future::{new_output, MaybeDone, Output, Sender};
-use mpz_core::Block;
-
-use crate::{
-    ot::{OTReceiver, OTReceiverOutput, OTSender, OTSenderOutput},
-    TransferId,
->>>>>>> b81b562 (feat: lazy ot (#186))
 };
 
 #[derive(Debug, Default)]
@@ -61,11 +52,7 @@ impl IdealOT {
         let sender_queue = this.sender_state.queue.len();
         let receiver_queue = this.receiver_state.queue.len();
 
-<<<<<<< HEAD
         sender_queue > 0 || receiver_queue > 0
-=======
-        sender_queue > 0 && receiver_queue > 0 && sender_queue == receiver_queue
->>>>>>> b81b562 (feat: lazy ot (#186))
     }
 
     /// Flushes the functionality.
@@ -95,13 +82,9 @@ impl IdealOT {
             let receiver_id = this.receiver_state.transfer_id.next();
 
             if sender_count != receiver_count {
-<<<<<<< HEAD
                 return Err(IdealOTError::new(format!(
                     "number of messages and choices do not match ({sender_id}): {sender_count} != {receiver_count}"
                 )));
-=======
-                return Err(IdealOTError::new(format!("number of messages and choices do not match ({sender_id}): {sender_count} != {receiver_count}")));
->>>>>>> b81b562 (feat: lazy ot (#186))
             }
 
             sender_output.send(OTSenderOutput { id: sender_id });
@@ -191,11 +174,7 @@ impl IdealOTError {
 #[cfg(test)]
 mod tests {
     use mpz_core::Block;
-<<<<<<< HEAD
     use rand::{Rng, SeedableRng, rngs::StdRng};
-=======
-    use rand::{rngs::StdRng, Rng, SeedableRng};
->>>>>>> b81b562 (feat: lazy ot (#186))
 
     use crate::test::assert_ot;
 

@@ -9,8 +9,8 @@ use mpz_memory_core::correlated::Mac;
 use serio::stream::IoStreamExt;
 
 #[tracing::instrument(fields(thread = %ctx.id()), skip_all)]
-pub async fn receive_garbled_circuit<Ctx: Context>(
-    ctx: &mut Ctx,
+pub async fn receive_garbled_circuit(
+    ctx: &mut Context,
     circ: &Circuit,
 ) -> Result<GarbledCircuit, EvaluatorError> {
     let gate_count = circ.and_count();
@@ -41,10 +41,10 @@ pub async fn receive_garbled_circuit<Ctx: Context>(
 /// * `circ` - The circuit to evaluate.
 /// * `inputs` - The inputs of the circuit.
 #[tracing::instrument(fields(thread = %ctx.id()), skip_all)]
-pub async fn evaluate<Ctx: Context>(
-    ctx: &mut Ctx,
+pub async fn evaluate(
+    ctx: &mut Context,
     circ: Arc<Circuit>,
-    inputs: Vec<Mac>,
+    inputs: &[Mac],
 ) -> Result<EvaluatorOutput, EvaluatorError> {
     let mut ev = EvaluatorCore::default();
     let mut ev_consumer = ev.evaluate_batched(&circ, inputs)?;
@@ -61,7 +61,7 @@ pub async fn evaluate<Ctx: Context>(
 /// Garbled circuit evaluator error.
 #[derive(Debug, thiserror::Error)]
 #[error(transparent)]
-pub struct EvaluatorError(#[from] ErrorRepr);
+pub(crate) struct EvaluatorError(#[from] ErrorRepr);
 
 #[derive(Debug, thiserror::Error)]
 enum ErrorRepr {

@@ -9,7 +9,7 @@
 pub(crate) mod circuit;
 mod evaluator;
 mod auth_eval;
-mod generator;
+mod garbler;
 mod auth_gen;
 mod fpre;
 pub mod store;
@@ -26,7 +26,7 @@ pub use auth_eval::{
 pub use garbler::{
     EncryptedGateBatchIter, EncryptedGateIter, Garbler, GarblerError, GarblerOutput,
 };
-pub use auth_gen::{AuthGenerator, AuthGeneratorError};
+pub use auth_gen::{AuthGen, AuthGeneratorError, AuthEncryptedGateBatchIter, AuthGenOutput};
 
 pub use fpre::{Fpre, FpreError, fpre, bit_shares_from_cot, AuthBit, AuthTriple};
 pub use mpz_memory_core::correlated::{Delta, Key, Mac};
@@ -63,15 +63,12 @@ mod tests {
     use aes::{
         Aes128,
         cipher::{BlockEncrypt, KeyInit},
-        Aes128,
     };
     use itybity::{FromBitIterator, IntoBitIterator, ToBits};
-    use mpz_circuits::{circuits::AES128, CircuitBuilder};
-    use mpz_core::{aes::FIXED_KEY_AES, Block};
-    use rand::{rngs::StdRng, Rng, SeedableRng};
+    use mpz_circuits::circuits::{AES128, xor};
+    use mpz_core::{Block, aes::FIXED_KEY_AES};
+    use rand::{Rng, SeedableRng, rngs::StdRng};
     use rand_chacha::ChaCha12Rng;
-
-    use crate::evaluator::evaluate_garbled_circuits;
 
     use crate::evaluator::evaluate_garbled_circuits;
 
@@ -91,13 +88,9 @@ mod tests {
         let x_1 = x_0 ^ delta.as_block();
         let y_0 = Block::random(&mut rng);
         let y_1 = y_0 ^ delta.as_block();
-        let x_0 = Block::random(&mut rng);
-        let x_1 = x_0 ^ delta.as_block();
-        let y_0 = Block::random(&mut rng);
-        let y_1 = y_0 ^ delta.as_block();
         let gid: usize = 1;
 
-        let (z_0, encrypted_gate) = gen::and_gate(cipher, &x_0, &y_0, &delta, gid);
+        let (z_0, encrypted_gate) = gb::and_gate(cipher, &x_0, &y_0, &delta, gid);
         let z_1 = z_0 ^ delta.as_block();
 
         assert_eq!(ev::and_gate(cipher, &x_0, &y_0, &encrypted_gate, gid), z_0);
@@ -108,7 +101,6 @@ mod tests {
 
     #[test]
     fn test_garble() {
-        let mut rng = StdRng::seed_from_u64(0);
         let mut rng = StdRng::seed_from_u64(0);
 
         let key = [69u8; 16];
@@ -122,8 +114,8 @@ mod tests {
         };
 
         let delta = Delta::random(&mut rng);
-        let input_keys = (0..AES128.input_len())
-            .map(|_| rng.gen())
+        let input_keys = (0..AES128.inputs().len())
+            .map(|_| rng.random())
             .collect::<Vec<Key>>();
 
         let input_macs = input_keys
@@ -131,49 +123,42 @@ mod tests {
             .zip(key.iter().copied().chain(msg).into_iter_lsb0())
             .map(|(key, bit)| key.auth(bit, &delta))
             .collect::<Vec<_>>();
-            .zip(key.iter().copied().chain(msg).into_iter_lsb0())
-            .map(|(key, bit)| key.auth(bit, &delta))
-            .collect::<Vec<_>>();
 
         let mut gb = Garbler::default();
         let mut ev = Evaluator::default();
 
-        let mut gen_iter: EncryptedGateBatchIter<'_, std::slice::Iter<'_, mpz_circuits::Gate>, 128> = gen.generate_batched(&AES128, delta, input_keys).unwrap();
-        let mut ev_consumer: EncryptedGateBatchConsumer<'_, std::slice::Iter<'_, mpz_circuits::Gate>, 128> = ev.evaluate_batched(&AES128, input_macs).unwrap();
+        let mut gb_iter = gb.generate_batched(&AES128, delta, &input_keys).unwrap();
+        let mut ev_consumer = ev.evaluate_batched(&AES128, &input_macs).unwrap();
 
         for batch in gb_iter.by_ref() {
             ev_consumer.next(batch);
         }
 
-        let GeneratorOutput {
+        let GarblerOutput {
             outputs: output_keys,
-        } = gen_iter.finish().unwrap();
+        } = gb_iter.finish().unwrap();
         let EvaluatorOutput {
-            outputs: output_macs,
             outputs: output_macs,
         } = ev_consumer.finish().unwrap();
 
-        // Generator sends decoding bits to Evaluator
-        let decoding_bits: Vec<bool> = output_keys.iter()
-            .map(|key| key.pointer())
-            .collect();
+        assert!(
+            output_keys
+                .iter()
+                .zip(&output_macs)
+                .zip(expected.iter_lsb0())
+                .all(|((key, mac), bit)| &key.auth(bit, &delta) == mac)
+        );
 
-        assert!(output_keys
-            .iter()
-            .zip(&output_macs)
-            .zip(expected.iter_lsb0())
-            .all(|((key, mac), bit)| &key.auth(bit, &delta) == mac));
-
-        // Evaluator decrypts the output by XORing mac pointer with decoding bits
         let output: Vec<u8> = Vec::from_lsb0_iter(
             output_macs
                 .into_iter()
-                .enumerate()
-                .map(|(i, mac)| mac.pointer() ^ decoding_bits[i]),
+                .zip(output_keys)
+                .map(|(mac, key)| mac.pointer() ^ key.pointer()),
         );
 
         assert_eq!(output, expected);
     }
+
 
     #[test]
     fn test_garble_preprocessed() {
@@ -190,8 +175,8 @@ mod tests {
         };
 
         let delta = Delta::random(&mut rng);
-        let input_keys = (0..AES128.input_len())
-            .map(|_| rng.gen())
+        let input_keys = (0..AES128.inputs().len())
+            .map(|_| rng.random())
             .collect::<Vec<Key>>();
 
         let input_macs = input_keys
@@ -200,21 +185,19 @@ mod tests {
             .map(|(key, bit)| key.auth(bit, &delta))
             .collect::<Vec<_>>();
 
-        let mut gen = Generator::default();
-        let mut gen_iter = gen
-            .generate_batched(&AES128, delta, input_keys.clone())
-            .unwrap();
+        let mut gb = Garbler::default();
+        let mut gb_iter = gb.generate_batched(&AES128, delta, &input_keys).unwrap();
 
         let mut gates = Vec::new();
-        for batch in gen_iter.by_ref() {
+        for batch in gb_iter.by_ref() {
             gates.extend(batch.into_array());
         }
 
         let garbled_circuit = GarbledCircuit { gates };
 
-        let GeneratorOutput {
+        let GarblerOutput {
             outputs: output_keys,
-        } = gen_iter.finish().unwrap();
+        } = gb_iter.finish().unwrap();
 
         let outputs = evaluate_garbled_circuits(vec![
             (AES128.clone(), input_macs.clone(), garbled_circuit.clone()),
@@ -227,11 +210,13 @@ mod tests {
                 outputs: output_macs,
             } = output;
 
-            assert!(output_keys
-                .iter()
-                .zip(&output_macs)
-                .zip(expected.iter_lsb0())
-                .all(|((key, mac), bit)| &key.auth(bit, &delta) == mac));
+            assert!(
+                output_keys
+                    .iter()
+                    .zip(&output_macs)
+                    .zip(expected.iter_lsb0())
+                    .all(|((key, mac), bit)| &key.auth(bit, &delta) == mac)
+            );
 
             let output: Vec<u8> = Vec::from_lsb0_iter(
                 output_macs
@@ -248,7 +233,6 @@ mod tests {
     #[test]
     fn test_garble_no_and() {
         let mut rng = StdRng::seed_from_u64(0);
-        let mut rng = StdRng::seed_from_u64(0);
 
         let circ = xor(8);
         assert_eq!(circ.and_count(), 0);
@@ -258,8 +242,8 @@ mod tests {
         let expected = a ^ b;
 
         let delta = Delta::random(&mut rng);
-        let input_keys = (0..circ.input_len())
-            .map(|_| rng.gen())
+        let input_keys = (0..circ.inputs().len())
+            .map(|_| rng.random())
             .collect::<Vec<Key>>();
 
         let input_macs = input_keys
@@ -268,29 +252,30 @@ mod tests {
             .map(|(key, bit)| key.auth(bit, &delta))
             .collect::<Vec<_>>();
 
-        let mut gen = Generator::default();
+        let mut gb = Garbler::default();
         let mut ev = Evaluator::default();
 
-        let mut gen_iter = gen.generate_batched(&circ, delta, input_keys).unwrap();
-        let mut ev_consumer = ev.evaluate_batched(&circ, input_macs).unwrap();
+        let mut gb_iter = gb.generate_batched(&circ, delta, &input_keys).unwrap();
+        let mut ev_consumer = ev.evaluate_batched(&circ, &input_macs).unwrap();
 
         for batch in gb_iter.by_ref() {
             ev_consumer.next(batch);
         }
 
-        let GeneratorOutput {
+        let GarblerOutput {
             outputs: output_keys,
-        } = gen_iter.finish().unwrap();
+        } = gb_iter.finish().unwrap();
         let EvaluatorOutput {
-            outputs: output_macs,
             outputs: output_macs,
         } = ev_consumer.finish().unwrap();
 
-        assert!(output_keys
-            .iter()
-            .zip(&output_macs)
-            .zip(expected.iter_lsb0())
-            .all(|((key, mac), bit)| &key.auth(bit, &delta) == mac));
+        assert!(
+            output_keys
+                .iter()
+                .zip(&output_macs)
+                .zip(expected.iter_lsb0())
+                .all(|((key, mac), bit)| &key.auth(bit, &delta) == mac)
+        );
 
         let output: u8 = u8::from_lsb0_iter(
             output_macs
@@ -323,7 +308,7 @@ mod tests {
 
         // Calculate total number of shares needed
         let bucket_size = (SSP as f64 / (circuit.and_count() as f64).log2()).ceil() as usize;
-        let num_input_shares = circuit.input_len();
+        let num_input_shares = circuit.inputs().len();
         let num_and_shares = circuit.and_count()*(3*bucket_size+1);
         let total_shares = num_input_shares + num_and_shares;
 
@@ -346,11 +331,11 @@ mod tests {
         // let seed = rand::thread_rng().gen();
         let seed = 0;
 
-        let mut gen = AuthGen::new(seed, bucket_size);
+        let mut gb = AuthGen::new(seed, bucket_size);
         let mut ev = AuthEval::new(seed, bucket_size);
 
-        let input_keys = (0..AES128.input_len())
-            .map(|_| rng.gen())
+        let input_keys = (0..circuit.inputs().len())
+            .map(|_| rng.random())
             .collect::<Vec<Key>>();
 
         let masked_inputs = key.iter().copied().chain(msg).into_iter_lsb0()
@@ -370,21 +355,21 @@ mod tests {
             })
             .collect::<Vec<Mac>>();    
 
-        let (c_gen, mut g_gen) = gen.generate_pre_1(circuit, delta_a, gen_input_shares, gen_and_shares).unwrap();
-        let (c_eval, mut g_eval) = ev.evaluate_pre_1(circuit, delta_b, eval_input_shares, eval_and_shares).unwrap();
+        let (c_gen, mut g_gen) = gb.generate_pre_1(circuit, delta_a, &gen_input_shares, &gen_and_shares).unwrap();
+        let (c_eval, mut g_eval) = ev.evaluate_pre_1(circuit, delta_b, &eval_input_shares, &eval_and_shares).unwrap();
 
         // Comm 1
         let gr_gen = g_eval.clone();
         let gr_eval = g_gen.clone();
 
-        let d_gen = gen.generate_pre_2(delta_a, c_gen, &mut g_gen, gr_gen).unwrap();
+        let d_gen = gb.generate_pre_2(delta_a, c_gen, &mut g_gen, gr_gen).unwrap();
         let d_eval = ev.evaluate_pre_2(delta_b, c_eval, &mut g_eval, gr_eval).unwrap();
 
         // Comm 2
         let dr_gen = d_eval.clone();    
         let dr_eval = d_gen.clone();
 
-        let data_gen = gen.generate_pre_3(delta_a, &mut g_gen, d_gen, dr_gen).unwrap();
+        let data_gen = gb.generate_pre_3(delta_a, &mut g_gen, d_gen, dr_gen).unwrap();
         let data_eval = ev.evaluate_pre_3(delta_b, &mut g_eval, d_eval, dr_eval).unwrap();
 
         // Comm 3 (secure equality check)
@@ -397,18 +382,18 @@ mod tests {
         let data_recv_gen = data_eval.clone();
         let data_recv_eval = data_gen.clone();
 
-        gen.generate_pre_4(data_gen, data_recv_gen).unwrap();
+        gb.generate_pre_4(data_gen, data_recv_gen).unwrap();
         ev.evaluate_pre_4(data_eval, data_recv_eval).unwrap();
 
-        gen.generate_free(circuit).unwrap();
+        gb.generate_free(circuit).unwrap();
         ev.evaluate_free(circuit).unwrap();
 
         // Comm 5
-        let (px_gen, py_gen) = gen.generate_de(circuit).unwrap();
+        let (px_gen, py_gen) = gb.generate_de(circuit).unwrap();
         let (px_eval, py_eval) = ev.evaluate_de(circuit).unwrap();
 
-        let mut gen_iter: AuthEncryptedGateBatchIter<'_, std::slice::Iter<'_, mpz_circuits::Gate>> = gen.generate_batched(&AES128, delta_a, input_keys, px_eval, py_eval).unwrap();
-        let mut ev_consumer: AuthEncryptedGateBatchConsumer<'_, std::slice::Iter<'_, mpz_circuits::Gate>> = ev.evaluate_batched(&AES128, delta_b, input_macs, masked_inputs, px_gen, py_gen).unwrap();
+        let mut gen_iter: AuthEncryptedGateBatchIter<'_, std::slice::Iter<'_, mpz_circuits::Gate>> = gb.generate_batched(&AES128, delta_a, &input_keys, px_eval, py_eval).unwrap();
+        let mut ev_consumer: AuthEncryptedGateBatchConsumer<'_, std::slice::Iter<'_, mpz_circuits::Gate>> = ev.evaluate_batched(&AES128, delta_b, &input_macs, masked_inputs, px_gen, py_gen).unwrap();
 
         for gate in gen_iter.by_ref() {
             ev_consumer.next(gate);

@@ -40,11 +40,8 @@ cfg-if.workspace = true
 bytemuck = { workspace = true, features = ["derive"] }
 enum-try-as-inner.workspace = true
 futures = { workspace = true }
-<<<<<<< HEAD
 tokio = { workspace = true, features = ["sync"] }
 zerocopy = { workspace = true }
-=======
->>>>>>> b81b562 (feat: lazy ot (#186))
 
 [dev-dependencies]
 rstest.workspace = true

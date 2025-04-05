@@ -1,6 +1,5 @@
 use std::{collections::VecDeque, mem};
 
-<<<<<<< HEAD
 use mpz_common::future::{MaybeDone, Sender, new_output};
 use mpz_core::{Block, bitvec::BitVec};
 use serde::{Deserialize, Serialize};
@@ -9,16 +8,6 @@ use crate::{
     Derandomize,
     cot::{COTReceiver, COTReceiverOutput, COTSender, COTSenderOutput},
     rcot::{RCOTReceiver, RCOTReceiverOutput, RCOTSender, RCOTSenderOutput},
-=======
-use mpz_common::future::{new_output, MaybeDone, Sender};
-use mpz_core::{bitvec::BitVec, Block};
-use serde::{Deserialize, Serialize};
-
-use crate::{
-    cot::{COTReceiver, COTReceiverOutput, COTSender, COTSenderOutput},
-    rcot::{RCOTReceiver, RCOTReceiverOutput, RCOTSender, RCOTSenderOutput},
-    Derandomize,
->>>>>>> b81b562 (feat: lazy ot (#186))
 };
 
 /// COT adjustment message.
@@ -39,11 +28,8 @@ struct QueuedSend {
 #[derive(Debug)]
 pub struct DerandCOTSender<T> {
     rcot: T,
-<<<<<<< HEAD
     /// Keys corresponding to the value 0 of the choice bits which need to be
     /// derandomized.
-=======
->>>>>>> b81b562 (feat: lazy ot (#186))
     adjust: Vec<Block>,
     queue: VecDeque<QueuedSend>,
 }
@@ -181,10 +167,7 @@ struct QueuedReceive {
 #[derive(Debug)]
 pub struct DerandCOTReceiver<T> {
     rcot: T,
-<<<<<<< HEAD
     /// Choice bits from RCOT which need to be derandomized.
-=======
->>>>>>> b81b562 (feat: lazy ot (#186))
     derandomize: BitVec,
     queue: VecDeque<QueuedReceive>,
 }
@@ -354,11 +337,7 @@ impl DerandCOTReceiverError {
 #[cfg(test)]
 mod tests {
     use mpz_common::future::Output;
-<<<<<<< HEAD
     use rand::{Rng, SeedableRng, rngs::StdRng};
-=======
-    use rand::{rngs::StdRng, Rng, SeedableRng};
->>>>>>> b81b562 (feat: lazy ot (#186))
 
     use crate::{ideal::rcot::IdealRCOT, test::assert_cot};
 
@@ -368,21 +347,13 @@ mod tests {
     fn test_derandomize_cot() {
         let mut rng = StdRng::seed_from_u64(0);
         let delta = Block::random(&mut rng);
-<<<<<<< HEAD
         let rcot = IdealRCOT::new(rng.random(), delta);
-=======
-        let rcot = IdealRCOT::new(rng.gen(), delta);
->>>>>>> b81b562 (feat: lazy ot (#186))
 
         let mut sender = DerandCOTSender::new(rcot.clone());
         let mut receiver = DerandCOTReceiver::new(rcot);
 
         let count = 10;
-<<<<<<< HEAD
         let choices = (0..count).map(|_| rng.random()).collect::<Vec<_>>();
-=======
-        let choices = (0..count).map(|_| rng.gen()).collect::<Vec<_>>();
->>>>>>> b81b562 (feat: lazy ot (#186))
         let keys: Vec<_> = (0..count).map(|_| Block::random(&mut rng)).collect();
 
         sender.alloc(count).unwrap();

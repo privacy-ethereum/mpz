@@ -153,7 +153,7 @@ pub(crate) struct View {
 }
 
 impl View {
-    pub(crate) fn new_generator() -> Self {
+    pub(crate) fn new_garbler() -> Self {
         Self {
             role: Role::Generator,
             len: 0,
@@ -705,7 +705,7 @@ mod tests {
 
     fn new(role: Role) -> View {
         match role {
-            Role::Generator => View::new_generator(),
+            Role::Generator => View::new_garbler(),
             Role::Evaluator => View::new_evaluator(),
         }
     }

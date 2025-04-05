@@ -3,21 +3,12 @@ use std::sync::Arc;
 use tokio::sync::{Mutex, OwnedMutexGuard};
 
 use mpz_common::future::Output;
-<<<<<<< HEAD
 use mpz_core::{Block, bitvec::BitVec};
 use mpz_memory_core::{
     DecodeError, DecodeFuture, DecodeOp, Memory, Slice, View as ViewTrait,
     binary::Binary,
     correlated::{COMMIT_CIPHER, Mac, MacCommitment, MacCommitmentError, MacStore, MacStoreError},
     store::{BitStore, Store, StoreError},
-=======
-use mpz_core::{bitvec::BitVec, Block};
-use mpz_memory_core::{
-    binary::Binary,
-    correlated::{Mac, MacCommitment, MacCommitmentError, MacStore, MacStoreError, COMMIT_CIPHER},
-    store::{BitStore, Store, StoreError},
-    DecodeError, DecodeFuture, DecodeOp, Memory, Slice, View as ViewTrait,
->>>>>>> 50828d7 (feat: garble vm (#191))
 };
 use mpz_ot_core::cot::{COTReceiver, COTReceiverOutput};
 use utils::{
@@ -26,11 +17,7 @@ use utils::{
 };
 
 use crate::{
-<<<<<<< HEAD
     store::{EvaluatorFlush, GarblerFlush, MacProof},
-=======
-    store::{EvaluatorFlush, GeneratorFlush, MacProof},
->>>>>>> 50828d7 (feat: garble vm (#191))
     view::{FlushView, View, ViewError},
 };
 
@@ -201,11 +188,7 @@ where
     COT: COTReceiver<bool, Block>,
     COT::Future: Send + 'static,
 {
-<<<<<<< HEAD
     /// Sends a flush to the garbler.
-=======
-    /// Sends a flush to the generator.
->>>>>>> 50828d7 (feat: garble vm (#191))
     ///
     /// This queues any necessary COTs.
     pub fn send_flush(&mut self) -> Result<EvaluatorFlush> {
@@ -235,11 +218,7 @@ where
             None
         };
 
-<<<<<<< HEAD
         // Prove decoded MACs to the garbler.
-=======
-        // Prove decoded MACs to the generator.
->>>>>>> 50828d7 (feat: garble vm (#191))
         let mac_proof = if !view.decode.is_empty() {
             let (bits, proof) = self.mac_store.prove(&view.decode)?;
 
@@ -255,45 +234,26 @@ where
         Ok(flush)
     }
 
-<<<<<<< HEAD
     /// Receives flush from the garbler.
     ///
     /// This expects that the COT receiver has been flushed.
     pub fn receive_flush(&mut self, flush: GarblerFlush) -> Result<()> {
-=======
-    /// Receives flush from the generator.
-    ///
-    /// This expects that the COT receiver has been flushed.
-    pub fn receive_flush(&mut self, flush: GeneratorFlush) -> Result<()> {
->>>>>>> 50828d7 (feat: garble vm (#191))
         let Some(PendingFlush { cot }) = self.pending.take() else {
             return Err(ErrorRepr::UnexpectedFlush.into());
         };
 
-<<<<<<< HEAD
         let GarblerFlush {
-=======
-        let GeneratorFlush {
->>>>>>> 50828d7 (feat: garble vm (#191))
             view,
             macs,
             key_bits,
             mac_commitments,
         } = flush;
 
-<<<<<<< HEAD
         // Ensure the garblers flush is consistent.
         if &view != self.view.flush() {
             return Err(ErrorRepr::InconsistentFlush {
                 expected: Box::new(view),
                 actual: Box::new(self.view.flush().clone()),
-=======
-        // Ensure the generators flush is consistent.
-        if &view != self.view.flush() {
-            return Err(ErrorRepr::InconsistentFlush {
-                expected: view,
-                actual: self.view.flush().clone(),
->>>>>>> 50828d7 (feat: garble vm (#191))
             }
             .into());
         }
@@ -365,14 +325,7 @@ impl<COT> Memory<Binary> for EvaluatorStore<COT> {
     }
 
     fn get_raw(&self, slice: Slice) -> Result<Option<BitVec>> {
-<<<<<<< HEAD
         Ok(self.data_store.get(slice).map(|data| data.to_bitvec()))
-=======
-        self.data_store
-            .try_get(slice)
-            .map(|data| Some(data.to_bitvec()))
-            .map_err(Error::from)
->>>>>>> 50828d7 (feat: garble vm (#191))
     }
 
     fn decode_raw(&mut self, slice: Slice) -> Result<DecodeFuture<BitVec>> {
@@ -446,13 +399,8 @@ enum ErrorRepr {
     UnexpectedFlush,
     #[error("inconsistent flush: expected={expected:?}, actual={actual:?}")]
     InconsistentFlush {
-<<<<<<< HEAD
         expected: Box<FlushView>,
         actual: Box<FlushView>,
-=======
-        expected: FlushView,
-        actual: FlushView,
->>>>>>> 50828d7 (feat: garble vm (#191))
     },
     #[error("invalid MAC commitment: {0}")]
     MacCommitment(#[from] MacCommitmentError),

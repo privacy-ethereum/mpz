@@ -1,5 +1,4 @@
 use async_trait::async_trait;
-<<<<<<< HEAD
 use rand::Rng;
 use serio::SinkExt as _;
 
@@ -8,16 +7,6 @@ use mpz_common::{Context, ContextError, Flush, future::MaybeDone};
 use mpz_core::Block;
 use mpz_ot_core::{
     kos::{Receiver as Core, ReceiverConfig, ReceiverError as CoreError, receiver_state as state},
-=======
-use rand::{thread_rng, Rng};
-use serio::SinkExt as _;
-
-use mpz_cointoss::{self as cointoss, cointoss_sender};
-use mpz_common::{future::MaybeDone, scoped, Context, ContextError, Flush};
-use mpz_core::Block;
-use mpz_ot_core::{
-    kos::{receiver_state as state, Receiver as Core, ReceiverConfig, ReceiverError as CoreError},
->>>>>>> b81b562 (feat: lazy ot (#186))
     ot::OTSender,
     rcot::{RCOTReceiver, RCOTReceiverOutput},
 };
@@ -91,11 +80,7 @@ impl<BaseOT> RCOTReceiver<bool, Block> for Receiver<BaseOT> {
                 receiver.try_recv_rcot(count).map_err(Error::from)
             }
             State::Extension(receiver) => receiver.try_recv_rcot(count).map_err(Error::from),
-<<<<<<< HEAD
             State::Error => Err(Error::state("cannot send, receiver in error state")),
-=======
-            State::Error => Err(Error::state("can not send, receiver in error state")),
->>>>>>> b81b562 (feat: lazy ot (#186))
         }
     }
 
@@ -111,16 +96,9 @@ impl<BaseOT> RCOTReceiver<bool, Block> for Receiver<BaseOT> {
 }
 
 #[async_trait]
-<<<<<<< HEAD
 impl<BaseOT> Flush for Receiver<BaseOT>
 where
     BaseOT: OTSender<Block> + Flush + Send,
-=======
-impl<Ctx, BaseOT> Flush<Ctx> for Receiver<BaseOT>
-where
-    Ctx: Context,
-    BaseOT: OTSender<Block> + Flush<Ctx> + Send,
->>>>>>> b81b562 (feat: lazy ot (#186))
 {
     type Error = Error;
 
@@ -132,24 +110,15 @@ where
         }
     }
 
-<<<<<<< HEAD
     async fn flush(&mut self, ctx: &mut Context) -> Result<(), Self::Error> {
-=======
-    async fn flush(&mut self, ctx: &mut Ctx) -> Result<(), Self::Error> {
->>>>>>> b81b562 (feat: lazy ot (#186))
         let mut receiver = match self.state.take() {
             State::Initialized {
                 mut base_ot,
                 receiver,
             } => {
                 let (receiver, seeds) = {
-<<<<<<< HEAD
                     let mut rng = rand::rng();
                     let seeds = std::array::from_fn(|_| rng.random());
-=======
-                    let mut rng = thread_rng();
-                    let seeds = std::array::from_fn(|_| rng.gen());
->>>>>>> b81b562 (feat: lazy ot (#186))
                     (receiver.setup(seeds), seeds)
                 };
 
@@ -159,11 +128,7 @@ where
                 receiver
             }
             State::Extension(receiver) => receiver,
-<<<<<<< HEAD
             State::Error => return Err(Error::state("cannot flush, receiver in error state")),
-=======
-            State::Error => return Err(Error::state("can not flush, receiver in error state")),
->>>>>>> b81b562 (feat: lazy ot (#186))
         };
 
         if !receiver.wants_extend() {
@@ -171,7 +136,6 @@ where
             return Ok(());
         }
 
-<<<<<<< HEAD
         while receiver.wants_extend() {
             let extend = receiver.extend()?;
             ctx.io_mut().send(extend).await?;
@@ -186,28 +150,6 @@ where
 
         ctx.io_mut().send(receiver_check).await?;
 
-=======
-        let receiver = ctx
-            .blocking(scoped!(move |ctx| {
-                while receiver.wants_extend() {
-                    let extend = receiver.extend()?;
-                    ctx.io_mut().send(extend).await?;
-                }
-
-                let seed = thread_rng().gen();
-
-                // See issue #176.
-                let chi_seed = cointoss_sender(ctx, vec![seed]).await?[0];
-
-                let receiver_check = receiver.check(chi_seed)?;
-
-                ctx.io_mut().send(receiver_check).await?;
-
-                Ok::<_, Error>(receiver)
-            }))
-            .await??;
-
->>>>>>> b81b562 (feat: lazy ot (#186))
         self.state = State::Extension(receiver);
 
         Ok(())

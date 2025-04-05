@@ -1,5 +1,4 @@
 use async_trait::async_trait;
-<<<<<<< HEAD
 use mpz_common::{Context, Flush, future::MaybeDone};
 use mpz_core::Block;
 use mpz_ot_core::{
@@ -7,19 +6,6 @@ use mpz_ot_core::{
     ot::{OTSender, OTSenderOutput},
 };
 use serio::{SinkExt, stream::IoStreamExt};
-=======
-use mpz_common::{future::MaybeDone, Context, Flush};
-use mpz_core::Block;
-use mpz_ot_core::{
-    chou_orlandi::{sender_state as state, Sender as Core, SenderError as CoreError},
-    ot::{OTSender, OTSenderOutput},
-};
-use serio::{stream::IoStreamExt, SinkExt};
-<<<<<<< HEAD
-use utils_aio::non_blocking_backend::{Backend, NonBlockingBackend};
->>>>>>> b81b562 (feat: lazy ot (#186))
-=======
->>>>>>> 50828d7 (feat: garble vm (#191))
 
 type Error = SenderError;
 
@@ -90,14 +76,7 @@ impl OTSender<Block> for Sender {
 }
 
 #[async_trait]
-<<<<<<< HEAD
 impl Flush for Sender {
-=======
-impl<Ctx> Flush<Ctx> for Sender
-where
-    Ctx: Context,
-{
->>>>>>> b81b562 (feat: lazy ot (#186))
     type Error = Error;
 
     fn wants_flush(&self) -> bool {
@@ -108,11 +87,7 @@ where
         }
     }
 
-<<<<<<< HEAD
     async fn flush(&mut self, ctx: &mut Context) -> Result<(), Self::Error> {
-=======
-    async fn flush(&mut self, ctx: &mut Ctx) -> Result<(), Self::Error> {
->>>>>>> b81b562 (feat: lazy ot (#186))
         let mut sender = match self.state.take() {
             State::Initialized(sender) => {
                 let (setup, sender) = sender.setup();
@@ -129,19 +104,8 @@ where
         }
 
         let payload = ctx.io_mut().expect_next().await?;
-<<<<<<< HEAD
-<<<<<<< HEAD
         let payload = sender.send(payload)?;
 
-=======
-
-        let (payload, sender) =
-            Backend::spawn(|| sender.send(payload).map(|payload| (payload, sender))).await?;
-=======
-        let payload = sender.send(payload)?;
->>>>>>> 50828d7 (feat: garble vm (#191))
-
->>>>>>> b81b562 (feat: lazy ot (#186))
         ctx.io_mut().send(payload).await?;
 
         self.state = State::Setup(sender);

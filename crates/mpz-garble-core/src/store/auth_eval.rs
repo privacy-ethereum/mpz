@@ -260,7 +260,7 @@ where
         // Send OT keys for masks.
         let masks = view.gen_masks.clone() | view.eval_masks.clone();
         if !masks.is_empty() {
-            let keys = (0..masks.len()).map(|_| self.prg.gen()).collect::<Vec<_>>();
+            let keys = (0..masks.len()).map(|_| self.prg.random()).collect::<Vec<_>>();
             // Store keys in mask store.
             for range in masks.iter_ranges() {
                 let slice = Slice::from_range_unchecked(range);
@@ -278,7 +278,7 @@ where
         // Send OT choices for masks, box the output to receive Macs as a future.
         let cot = if !masks.is_empty() {
             // Collect the choices for oblivious transfer.
-            let choices: Vec<bool> = (0..masks.len()).map(|_| self.prg.gen()).collect::<Vec<_>>();
+            let choices: Vec<bool> = (0..masks.len()).map(|_| self.prg.random()).collect::<Vec<_>>();
             for range in masks.iter_ranges() {
                 let slice = Slice::from_range_unchecked(range);
                 self.mask_store.try_set_bits(slice, &BitVec::from_iter(choices.iter()))?;

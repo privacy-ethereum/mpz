@@ -11,10 +11,7 @@
 
 pub mod chou_orlandi;
 pub mod cot;
-<<<<<<< HEAD
 pub mod ferret;
-=======
->>>>>>> b81b562 (feat: lazy ot (#186))
 #[cfg(any(test, feature = "ideal"))]
 pub mod ideal;
 pub mod kos;

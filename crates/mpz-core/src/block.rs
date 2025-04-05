@@ -42,14 +42,7 @@ impl Block {
     /// Create a new block
     #[inline]
     pub const fn new(bytes: [u8; 16]) -> Self {
-    pub const fn new(bytes: [u8; 16]) -> Self {
         Self(bytes)
-    }
-
-    /// Returns the block encoded as bytes.
-    #[inline]
-    pub fn as_bytes(&self) -> &[u8] {
-        &self.0
     }
 
     /// Returns the block encoded as bytes.
@@ -93,9 +86,6 @@ impl Block {
     /// Reduces the polynomial represented in bits modulo the GCM polynomial
     /// x^128 + x^7 + x^2 + x + 1. `x` and `y` are resp. upper and lower
     /// bits of the polynomial.
-    /// Reduces the polynomial represented in bits modulo the GCM polynomial
-    /// x^128 + x^7 + x^2 + x + 1. `x` and `y` are resp. upper and lower
-    /// bits of the polynomial.
     pub fn reduce_gcm(x: Self, y: Self) -> Self {
         let r = Clmul::reduce_gcm(Clmul::new(&x.0), Clmul::new(&y.0));
         Self::new(r.into())
@@ -108,18 +98,6 @@ impl Block {
         Block::reduce_gcm(a, b)
     }
 
-    /// Multiplies a block with a boolean value
-    #[inline]
-    pub fn mul_bool(self, bit: bool) -> Self {
-        if bit {
-            self
-        } else {
-            Block::ZERO
-        }
-    }
-
-    /// Compute the inner product of two block vectors, without reducing the
-    /// polynomial.
     /// Compute the inner product of two block vectors, without reducing the
     /// polynomial.
     #[inline]
@@ -152,12 +130,6 @@ impl Block {
         self.0[0] = (self.0[0] & 0xfe) | value as u8;
     }
 
-    /// Sets the second least significant bit of the block
-    #[inline]
-    pub fn set_second_lsb(&mut self, value: bool) {
-        self.0[0] = (self.0[0] & 0xfd) | ((value as u8) << 1);
-    }
-
     /// XORs the least significant bit of the block with the given value.
     #[inline]
     pub fn xor_lsb(&mut self, bit: bool) {
@@ -168,14 +140,17 @@ impl Block {
     #[inline]
     pub fn lsb(&self) -> bool {
         (self.0[0] & 1) == 1
-    } 
-
-    /// Returns the second least significant bit of the block
-    #[inline]
-    pub fn second_lsb(&self) -> bool {
-        (self.0[0] & 2) == 2
     }
 
+    /// multiplies the block with a boolean
+    #[inline]
+    pub fn mul_bool(self, bit: bool) -> Self {
+        if bit {
+            self
+        } else {
+            Self::ZERO
+        }
+    }
     /// Let `x0` and `x1` be the lower and higher halves of `x`, respectively.
     /// This function compute ``sigma( x = x0 || x1 ) = x1 || (x0 xor x1)``.
     #[inline(always)]
@@ -183,6 +158,28 @@ impl Block {
         let mut x: [u64; 2] = bytemuck::cast(a);
         x[0] ^= x[1];
         bytemuck::cast([x[1], x[0]])
+    }
+
+    /// Converts a slice of blocks to a slice of bytes.
+    pub fn as_flattened_bytes(slice: &[Self]) -> &[u8] {
+        // This is equivalent to `<[[u8; 16]]>::as_flattened`
+
+        // SAFETY: `slice.len() * Block::LEN` cannot overflow because `slice` is
+        // already in the address space.
+        let len = unsafe { slice.len().unchecked_mul(Self::LEN) };
+        // SAFETY: `[u8]` is layout-identical to `[u8; 16]` of which block is a newtype.
+        unsafe { from_raw_parts(slice.as_ptr().cast(), len) }
+    }
+
+    /// Converts a slice of block arrays to a slice of bytes.
+    pub fn array_as_flattened_bytes<const N: usize>(slice: &[[Self; N]]) -> &[u8] {
+        // This is equivalent to `<[[u8; 16 * N]]>::as_flattened`
+
+        // SAFETY: `slice.len() * N * Block::LEN` cannot overflow because `slice` is
+        // already in the address space.
+        let len = unsafe { slice.len().unchecked_mul(N * Self::LEN) };
+        // SAFETY: `[u8]` is layout-identical to `[u8; 16]` of which block is a newtype.
+        unsafe { from_raw_parts(slice.as_ptr().cast(), len) }
     }
 
     /// Converts a block to a [`GenericArray<u8,
@@ -194,21 +191,15 @@ impl Block {
 
     /// Converts a mutable block to a mutable [`GenericArray<u8,
     /// U16>`](cipher::generic_array::GenericArray) from the [`generic-array`](https://docs.rs/generic-array/latest/generic_array/) crate.
-    /// Converts a mutable block to a mutable [`GenericArray<u8,
-    /// U16>`](cipher::generic_array::GenericArray) from the [`generic-array`](https://docs.rs/generic-array/latest/generic_array/) crate.
     pub(crate) fn as_generic_array_mut(&mut self) -> &mut GenericArray<u8, U16> {
         (&mut self.0).into()
     }
 
     /// Converts a slice of blocks to a slice of [`GenericArray<u8,
     /// U16>`](cipher::generic_array::GenericArray) from the [`generic-array`](https://docs.rs/generic-array/latest/generic_array/) crate.
-    /// Converts a slice of blocks to a slice of [`GenericArray<u8,
-    /// U16>`](cipher::generic_array::GenericArray) from the [`generic-array`](https://docs.rs/generic-array/latest/generic_array/) crate.
     #[allow(dead_code)]
     pub(crate) fn as_generic_array_slice(slice: &[Self]) -> &[GenericArray<u8, U16>] {
         // # Safety
-        // This is always safe because `Block` and `GenericArray<u8, U16>` have the same
-        // memory layout. See https://github.com/fizyk20/generic-array/blob/37dc6aefc3ed5c423ad7402d4febf06a3e78a223/src/lib.rs#L838-L845
         // This is always safe because `Block` and `GenericArray<u8, U16>` have the same
         // memory layout. See https://github.com/fizyk20/generic-array/blob/37dc6aefc3ed5c423ad7402d4febf06a3e78a223/src/lib.rs#L838-L845
         // TODO: Use methods provided by `generic-array` once 1.0 is released.
@@ -217,12 +208,8 @@ impl Block {
 
     /// Converts a mutable slice of blocks to a mutable slice of
     /// [`GenericArray<u8, U16>`](cipher::generic_array::GenericArray) from the [`generic-array`](https://docs.rs/generic-array/latest/generic_array/) crate.
-    /// Converts a mutable slice of blocks to a mutable slice of
-    /// [`GenericArray<u8, U16>`](cipher::generic_array::GenericArray) from the [`generic-array`](https://docs.rs/generic-array/latest/generic_array/) crate.
     pub(crate) fn as_generic_array_mut_slice(slice: &mut [Self]) -> &mut [GenericArray<u8, U16>] {
         // # Safety
-        // This is always safe because `Block` and `GenericArray<u8, U16>` have the same
-        // memory layout. See https://github.com/fizyk20/generic-array/blob/37dc6aefc3ed5c423ad7402d4febf06a3e78a223/src/lib.rs#L847-L854
         // This is always safe because `Block` and `GenericArray<u8, U16>` have the same
         // memory layout. See https://github.com/fizyk20/generic-array/blob/37dc6aefc3ed5c423ad7402d4febf06a3e78a223/src/lib.rs#L847-L854
         // TODO: Use methods provided by `generic-array` once 1.0 is released.
@@ -406,63 +393,12 @@ impl BitXorAssign<&Block> for Block {
         self.0[2] ^= rhs.0[2];
         self.0[1] ^= rhs.0[1];
         self.0[0] ^= rhs.0[0];
-    fn bitxor(mut self, rhs: Self) -> Self::Output {
-        self.bitxor_assign(rhs);
-        self
-    }
-}
-
-impl BitXor<&Block> for Block {
-    type Output = Block;
-
-    fn bitxor(mut self, rhs: &Self) -> Self::Output {
-        self.bitxor_assign(rhs);
-        self
-    }
-}
-
-impl BitXor<Block> for &Block {
-    type Output = Block;
-
-    fn bitxor(self, rhs: Block) -> Self::Output {
-        *self ^ rhs
-    }
-}
-
-impl BitXor<&Block> for &Block {
-    type Output = Block;
-
-    fn bitxor(self, rhs: &Block) -> Self::Output {
-        *self ^ rhs
-    }
-}
-
-impl BitXorAssign<&Block> for Block {
-    #[inline(always)]
-    fn bitxor_assign(&mut self, rhs: &Self) {
-        self.0[15] ^= rhs.0[15];
-        self.0[14] ^= rhs.0[14];
-        self.0[13] ^= rhs.0[13];
-        self.0[12] ^= rhs.0[12];
-        self.0[11] ^= rhs.0[11];
-        self.0[10] ^= rhs.0[10];
-        self.0[9] ^= rhs.0[9];
-        self.0[8] ^= rhs.0[8];
-        self.0[7] ^= rhs.0[7];
-        self.0[6] ^= rhs.0[6];
-        self.0[5] ^= rhs.0[5];
-        self.0[4] ^= rhs.0[4];
-        self.0[3] ^= rhs.0[3];
-        self.0[2] ^= rhs.0[2];
-        self.0[1] ^= rhs.0[1];
-        self.0[0] ^= rhs.0[0];
     }
 }
 
 impl BitXorAssign for Block {
     #[inline(always)]
     fn bitxor_assign(&mut self, rhs: Self) {
-        self.bitxor_assign(&rhs);
         self.bitxor_assign(&rhs);
     }
 }
@@ -490,7 +426,7 @@ impl BitAnd<Block> for &Block {
     type Output = Block;
 
     fn bitand(self, rhs: Block) -> Self::Output {
-        *self & &rhs
+        *self & rhs
     }
 }
 
@@ -503,25 +439,7 @@ impl BitAnd<&Block> for &Block {
 }
 
 impl BitAndAssign<&Block> for Block {
-impl BitAndAssign<&Block> for Block {
     #[inline(always)]
-    fn bitand_assign(&mut self, rhs: &Self) {
-        self.0[15] &= rhs.0[15];
-        self.0[14] &= rhs.0[14];
-        self.0[13] &= rhs.0[13];
-        self.0[12] &= rhs.0[12];
-        self.0[11] &= rhs.0[11];
-        self.0[10] &= rhs.0[10];
-        self.0[9] &= rhs.0[9];
-        self.0[8] &= rhs.0[8];
-        self.0[7] &= rhs.0[7];
-        self.0[6] &= rhs.0[6];
-        self.0[5] &= rhs.0[5];
-        self.0[4] &= rhs.0[4];
-        self.0[3] &= rhs.0[3];
-        self.0[2] &= rhs.0[2];
-        self.0[1] &= rhs.0[1];
-        self.0[0] &= rhs.0[0];
     fn bitand_assign(&mut self, rhs: &Self) {
         self.0[15] &= rhs.0[15];
         self.0[14] &= rhs.0[14];
@@ -569,36 +487,30 @@ mod tests {
 
         b.set_lsb(false);
         assert!(!b.lsb());
-        let mut b = Block::ZERO;
-        b.set_lsb(true);
-        assert!(b.lsb());
-
-        b.set_lsb(false);
-        assert!(!b.lsb());
     }
 
     #[test]
     fn test_lsb() {
         let a = Block::new([0; 16]);
-        assert_eq!(a.lsb(), false);
+        assert!(!a.lsb());
 
         let mut one = [0; 16];
         one[0] = 1;
 
         let a = Block::new(one);
-        assert_eq!(a.lsb(), true);
+        assert!(a.lsb());
 
         let mut two = [0; 16];
         two[0] = 2;
 
         let a = Block::new(two);
-        assert_eq!(a.lsb(), false);
+        assert!(!a.lsb());
 
         let mut three = [0; 16];
         three[0] = 3;
 
         let a = Block::new(three);
-        assert_eq!(a.lsb(), true);
+        assert!(a.lsb());
     }
 
     #[test]

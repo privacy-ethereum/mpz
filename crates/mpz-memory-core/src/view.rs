@@ -100,10 +100,6 @@ impl VisibilityView {
 
     /// Sets the range as public.
     pub fn set_public(&mut self, range: Range) {
-<<<<<<< HEAD
-=======
-        let range = range;
->>>>>>> 50828d7 (feat: garble vm (#191))
         self.public |= &range;
         self.visible |= &range;
         self.uninit -= &range;
@@ -113,10 +109,6 @@ impl VisibilityView {
 
     /// Sets the range as private.
     pub fn set_private(&mut self, range: Range) {
-<<<<<<< HEAD
-=======
-        let range = range;
->>>>>>> 50828d7 (feat: garble vm (#191))
         self.private |= &range;
         self.visible |= &range;
         self.uninit -= &range;
@@ -126,10 +118,6 @@ impl VisibilityView {
 
     /// Sets the range as blind.
     pub fn set_blind(&mut self, range: Range) {
-<<<<<<< HEAD
-=======
-        let range = range;
->>>>>>> 50828d7 (feat: garble vm (#191))
         self.blind |= &range;
         self.visible -= &range;
         self.uninit -= &range;

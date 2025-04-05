@@ -6,7 +6,6 @@ mod garbler;
 pub use evaluator::Evaluator;
 pub use garbler::Garbler;
 
-pub use generator::Generator;
 #[cfg(test)]
 mod tests {
     use mpz_circuits::circuits::AES128;
@@ -85,7 +84,6 @@ mod tests {
                     .unwrap();
 
                 let mut ciphertext = ev.decode(ciphertext).unwrap();
-                let mut decoded_msg = ev.decode(msg).unwrap();
 
                 ev.assign(msg, [42u8; 16]).unwrap();
                 ev.commit(key).unwrap();
@@ -125,52 +123,6 @@ mod tests {
         let mut gb = Garbler::new(cot_send, [0u8; 16], delta);
         let mut ev = Evaluator::new(cot_recv);
 
-        let key_g: Array<U8, 16> = gen.alloc().unwrap();
-        let msg_g: Array<U8, 16> = gen.alloc().unwrap();
-        gen.mark_private(key_g).unwrap();
-        gen.mark_blind(msg_g).unwrap();
-
-        let key_e: Array<U8, 16> = ev.alloc().unwrap();
-        let msg_e: Array<U8, 16> = ev.alloc().unwrap();
-        ev.mark_blind(key_e).unwrap();
-        ev.mark_private(msg_e).unwrap();
-
-        // Set up the AES calls
-        let output_g: Array<U8, 16> = gen
-            .call(Call::new(AES128.clone()).arg(key_g).arg(msg_g).build().unwrap())
-            .unwrap();
-        let ciphertext_g: Array<U8, 16> = gen
-            .call(Call::new(AES128.clone()).arg(key_g).arg(output_g).build().unwrap())
-            .unwrap();
-
-        let output_e: Array<U8, 16> = ev
-            .call(Call::new(AES128.clone()).arg(key_e).arg(msg_e).build().unwrap())
-            .unwrap();
-        let ciphertext_e: Array<U8, 16> = ev
-            .call(Call::new(AES128.clone()).arg(key_e).arg(output_e).build().unwrap())
-            .unwrap();
-
-        let mut ciphertext_g = gen.decode(ciphertext_g).unwrap();
-        let mut ciphertext_e = ev.decode(ciphertext_e).unwrap();
-
-        assert!(gen.wants_preprocess());
-        assert!(ev.wants_preprocess());
-
-        // --- Async section: preprocess ---
-        futures::join!(
-            async { gen.preprocess(&mut ctx_a).await.unwrap() },
-            async { ev.preprocess(&mut ctx_b).await.unwrap() }
-        );
-
-        gen.assign(key_g, [0u8; 16]).unwrap();
-        gen.commit(key_g).unwrap();
-        gen.commit(msg_g).unwrap();
-
-        ev.assign(msg_e, [42u8; 16]).unwrap();
-        ev.commit(key_e).unwrap();
-        ev.commit(msg_e).unwrap();
-
-        // --- Async section: execute and receive results ---
         let (gen_out, ev_out) = futures::join!(
             async {
                 let key: Array<U8, 16> = gb.alloc().unwrap();
@@ -250,7 +202,7 @@ mod tests {
                 ev.commit(msg).unwrap();
 
                 ev.execute_all(&mut ctx_b).await.unwrap();
-                ciphertext_e.try_recv().unwrap().unwrap();
+                ciphertext.try_recv().unwrap().unwrap()
             }
         );
 

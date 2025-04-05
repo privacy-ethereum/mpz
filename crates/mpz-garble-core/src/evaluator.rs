@@ -1,26 +1,12 @@
 use core::fmt;
-<<<<<<< HEAD
 use std::{ops::Range, sync::Arc};
-=======
-use std::sync::Arc;
->>>>>>> 50828d7 (feat: garble vm (#191))
 
 use cfg_if::cfg_if;
 use mpz_memory_core::correlated::Mac;
 
-<<<<<<< HEAD
 use crate::{DEFAULT_BATCH_SIZE, EncryptedGateBatch, GarbledCircuit, circuit::EncryptedGate};
 use mpz_circuits::{Circuit, Gate};
 use mpz_core::{
-=======
-use crate::{circuit::EncryptedGate, EncryptedGateBatch, GarbledCircuit, DEFAULT_BATCH_SIZE};
-use mpz_circuits::{
-    types::{BinaryRepr, TypeError},
-    Circuit, CircuitError, Gate,
-};
-use mpz_core::{
-    aes::{FixedKeyAes, FIXED_KEY_AES},
->>>>>>> 50828d7 (feat: garble vm (#191))
     Block,
     aes::{FIXED_KEY_AES, FixedKeyAes},
 };
@@ -92,7 +78,6 @@ impl Evaluator {
     pub fn evaluate<'a>(
         &'a mut self,
         circ: &'a Circuit,
-<<<<<<< HEAD
         inputs: &[Mac],
     ) -> Result<EncryptedGateConsumer<'a, std::slice::Iter<'a, Gate>>, EvaluatorError> {
         if inputs.len() != circ.inputs().len() {
@@ -100,15 +85,6 @@ impl Evaluator {
                 expected: circ.inputs().len(),
                 actual: inputs.len(),
             });
-=======
-        inputs: Vec<Mac>,
-    ) -> Result<EncryptedGateConsumer<'_, std::slice::Iter<'_, Gate>>, EvaluatorError> {
-        if inputs.len() != circ.input_len() {
-            return Err(CircuitError::InvalidInputCount(
-                circ.input_len(),
-                inputs.len(),
-            ))?;
->>>>>>> 50828d7 (feat: garble vm (#191))
         }
 
         // Expand the buffer to fit the circuit
@@ -116,16 +92,7 @@ impl Evaluator {
             self.buffer.resize(circ.feed_count(), Default::default());
         }
 
-<<<<<<< HEAD
         self.buffer[..inputs.len()].copy_from_slice(Mac::as_blocks(inputs));
-=======
-        let mut inputs = inputs.into_iter();
-        for input in circ.inputs() {
-            for (node, label) in input.iter().zip(inputs.by_ref()) {
-                self.buffer[node.id()] = label.into();
-            }
-        }
->>>>>>> 50828d7 (feat: garble vm (#191))
 
         Ok(EncryptedGateConsumer::new(
             circ.gates().iter(),
@@ -144,13 +111,8 @@ impl Evaluator {
     pub fn evaluate_batched<'a>(
         &'a mut self,
         circ: &'a Circuit,
-<<<<<<< HEAD
         inputs: &[Mac],
     ) -> Result<EncryptedGateBatchConsumer<'a, std::slice::Iter<'a, Gate>>, EvaluatorError> {
-=======
-        inputs: Vec<Mac>,
-    ) -> Result<EncryptedGateBatchConsumer<'_, std::slice::Iter<'_, Gate>>, EvaluatorError> {
->>>>>>> 50828d7 (feat: garble vm (#191))
         self.evaluate(circ, inputs).map(EncryptedGateBatchConsumer)
     }
 }
@@ -185,11 +147,7 @@ impl<'a, I> EncryptedGateConsumer<'a, I>
 where
     I: Iterator<Item = &'a Gate>,
 {
-<<<<<<< HEAD
     fn new(gates: I, labels: &'a mut [Block], and_count: usize, outputs: Range<usize>) -> Self {
-=======
-    fn new(gates: I, outputs: &'a [BinaryRepr], labels: &'a mut [Block], and_count: usize) -> Self {
->>>>>>> 50828d7 (feat: garble vm (#191))
         Self {
             cipher: &(*FIXED_KEY_AES),
             gates,
@@ -272,19 +230,9 @@ where
             self.next(Default::default());
         }
 
-<<<<<<< HEAD
         Ok(EvaluatorOutput {
             outputs: Mac::from_blocks(self.labels[self.outputs].to_vec()),
         })
-=======
-        let outputs = self
-            .outputs
-            .iter()
-            .flat_map(|output| output.iter().map(|node| Mac::from(self.labels[node.id()])))
-            .collect();
-
-        Ok(EvaluatorOutput { outputs })
->>>>>>> 50828d7 (feat: garble vm (#191))
     }
 }
 
@@ -332,11 +280,7 @@ pub fn evaluate_garbled_circuits(
 
             circs.into_par_iter().map(|(circ, inputs, garbled_circuit)| {
                 let mut ev = Evaluator::with_capacity(circ.feed_count());
-<<<<<<< HEAD
                 let mut consumer = ev.evaluate(&circ, &inputs)?;
-=======
-                let mut consumer = ev.evaluate(&circ, inputs)?;
->>>>>>> 50828d7 (feat: garble vm (#191))
                 for gate in garbled_circuit.gates {
                     consumer.next(gate);
                 }
@@ -352,11 +296,8 @@ pub fn evaluate_garbled_circuits(
                 }
                 outputs.push(consumer.finish()?);
             }
-<<<<<<< HEAD
 
             Ok(outputs)
-=======
->>>>>>> 50828d7 (feat: garble vm (#191))
         }
     }
 }

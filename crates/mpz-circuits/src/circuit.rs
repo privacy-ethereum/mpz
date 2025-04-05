@@ -8,12 +8,10 @@ use crate::components::Gate;
 pub enum CircuitError {
     #[error("Invalid number of wires: expected {0}, got {1}")]
     InvalidWireCount(usize, usize),
-    #[error("Invalid number of inputs: expected {0}, got {1}")]
-    InvalidInputCount(usize, usize),
-    #[error("Invalid number of outputs: expected {0}, got {1}")]
-    InvalidOutputCount(usize, usize),
-    #[error(transparent)]
-    TypeError(#[from] TypeError),
+    #[error("Invalid input length: expected {expected}, got {actual}")]
+    InvalidInputLength { expected: usize, actual: usize },
+    #[error("Invalid output length: expected {expected}, got {actual}")]
+    InvalidOutputLength { expected: usize, actual: usize },
 }
 
 /// A binary circuit.
@@ -30,24 +28,14 @@ pub struct Circuit {
 }
 
 impl Circuit {
-    /// Returns a reference to the inputs of the circuit.
-    pub fn inputs(&self) -> &[BinaryRepr] {
-        &self.inputs
+    /// Returns the inputs.
+    pub fn inputs(&self) -> Range<usize> {
+        self.inputs.clone()
     }
 
-    /// Returns a reference to the outputs of the circuit.
-    pub fn outputs(&self) -> &[BinaryRepr] {
-        &self.outputs
-    }
-
-    /// Returns the input length of the circuit in bits.
-    pub fn input_len(&self) -> usize {
-        self.inputs.iter().map(|input| input.len()).sum()
-    }
-
-    /// Returns the output length of the circuit in bits.
-    pub fn output_len(&self) -> usize {
-        self.outputs.iter().map(|output| output.len()).sum()
+    /// Returns the outputs.
+    pub fn outputs(&self) -> Range<usize> {
+        self.outputs.clone()
     }
 
     /// Returns a reference to the gates of the circuit.
@@ -68,54 +56,6 @@ impl Circuit {
     /// Returns the number of XOR gates in the circuit.
     pub fn xor_count(&self) -> usize {
         self.xor_count
-    }
-
-    /// Reverses the order of the inputs.
-    pub fn reverse_inputs(mut self) -> Self {
-        self.inputs.reverse();
-        self
-    }
-
-    /// Reverses endianness of the input at the given index.
-    ///
-    /// This only has an effect on array inputs.
-    ///
-    /// # Arguments
-    ///
-    /// * `idx` - The index of the input to reverse.
-    ///
-    /// # Returns
-    ///
-    /// The circuit with the input reversed.
-    pub fn reverse_input(mut self, idx: usize) -> Self {
-        if let Some(BinaryRepr::Array(arr)) = self.inputs.get_mut(idx) {
-            arr.reverse();
-        }
-        self
-    }
-
-    /// Reverses the order of the outputs.
-    pub fn reverse_outputs(mut self) -> Self {
-        self.outputs.reverse();
-        self
-    }
-
-    /// Reverses endianness of the output at the given index.
-    ///
-    /// This only has an effect on array outputs.
-    ///
-    /// # Arguments
-    ///
-    /// * `idx` - The index of the output to reverse.
-    ///
-    /// # Returns
-    ///
-    /// The circuit with the output reversed.
-    pub fn reverse_output(mut self, idx: usize) -> Self {
-        if let Some(BinaryRepr::Array(arr)) = self.outputs.get_mut(idx) {
-            arr.reverse();
-        }
-        self
     }
 
     /// Evaluate the circuit using the provided wires.
@@ -165,45 +105,27 @@ impl Circuit {
     /// # Returns
     ///
     /// The outputs of the circuit.
-    pub fn evaluate(&self, values: &[Value]) -> Result<Vec<Value>, CircuitError> {
-        if values.len() != self.inputs.len() {
-            return Err(CircuitError::InvalidInputCount(
-                self.inputs.len(),
-                values.len(),
-            ));
-        }
-
+    pub fn evaluate(
+        &self,
+        input: impl IntoIterator<Item = bool>,
+    ) -> Result<Vec<bool>, CircuitError> {
+        let mut input = input.into_iter();
         let mut feeds: Vec<bool> = vec![false; self.feed_count];
 
-        for (input, value) in self.inputs.iter().zip(values) {
-            if input.value_type() != value.value_type() {
-                return Err(TypeError::UnexpectedType {
-                    expected: input.value_type(),
-                    actual: value.value_type(),
-                })?;
-            }
+        for i in self.inputs.clone() {
+            let Some(value) = input.next() else {
+                return Err(CircuitError::InvalidInputLength {
+                    expected: self.inputs.len(),
+                    actual: i,
+                });
+            };
 
-            for (node, bit) in input.iter().zip(value.clone().into_iter_lsb0()) {
-                feeds[node.id] = bit;
-            }
+            feeds[i] = value;
         }
 
         self.evaluate_raw(&mut feeds)?;
 
-        let outputs = self
-            .outputs
-            .iter()
-            .cloned()
-            .map(|output| {
-                let bits: Vec<bool> = output.iter().map(|node| feeds[node.id]).collect();
-
-                output
-                    .from_bin_repr(&bits)
-                    .expect("Output should be decodable")
-            })
-            .collect();
-
-        Ok(outputs)
+        Ok(feeds[self.outputs.clone()].to_vec())
     }
 }
 

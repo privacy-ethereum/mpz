@@ -64,17 +64,10 @@ pub use macs::{Mac, MacStore, MacStoreError};
 pub use auth::{AuthBit, AuthBitStore, AuthBitStoreError};
 
 use mpz_core::{
-<<<<<<< HEAD
-    Block,
-    aes::{FIXED_KEY, FixedKeyAes},
-};
-use rand::{CryptoRng, Rng, distr::StandardUniform, prelude::Distribution};
-=======
     aes::{FixedKeyAes, FIXED_KEY},
     Block,
 };
-use rand::{distributions::Standard, prelude::Distribution, CryptoRng, Rng};
->>>>>>> 50828d7 (feat: garble vm (#191))
+use rand::{CryptoRng, Rng, distr::StandardUniform, prelude::Distribution};
 use serde::{Deserialize, Serialize};
 
 /// AES cipher used for MAC commitments.
@@ -144,12 +137,6 @@ impl Delta {
     #[inline]
     pub fn into_inner(self) -> Block {
         self.0
-    }
-
-    /// Set second least significant bit of the block
-    #[inline]
-    pub fn set_second_lsb(&mut self, value: bool) {
-        self.0.set_second_lsb(value);
     }
 }
 
@@ -287,15 +274,9 @@ enum MacCommitmentErrorKind {
 
 #[cfg(test)]
 mod tests {
-<<<<<<< HEAD
     use mpz_core::{bitvec::BitVec, prg::Prg};
     use mpz_ot_core::{cot::COTReceiverOutput, ideal::cot::IdealCOT};
     use rand::{SeedableRng, rngs::StdRng};
-=======
-    use mpz_core::prg::Prg;
-    use mpz_ot_core::{cot::COTReceiverOutput, ideal::cot::IdealCOT};
-    use rand::{rngs::StdRng, SeedableRng};
->>>>>>> 50828d7 (feat: garble vm (#191))
 
     use crate::Slice;
 

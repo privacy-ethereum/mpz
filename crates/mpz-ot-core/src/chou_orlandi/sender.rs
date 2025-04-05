@@ -1,15 +1,6 @@
 use std::{collections::VecDeque, mem};
 
 use crate::{
-<<<<<<< HEAD
-=======
-    chou_orlandi::{
-        hash_point,
-        msgs::{ReceiverPayload, SenderPayload, SenderSetup},
-        SenderError,
-    },
-    ot::{OTSender, OTSenderOutput},
->>>>>>> b81b562 (feat: lazy ot (#186))
     TransferId,
     chou_orlandi::{
         SenderError, hash_point,
@@ -18,13 +9,8 @@ use crate::{
     ot::{OTSender, OTSenderOutput},
 };
 
-<<<<<<< HEAD
 use mpz_common::future::{MaybeDone, Sender as OutputSender, new_output};
 use mpz_core::{Block, rand::Rand0_8CompatExt};
-=======
-use mpz_common::future::{new_output, MaybeDone, Sender as OutputSender};
-use mpz_core::Block;
->>>>>>> b81b562 (feat: lazy ot (#186))
 
 use curve25519_dalek::{
     constants::RISTRETTO_BASEPOINT_TABLE, ristretto::RistrettoPoint, scalar::Scalar,

@@ -1,8 +1,7 @@
-use std::fmt;
+use std::{fmt, ops::Range};
 use mpz_memory_core::correlated::{Mac, Delta, Key};
 
 use mpz_circuits::{
-    types::{TypeError, BinaryRepr},
     Circuit, CircuitError, Gate,
 };
 use mpz_core::{
@@ -22,13 +21,13 @@ const SELECT_MASK: [Block; 2] = [Block::ZERO, Block::ONES];
 #[allow(missing_docs)]
 pub enum AuthEvaluatorError {
     #[error(transparent)]
-    TypeError(#[from] TypeError),
-    #[error(transparent)]
     CircuitError(#[from] CircuitError),
     #[error("evaluator not finished")]
     NotFinished,
     #[error("MAC verification failed at gate {0}")]
     MacCheckFailed(usize), 
+    #[error("expected {expected} input labels, got {actual}")]
+    InvalidLabelCount { expected: usize, actual: usize },
     #[error("expected {expected} auth bits, got {actual}")]
     InvalidAuthBitCount { expected: usize, actual: usize },
     #[error("expected {expected} AND gates, got {actual}")]
@@ -206,15 +205,15 @@ impl AuthEval {
         &'a mut self, 
         circ: &'a Circuit,
         delta: Delta,
-        input_auth_bits: Vec<AuthBitShare>,
-        shares: Vec<AuthBitShare>,
+        input_auth_bits: &[AuthBitShare],
+        shares: &[AuthBitShare],
     ) -> Result<(Vec<Block>, Vec<Block>), AuthEvaluatorError> {
 
-        if input_auth_bits.len() != circ.input_len() {
-            return Err(CircuitError::InvalidInputCount(
-                circ.input_len(),
-                input_auth_bits.len(),
-            ))?;
+        if input_auth_bits.len() != circ.inputs().len() {
+            return Err(AuthEvaluatorError::InvalidAuthBitCount {
+                expected: circ.inputs().len(),
+                actual: input_auth_bits.len(),
+            });
         }
 
         // Expand the buffer to fit the circuit
@@ -222,14 +221,8 @@ impl AuthEval {
             self.auth_bits.resize(circ.feed_count(), Default::default());
         }
 
-        // Set input labels and auth bits
-        let mut input_auth_bits_iter = input_auth_bits.into_iter();
-        for input in circ.inputs() {
-            for (node, auth_bit) in input.iter().zip(input_auth_bits_iter.by_ref()) {
-                self.auth_bits[node.id()] = auth_bit;
-            }
-        }
-
+        // Set input auth bits
+        self.auth_bits[..input_auth_bits.len()].copy_from_slice(input_auth_bits);
 
         // Set AND output auth bits
         let mut count = 0;
@@ -315,7 +308,7 @@ impl AuthEval {
         let mut rng = ChaCha12Rng::seed_from_u64(self.seed);
         let mut location: Vec<usize> = (0..total).collect();
         for i in (0..total).rev() {
-            let idx = rng.gen_range(0..=i);
+            let idx = rng.random_range(0..=i);
             location.swap(i, idx);
         }
 
@@ -377,11 +370,6 @@ impl AuthEval {
         Ok(())
     }
 
-    /// Returns the output triples for debugging
-    pub fn output_triples(&self) -> Vec<AuthTripleShare> {
-        self.triples.clone()
-    }
-
     /// Generates the free gates for the circuit.
     pub fn evaluate_free<'a>(
         &'a mut self, 
@@ -395,6 +383,9 @@ impl AuthEval {
                 }
                 Gate::Inv { x, z } => {
                     // self.labels[z.id()] = self.labels[x.id()] ^ delta.as_block();
+                    self.auth_bits[z.id()] = self.auth_bits[x.id()].clone();
+                }
+                Gate::Id { x, z } => {
                     self.auth_bits[z.id()] = self.auth_bits[x.id()].clone();
                 }
                 Gate::And { .. } => {
@@ -434,17 +425,17 @@ impl AuthEval {
         &'a mut self,
         circ: &'a Circuit,
         delta: Delta,
-        input_labels: Vec<Mac>,
+        input_labels: &[Mac],
         masked_inputs: Vec<bool>,
         px: Vec<bool>, // received
         py: Vec<bool>, // received
     ) -> Result<AuthEncryptedGateConsumer<'_, std::slice::Iter<'_, Gate>>, AuthEvaluatorError> {
-        
-        if input_labels.len() != circ.input_len() || masked_inputs.len() != circ.input_len() {
-            return Err(CircuitError::InvalidInputCount(
-                circ.input_len(),
-                input_labels.len(),
-            ))?;
+
+        if input_labels.len() != circ.inputs().len() || masked_inputs.len() != circ.inputs().len() {
+            return Err(AuthEvaluatorError::InvalidLabelCount {
+                expected: circ.inputs().len(),
+                actual: input_labels.len(),
+            });
         }
 
         // Expand the buffer to fit the circuit
@@ -452,19 +443,11 @@ impl AuthEval {
             self.labels.resize(circ.feed_count(), Default::default());
             self.masked_values.resize(circ.feed_count(), false);
         }
-
-        // Set input labels and auth bits
-        let mut input_labels_iter = input_labels.into_iter();
-        let mut masked_inputs_iter = masked_inputs.into_iter();
-        for input in circ.inputs() {
-            for (node, label) in input.iter().zip(input_labels_iter.by_ref()) {
-                self.labels[node.id()] = label.into();
-            }
-            for (node, masked_input) in input.iter().zip(masked_inputs_iter.by_ref()) {
-                self.masked_values[node.id()] = masked_input;
-            }
-        }
         
+        // Set input labels and masked values
+        self.labels[..input_labels.len()].copy_from_slice(Mac::as_blocks(input_labels));
+        self.masked_values[..masked_inputs.len()].copy_from_slice(&masked_inputs);
+
         if px.len().min(py.len()) < circ.and_count() {
             return Err(AuthEvaluatorError::InvalidPxPyCount {
                 expected: circ.and_count(),
@@ -520,11 +503,11 @@ impl AuthEval {
         &'a mut self,
         circ: &'a Circuit,
         delta: Delta,
-        input_labels: Vec<Mac>, 
+        input_labels: &[Mac], 
         masked_inputs: Vec<bool>,
         px: Vec<bool>,
         py: Vec<bool>,
-    ) -> Result<AuthEncryptedGateBatchConsumer<'_, std::slice::Iter<'_, Gate>>, AuthEvaluatorError> {
+    ) -> Result<AuthEncryptedGateBatchConsumer<'a, std::slice::Iter<'a, Gate>>, AuthEvaluatorError> {
         self.evaluate(circ, delta, input_labels, masked_inputs, px, py).map(AuthEncryptedGateBatchConsumer)
     }
     
@@ -549,7 +532,7 @@ pub struct AuthEncryptedGateConsumer<'a, I: Iterator> {
    /// Iterator over the gates.
    gates2: I,
    /// Circuit outputs.
-   outputs: &'a [BinaryRepr],
+   outputs: Range<usize>,
    /// Current gate id.
    gid: usize,
    /// Number of AND gates generated.
@@ -574,7 +557,7 @@ where
         delta: Delta,
         gates: I,
         gates2: I,
-        outputs: &'a [BinaryRepr],
+        outputs: Range<usize>,
         labels: &'a mut [Block],
         auth_bits: &'a mut [AuthBitShare],
         sigma_bits: &'a mut [AuthBitShare],
@@ -616,6 +599,10 @@ where
                 Gate::Inv { x, z } => {
                     self.labels[z.id()] = self.labels[x.id()];
                     self.masked_values[z.id()] = !self.masked_values[x.id()];
+                }
+                Gate::Id { x, z } => {
+                    self.labels[z.id()] = self.labels[x.id()];
+                    self.masked_values[z.id()] = self.masked_values[x.id()];
                 }
                 Gate::And { x, y, z } => {
                     let sx = self.auth_bits[x.id()];
@@ -680,17 +667,9 @@ where
             self.next(Default::default());
         }
 
-        let mut output_labels = Vec::new();
-        let mut output_auth_bits = Vec::new();
-        let mut masked_output_values = Vec::new();
-
-        for output in self.outputs.iter() {
-            for node in output.iter() {
-                output_labels.push(Mac::from(self.labels[node.id()]));
-                output_auth_bits.push(self.auth_bits[node.id()]);
-                masked_output_values.push(self.masked_values[node.id()]);
-            }
-        }
+        let output_labels = Mac::from_blocks(self.labels[self.outputs.clone()].to_vec());
+        let output_auth_bits = self.auth_bits[self.outputs.clone()].to_vec();
+        let masked_output_values = self.masked_values[self.outputs.clone()].to_vec();
 
         let mut auth_hash = Block::ZERO;
         let mut and_count = 0;

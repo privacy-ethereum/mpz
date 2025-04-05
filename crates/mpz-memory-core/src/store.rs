@@ -266,7 +266,6 @@ mod tests {
         let mut store = Store::new();
         let range = store.alloc(10);
 
-<<<<<<< HEAD
         assert!(!store.is_set(range));
 
         let data = vec![1; 10];
@@ -277,18 +276,6 @@ mod tests {
 
         let range2 = store.alloc(10);
         assert!(!store.is_set(range2));
-=======
-        assert!(!store.is_set(range.clone()));
-
-        let data = vec![1; 10];
-        store.try_set(range.clone(), &data).unwrap();
-
-        assert!(store.is_set(range.clone()));
-        assert_eq!(store.try_get(range.clone()).unwrap(), &data[..]);
-
-        let range2 = store.alloc(10);
-        assert!(!store.is_set(range2.clone()));
->>>>>>> 50828d7 (feat: garble vm (#191))
     }
 
     #[test]
@@ -296,16 +283,11 @@ mod tests {
         let mut store = BitStore::new();
         let range = store.alloc(10);
 
-<<<<<<< HEAD
         assert!(!store.is_set(range));
-=======
-        assert!(!store.is_set(range.clone()));
->>>>>>> 50828d7 (feat: garble vm (#191))
 
         let data = BitVec::from_iter([
             false, true, false, true, false, true, false, true, false, true,
         ]);
-<<<<<<< HEAD
         store.try_set(range, &data).unwrap();
 
         assert!(store.is_set(range));
@@ -313,14 +295,5 @@ mod tests {
 
         let range2 = store.alloc(10);
         assert!(!store.is_set(range2));
-=======
-        store.try_set(range.clone(), &data).unwrap();
-
-        assert!(store.is_set(range.clone()));
-        assert_eq!(store.try_get(range.clone()).unwrap(), &data);
-
-        let range2 = store.alloc(10);
-        assert!(!store.is_set(range2.clone()));
->>>>>>> 50828d7 (feat: garble vm (#191))
     }
 }

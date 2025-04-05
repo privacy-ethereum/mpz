@@ -1,13 +1,6 @@
-<<<<<<< HEAD
 //! Test utilities.
 
 use mpz_common::{Flush, context::test_st_context};
-=======
-use mpz_common::{
-    executor::{test_st_executor, TestSTExecutor},
-    Flush,
-};
->>>>>>> b81b562 (feat: lazy ot (#186))
 use mpz_core::Block;
 use mpz_ot_core::{
     cot::{COTReceiver, COTSender},
@@ -16,16 +9,11 @@ use mpz_ot_core::{
     rot::{ROTReceiver, ROTReceiverOutput, ROTSender, ROTSenderOutput},
     test::{assert_cot, assert_ot, assert_rot},
 };
-<<<<<<< HEAD
 use rand::{Rng, SeedableRng, rngs::StdRng};
-=======
-use rand::{rngs::StdRng, Rng, SeedableRng};
->>>>>>> b81b562 (feat: lazy ot (#186))
 
 /// Tests OT functionality.
 pub async fn test_ot<S, R>(mut sender: S, mut receiver: R, cycles: usize)
 where
-<<<<<<< HEAD
     S: OTSender<Block> + Flush,
     R: OTReceiver<bool, Block> + Flush,
 {
@@ -36,16 +24,6 @@ where
         .map(|_| [rng.random(), rng.random()])
         .collect::<Vec<_>>();
     let choices = (0..128).map(|_| rng.random()).collect::<Vec<_>>();
-=======
-    S: OTSender<Block> + Flush<TestSTExecutor>,
-    R: OTReceiver<bool, Block> + Flush<TestSTExecutor>,
-{
-    let (mut sender_ctx, mut receiver_ctx) = test_st_executor(8);
-
-    let mut rng = StdRng::seed_from_u64(0);
-    let msgs = (0..128).map(|_| [rng.gen(), rng.gen()]).collect::<Vec<_>>();
-    let choices = (0..128).map(|_| rng.gen()).collect::<Vec<_>>();
->>>>>>> b81b562 (feat: lazy ot (#186))
 
     for _ in 0..cycles {
         let (output_sender, output_receiver) = futures::join! {
@@ -69,7 +47,6 @@ where
 }
 
 /// Tests RCOT functionality.
-<<<<<<< HEAD
 pub async fn test_rcot<S, R>(mut sender: S, mut receiver: R, count: usize, cycles: usize)
 where
     S: RCOTSender<Block> + Flush,
@@ -77,16 +54,6 @@ where
 {
     let (mut sender_ctx, mut receiver_ctx) = test_st_context(8);
 
-=======
-pub async fn test_rcot<S, R>(mut sender: S, mut receiver: R, cycles: usize)
-where
-    S: RCOTSender<Block> + Flush<TestSTExecutor>,
-    R: RCOTReceiver<bool, Block> + Flush<TestSTExecutor>,
-{
-    let (mut sender_ctx, mut receiver_ctx) = test_st_executor(8);
-
-    let count = 128;
->>>>>>> b81b562 (feat: lazy ot (#186))
     for _ in 0..cycles {
         let (
             RCOTSenderOutput {
@@ -121,7 +88,6 @@ where
 /// Tests COT functionality.
 pub async fn test_cot<S, R>(mut sender: S, mut receiver: R, cycles: usize)
 where
-<<<<<<< HEAD
     S: COTSender<Block> + Flush,
     R: COTReceiver<bool, Block> + Flush,
 {
@@ -130,16 +96,6 @@ where
     let mut rng = StdRng::seed_from_u64(0);
     let keys = (0..128).map(|_| rng.random()).collect::<Vec<_>>();
     let choices = (0..128).map(|_| rng.random()).collect::<Vec<_>>();
-=======
-    S: COTSender<Block> + Flush<TestSTExecutor>,
-    R: COTReceiver<bool, Block> + Flush<TestSTExecutor>,
-{
-    let (mut sender_ctx, mut receiver_ctx) = test_st_executor(8);
-
-    let mut rng = StdRng::seed_from_u64(0);
-    let keys = (0..128).map(|_| rng.gen()).collect::<Vec<_>>();
-    let choices = (0..128).map(|_| rng.gen()).collect::<Vec<_>>();
->>>>>>> b81b562 (feat: lazy ot (#186))
 
     for _ in 0..cycles {
         let (output_sender, output_receiver) = futures::join! {
@@ -165,19 +121,11 @@ where
 /// Tests ROT functionality.
 pub async fn test_rot<S, R, T>(mut sender: S, mut receiver: R, cycles: usize)
 where
-<<<<<<< HEAD
     S: ROTSender<[T; 2]> + Flush,
     R: ROTReceiver<bool, T> + Flush,
     T: Copy + PartialEq,
 {
     let (mut sender_ctx, mut receiver_ctx) = test_st_context(8);
-=======
-    S: ROTSender<[T; 2]> + Flush<TestSTExecutor>,
-    R: ROTReceiver<bool, T> + Flush<TestSTExecutor>,
-    T: Copy + PartialEq,
-{
-    let (mut sender_ctx, mut receiver_ctx) = test_st_executor(8);
->>>>>>> b81b562 (feat: lazy ot (#186))
 
     let count = 128;
 

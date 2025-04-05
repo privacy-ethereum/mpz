@@ -1,5 +1,4 @@
 use async_trait::async_trait;
-<<<<<<< HEAD
 use mpz_common::{Context, ContextError, Flush};
 use mpz_core::{Block, bitvec::BitVec};
 use mpz_garble_core::{
@@ -9,17 +8,6 @@ use mpz_garble_core::{
 use mpz_memory_core::{DecodeFuture, Memory, Slice, View, binary::Binary};
 use mpz_ot::cot::COTReceiver;
 use serio::{SinkExt, stream::IoStreamExt};
-=======
-use mpz_common::{scoped_futures::ScopedFutureExt, Context, ContextError, Flush};
-use mpz_core::{bitvec::BitVec, Block};
-use mpz_garble_core::{
-    store::{EvaluatorStore as Core, EvaluatorStoreError as CoreError},
-    Mac,
-};
-use mpz_memory_core::{binary::Binary, DecodeFuture, Memory, Slice, View};
-use mpz_ot::cot::COTReceiver;
-use serio::{stream::IoStreamExt, SinkExt};
->>>>>>> 50828d7 (feat: garble vm (#191))
 
 type Error = EvaluatorStoreError;
 type Result<T, E = Error> = core::result::Result<T, E>;
@@ -108,16 +96,9 @@ where
 }
 
 #[async_trait]
-<<<<<<< HEAD
 impl<COT> Flush for EvaluatorStore<COT>
 where
     COT: COTReceiver<bool, Block> + Flush + Send + 'static,
-=======
-impl<Ctx, COT> Flush<Ctx> for EvaluatorStore<COT>
-where
-    Ctx: Context,
-    COT: COTReceiver<bool, Block> + Flush<Ctx> + Send + 'static,
->>>>>>> 50828d7 (feat: garble vm (#191))
     COT::Future: Send + 'static,
 {
     type Error = Error;
@@ -126,33 +107,18 @@ where
         self.core.wants_flush()
     }
 
-<<<<<<< HEAD
     async fn flush(&mut self, ctx: &mut Context) -> Result<(), Self::Error> {
-=======
-    async fn flush(&mut self, ctx: &mut Ctx) -> Result<(), Self::Error> {
->>>>>>> 50828d7 (feat: garble vm (#191))
         while self.core.wants_flush() {
             let flush = self.core.send_flush()?;
             let mut cot = self.core.acquire_cot();
 
             let (flush, ()) = ctx
                 .try_join(
-<<<<<<< HEAD
                     async |ctx| {
                         ctx.io_mut().send(flush).await?;
                         ctx.io_mut().expect_next().await.map_err(Error::from)
                     },
                     async move |ctx| cot.flush(ctx).await.map_err(Error::cot),
-=======
-                    |ctx| {
-                        async move {
-                            ctx.io_mut().send(flush).await?;
-                            ctx.io_mut().expect_next().await.map_err(Error::from)
-                        }
-                        .scope_boxed()
-                    },
-                    |ctx| async move { cot.flush(ctx).await.map_err(Error::cot) }.scope_boxed(),
->>>>>>> 50828d7 (feat: garble vm (#191))
                 )
                 .await??;
 
@@ -165,11 +131,7 @@ where
 
 #[derive(Debug, thiserror::Error)]
 #[error(transparent)]
-<<<<<<< HEAD
 pub(crate) struct EvaluatorStoreError(#[from] ErrorRepr);
-=======
-pub struct EvaluatorStoreError(#[from] ErrorRepr);
->>>>>>> 50828d7 (feat: garble vm (#191))
 
 impl EvaluatorStoreError {
     fn cot<E>(err: E) -> Self

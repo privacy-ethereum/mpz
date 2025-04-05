@@ -1,28 +1,16 @@
 use std::{collections::VecDeque, mem};
 
 use crate::{
-<<<<<<< HEAD
-=======
-    kos::{Check, Extend, ReceiverConfig, ReceiverError, CSP, SSP},
-    rcot::{RCOTReceiver, RCOTReceiverOutput},
->>>>>>> b81b562 (feat: lazy ot (#186))
     TransferId,
     kos::{CSP, Check, Extend, ReceiverConfig, ReceiverError, SSP},
     rcot::{RCOTReceiver, RCOTReceiverOutput},
 };
 
 use itybity::{FromBitIterator, IntoBits};
-<<<<<<< HEAD
 use mpz_common::future::{MaybeDone, Sender, new_output};
 use mpz_core::{Block, prg::Prg};
 
 use rand::{Rng as _, SeedableRng};
-=======
-use mpz_common::future::{new_output, MaybeDone, Sender};
-use mpz_core::{prg::Prg, Block};
-
-use rand::{thread_rng, Rng as _, SeedableRng};
->>>>>>> b81b562 (feat: lazy ot (#186))
 use rand_core::RngCore;
 
 #[cfg(feature = "rayon")]
@@ -87,11 +75,7 @@ impl Receiver {
             state: state::Extension {
                 rngs: seeds
                     .into_iter()
-<<<<<<< HEAD
                     .map(|seeds| seeds.map(Prg::from_seed))
-=======
-                    .map(|seeds| seeds.map(|seed| Prg::from_seed(seed)))
->>>>>>> b81b562 (feat: lazy ot (#186))
                     .collect(),
                 msgs: Vec::default(),
                 choices: Vec::default(),
@@ -298,15 +282,9 @@ impl RCOTReceiver<bool, Block> for Receiver<state::Initialized> {
         &mut self,
         _count: usize,
     ) -> Result<RCOTReceiverOutput<bool, Block>, Self::Error> {
-<<<<<<< HEAD
         Err(ReceiverError::InvalidState(
             "receiver has not been set up yet".to_string(),
         ))
-=======
-        return Err(ReceiverError::InvalidState(
-            "receiver has not been setup yet".to_string(),
-        ));
->>>>>>> b81b562 (feat: lazy ot (#186))
     }
 
     fn queue_recv_rcot(&mut self, count: usize) -> Result<Self::Future, Self::Error> {
@@ -314,11 +292,7 @@ impl RCOTReceiver<bool, Block> for Receiver<state::Initialized> {
 
         self.queue.push_back(Queued { count, sender });
 
-<<<<<<< HEAD
         Ok(recv)
-=======
-        return Ok(recv);
->>>>>>> b81b562 (feat: lazy ot (#186))
     }
 }
 
@@ -369,31 +343,18 @@ impl RCOTReceiver<bool, Block> for Receiver<state::Extension> {
             let (sender, recv) = new_output();
             sender.send(output);
 
-<<<<<<< HEAD
             Ok(recv)
-=======
-            return Ok(recv);
->>>>>>> b81b562 (feat: lazy ot (#186))
         } else if !self.state.extended {
             let (sender, recv) = new_output();
 
             self.queue.push_back(Queued { count, sender });
 
-<<<<<<< HEAD
             Ok(recv)
         } else {
             Err(ReceiverError::InsufficientSetup {
                 expected: count,
                 actual: self.available(),
             })
-=======
-            return Ok(recv);
-        } else {
-            return Err(ReceiverError::InsufficientSetup {
-                expected: count,
-                actual: self.available(),
-            });
->>>>>>> b81b562 (feat: lazy ot (#186))
         }
     }
 }

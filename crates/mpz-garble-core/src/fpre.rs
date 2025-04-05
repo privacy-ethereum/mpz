@@ -119,7 +119,7 @@ impl Add<&AuthBitShare> for &AuthBitShare {
 
 /// Builds one `AuthBitShare` from a bit and delta, ensuring `key.lsb()==false`.
 fn build_share(rng: &mut ChaCha12Rng, bit: bool, delta: &Delta) -> AuthBitShare {
-    let key: Key = rng.gen();
+    let key: Key = rng.random();
     let mac = key.auth(bit, delta);
     AuthBitShare { key, mac, value: bit }
 }
@@ -319,7 +319,7 @@ impl Fpre {
             })
             .collect();
 
-        let gen = FpreGen {
+        let gb = FpreGen {
             num_input: self.num_input,
             num_and: self.num_and,
             delta_a: self.delta_a,
@@ -339,7 +339,7 @@ impl Fpre {
             location: Vec::new(),
         };
 
-        (gen, eval)
+        (gb, eval)
     }
 }
 
@@ -674,8 +674,8 @@ pub fn bit_shares_from_cot(
 
     // Perform COT with delta_b and eval keys so that received messages are macs on bits known to eval
     let mut cot_eval = IdealCOT::new(delta_b.into_inner());
-    let gen_bits: Vec<bool> = (0..length).map(|_| rng.gen()).collect::<Vec<_>>();
-    let eval_keys: Vec<Block> = (0..length).map(|_| rng.gen()).collect::<Vec<_>>();
+    let gen_bits: Vec<bool> = (0..length).map(|_| rng.random()).collect::<Vec<_>>();
+    let eval_keys: Vec<Block> = (0..length).map(|_| rng.random()).collect::<Vec<_>>();
 
     let (
         COTSenderOutput { id: _sender_id },
@@ -689,8 +689,8 @@ pub fn bit_shares_from_cot(
 
     // Perform COT with delta_a and gen keys so that received messages are macs on bits known to gen
     let mut cot_gen = IdealCOT::new(delta_a.into_inner());
-    let eval_bits: Vec<bool> = (0..length).map(|_| rng.gen()).collect::<Vec<_>>();
-    let gen_keys: Vec<Block> = (0..length).map(|_| rng.gen()).collect::<Vec<_>>();
+    let eval_bits: Vec<bool> = (0..length).map(|_| rng.random()).collect::<Vec<_>>();
+    let gen_keys: Vec<Block> = (0..length).map(|_| rng.random()).collect::<Vec<_>>();
 
     let (
         COTSenderOutput { id: _sender_id },

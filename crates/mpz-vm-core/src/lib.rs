@@ -37,13 +37,8 @@ pub trait Callable<T: MemoryType> {
     fn call_raw(&mut self, call: Call) -> Result<Slice>;
 }
 
-<<<<<<< HEAD
 /// Extension trait for [`Callable`].
 pub trait CallableExt<T: MemoryType>: Callable<T> {
-=======
-/// Extension trait for [`Vm`].
-pub trait VmExt<T: MemoryType>: Vm<T> {
->>>>>>> 50828d7 (feat: garble vm (#191))
     /// Calls a function, returning the output.
     fn call<R>(&mut self, call: Call) -> Result<R>
     where

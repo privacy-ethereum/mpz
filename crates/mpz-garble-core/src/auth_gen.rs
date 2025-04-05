@@ -1,4 +1,5 @@
 use core::fmt;
+use std::ops::Range;
 
 use crate::{
     circuit::{AuthHalfGate, AuthHalfGateBatch}, 
@@ -6,7 +7,6 @@ use crate::{
     DEFAULT_BATCH_SIZE,
 };
 use mpz_circuits::{
-    types::{BinaryRepr, TypeError},
     Circuit, Gate, CircuitError
 };
 use mpz_core::{
@@ -23,8 +23,6 @@ const SELECT_MASK: [Block; 2] = [Block::ZERO, Block::ONES];
 #[derive(Debug, thiserror::Error)]
 #[allow(missing_docs)]
 pub enum AuthGeneratorError {
-    #[error(transparent)]
-    TypeError(#[from] TypeError),
     #[error(transparent)]
     CircuitError(#[from] CircuitError),
     #[error("generator not finished")]
@@ -211,15 +209,15 @@ impl AuthGen {
         &'a mut self, 
         circ: &'a Circuit,
         delta: Delta,
-        input_auth_bits: Vec<AuthBitShare>,
-        shares: Vec<AuthBitShare>,
+        input_auth_bits: &[AuthBitShare],
+        shares: &[AuthBitShare],
     ) -> Result<(Vec<Block>, Vec<Block>), AuthGeneratorError> {
 
-        if input_auth_bits.len() != circ.input_len() {
-            return Err(CircuitError::InvalidInputCount(
-                circ.input_len(),
-                input_auth_bits.len(),
-            ))?;
+        if input_auth_bits.len() != circ.inputs().len() {
+            return Err(AuthGeneratorError::InvalidAuthBitCount {
+                expected: circ.inputs().len(),
+                actual: input_auth_bits.len(),
+            });
         }
 
         // Expand the buffer to fit the circuit
@@ -227,13 +225,8 @@ impl AuthGen {
             self.auth_bits.resize(circ.feed_count(), Default::default());
         }
 
-        // Set input labels and auth bits
-        let mut input_auth_bits_iter = input_auth_bits.into_iter();
-        for input in circ.inputs() {
-            for (node, auth_bit) in input.iter().zip(input_auth_bits_iter.by_ref()) {
-                self.auth_bits[node.id()] = auth_bit;
-            }
-        }
+        // Set input  auth bits
+        self.auth_bits[..input_auth_bits.len()].copy_from_slice(input_auth_bits);
 
         // Set AND output auth bits
         let mut count = 0;
@@ -319,7 +312,7 @@ impl AuthGen {
         let mut rng = ChaCha12Rng::seed_from_u64(self.seed);
         let mut location: Vec<usize> = (0..total).collect();
         for i in (0..total).rev() {
-            let idx = rng.gen_range(0..=i);
+            let idx = rng.random_range(0..=i);
             location.swap(i, idx);
         }
 
@@ -381,11 +374,6 @@ impl AuthGen {
         Ok(())
     }
 
-    /// Returns the output triples for debugging
-    pub fn output_triples(&self) -> Vec<AuthTripleShare> {
-        self.triples.clone()
-    }
-
     /// Generates the free gates for the circuit.
     pub fn generate_free<'a>(
         &'a mut self, 
@@ -399,6 +387,9 @@ impl AuthGen {
                 }
                 Gate::Inv { x, z } => {
                     // self.labels[z.id()] = self.labels[x.id()] ^ delta.as_block();
+                    self.auth_bits[z.id()] = self.auth_bits[x.id()].clone();
+                }
+                Gate::Id { x, z } => {
                     self.auth_bits[z.id()] = self.auth_bits[x.id()].clone();
                 }
                 Gate::And { .. } => {
@@ -438,16 +429,16 @@ impl AuthGen {
         &'a mut self,
         circ: &'a Circuit,
         delta: Delta,
-        input_labels: Vec<Key>,
+        input_labels: &[Key],
         px: Vec<bool>, // received
         py: Vec<bool>, // received
-    ) -> Result<AuthEncryptedGateIter<'_, std::slice::Iter<'_, Gate>>, AuthGeneratorError> {
+    ) -> Result<AuthEncryptedGateIter<'a, std::slice::Iter<'a, Gate>>, AuthGeneratorError> {
         
-        if input_labels.len() != circ.input_len() {
-            return Err(CircuitError::InvalidInputCount(
-                circ.input_len(),
-                input_labels.len(),
-            ))?;
+        if input_labels.len() != circ.inputs().len() {
+            return Err(AuthGeneratorError::InvalidLabelCount {
+                expected: circ.inputs().len(),
+                actual: input_labels.len(),
+            });
         }
 
         // Expand the buffer to fit the circuit
@@ -456,12 +447,7 @@ impl AuthGen {
         }
 
         // Set input labels
-        let mut input_labels_iter = input_labels.into_iter();
-        for input in circ.inputs() {
-            for (node, label) in input.iter().zip(input_labels_iter.by_ref()) {
-                self.labels[node.id()] = label.into();
-            }
-        }
+        self.labels[..input_labels.len()].copy_from_slice(Key::as_blocks(input_labels));
         
         if px.len().min(py.len()) < circ.and_count() {
             return Err(AuthGeneratorError::InvalidPxPyCount {
@@ -512,10 +498,10 @@ impl AuthGen {
         &'a mut self,
         circ: &'a Circuit,
         delta: Delta,
-        input_labels: Vec<Key>,
+        input_labels: &[Key],
         px: Vec<bool>,
         py: Vec<bool>,
-    ) -> Result<AuthEncryptedGateBatchIter<'_, std::slice::Iter<'_, Gate>>, AuthGeneratorError> {
+    ) -> Result<AuthEncryptedGateBatchIter<'a, std::slice::Iter<'a, Gate>>, AuthGeneratorError> {
         self.generate(circ, delta, input_labels, px, py)
             .map(AuthEncryptedGateBatchIter)
     }
@@ -541,7 +527,7 @@ pub struct AuthEncryptedGateIter<'a, I> {
     /// Iterator over the gates.
     gates2: I,
     /// Circuit outputs.
-    outputs: &'a [BinaryRepr],
+    outputs: Range<usize>,
     /// Current gate id.
     gid: usize,
     /// Number of AND gates generated.
@@ -566,7 +552,7 @@ where
         delta: Delta,
         gates: I,
         gates2: I,
-        outputs: &'a [BinaryRepr],
+        outputs: Range<usize>,
         labels: &'a mut [Block],
         auth_bits: &'a mut [AuthBitShare],
         sigma_bits: &'a mut [AuthBitShare],
@@ -611,25 +597,8 @@ where
             assert_eq!(self.next(), None);
         }
 
-        // let (output_labels, output_auth_bits): (Vec<_>, Vec<_>) = self
-        //     .outputs
-        //     .iter()
-        //     .flat_map(|output| output.iter().map(|node| {
-        //         let key = Key::from(self.labels[node.id()]);
-        //         let auth_bit = self.auth_bits[node.id()];
-        //         (key, auth_bit)
-        //     }))
-        //     .unzip();
-
-        let mut output_labels = Vec::new();
-        let mut output_auth_bits = Vec::new();
-
-        for output in self.outputs.iter() {
-            for node in output.iter() {
-                output_labels.push(Key::from(self.labels[node.id()]));
-                output_auth_bits.push(self.auth_bits[node.id()]);
-            }
-        }
+        let output_labels = Key::from_blocks(self.labels[self.outputs.clone()].to_vec());
+        let output_auth_bits = self.auth_bits[self.outputs.clone()].to_vec();
 
         self.masked_values.copy_from_slice(&masked_values);
 
@@ -705,6 +674,9 @@ where
                 }
                 Gate::Inv { x, z } => {
                     self.labels[z.id()] = self.labels[x.id()] ^ self.delta.as_block();
+                }
+                Gate::Id { x, z } => {
+                    self.labels[z.id()] = self.labels[x.id()].clone();
                 }
             }
         }

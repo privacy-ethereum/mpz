@@ -2,7 +2,6 @@ use std::ops::Add;
 
 use blake3::{Hash, Hasher};
 use mpz_core::{
-<<<<<<< HEAD
     Block,
     aes::FixedKeyAes,
     bitvec::{BitSlice, BitVec},
@@ -14,19 +13,6 @@ use crate::{
     RangeSet, Slice,
     correlated::{COMMIT_CIPHER, Delta, MAC_ONE, MAC_ZERO, MacCommitment, macs::Mac},
     store::{Store, StoreError},
-=======
-    aes::FixedKeyAes,
-    bitvec::{BitSlice, BitVec},
-    Block,
-};
-use rand::{distributions::Standard, prelude::Distribution};
-use utils::range::Disjoint;
-
-use crate::{
-    correlated::{macs::Mac, Delta, MacCommitment, COMMIT_CIPHER, MAC_ONE, MAC_ZERO},
-    store::{Store, StoreError},
-    RangeSet, Slice,
->>>>>>> 50828d7 (feat: garble vm (#191))
 };
 
 type Result<T> = core::result::Result<T, KeyStoreError>;
@@ -51,7 +37,6 @@ impl Key {
     /// Adjusts the truth value of the corresponding MAC.
     #[inline]
     pub fn adjust(&mut self, adjust: bool, delta: &Delta) {
-<<<<<<< HEAD
         self.0 ^= if adjust {
             delta.as_block()
         } else {
@@ -60,14 +45,6 @@ impl Key {
 
         // Setting LSB(key) == 0 to enable the prover to store the authenticated bit in
         // LSB(MAC).
-=======
-        self.0 = self.0
-            ^ if adjust {
-                delta.as_block()
-            } else {
-                &Block::ZERO
-            };
->>>>>>> 50828d7 (feat: garble vm (#191))
         self.0.set_lsb(false);
     }
 
@@ -167,17 +144,10 @@ impl Add<&Key> for &Key {
     }
 }
 
-<<<<<<< HEAD
 impl Distribution<Key> for StandardUniform {
     #[inline]
     fn sample<R: rand::Rng + ?Sized>(&self, rng: &mut R) -> Key {
         Key(rng.random())
-=======
-impl Distribution<Key> for Standard {
-    #[inline]
-    fn sample<R: rand::Rng + ?Sized>(&self, rng: &mut R) -> Key {
-        Key(rng.gen())
->>>>>>> 50828d7 (feat: garble vm (#191))
     }
 }
 
@@ -188,10 +158,7 @@ pub struct KeyStore {
     delta: Delta,
     /// Key for public 1 MAC.
     public_one: Key,
-<<<<<<< HEAD
     /// Keys used for either OT or for transfering MACs directly.
-=======
->>>>>>> 50828d7 (feat: garble vm (#191))
     used: RangeSet,
 }
 
@@ -200,10 +167,7 @@ impl KeyStore {
     #[inline]
     pub fn new(delta: Delta) -> Self {
         let mut public_one = Key(MAC_ONE ^ delta.as_block());
-<<<<<<< HEAD
         // By definition, LSB(public_one) == 0. We set it here again for expliciteness.
-=======
->>>>>>> 50828d7 (feat: garble vm (#191))
         public_one.0.set_lsb(false);
         Self {
             keys: Store::default(),
@@ -244,11 +208,6 @@ impl KeyStore {
     }
 
     /// Allocates memory with the given keys.
-<<<<<<< HEAD
-=======
-    ///
-    /// The provided keys are marked as used.
->>>>>>> 50828d7 (feat: garble vm (#191))
     #[inline]
     pub fn alloc_with(&mut self, keys: &[Key]) -> Slice {
         self.keys.alloc_with(keys)
@@ -416,11 +375,7 @@ impl KeyStore {
                     let expected_mac = key.auth(value, &self.delta);
 
                     data.push(value);
-<<<<<<< HEAD
                     hasher.update(expected_mac.as_bytes());
-=======
-                    hasher.update(&expected_mac.as_bytes());
->>>>>>> 50828d7 (feat: garble vm (#191))
                 });
             idx += slice.size;
         }
