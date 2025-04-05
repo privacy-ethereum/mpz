@@ -1,7 +1,6 @@
 // fpre.rs
 
-// TODO: Move auth bits and auth triples into correlated.rs
-// TODO: Implement Delta/Block/Key/Mac arithmetic
+// TODO: Move all of this code elsewhere, maybe into correlated.rs
 
 use std::ops::Add;
 use std::iter::zip;

@@ -1,6 +1,6 @@
 use std::ops::Index;
 
-use mpz_core::{aes::FixedKeyAes, Block};
+use mpz_core::Block;
 use serde::{Deserialize, Serialize};
 
 use crate::DEFAULT_BATCH_SIZE;
@@ -92,9 +92,4 @@ impl<const N: usize> AuthHalfGateBatch<N> {
     pub fn into_array(self) -> [AuthHalfGate; N] {
         self.0
     }
-}
-
-/// Helper function for hashing without tweaks for now.
-pub fn sigma(tweak: Block, block: Block, cipher: &FixedKeyAes) -> Block {
-    cipher.tccr(tweak, block)
 }
