@@ -8,7 +8,7 @@ use mpz_common::future::Output;
 use mpz_core::{bitvec::{BitVec, BitSlice}, Block, prg::Prg};
 use mpz_memory_core::{
     binary::Binary,
-    correlated::{Key, Delta, Mac, MacCommitment, MacCommitmentError, MacStore, MacStoreError, COMMIT_CIPHER, AuthBitStore, AuthBit, AuthBitStoreError},
+    correlated::{Key, Delta, Mac, MacCommitment, MacCommitmentError, MacStore, MacStoreError, COMMIT_CIPHER, AuthBitStore, AuthBitStoreError},
     store::{BitStore, Store, StoreError},
     DecodeError, DecodeFuture, DecodeOp, Memory, Slice, View as ViewTrait,
 };
@@ -202,7 +202,7 @@ impl<S, R> AuthEvalStore<S, R>
 
     /// Decodes all data which are not set but we have the MACs and key bits.
     // TODO: change this decoding to use masks and MACs.
-    fn decode_macs(&mut self) -> Result<()> {
+    fn _decode_macs(&mut self) -> Result<()> {
         let idx = self
             .mac_store
             .set_ranges()

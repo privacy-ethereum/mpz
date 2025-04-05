@@ -7,7 +7,7 @@ use mpz_common::future::Output;
 use mpz_core::{bitvec::{BitVec, BitSlice}, prg::Prg, Block};
 use mpz_memory_core::{
     binary::Binary,
-    correlated::{Delta, Mac, Key, KeyStore, KeyStoreError, AuthBitStore, AuthBitStoreError, AuthBit},
+    correlated::{Delta, Mac, Key, KeyStore, KeyStoreError, AuthBitStore, AuthBitStoreError},
     store::{BitStore, StoreError},
     DecodeError, DecodeFuture, DecodeOp, Memory, Slice, View as ViewTrait,
 };

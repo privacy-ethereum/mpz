@@ -21,7 +21,7 @@ struct AuthInputView {
     /// Ranges which have been assigned.
     assigned: RangeSet,
     /// Ranges which have auth bits set in both parties views.
-    preprocessed: RangeSet,
+    _preprocessed: RangeSet,
     /// Ranges which are fully committed in both parties views.
     complete: RangeSet,
     /// All input ranges.

@@ -429,7 +429,7 @@ impl AuthEval {
         masked_inputs: Vec<bool>,
         px: Vec<bool>, // received
         py: Vec<bool>, // received
-    ) -> Result<AuthEncryptedGateConsumer<'_, std::slice::Iter<'_, Gate>>, AuthEvaluatorError> {
+    ) -> Result<AuthEncryptedGateConsumer<'a, std::slice::Iter<'a, Gate>>, AuthEvaluatorError> {
 
         if input_labels.len() != circ.inputs().len() || masked_inputs.len() != circ.inputs().len() {
             return Err(AuthEvaluatorError::InvalidLabelCount {

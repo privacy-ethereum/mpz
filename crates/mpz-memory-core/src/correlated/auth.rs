@@ -1,9 +1,4 @@
-use std::ops::Add;
-
-use mpz_core::{
-    bitvec::{BitSlice, BitVec},
-    Block,
-};
+use mpz_core::bitvec::{BitSlice, BitVec};
 
 use crate::{
     correlated::{Delta, Key, Mac, MacStore, KeyStore, MacStoreError, KeyStoreError},
