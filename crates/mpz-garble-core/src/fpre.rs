@@ -235,7 +235,7 @@ impl Fpre {
     /// Builds an AuthBit [x] from a bit b such that x=b 
     pub fn gen_auth_bit(&mut self, x: bool) -> AuthBit {
         
-        let r = self.rng.gen_bool(0.5);
+        let r = self.rng.random_bool(0.5);
         let s = x ^ r;
 
         let r_share = build_share(&mut self.rng, r, &self.delta_b);
@@ -251,8 +251,8 @@ impl Fpre {
 
     /// Builds a random triple
     pub fn gen_auth_triple(&mut self) -> AuthTriple {
-        let x = self.rng.gen_bool(0.5);
-        let y = self.rng.gen_bool(0.5);
+        let x = self.rng.random_bool(0.5);
+        let y = self.rng.random_bool(0.5);
         let z = x && y;
 
         AuthTriple {
@@ -268,7 +268,7 @@ impl Fpre {
         let total_wire_bits = self.num_input + self.num_and;
         self.auth_bits.reserve(total_wire_bits);
         for _ in 0..total_wire_bits {
-            let x = self.rng.gen_bool(0.5);
+            let x = self.rng.random_bool(0.5);
             let auth_bit = self.gen_auth_bit(x);
             self.auth_bits.push(auth_bit);
         }
@@ -457,7 +457,7 @@ impl FpreGen {
         let mut rng = ChaCha12Rng::seed_from_u64(seed);
         let mut location: Vec<usize> = (0..total).collect();
         for i in (0..total).rev() {
-            let idx = rng.gen_range(0..=i);
+            let idx = rng.random_range(0..=i);
             location.swap(i, idx);
         }
 
@@ -481,7 +481,7 @@ impl FpreGen {
 
     fn triple_combine_2(
         self: &mut Self,
-        seed: u64,
+        _seed: u64,
         bucket_size: usize,
         data: Vec<bool>,
         data_recv: Vec<bool>,
@@ -625,7 +625,7 @@ impl FpreEval {
         let mut rng = ChaCha12Rng::seed_from_u64(seed);
         let mut location: Vec<usize> = (0..total).collect();
         for i in (0..total).rev() {
-            let idx = rng.gen_range(0..=i);
+            let idx = rng.random_range(0..=i);
             location.swap(i, idx);
         }
 
@@ -649,7 +649,7 @@ impl FpreEval {
 
     fn triple_combine_2(
         self: &mut Self,
-        seed: u64,
+        _seed: u64,
         bucket_size: usize,
         data: Vec<bool>,
         data_recv: Vec<bool>,
@@ -765,7 +765,7 @@ pub fn fpre(
     num_wires: usize,
     num_and: usize,
     bucket_size: usize,
-    seed: u64,
+    _seed: u64,
     rng: &mut StdRng,
 ) -> (FpreGen, FpreEval) {
 
@@ -845,7 +845,7 @@ pub fn fpre(
     (fpre_gen, fpre_eval)
 }
 
-fn verify_fpre(fpre_gen: FpreGen, fpre_eval: FpreEval){
+fn _verify_fpre(fpre_gen: FpreGen, fpre_eval: FpreEval){
     for (gen_share, eval_share) in zip(fpre_gen.wire_shares, fpre_eval.wire_shares) {
         AuthBit {
             gen_share,
@@ -884,7 +884,7 @@ mod tests {
         let mut rng = StdRng::seed_from_u64(0);
         let (fpre_gen, fpre_eval) = fpre(num_wires, num_and, bucket_size, 0, &mut rng);
 
-        verify_fpre(fpre_gen, fpre_eval);
+        _verify_fpre(fpre_gen, fpre_eval);
     }
 
     #[test]
