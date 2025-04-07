@@ -83,6 +83,11 @@ impl<S, R> AuthEvalStore<S, R>
         }
     }
 
+    /// Returns the delta of the eval store.
+    pub fn delta(&self) -> &Delta {
+        self.mask_store.delta()
+    }
+
     /// Returns a lock on the COT sender.
     pub fn acquire_cot_sender(&self) -> OwnedMutexGuard<S> {
         Mutex::try_lock_owned(self.cot_sender.clone()).unwrap()

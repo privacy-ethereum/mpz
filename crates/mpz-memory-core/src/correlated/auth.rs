@@ -67,6 +67,12 @@ impl AuthBitStore {
         }
     }
 
+    /// Returns the delta of the authenticated bit store.
+    #[inline]
+    pub fn delta(&self) -> &Delta {
+        self.keys.delta()
+    }
+
     /// Returns whether all the authenticated bits are set.
     #[inline]
     pub fn is_set(&self, slice: Slice) -> bool {
