@@ -12,7 +12,7 @@ pub(crate) use auth_eval::AuthEvalStore;
 mod tests {
     use mpz_memory_core::{binary::U8, correlated::Delta, Array, MemoryExt, ViewExt};
     use mpz_ot::ideal::cot::ideal_cot;
-    use mpz_ot_core::ideal::cot::IdealCOT;
+    // use mpz_ot_core::ideal::cot::IdealCOT;
     use rand::{rngs::StdRng, Rng, SeedableRng};
     use mpz_common::context::test_st_context;
     use mpz_common::Flush;
@@ -103,6 +103,7 @@ mod tests {
     #[tokio::test]
     // TODO: handle public inputs - same as private inputs but auto decoded (so still requires auth bits)
     async fn test_auth_store_decode() {
+        println!("test_auth_store_decode");
         let mut rng = StdRng::seed_from_u64(0);
         let (mut ctx_a, mut ctx_b) = test_st_context(8);
         let delta_a = Delta::random(&mut rng).set_lsb(true);
