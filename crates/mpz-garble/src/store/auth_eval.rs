@@ -19,10 +19,6 @@ pub(crate) struct AuthEvalStore<S, R> {
 }
 
 impl<S, R> AuthEvalStore<S, R>
-where
-    S: COTSender<Block>,
-    R: COTReceiver<bool, Block>,
-    R::Future: Send + 'static,
 {
     pub(crate) fn new(seed: [u8; 16], delta: Delta, cot_sender: S, cot_receiver: R) -> Self {
         Self { core: Core::new(seed, delta, cot_sender, cot_receiver) }
@@ -56,6 +52,10 @@ where
         self.core.try_get_macs(slice).map_err(Error::from)
     }
 
+    pub(crate) fn try_get_masked_values(&self, slice: Slice) -> Result<&BitSlice, Error> {
+        self.core.try_get_masked_values(slice).map_err(Error::from)
+    }
+
     pub(crate) fn try_get_mask_bits(&self, slice: Slice) -> Result<&BitSlice, Error> {
         self.core.try_get_mask_bits(slice).map_err(Error::from)
     }
@@ -72,8 +72,8 @@ where
         self.core.alloc_output(len)
     }
 
-    pub(crate) fn set_output(&mut self, slice: Slice, macs: &[Mac], mask_bits: &BitSlice, mask_macs: &[Mac], mask_keys: &[Key]) -> Result<(), Error> {
-        self.core.set_output(slice, macs, mask_bits, mask_macs, mask_keys).map_err(Error::from)
+    pub(crate) fn set_output(&mut self, slice: Slice, macs: &[Mac], mask_bits: &BitSlice, mask_macs: &[Mac], mask_keys: &[Key], masked_values: &BitSlice) -> Result<(), Error> {
+        self.core.set_output(slice, macs, mask_bits, mask_macs, mask_keys, masked_values).map_err(Error::from)
     }
 
     pub(crate) fn mark_output_preprocessed(&mut self, slice: Slice) -> Result<(), Error> {
@@ -86,10 +86,6 @@ where
 }
 
 impl<S, R> Memory<Binary> for AuthEvalStore<S, R>
-where
-    S: COTSender<Block>,
-    R: COTReceiver<bool, Block>,
-    R::Future: Send + 'static,
 {
     type Error = Error;
 

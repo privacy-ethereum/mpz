@@ -57,14 +57,8 @@ pub struct AuthEvalStore<S, R> {
     pending_flush: Option<PendingFlush>,
 }
 
-impl<S, R> AuthEvalStore<S, R>
-{
+impl<S, R> AuthEvalStore<S, R> {
     /// Creates a new evaluator store.
-    ///
-    /// # Argument
-    ///
-    /// * `cot_sender` - Correlated OT sender.
-    /// * `cot_receiver` - Correlated OT receiver.
     pub fn new(seed: [u8; 16], delta: Delta, cot_sender: S, cot_receiver: R) -> Self {
         Self {
             cot_sender: Arc::new(Mutex::new(cot_sender)),
@@ -153,6 +147,11 @@ impl<S, R> AuthEvalStore<S, R>
         self.mac_store.try_get(slice).map_err(Error::from)
     }
 
+    /// Returns the masked values for a slice.
+    pub fn try_get_masked_values(&self, slice: Slice) -> Result<&BitSlice> {
+        self.masked_value_store.try_get(slice).map_err(Error::from)
+    }
+
     /// Returns the masks for a slice.
     pub fn try_get_mask_bits(&self, slice: Slice) -> Result<&BitSlice> {
         self.mask_store.try_get_bits(slice).map_err(Error::from)
@@ -170,13 +169,13 @@ impl<S, R> AuthEvalStore<S, R>
     
 
     /// Sets the MACs for a slice corresponding to output.
-    pub fn set_output(&mut self, slice: Slice, macs: &[Mac], mask_bits: &BitSlice, mask_macs: &[Mac], mask_keys: &[Key]) -> Result<()> {
+    pub fn set_output(&mut self, slice: Slice, macs: &[Mac], mask_bits: &BitSlice, mask_macs: &[Mac], mask_keys: &[Key], masked_values: &BitSlice) -> Result<()> {
         self.view.set_output(slice.to_range())?;
         self.mac_store.try_set(slice, macs)?;
         self.mask_store.try_set_bits(slice, mask_bits)?;
         self.mask_store.try_set_macs(slice, mask_macs)?;
         self.mask_store.try_set_keys(slice, mask_keys)?;
-
+        self.masked_value_store.try_set(slice, masked_values)?;
         Ok(())
     }
 

@@ -18,10 +18,6 @@ pub(crate) struct AuthGenStore<S, R> {
 }
 
 impl<S,R> AuthGenStore<S,R>
-where
-    S: COTSender<Block>,
-    R: COTReceiver<bool, Block>,
-    R::Future: Send + 'static,
 {
     pub(crate) fn new(seed: [u8; 16], delta: Delta, cot_sender: S, cot_receiver: R) -> Self {
         Self { core: Core::new(seed, delta, cot_sender, cot_receiver) }
@@ -55,6 +51,10 @@ where
         self.core.try_get_keys(slice).map_err(Error::from)
     }
 
+    pub(crate) fn try_get_masked_values(&self, slice: Slice) -> Result<&BitSlice, Error> {
+        self.core.try_get_masked_values(slice).map_err(Error::from)
+    }
+
     pub(crate) fn try_get_mask_bits(&self, slice: Slice) -> Result<&BitSlice, Error> {
         self.core.try_get_mask_bits(slice).map_err(Error::from)
     }
@@ -82,10 +82,6 @@ where
 }
 
 impl<S,R> Memory<Binary> for AuthGenStore<S,R>
-where
-    S: COTSender<Block>,
-    R: COTReceiver<bool, Block>,
-    R::Future: Send + 'static,
 {
     type Error = Error;
 
@@ -114,7 +110,6 @@ impl<S,R> View<Binary> for AuthGenStore<S,R>
 where
     S: COTSender<Block>,
     R: COTReceiver<bool, Block>,
-    R::Future: Send + 'static,
 {
     type Error = Error;
 
@@ -136,6 +131,7 @@ impl<S,R> Flush for AuthGenStore<S,R>
 where
     S: COTSender<Block> + Flush + Send + 'static,
     R: COTReceiver<bool, Block> + Flush + Send + 'static,
+    R::Future: Send + 'static,
 {
     type Error = Error;
 

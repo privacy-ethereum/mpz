@@ -51,12 +51,7 @@ pub struct AuthGenStore<S, R> {
 }
 
 
-impl<S, R> AuthGenStore<S, R>
-where
-    S: COTSender<Block>,
-    R: COTReceiver<bool, Block>,
-    R::Future: Send + 'static,
-{
+impl<S, R> AuthGenStore<S, R> {
     /// Creates a new generator store.
     pub fn new(seed: [u8; 16], delta: Delta, cot_sender: S, cot_receiver: R) -> Self {
         Self {
@@ -135,6 +130,11 @@ where
     /// **Never** use this method to transfer MACs to the evaluator.
     pub fn try_get_keys(&self, slice: Slice) -> Result<&[Key]> {
         self.key_store.try_get(slice).map_err(Error::from)
+    }
+
+    /// Returns masked values if they are set.
+    pub fn try_get_masked_values(&self, slice: Slice) -> Result<&BitSlice> {
+        self.masked_value_store.try_get(slice).map_err(Error::from)
     }
 
     /// Returns masks if they are set.
