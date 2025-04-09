@@ -155,12 +155,16 @@ where
                     ctx.io_mut().expect_next().await.map_err(Error::from)
                 },
                 async move |ctx| {
-                    println!("gen flushing cot sender");
-                    cot_sender.flush(ctx).await.map_err(Error::cot)
+                    println!("gen core flushing cot sender");
+                    let ret = cot_sender.flush(ctx).await.map_err(Error::cot);
+                    println!("gen core flushed cot sender");
+                    ret
                 },
                 async move |ctx| {
-                    println!("gen flushing cot receiver");
-                    cot_receiver.flush(ctx).await.map_err(Error::cot)
+                    println!("gen core flushing cot receiver");
+                    let ret = cot_receiver.flush(ctx).await.map_err(Error::cot);
+                    println!("gen core flushed cot receiver");
+                    ret
                 },
             )
             .await??;

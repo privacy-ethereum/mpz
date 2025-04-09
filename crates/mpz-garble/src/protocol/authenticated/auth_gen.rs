@@ -23,13 +23,26 @@ use serio::{SinkExt, stream::IoStreamExt};
 
 use crate::store::AuthGenStore;
 
+struct PendingFlush {
+    cot: Option<Box<dyn Output<COTReceiverOutput<Block>> + Send>>,
+}
+
+#[derive(Debug, Clone, Default)]
+struct PrepAuthBits {
+    choices: Vec<bool>,
+    macs: Vec<Mac>,
+    keys: Vec<Key>,
+}
+
 /// Semi-honest garbler.
-#[derive(Debug)]
+// #[derive(Debug)]
 pub struct AuthGen<S,R> {
     store: Arc<Mutex<AuthGenStore<S,R>>>,
     call_stack: Vec<(Call, Slice)>,
     // preprocessed: Vec<(Vec<Slice>, Slice)>,
     prg: Prg,
+    pending_flush: Option<PendingFlush>,
+    prep_auth_bits: PrepAuthBits,
 }
 
 impl<S,R> AuthGen<S,R> 
@@ -41,6 +54,8 @@ impl<S,R> AuthGen<S,R>
             call_stack: Vec::new(),
             prg: Prg::new_with_seed(seed),
             // preprocessed: Vec::new(),
+            pending_flush: None,
+            prep_auth_bits: PrepAuthBits::default(),
         }
     }
 
@@ -179,6 +194,27 @@ where
         cot_sender.alloc(num_and_shares).unwrap();
         cot_receiver.alloc(num_and_shares).unwrap();
 
+        let keys: Vec<Key> = (0..num_and_shares).map(|_| self.prg.random()).collect::<Vec<_>>();
+        self.prep_auth_bits.keys.extend_from_slice(&keys);
+        // Queue COT, we don't need the output here.
+        _ = cot_sender
+            .queue_send_cot(Key::as_blocks(&keys))
+            // TODO: Handle error
+            .unwrap();
+
+        let choices: Vec<bool> = (0..num_and_shares).map(|_| self.prg.random()).collect::<Vec<_>>();
+        self.prep_auth_bits.choices.extend_from_slice(&choices);
+        let cot = if num_and_shares > 0 {
+            let output = cot_receiver
+                .queue_recv_cot(&choices)
+                .unwrap();
+            Some(Box::new(output) as Box<dyn Output<COTReceiverOutput<Block>> + Send>)
+        } else {
+            None
+        };
+
+        self.pending_flush = Some(PendingFlush { cot });
+
         self.call_stack.push((call, output));
         Ok(output)
     }
@@ -267,13 +303,41 @@ where
                 break;
             }
 
+            let Some(PendingFlush { cot }) = self.pending_flush.take() else {
+                return Err(VmError::execute("Unexpected flush".to_string()));
+            };
+
+            self.pending_flush = None;
+        
+            if let Some(mut cot) = cot {
+                let COTReceiverOutput { msgs: macs, .. } = cot
+                    .try_recv()
+                    .map_err(VmError::execute)?
+                    .ok_or_else(|| VmError::execute("COT output is not ready"))?;
+                let macs = Mac::from_blocks(macs);
+                self.prep_auth_bits.macs.extend_from_slice(&macs);
+            }
+
+            let choices = self.prep_auth_bits.choices.clone();
+            let macs = self.prep_auth_bits.macs.clone();
+            let keys = self.prep_auth_bits.keys.clone();
+
+            let mut and_shares = Vec::new();
+            for ((value, mac), key) in choices.iter().zip(macs).zip(keys) {
+                and_shares.push(AuthBitShare {
+                    value: *value,
+                    mac,
+                    key,
+                });
+            }
+
             let store = self.store.clone();
-            let prg = self.prg.clone();
+
             let outputs = ctx
                 .map(
                     calls,
                     async move |ctx: &mut Context, (call, output): (Call, Slice)| {
-                        generate(ctx, store.clone(), delta, call, output, prg.clone()).await
+                        generate(ctx, store.clone(), delta, call, output, and_shares.clone()).await
                     },
                     |(call, _)| call.circ().and_count(),
                 )
@@ -300,7 +364,7 @@ async fn generate<S,R>(
     delta: Delta,
     call: Call,
     output: Slice,
-    mut prg: Prg,
+    and_shares: Vec<AuthBitShare>,
 ) -> Result<()> 
     where
     S: COTSender<Block> + Flush + Send + 'static,
@@ -331,54 +395,6 @@ async fn generate<S,R>(
             }
         }
     }
-
-    // obtain COTs required for AND gates
-    let bucket_size = (SSP as f64 / (circ.and_count() as f64).log2()).ceil() as usize;
-    let num_and_shares = circ.and_count()*(3*bucket_size+1);
-
-    // let mut cot_sender = store.try_lock().unwrap().acquire_cot_sender();
-
-    // println!("gen reached here");
-    
-    // let keys: Vec<Key> = (0..num_and_shares).map(|_| prg.random()).collect::<Vec<_>>();
-    // // Queue COT, we don't need the output here.
-    // _ = cot_sender
-    //     .queue_send_cot(Key::as_blocks(&keys))
-    //     // TODO: Handle error
-    //     .unwrap();
-
-    // cot_sender.flush(ctx).await.unwrap();
-
-    // let mut cot_receiver = store.try_lock().unwrap().acquire_cot_receiver();
-    // println!("gen reached here 2");
-    // let choices: Vec<bool> = (0..num_and_shares).map(|_| prg.random()).collect::<Vec<_>>();
-    // let cot = {
-    //     let output = cot_receiver
-    //     .queue_recv_cot(&choices)
-    //     // TODO: Handle error
-    //     .unwrap();
-    //     Some(Box::new(output) as Box<dyn Output<COTReceiverOutput<Block>> + Send>)
-    // };
-    
-    // cot_receiver.flush(ctx).await.unwrap();
-    
-    let mut and_shares = Vec::with_capacity(num_and_shares);
-    for _ in 0..num_and_shares {
-        and_shares.push(AuthBitShare::default());
-    }
-
-    // if let Some(mut cot) = cot {
-    //     if let Some(COTReceiverOutput { msgs: macs, .. }) = cot.try_recv().unwrap() {
-    //         let macs = Mac::from_blocks(macs);
-    //         for ((value, mac), key) in choices.iter().zip(macs).zip(keys) {
-    //             and_shares.push(AuthBitShare {
-    //                 value: *value,
-    //                 mac,
-    //                 key,
-    //             });
-    //         }
-    //     }
-    // }
 
     let AuthGenOutput {
         output_labels,
