@@ -71,8 +71,8 @@ impl<S,R> AuthGenStore<S,R>
         self.core.alloc_output(len)
     }
 
-    pub(crate) fn set_output(&mut self, slice: Slice, keys: &[Key], mask_bits: &BitSlice, mask_macs: &[Mac], mask_keys: &[Key]) -> Result<(), Error> {
-        self.core.set_output(slice, keys, mask_bits, mask_macs, mask_keys).map_err(Error::from)
+    pub(crate) fn set_output(&mut self, slice: Slice, keys: &[Key], mask_bits: &BitSlice, mask_macs: &[Mac], mask_keys: &[Key], masked_values: &BitSlice) -> Result<(), Error> {
+        self.core.set_output(slice, keys, mask_bits, mask_macs, mask_keys, masked_values).map_err(Error::from)
     }
 
     pub(crate) fn mark_output_complete(&mut self, slice: Slice) -> Result<(), Error> {

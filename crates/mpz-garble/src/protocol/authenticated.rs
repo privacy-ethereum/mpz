@@ -61,7 +61,7 @@ mod tests {
                     )
                     .unwrap();
 
-                let mut ciphertext = gb.decode(msg).unwrap();
+                let mut ciphertext = gb.decode(ciphertext).unwrap();
 
                 gb.assign(key, [0u8; 16]).unwrap();
                 gb.commit(key).unwrap();
@@ -87,7 +87,7 @@ mod tests {
                     )
                     .unwrap();
 
-                let mut ciphertext = ev.decode(msg).unwrap();
+                let mut ciphertext = ev.decode(ciphertext).unwrap();
 
                 ev.assign(msg, [42u8; 16]).unwrap();
                 ev.commit(key).unwrap();

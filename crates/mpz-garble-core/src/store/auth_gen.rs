@@ -162,12 +162,15 @@ impl<S, R> AuthGenStore<S, R> {
     }
 
     /// Sets the keys and masks for output data.
-    pub fn set_output(&mut self, slice: Slice, keys: &[Key], mask_bits: &BitSlice, mask_macs: &[Mac], mask_keys: &[Key]) -> Result<()> {
+    pub fn set_output(&mut self, slice: Slice, keys: &[Key], mask_bits: &BitSlice, mask_macs: &[Mac], mask_keys: &[Key], masked_values: &BitSlice) -> Result<()> {
+        dbg!("gen core store setting key, mask, view output");
         self.key_store.try_set(slice, keys)?;
         self.mask_store.try_set_bits(slice, mask_bits)?;
         self.mask_store.try_set_macs(slice, mask_macs)?;
         self.mask_store.try_set_keys(slice, mask_keys)?;
+        self.masked_value_store.try_set(slice, masked_values)?;
         self.view.set_preprocessed(slice.to_range())?;
+        dbg!("gen core store set key, mask, view output");
 
         Ok(())
     }
@@ -254,6 +257,8 @@ where
             None
         };
 
+        dbg!("gen core ignored cots");
+
         // Prove Gen's share of Eval input wires.
         let share_proof = if !view.eval_reveal.is_empty() {
             let (bits, macs) = self.mask_store.prove_share(&view.eval_reveal)?;
@@ -269,6 +274,8 @@ where
         } else {
             None
         };
+
+        dbg!("gen core ignored share proof");
 
         // Send half masked inputs corresponding to Gen's input wires. 
         let mut temp = true;
@@ -292,6 +299,8 @@ where
             temp = false;
         }
 
+        dbg!("gen core ignored half masked inputs");
+
         // for both gen and eval's input wires here
         temp = true;
         let mut labels = Vec::with_capacity(view.labels.len());
@@ -304,6 +313,8 @@ where
             }
             temp = false;
         }
+
+        dbg!("gen core sent labels");
         // Prove Gen's share of Gen's input wires for decoding.
         let decode_share_proof = if !view.gen_decode_info.is_empty() {
             let (bits, macs) = self.mask_store.prove_share(&view.gen_decode_info)?;
@@ -312,6 +323,8 @@ where
         } else {
             None
         };
+
+        dbg!("gen core sent decode share proof");
 
         let flush = AuthGenFlush {
             view,

@@ -520,7 +520,7 @@ impl AuthView {
 
         self.output.preprocessed |= &range;
         // If marked for decoding, transfer decode info.
-        self.flush.labels |= range.intersection(&self.decode.all) - &self.decode.complete;
+        // self.flush.labels |= range.intersection(&self.decode.all) - &self.decode.complete;
 
         Ok(())
     }
@@ -535,10 +535,14 @@ impl AuthView {
         self.output.preprocessed |= &range;
         self.output.complete |= &range;
         // If marked for decoding, transfer decode info.
-        self.flush.labels |= range.intersection(&self.decode.all) - &self.decode.complete;
+        // self.flush.labels |= range.intersection(&self.decode.all) - &self.decode.complete;
         // If decoding info transferred, prove MACs.
-        self.flush.gen_decode |= range.intersection(&self.decode.complete);
-        self.flush.eval_decode |= range.intersection(&self.decode.complete);
+
+        self.flush.gen_decode_info |= range.intersection(&self.decode.all) - &self.decode.decode_info;
+        self.flush.eval_decode_info |= range.intersection(&self.decode.all) - &self.decode.decode_info;
+
+        // self.flush.gen_decode |= range.intersection(&self.decode.complete);
+        // self.flush.eval_decode |= range.intersection(&self.decode.complete);
 
         Ok(())
     }
@@ -651,6 +655,9 @@ impl AuthView {
         self.flush.gen_decode_info |= view.gen_reveal.intersection(&self.decode.all);
         self.flush.eval_decode_info |= view.eval_reveal.intersection(&self.decode.all);
         
+        // decodes output to both parties
+        self.flush.gen_decode_info |= view.labels.intersection(&self.decode.all);
+        self.flush.eval_decode_info |= view.labels.intersection(&self.decode.all);
         // Decode inputs and outputs (set data store values) if the decode info has been received and verified.
         // self.flush.gen_decode |= view.gen_decode_info.intersection(&self.decode.all);
         // self.flush.eval_decode |= view.eval_decode_info.intersection(&self.decode.all);

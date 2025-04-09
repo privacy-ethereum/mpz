@@ -408,21 +408,21 @@ async fn generate<S,R>(
     io.feed(auth_hash).await?;
     io.flush().await?;
 
-    // let mut lock = store.lock().await;
-    // lock.set_output(output, &output_keys)
-    //     .map_err(VmError::memory)?;
-
+    // TODO: Authenticate these with output labels
+    let output_masked_values: Vec<bool> = io.expect_next().await?;
+    let output_masked_values = BitVec::from_iter(output_masked_values);
     let output_bits: Vec<_> = output_auth_bits.iter().map(|share| share.value).collect();
     let output_macs: Vec<_> = output_auth_bits.iter().map(|share| share.mac).collect();
     let output_keys: Vec<_> = output_auth_bits.iter().map(|share| share.key).collect();
 
     let output_bits = BitVec::from_iter(output_bits);
     let mut lock = store.lock().await;
-    lock.set_output(output, &output_labels, &output_bits, &output_macs, &output_keys)
+    println!("gen setting output");
+    lock.set_output(output, &output_labels, &output_bits, &output_macs, &output_keys, &output_masked_values)
         .map_err(VmError::memory)?;
-
+    println!("gen output set");
     // if let Mode::Execute = mode {
-    //     lock.mark_output_complete(output).map_err(VmError::memory)?;
+        lock.mark_output_complete(output).map_err(VmError::memory)?;
     // }
 
     Ok(())
