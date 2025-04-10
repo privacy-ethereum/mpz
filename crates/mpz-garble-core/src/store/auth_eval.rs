@@ -332,6 +332,13 @@ where
             half_masked_inputs.extend_from_bitslice(&half_masked);
         }
 
+        // output labels
+        let mut labels = Vec::with_capacity(view.decode_info.len());
+        for range in view.decode_info.iter_ranges() {
+            let slice = Slice::from_range_unchecked(range);
+            labels.extend(self.mac_store.try_get(slice)?);
+        }
+
         // Prove Eval's share of Eval's input wires for decoding.
         let decode_share_proof = if !view.eval_decode.is_empty() {
             let (bits, macs) = self.mask_store.prove_share(&view.eval_decode)?;
@@ -345,6 +352,7 @@ where
             view,
             share_proof,
             half_masked_inputs,
+            labels,
             decode_share_proof,
         };
 

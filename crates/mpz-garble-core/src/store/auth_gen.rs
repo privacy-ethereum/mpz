@@ -354,6 +354,7 @@ where
             view,
             share_proof,
             half_masked_inputs,
+            labels,
             decode_share_proof,
         } = flush;
 
@@ -399,6 +400,17 @@ where
             self.masked_value_store.update_xor(slice, &half_masked_inputs[i..i + slice.len()])?;
             i += slice.len();
         }
+
+        // Verify eval's output labels
+        let mut output_labels = Vec::with_capacity(view.decode_info.len());
+        for range in view.decode_info.iter_ranges() {
+            let slice = Slice::from_range_unchecked(range);
+            let data = self.masked_value_store.try_get(slice)?;
+            output_labels.extend(self.key_store.authenticate(slice, data)?);
+        }
+
+        // TODO: Add robust error handling
+        assert_eq!(labels, output_labels);
 
         if let Some(ShareProof { bits, macs }) = decode_share_proof {
             self.mask_store.check_share(&view.eval_decode, &bits, &macs)?;

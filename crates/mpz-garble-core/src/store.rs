@@ -41,7 +41,7 @@ pub struct AuthGenFlush {
     share_proof: Option<ShareProof>,
     /// Half masked inputs.
     half_masked_inputs: BitVec,
-    /// Labels.
+    /// Input labels.
     labels: Vec<Mac>,
     /// Decode share proof.
     decode_share_proof: Option<ShareProof>,
@@ -66,6 +66,8 @@ pub struct AuthEvalFlush {
     share_proof: Option<ShareProof>,
     /// Half masked inputs.
     half_masked_inputs: BitVec,
+    /// Output labels.
+    labels: Vec<Mac>,
     /// Decode share proof.
     decode_share_proof: Option<ShareProof>,
 }
