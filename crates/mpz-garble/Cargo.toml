@@ -56,3 +56,7 @@ tracing-subscriber = { workspace = true, features = ["fmt"] }
 [[bench]]
 name = "semihonest"
 harness = false
+
+[[bench]]
+name = "authenticated"
+harness = false

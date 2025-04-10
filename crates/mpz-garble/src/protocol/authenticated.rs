@@ -43,13 +43,16 @@ mod tests {
         let mut gb = AuthGen::new([0u8; 16], delta_a, cot_gen_send, cot_gen_recv);
         let mut ev = AuthEval::new([0u8; 16], delta_b, cot_eval_send, cot_eval_recv);
 
-        let (gen_out, ev_out) = futures::join!(
+        let ((gen_key, gen_msg, gen_ciphertext), (ev_key, ev_msg, ev_ciphertext)) = futures::join!(
             async {
                 let key: Array<U8, 16> = gb.alloc().unwrap();
                 let msg: Array<U8, 16> = gb.alloc().unwrap();
 
                 gb.mark_private(key).unwrap();
                 gb.mark_blind(msg).unwrap();
+
+                let mut decoded_key = gb.decode(key).unwrap();
+                let mut decoded_msg = gb.decode(msg).unwrap();
 
                 let ciphertext: Array<U8, 16> = gb
                     .call(
@@ -68,7 +71,7 @@ mod tests {
                 gb.commit(msg).unwrap();
 
                 gb.execute_all(&mut ctx_a).await.unwrap();
-                ciphertext.try_recv().unwrap().unwrap()
+                (decoded_key.try_recv().unwrap().unwrap(), decoded_msg.try_recv().unwrap().unwrap(), ciphertext.try_recv().unwrap().unwrap())
             },
             async {
                 let key: Array<U8, 16> = ev.alloc().unwrap();
@@ -76,6 +79,9 @@ mod tests {
 
                 ev.mark_blind(key).unwrap();
                 ev.mark_private(msg).unwrap();
+
+                let mut decoded_key = ev.decode(key).unwrap();
+                let mut decoded_msg = ev.decode(msg).unwrap();
 
                 let ciphertext: Array<U8, 16> = ev
                     .call(
@@ -94,11 +100,13 @@ mod tests {
                 ev.commit(msg).unwrap();
 
                 ev.execute_all(&mut ctx_b).await.unwrap();
-                ciphertext.try_recv().unwrap().unwrap()
+                (decoded_key.try_recv().unwrap().unwrap(), decoded_msg.try_recv().unwrap().unwrap(), ciphertext.try_recv().unwrap().unwrap())
             }
         );
 
-        assert_eq!(gen_out, ev_out);
+        assert_eq!(gen_key, ev_key);
+        assert_eq!(gen_msg, ev_msg);
+        assert_eq!(gen_ciphertext, ev_ciphertext);
     }
 
     #[tokio::test]

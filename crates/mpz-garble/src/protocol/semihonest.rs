@@ -47,6 +47,8 @@ mod tests {
                 gb.mark_private(key).unwrap();
                 gb.mark_blind(msg).unwrap();
 
+                let decoded_msg = gb.decode(msg).unwrap();
+
                 let ciphertext: Array<U8, 16> = gb
                     .call(
                         Call::builder(AES128.clone())
@@ -69,6 +71,8 @@ mod tests {
             async {
                 let key: Array<U8, 16> = ev.alloc().unwrap();
                 let msg: Array<U8, 16> = ev.alloc().unwrap();
+
+                let decoded_msg = ev.decode(msg).unwrap();
 
                 ev.mark_blind(key).unwrap();
                 ev.mark_private(msg).unwrap();

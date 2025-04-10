@@ -333,8 +333,8 @@ where
         }
 
         // Prove Eval's share of Eval's input wires for decoding.
-        let decode_share_proof = if !view.eval_decode_info.is_empty() {
-            let (bits, macs) = self.mask_store.prove_share(&view.eval_decode_info)?;
+        let decode_share_proof = if !view.eval_decode.is_empty() {
+            let (bits, macs) = self.mask_store.prove_share(&view.eval_decode)?;
 
             Some(ShareProof { bits, macs })
         } else {
@@ -440,11 +440,11 @@ where
         }
 
         if let Some(ShareProof { bits, macs }) = decode_share_proof {
-            self.mask_store.check_share(&view.gen_decode_info, &bits, &macs)?;
+            self.mask_store.check_share(&view.gen_decode, &bits, &macs)?;
 
             // Decode gen's input wires.
             let mut i = 0;
-            for range in view.gen_decode_info.iter_ranges() {
+            for range in view.gen_decode.iter_ranges() {
                 let slice = Slice::from_range_unchecked(range);
                 self.data_store.try_set(slice, &bits[i..i + slice.len()])?;
                 self.data_store.update_xor(slice, self.masked_value_store.try_get(slice)?)?;
