@@ -43,13 +43,6 @@ const BYTES_PER_GATE: usize = 32;
 /// Maximum size of a batch in bytes.
 const MAX_BATCH_SIZE: usize = 4 * KB;
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-#[allow(missing_docs)]
-pub enum Party {
-    Generator,
-    Evaluator,
-}
-
 /// Default amount of encrypted gates per batch.
 ///
 /// Batches are stack allocated, so we will limit the size to `MAX_BATCH_SIZE`.
@@ -332,7 +325,6 @@ mod tests {
         };
 
         // Coin-tossing to agree on a seed
-        // let seed = rand::thread_rng().gen();
         let seed = 0;
 
         let mut gb = AuthGen::new(seed, bucket_size);
@@ -362,27 +354,22 @@ mod tests {
         let (c_gen, mut g_gen) = gb.generate_pre_1(circuit, delta_a, &gen_input_shares, &gen_and_shares).unwrap();
         let (c_eval, mut g_eval) = ev.evaluate_pre_1(circuit, delta_b, &eval_input_shares, &eval_and_shares).unwrap();
 
-        // Comm 1
         let gr_gen = g_eval.clone();
         let gr_eval = g_gen.clone();
 
         let d_gen = gb.generate_pre_2(delta_a, c_gen, &mut g_gen, gr_gen).unwrap();
         let d_eval = ev.evaluate_pre_2(delta_b, c_eval, &mut g_eval, gr_eval).unwrap();
 
-        // Comm 2
         let dr_gen = d_eval.clone();    
         let dr_eval = d_gen.clone();
 
         let data_gen = gb.generate_pre_3(delta_a, &mut g_gen, d_gen, dr_gen).unwrap();
         let data_eval = ev.evaluate_pre_3(delta_b, &mut g_eval, d_eval, dr_eval).unwrap();
 
-        // Comm 3 (secure equality check)
-
         for (g_gen, g_eval) in g_gen.iter().zip(g_eval.iter()) {
-            assert_eq!(g_gen, g_eval);
+            assert_eq!(g_gen, g_eval, "fpre triple check failed");
         }
 
-        // Comm 4
         let data_recv_gen = data_eval.clone();
         let data_recv_eval = data_gen.clone();
 
@@ -392,7 +379,6 @@ mod tests {
         gb.generate_free(circuit).unwrap();
         ev.evaluate_free(circuit).unwrap();
 
-        // Comm 5
         let (px_gen, py_gen) = gb.generate_de(circuit).unwrap();
         let (px_eval, py_eval) = ev.evaluate_de(circuit).unwrap();
 
@@ -402,7 +388,6 @@ mod tests {
         for gate in gen_iter.by_ref() {
             ev_consumer.next(gate);
         }
-
 
         let AuthEvalOutput {
             output_labels: eval_output_labels,
@@ -419,7 +404,7 @@ mod tests {
         } = gen_iter.finish(masked_values).unwrap();
 
         // authentication check
-        assert_eq!(gen_auth_hash, eval_auth_hash);
+        assert_eq!(gen_auth_hash, eval_auth_hash, "auth hash mismatch");
 
         let masks = gen_output_auth_bits.iter()
             .zip(eval_output_auth_bits.iter())
@@ -435,14 +420,14 @@ mod tests {
                 .map(|(i, masked_value)| masked_value ^ masks[i]),
         );
 
-        assert_eq!(output, expected);   
+        assert_eq!(output, expected, "output mismatch");
 
         // Check output labels
         for (i, (gen_label, eval_label)) in gen_output_labels.iter().zip(eval_output_labels.iter()).enumerate() {
             let xor = gen_label.as_block() ^ eval_label.as_block();
             let masked_value = masked_output_values[i];
             let expected = delta_a.mul_bool(masked_value);
-            assert_eq!(xor, expected);
+            assert_eq!(xor, expected, "output label mismatch");
         }
     }
 }

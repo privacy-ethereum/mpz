@@ -29,6 +29,7 @@ mod tests {
         is_vm::<AuthEval<IdealCOTSender, IdealCOTReceiver>>();
     }
 
+    // TODO: test with public inputs
     #[tokio::test]
     async fn test_authenticated() {
         let mut rng = StdRng::seed_from_u64(0);

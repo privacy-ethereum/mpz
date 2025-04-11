@@ -20,8 +20,6 @@ struct InputView {
 struct AuthInputView {
     /// Ranges which have been assigned.
     assigned: RangeSet,
-    /// Ranges which have auth bits set in both parties views.
-    _preprocessed: RangeSet,
     /// Ranges which are fully committed in both parties views.
     complete: RangeSet,
     /// All input ranges.
@@ -38,8 +36,6 @@ struct OutputView {
     all: RangeSet,
 }
 
-// Decode_info is range of data which has been "decoded" i.e. MACs have been checked and bits have been stored in data store.
-// Decode is the range of data for which this decoded value has been sent to the future output.
 #[derive(Debug, Default)]
 struct DecodeView {
     /// Ranges which have decode info sent.
@@ -84,24 +80,21 @@ impl FlushView {
 #[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct AuthFlushView {
 
-    // gen_masks, gen_reveal, gen_check correspond to generator's input wires
-    // eval_masks, eval_reveal, eval_check correspond to evaluator's input wires
-
-    /// Ranges for which both the generator and evaluator send gen input masks via COTs. 
+    /// Both send Gen input masks via COTs. 
     pub(crate) gen_masks: RangeSet,
-    /// Ranges for which both the generator and evaluator send eval input masks via COTs. 
+    /// Both send Eval input masks via COTs. 
     pub(crate) eval_masks: RangeSet,
-    /// Ranges for which the evaluator is to send share and MACs for gen's inputs.
+    /// Eval sends share and MACs for gen's inputs.
     pub(crate) gen_reveal: RangeSet,
-    /// Ranges for which the generator is to send share and MACs for eval's inputs.
+    /// Gen sends share and MACs for eval's inputs.
     pub(crate) eval_reveal: RangeSet,
-    /// Ranges for which masked labels are sent.
+    /// Gen sends masked input labels to Eval.
     pub(crate) labels: RangeSet,
-    /// eval sends labels to gen to authenticate masked output
+    /// Eval sends output labels to Gen to authenticate masked output
     pub(crate) decode_info: RangeSet,
-    /// send MACs for decoding gen input/output
+    /// Both send MACs for decoding gen input/output
     pub(crate) gen_decode: RangeSet,
-    /// receive MACs for decoding eval input/output
+    /// Both send MACs for decoding eval input/output
     pub(crate) eval_decode: RangeSet,
 }
 
@@ -515,8 +508,7 @@ impl AuthView {
         }
 
         self.output.preprocessed |= &range;
-        // If marked for decoding, transfer decode info.
-        // self.flush.labels |= range.intersection(&self.decode.all) - &self.decode.complete;
+        // TODO: if preprocessed, can also decode to Eval
 
         Ok(())
     }
@@ -600,7 +592,7 @@ impl AuthView {
         self.decode.all |= &undecoded;
 
 
-        // This seems redundant.
+        // CHECK: This seems redundant.
         // Just adding everything to undecoded works fine.
         // All other ranges are set in complete_flush as and when they are ready, and you would never call decode after flushing.
 
@@ -647,7 +639,7 @@ impl AuthView {
         // send masked labels, can be done in parallel with decode info
         self.flush.labels |= view.gen_reveal.clone() | view.eval_reveal.clone();
         
-        // Send decode info for inputs
+        // Send decode info for inputs (outputs handled in set_output)
         self.flush.gen_decode |= view.gen_reveal.intersection(&self.decode.all) - &self.decode.complete;
         self.flush.eval_decode |= view.eval_reveal.intersection(&self.decode.all) - &self.decode.complete;
     }

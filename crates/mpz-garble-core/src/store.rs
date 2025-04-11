@@ -32,7 +32,7 @@ pub struct GarblerFlush {
     mac_commitments: Vec<MacCommitment>,
 }
 
-/// Flush message sent by the generator.
+/// Flush message sent by auth generator.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AuthGenFlush {
     /// Flush view.
@@ -57,7 +57,7 @@ pub struct EvaluatorFlush {
     mac_proof: Option<MacProof>,
 }
 
-/// Flush message sent by the evaluator.
+/// Flush message sent by auth evaluator.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AuthEvalFlush {
     /// Flush view.
@@ -87,6 +87,7 @@ pub struct ShareProof {
     macs: Vec<Mac>,
 }
 
+// TODO: Add validation for auth flush messages
 mod validation {
     use super::*;
 

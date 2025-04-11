@@ -14,8 +14,6 @@ use crate::{fpre::{AuthBitShare, AuthTripleShare}, circuit::{AuthHalfGate, AuthH
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha12Rng;
 
-const SELECT_MASK: [Block; 2] = [Block::ZERO, Block::ONES];
-
 /// Errors that can occur during garbled circuit evaluation.
 #[derive(Debug, thiserror::Error)]
 #[allow(missing_docs)]
@@ -26,14 +24,14 @@ pub enum AuthEvaluatorError {
     NotFinished,
     #[error("MAC verification failed at gate {0}")]
     MacCheckFailed(usize), 
-    #[error("expected {expected} input labels, got {actual}")]
-    InvalidLabelCount { expected: usize, actual: usize },
     #[error("expected {expected} auth bits, got {actual}")]
     InvalidAuthBitCount { expected: usize, actual: usize },
-    #[error("expected {expected} AND gates, got {actual}")]
-    InvalidPxPyCount { expected: usize, actual: usize },
+    #[error("expected {expected} derandomization bits, got {actual}")]
+    InvalidDerandCount { expected: usize, actual: usize },
     #[error("expected {expected} input MACs, got {actual}")]
     InvalidInputMacCount { expected: usize, actual: usize },
+    #[error("expected {expected} masked inputs, got {actual}")]
+    InvalidMaskedInputCount { expected: usize, actual: usize },
     #[error("expected {expected} output MACs, got {actual}")]
     InvalidOutputMacCount { expected: usize, actual: usize },
 }
@@ -55,7 +53,6 @@ fn h2(a: Block, b: Block, cipher: &FixedKeyAes) -> Block {
     return d[0] ^ b;
 }
 
-/// Evaluates a single AND gate, computing the output label
 #[inline]
 pub(crate) fn and_gate(
     lx: Block,
@@ -70,11 +67,9 @@ pub(crate) fn and_gate(
     cipher: &FixedKeyAes,
     gid: usize,
 ) -> (Block, bool) {
-    // Compute garbled gate values
     let g_0 = encrypted_gate.gates[0] ^ sy.mac.as_block();
     let g_1 = encrypted_gate.gates[1] ^ sx.mac.as_block();
 
-    // Compute output label
     let j = Block::new((gid as u128).to_be_bytes());
     let k = Block::new(((gid + 1) as u128).to_be_bytes());
 
@@ -82,42 +77,33 @@ pub(crate) fn and_gate(
     cipher.tccr_many(&[j, k], &mut h);
     let [hx, hy] = h;
 
-    // let hx = sigma(j, lx, cipher);
-    // let hy = sigma(k, ly, cipher);
-
     let sz_mac = sz.mac.as_block();
     let ss_mac = ss.mac.as_block();
 
     let lz = hx ^ hy ^ sz_mac ^ ss_mac ^ (g_0.mul_bool(za)) ^ ((g_1^lx).mul_bool(zb));
-
-    // Compute masked value
     let zc = lz.lsb() ^ encrypted_gate.mask;
-    // lz.set_lsb(zc);
     
     (lz, zc)
 }
 
 
-/// Computes the sigma share from a triple, px, and py
+#[inline]
 pub(crate) fn sigma_share(triple: &mut AuthTripleShare, px: bool, py: bool) -> AuthBitShare {
     let mut sigma_share = triple.z.clone();
 
     if px {
         sigma_share = sigma_share + triple.y;
     }
-    
     if py {
         sigma_share = sigma_share + triple.x;
     }
-
     if px && py {
         sigma_share.value = !sigma_share.value;
     }
-
     sigma_share
 }
 
-/// Computes the authentication share for an AND gate
+#[inline]
 pub(crate) fn check_and(
     ss: &AuthBitShare,
     sz: &AuthBitShare,
@@ -150,7 +136,7 @@ pub(crate) fn check_and(
     share
 }
 
-/// Output of the evaluator.
+/// Output of the authenticated evaluator.
 #[derive(Debug)]
 pub struct AuthEvalOutput {
     /// Output labels of the circuit.
@@ -165,14 +151,13 @@ pub struct AuthEvalOutput {
     pub masked_values: Vec<bool>,
 }
 
-/// Garbled circuit evaluator.
+/// Authenticated garbled circuit evaluator.
 pub struct AuthEval {
     cipher: &'static FixedKeyAes,
     labels: Vec<Block>, 
     auth_bits: Vec<AuthBitShare>,
     sigma_bits: Vec<AuthBitShare>,
     masked_values: Vec<bool>,
-    // Preprocessed triples, consumed to generate sigma_bits
     triples: Vec<AuthTripleShare>,
     leaky_triples: Vec<AuthTripleShare>,
     permutation: Vec<usize>,
@@ -180,27 +165,25 @@ pub struct AuthEval {
     bucket_size: usize,
 }
 
-// TODO: set input labels at the end
 impl AuthEval {
 
     /// Create a new AuthEval with seed from coin-tossing
     pub fn new(seed: u64, bucket_size: usize) -> Self {
         Self {
             cipher: &(*FIXED_KEY_AES),
-            labels: vec![],
-            auth_bits: vec![],
-            sigma_bits: vec![],
-            masked_values: vec![],
-            triples: vec![],
-            leaky_triples: vec![],
-            permutation: vec![],
+            labels: Vec::new(),
+            auth_bits: Vec::new(),
+            sigma_bits: Vec::new(),
+            masked_values: Vec::new(),
+            triples: Vec::new(),
+            leaky_triples: Vec::new(),
+            permutation: Vec::new(),
             seed,
             bucket_size,
         }
     }
 
-    /// 1) Sets input auth bits and labels.
-    /// 2) Uses auth bits from COT to set wire auth bits and output faulty triples.
+    /// Set input auth bits, begin generation of triples
     pub fn evaluate_pre_1<'a>(
         &'a mut self, 
         circ: &'a Circuit,
@@ -216,15 +199,12 @@ impl AuthEval {
             });
         }
 
-        // Expand the buffer to fit the circuit
-        if circ.feed_count() > self.labels.len() {
+        if circ.feed_count() > self.auth_bits.len() {
             self.auth_bits.resize(circ.feed_count(), Default::default());
         }
 
-        // Set input auth bits
         self.auth_bits[..input_auth_bits.len()].copy_from_slice(input_auth_bits);
 
-        // Set AND output auth bits
         let mut count = 0;
         for gate in circ.gates() {
             if let Gate::And { x: _, y: _, z } = gate {
@@ -233,7 +213,6 @@ impl AuthEval {
             }
         }
 
-        // Set faulty triples
         let remaining_shares = shares.len() - count;
         let length = remaining_shares / 3;
         for i in 0..length {
@@ -252,14 +231,14 @@ impl AuthEval {
         for i in 0..length {
             c[i] = self.leaky_triples[i].y.mac.as_block().clone()
                 ^ self.leaky_triples[i].y.key.as_block().clone()
-                ^ (SELECT_MASK[self.leaky_triples[i].y.bit() as usize] & delta.as_block());
+                ^ (delta.mul_bool(self.leaky_triples[i].y.bit()));
 
             g[i] = c[i] ^ h2d(self.leaky_triples[i].x.key.into(), delta.into_inner(), self.cipher);
         }
         Ok((c, g))
     }
 
-    /// Round 2
+    /// Triple generation, Round 2
     pub fn evaluate_pre_2<'a>(
         &'a mut self, 
         delta: Delta,
@@ -273,15 +252,15 @@ impl AuthEval {
         for i in 0..length {
             let mut s = h2(self.leaky_triples[i].x.mac.as_block().clone(), self.leaky_triples[i].x.key.as_block().clone(), self.cipher);
             s = s ^ self.leaky_triples[i].z.mac.as_block().clone() ^ self.leaky_triples[i].z.key.as_block().clone();
-            s = s ^ SELECT_MASK[self.leaky_triples[i].x.bit() as usize] & (gr[i] ^ c[i]);
-            g[i] = s ^ SELECT_MASK[self.leaky_triples[i].z.bit() as usize] & delta.as_block();
+            s = s ^ (gr[i] ^ c[i]).mul_bool(self.leaky_triples[i].x.bit());
+            g[i] = s ^ delta.mul_bool(self.leaky_triples[i].z.bit());
             d[i] = g[i].lsb();
         }
 
         Ok(d)
     }
 
-    /// Round 3
+    /// Triple generation, Round 3
     pub fn evaluate_pre_3<'a>(
         &'a mut self, 
         delta: Delta,
@@ -328,7 +307,7 @@ impl AuthEval {
         Ok(data)
     }
 
-    /// Round 4
+    /// Triple generation, Round 4
     pub fn evaluate_pre_4<'a>(
         &'a mut self,
         data: Vec<bool>,
@@ -349,18 +328,14 @@ impl AuthEval {
         for i in 0..n {
             let base_idx = self.permutation[i*bucket_size + 0];
     
-            // Start with a "copy" of the first triple in the bucket
             let mut combined_share = self.leaky_triples[base_idx].clone();
     
-            // For j in [1..bucket_size], merge x and z wires, keep y same as base
             for j in 1..bucket_size {
                 let idx_j = self.permutation[i*bucket_size + j];
     
                 combined_share.x = combined_share.x + self.leaky_triples[idx_j].x;
-    
                 combined_share.z = combined_share.z + self.leaky_triples[idx_j].z;
     
-                // If d == 1, correct z-wire by xoring with x-wire
                 if final_data[i*bucket_size + j] {
                     combined_share.z = combined_share.z + self.leaky_triples[idx_j].x;
                 }
@@ -370,7 +345,7 @@ impl AuthEval {
         Ok(())
     }
 
-    /// Generates the free gates for the circuit.
+    /// Circuit dependent local preprocessing.
     pub fn evaluate_free<'a>(
         &'a mut self, 
         circ: &'a Circuit,
@@ -378,15 +353,13 @@ impl AuthEval {
         for gate in circ.gates() {
             match gate {
                 Gate::Xor { x, y, z } => {
-                    // self.labels[z.id()] = self.labels[x.id()] ^ self.labels[y.id()];
                     self.auth_bits[z.id()] = self.auth_bits[x.id()] + self.auth_bits[y.id()];
                 }
                 Gate::Inv { x, z } => {
-                    // self.labels[z.id()] = self.labels[x.id()] ^ delta.as_block();
-                    self.auth_bits[z.id()] = self.auth_bits[x.id()].clone();
+                    self.auth_bits[z.id()] = self.auth_bits[x.id()];
                 }
                 Gate::Id { x, z } => {
-                    self.auth_bits[z.id()] = self.auth_bits[x.id()].clone();
+                    self.auth_bits[z.id()] = self.auth_bits[x.id()];
                 }
                 Gate::And { .. } => {
                     // AND gates are handled separately
@@ -396,13 +369,13 @@ impl AuthEval {
         Ok(())
     }
 
-    /// Generates the derandomized bits for the circuit.
+    /// Generates the derandomized bits for circuit-dependent AND gate preprocessing.
     pub fn evaluate_de<'a>(
         &'a mut self,
         circ: &'a Circuit,
     ) -> Result<(Vec<bool>, Vec<bool>), AuthEvaluatorError> {
-        let mut px = Vec::with_capacity(circ.and_count());
-        let mut py = Vec::with_capacity(circ.and_count());
+        let mut px = Vec::new();
+        let mut py = Vec::new();
         let mut and_count = 0;
 
         for gate in circ.gates() {
@@ -420,7 +393,7 @@ impl AuthEval {
         Ok((px, py))
     }
 
-    /// Generates an iterator over the encrypted gates of a circuit.
+    /// Generates a consumer over the encrypted gates of a circuit, finish circuit dependent preprocessing
     pub fn evaluate<'a>(
         &'a mut self,
         circ: &'a Circuit,
@@ -431,25 +404,30 @@ impl AuthEval {
         py: Vec<bool>, // received
     ) -> Result<AuthEncryptedGateConsumer<'a, std::slice::Iter<'a, Gate>>, AuthEvaluatorError> {
 
-        if input_labels.len() != circ.inputs().len() || masked_inputs.len() != circ.inputs().len() {
-            return Err(AuthEvaluatorError::InvalidLabelCount {
+        if input_labels.len() != circ.inputs().len() {
+            return Err(AuthEvaluatorError::InvalidInputMacCount {
                 expected: circ.inputs().len(),
                 actual: input_labels.len(),
             });
         }
 
-        // Expand the buffer to fit the circuit
-        if circ.feed_count() > self.labels.len() {
+        if masked_inputs.len() != circ.inputs().len() {
+            return Err(AuthEvaluatorError::InvalidMaskedInputCount {
+                expected: circ.inputs().len(),
+                actual: masked_inputs.len(),
+            });
+        }
+
+        if circ.feed_count() > self.labels.len() || circ.feed_count() > self.masked_values.len() {
             self.labels.resize(circ.feed_count(), Default::default());
             self.masked_values.resize(circ.feed_count(), false);
         }
         
-        // Set input labels and masked values
         self.labels[..input_labels.len()].copy_from_slice(Mac::as_blocks(input_labels));
         self.masked_values[..masked_inputs.len()].copy_from_slice(&masked_inputs);
 
         if px.len().min(py.len()) < circ.and_count() {
-            return Err(AuthEvaluatorError::InvalidPxPyCount {
+            return Err(AuthEvaluatorError::InvalidDerandCount {
                 expected: circ.and_count(),
                 actual: px.len().min(py.len()),
             });
@@ -457,7 +435,6 @@ impl AuthEval {
 
         let mut and_count = 0;
         
-        // Reserve space for sigma bits
         self.sigma_bits.reserve(circ.and_count());
 
         for gate in circ.gates() {
@@ -466,19 +443,16 @@ impl AuthEval {
                 let sy = self.auth_bits[y.id()];
                 let triple = &mut self.triples[and_count];
 
-                // Calculate adjusted px and py values
                 let px = sx.bit() ^ triple.x.bit() ^ px[and_count];
                 let py = sy.bit() ^ triple.y.bit() ^ py[and_count];
 
-                // Compute sigma share for this gate
+                // Compute auth_bit for output wire of this AND gate
                 let ss = sigma_share(triple, px, py);
                 
                 self.sigma_bits.push(ss);
                 and_count += 1;
             }
         }
-
-        // self.masked_values.resize(circ.feed_count(), false);
 
         Ok(AuthEncryptedGateConsumer::new(
             delta,
@@ -493,12 +467,7 @@ impl AuthEval {
         ))
     }
 
-    /// Returns a consumer over batched encrypted gates of a circuit.
-    ///
-    /// # Arguments
-    ///
-    /// * `circ` - The circuit to evaluate.
-    /// * `inputs` - The input labels to the circuit.
+    /// Generates a consumer over the batched encrypted gates of a circuit, finish circuit dependent preprocessing
     pub fn evaluate_batched<'a>(
         &'a mut self,
         circ: &'a Circuit,
@@ -529,8 +498,8 @@ pub struct AuthEncryptedGateConsumer<'a, I: Iterator> {
    masked_values: &'a mut [bool],
    /// Iterator over the gates.
    gates: I,
-   /// Iterator over the gates.
-   gates2: I,
+   /// Iterator over the gates to check authenticity.
+   gates_check: I,
    /// Circuit outputs.
    outputs: Range<usize>,
    /// Current gate id.
@@ -556,7 +525,7 @@ where
     fn new(
         delta: Delta,
         gates: I,
-        gates2: I,
+        gates_check: I,
         outputs: Range<usize>,
         labels: &'a mut [Block],
         auth_bits: &'a mut [AuthBitShare],
@@ -568,7 +537,7 @@ where
             cipher: &(*FIXED_KEY_AES),
             delta,
             gates,
-            gates2,
+            gates_check,
             outputs,
             labels,
             auth_bits,
@@ -605,17 +574,18 @@ where
                     self.masked_values[z.id()] = self.masked_values[x.id()];
                 }
                 Gate::And { x, y, z } => {
-                    let sx = self.auth_bits[x.id()];
-                    let sy = self.auth_bits[y.id()];
-
                     // Get labels for input wires
                     let lx = self.labels[x.id()];
                     let ly = self.labels[y.id()];
+                    
+                    // Get input auth_bits
+                    let sx = self.auth_bits[x.id()];
+                    let sy = self.auth_bits[y.id()];
 
-                    // Compute sigma share for this AND gate
+                    // Get AND of input auth_bits
                     let ss = self.sigma_bits[self.counter];
 
-                    // Get preprocessed (mac, key) for output wire
+                    // Get output auth_bit for wire
                     let sz = self.auth_bits[z.id()];
 
                     // Get masked input bits
@@ -675,7 +645,7 @@ where
         let mut and_count = 0;
         let delta = self.delta.as_block();
         
-        for gate in self.gates2 {
+        for gate in self.gates_check {
             if let Gate::And { x, y, z } = gate {
                 let ss = &self.sigma_bits[and_count];
                 let sz = &self.auth_bits[z.id()];

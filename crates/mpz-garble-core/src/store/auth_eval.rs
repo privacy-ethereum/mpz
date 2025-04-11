@@ -8,15 +8,12 @@ use mpz_common::future::Output;
 use mpz_core::{bitvec::{BitVec, BitSlice}, Block, prg::Prg};
 use mpz_memory_core::{
     binary::Binary,
-    correlated::{Key, Delta, Mac, MacCommitment, MacCommitmentError, MacStore, MacStoreError, COMMIT_CIPHER, AuthBitStore, AuthBitStoreError},
-    store::{BitStore, Store, StoreError},
+    correlated::{Key, Delta, Mac, MacCommitmentError, MacStore, MacStoreError, AuthBitStore, AuthBitStoreError},
+    store::{BitStore, StoreError},
     DecodeError, DecodeFuture, DecodeOp, Memory, Slice, View as ViewTrait,
 };
 use mpz_ot_core::cot::{COTReceiver, COTReceiverOutput, COTSender};
-use utils::{
-    filter_drain::FilterDrain,
-    range::{Difference, Intersection},
-};
+use utils::filter_drain::FilterDrain;
 
 use crate::{
     store::{ShareProof, AuthEvalFlush, AuthGenFlush},
@@ -42,18 +39,15 @@ pub struct AuthEvalStore<S, R> {
     cot_sender: Arc<Mutex<S>>,
     cot_receiver: Arc<Mutex<R>>,
     prg: Prg,
-    // I suspect we can remove mac_store since labels are used to authenticate masked data
     mac_store: MacStore,
     mask_store: AuthBitStore,
     masked_value_store: BitStore,
-    // key bits and commitments aren't needed in auth garbling
-    key_bit_store: BitStore,
-    // TODO: We need a sparse store as this takes up a lot of space.
-    commit_store: Store<MacCommitment>,
     data_store: BitStore,
     view: AuthView,
     buffer_decode: Vec<DecodeOp<BitVec>>,
+    // Whether the store is waiting for a flush.
     pending: bool,
+    // Pending COT flush
     pending_flush: Option<PendingFlush>,
 }
 
@@ -67,8 +61,6 @@ impl<S, R> AuthEvalStore<S, R> {
             mac_store: MacStore::default(),
             mask_store: AuthBitStore::new(delta),
             masked_value_store: BitStore::default(),
-            key_bit_store: BitStore::default(),
-            commit_store: Store::default(),
             data_store: BitStore::default(),
             view: AuthView::new_evaluator(),
             buffer_decode: Vec::default(),
@@ -120,8 +112,6 @@ impl<S, R> AuthEvalStore<S, R> {
     pub fn alloc_output(&mut self, size: usize) -> Slice {
         self.view.alloc_output(size);
         self.mac_store.alloc(size);
-        self.key_bit_store.alloc(size);
-        self.commit_store.alloc(size);
         self.data_store.alloc(size);
         self.masked_value_store.alloc(size);
         self.mask_store.alloc(size)
@@ -203,46 +193,6 @@ impl<S, R> AuthEvalStore<S, R> {
 
         Ok(())
     }
-
-    /// Decodes all data which are not set but we have the MACs and key bits.
-    // TODO: change this decoding to use masks and MACs.
-    fn _decode_macs(&mut self) -> Result<()> {
-        let idx = self
-            .mac_store
-            .set_ranges()
-            .intersection(self.key_bit_store.set_ranges())
-            .difference(self.data_store.set_ranges());
-
-        for range in idx.iter_ranges() {
-            let slice = Slice::from_range_unchecked(range);
-
-            let mac_bits = self.mac_store.try_get_bits(slice)?;
-            let mut data = self.key_bit_store.try_get(slice)?.to_bitvec();
-
-            data.iter_mut()
-                .zip(mac_bits)
-                .for_each(|(mut bit, mac_bit)| {
-                    *bit ^= mac_bit;
-                });
-
-            let hasher = &(*COMMIT_CIPHER);
-            let start_id = slice.ptr().as_usize();
-            for (i, ((mac, bit), commitment)) in self
-                .mac_store
-                .try_get(slice)?
-                .iter()
-                .zip(&data)
-                .zip(self.commit_store.try_get(slice)?)
-                .enumerate()
-            {
-                commitment.check((start_id + i) as u64, *bit, mac, hasher)?;
-            }
-
-            self.data_store.try_set(slice, &data)?;
-        }
-
-        Ok(())
-    }
 }
 
 impl<S, R> AuthEvalStore<S, R>
@@ -279,7 +229,7 @@ where
                 .map_err(Error::cot)?;
         }
 
-        // Send OT choices for masks, box the output to receive Macs as a future.
+        // Send OT choices for masks, receive MACs as a future.
         let cot = if !masks.is_empty() {
             // Collect the choices for oblivious transfer.
             let choices: Vec<bool> = (0..masks.len()).map(|_| self.prg.random()).collect::<Vec<_>>();
@@ -408,19 +358,6 @@ where
         // Check Gen's share of Eval input wires
         if let Some(ShareProof { bits, macs }) = share_proof {
             
-            // if !view.eval_reveal.is_empty() {
-            //     let mut keys: Vec<Key> = Vec::new();
-            //     for range in view.eval_reveal.iter_ranges() {
-            //         let slice = Slice::from_range_unchecked(range);
-            //         let key = self.mask_store.try_get_keys(slice)?;
-            //         keys.extend(key);
-            //     }
-
-            //     for (mac, key) in macs.iter().zip(keys) {
-            //         println!("Received MAC: {:?}, Key: {:?}", mac, key);
-            //     }
-            // }
-            
             self.mask_store.check_share(&view.eval_reveal, &bits, &macs)?;            
             // Update masked values of eval's input wires with share proof bits
             let mut i = 0;
@@ -475,8 +412,6 @@ impl<S, R> Memory<Binary> for AuthEvalStore<S, R>
     fn alloc_raw(&mut self, size: usize) -> Result<Slice> {
         self.view.alloc_input(size);
         self.mac_store.alloc(size);
-        self.commit_store.alloc(size);
-        self.key_bit_store.alloc(size);
         self.mask_store.alloc(size);
         self.masked_value_store.alloc(size);
         let slice = self.data_store.alloc(size);

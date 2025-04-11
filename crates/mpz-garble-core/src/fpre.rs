@@ -43,7 +43,7 @@ fn h2(a: Block, b: Block) -> Block {
     return d[0] ^ b;
 }
 
-/// (key, mac) pair with bit = mac.pointer()
+/// AuthBitShare consisting of a bool and a (key, mac) pair
 #[derive(Debug, Clone, Default, Copy)]
 pub struct AuthBitShare {
     /// Key

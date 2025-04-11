@@ -38,7 +38,6 @@ pub struct AuthGenStore<S, R> {
     cot_sender: Arc<Mutex<S>>,
     cot_receiver: Arc<Mutex<R>>,
     prg: Prg,
-    // I suspect we can remove key_store since labels are used to authenticate masked data
     key_store: KeyStore,
     mask_store: AuthBitStore,
     masked_value_store: BitStore,
@@ -47,6 +46,7 @@ pub struct AuthGenStore<S, R> {
     buffer_decode: Vec<DecodeOp<BitVec>>,
     // Whether the store is waiting for a flush.
     pending: bool,
+    // Pending COT flush
     pending_flush: Option<PendingFlush>,
 }
 
@@ -163,14 +163,12 @@ impl<S, R> AuthGenStore<S, R> {
 
     /// Sets the keys and masks for output data.
     pub fn set_output(&mut self, slice: Slice, keys: &[Key], mask_bits: &BitSlice, mask_macs: &[Mac], mask_keys: &[Key], masked_values: &BitSlice) -> Result<()> {
-        dbg!("gen core store setting key, mask, view output");
         self.key_store.try_set(slice, keys)?;
         self.mask_store.try_set_bits(slice, mask_bits)?;
         self.mask_store.try_set_macs(slice, mask_macs)?;
         self.mask_store.try_set_keys(slice, mask_keys)?;
         self.masked_value_store.try_set(slice, masked_values)?;
         self.view.set_preprocessed(slice.to_range())?;
-        dbg!("gen core store set key, mask, view output");
 
         Ok(())
     }
@@ -237,7 +235,7 @@ where
                 .map_err(Error::cot)?;
         }
 
-        // Send OT choices for masks, box the output to receive Macs as a future.
+        // Send OT choices for masks, receive MACs as a future.
         let cot = if !masks.is_empty() {
             let choices = (0..masks.len()).map(|_| self.prg.random::<bool>()).collect::<Vec<bool>>();
             // Store choices in mask store.
@@ -257,8 +255,6 @@ where
             None
         };
 
-        dbg!("gen core ignored cots");
-
         // Prove Gen's share of Eval input wires.
         let share_proof = if !view.eval_reveal.is_empty() {
             let (bits, macs) = self.mask_store.prove_share(&view.eval_reveal)?;
@@ -275,10 +271,7 @@ where
             None
         };
 
-        dbg!("gen core ignored share proof");
-
         // Send half masked inputs corresponding to Gen's input wires. 
-        let mut temp = true;
         let mut half_masked_inputs = BitVec::with_capacity(view.gen_reveal.len());
         for range in view.gen_reveal.iter_ranges() {
             let slice = Slice::from_range_unchecked(range);
@@ -293,28 +286,16 @@ where
             
             self.masked_value_store.try_set(slice, &half_masked)?;
             half_masked_inputs.extend_from_bitslice(&half_masked);
-            if temp {
-                println!("reached 1");
-            }
-            temp = false;
         }
 
-        dbg!("gen core ignored half masked inputs");
-
         // for both gen and eval's input wires here
-        temp = true;
         let mut labels = Vec::with_capacity(view.labels.len());
         for range in view.labels.iter_ranges() {
             let slice = Slice::from_range_unchecked(range);
             let data = self.masked_value_store.try_get(slice)?;
             labels.extend(self.key_store.authenticate(slice, data)?);
-            if temp {
-                println!("reached 2");
-            }
-            temp = false;
         }
 
-        dbg!("gen core sent labels");
         // Prove Gen's share of Gen's input wires for decoding.
         let decode_share_proof = if !view.gen_decode.is_empty() {
             let (bits, macs) = self.mask_store.prove_share(&view.gen_decode)?;
@@ -323,8 +304,6 @@ where
         } else {
             None
         };
-
-        dbg!("gen core sent decode share proof");
 
         let flush = AuthGenFlush {
             view,
@@ -341,6 +320,8 @@ where
     }
 
     /// Receives a flush from the evaluator.
+    ///
+    /// This expects that the COT receiver has been flushed.
     pub fn receive_flush(&mut self, flush: AuthEvalFlush) -> Result<()> {
         if !self.pending {
             return Err(ErrorRepr::UnexpectedFlush.into());
@@ -401,7 +382,7 @@ where
             i += slice.len();
         }
 
-        // Verify eval's output labels
+        // Expected output labels
         let mut output_labels = Vec::with_capacity(view.decode_info.len());
         for range in view.decode_info.iter_ranges() {
             let slice = Slice::from_range_unchecked(range);
@@ -409,8 +390,16 @@ where
             output_labels.extend(self.key_store.authenticate(slice, data)?);
         }
 
-        // TODO: Add robust error handling
-        assert_eq!(labels, output_labels);
+        // Verify eval's output labels
+        for (index, (expected, actual)) in labels.iter().zip(output_labels.iter()).enumerate() {
+            if expected != actual {
+                return Err(ErrorRepr::OutputLabelMismatch {
+                    index,
+                    expected: *expected,
+                    actual: *actual,
+                }.into());
+            }
+        }
 
         if let Some(ShareProof { bits, macs }) = decode_share_proof {
             self.mask_store.check_share(&view.eval_decode, &bits, &macs)?;
@@ -430,7 +419,6 @@ where
         self.view.complete_flush(view);
         self.flush_decode()?;
         self.pending = false;
-
         Ok(())
     }
 }
@@ -563,6 +551,12 @@ enum ErrorRepr {
     InconsistentFlush {
         expected: AuthFlushView,
         actual: AuthFlushView,
+    },
+    #[error("output label mismatch: index={index:?}, expected={expected:?}, actual={actual:?}")]
+    OutputLabelMismatch {
+        index: usize,
+        expected: Mac,
+        actual: Mac,
     },
 }
 
