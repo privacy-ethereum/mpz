@@ -25,13 +25,13 @@
 //! In other words, if we bit-reverse (over 32 bits) the operands, then we
 //! bit-reverse (over 64 bits) the result.
 
-use bytemuck::{Pod, Zeroable};
 use core::{num::Wrapping, ops::BitXor};
+use zerocopy::{IntoBytes, FromBytes};
 pub type Clmul = U32x4;
 
 /// 4 x `u32` values
 #[repr(C)]
-#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Pod, Zeroable)]
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, IntoBytes, FromBytes)]
 pub struct U32x4(u32, u32, u32, u32);
 
 impl From<U32x4> for [u8; 16] {
@@ -154,7 +154,7 @@ impl U32x4 {
     }
 }
 
-/// Multiplication in GF(2)[X], truncated to the low 32-bits, with “holes”
+/// Multiplication in GF(2)[X], truncated to the low 32-bits, with "holes"
 /// (sequences of zeroes) to avoid carry spilling.
 ///
 /// When carries do occur, they wind up in a "hole" and are subsequently masked

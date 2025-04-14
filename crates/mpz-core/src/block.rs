@@ -1,6 +1,5 @@
 //! A block of 128 bits and its operations.
 
-use bytemuck::{Pod, Zeroable};
 use clmul::Clmul;
 use core::ops::{BitAnd, BitAndAssign, BitXor, BitXorAssign};
 use generic_array::{typenum::consts::U16, GenericArray};
@@ -11,10 +10,11 @@ use std::{
     fmt::{Debug, Display},
     slice::from_raw_parts,
 };
+use zerocopy::{Immutable, IntoBytes, FromBytes};
 
 /// A block of 128 bits
 #[repr(transparent)]
-#[derive(Copy, Clone, Debug, Default, PartialEq, Serialize, Deserialize, Pod, Zeroable)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Serialize, Deserialize, IntoBytes, FromBytes, Immutable)]
 pub struct Block([u8; 16]);
 
 impl Block {
@@ -142,13 +142,15 @@ impl Block {
         (self.0[0] & 1) == 1
     }
 
-    /// Let `x0` and `x1` be the lower and higher halves of `x`, respectively.
     /// This function compute ``sigma( x = x0 || x1 ) = x1 || (x0 xor x1)``.
     #[inline(always)]
     pub fn sigma(a: Self) -> Self {
-        let mut x: [u64; 2] = bytemuck::cast(a);
-        x[0] ^= x[1];
-        bytemuck::cast([x[1], x[0]])
+        let val = u128::from_le_bytes(a.0);
+        let low = (val & u64::MAX as u128) as u64;
+        let high = (val >> 64) as u64;
+        let new_low = low ^ high;
+        let result_val = ((new_low as u128) << 64) | (high as u128);
+        Block(result_val.to_le_bytes())
     }
 
     /// Converts a slice of blocks to a slice of bytes.
@@ -268,7 +270,9 @@ impl From<[u8; 16]> for Block {
 
 impl<'a> From<&'a [u8; 16]> for &'a Block {
     fn from(bytes: &'a [u8; 16]) -> Self {
-        bytemuck::cast_ref(bytes)
+        // This should now be safe as Block is repr(transparent)
+        // over [u8; 16], sharing the same layout and alignment.
+        zerocopy::transmute_ref!(bytes)
     }
 }
 

@@ -4,13 +4,13 @@
 //! <https://bearssl.org/gitweb/?p=BearSSL;a=blob;f=src/hash/ghash_ctmul64.c;hb=4b6046412>
 //!
 //! Copyright (c) 2016 Thomas Pornin <pornin@bolet.org>
-use bytemuck::{Pod, Zeroable};
 use core::{num::Wrapping, ops::BitXor};
+use zerocopy::{IntoBytes, FromBytes};
 pub type Clmul = U64x2;
 
 /// 2 x `u64` values
 #[repr(C)]
-#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Pod, Zeroable)]
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, IntoBytes, FromBytes)]
 pub struct U64x2(u64, u64);
 
 impl From<U64x2> for [u8; 16] {
@@ -77,7 +77,7 @@ impl U64x2 {
     }
 }
 
-/// Multiplication in GF(2)[X], truncated to the low 64-bits, with “holes”
+/// Multiplication in GF(2)[X], truncated to the low 64-bits, with "holes"
 /// (sequences of zeroes) to avoid carry spilling.
 ///
 /// When carries do occur, they wind up in a "hole" and are subsequently masked

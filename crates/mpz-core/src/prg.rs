@@ -40,7 +40,7 @@ impl BlockRngCore for PrgCore {
             },
         );
         self.aes.encrypt_many_blocks(&mut states);
-        *results = bytemuck::cast(states);
+        *results = zerocopy::transmute!(states);
     }
 }
 
@@ -179,7 +179,11 @@ impl Prg {
     /// Fill a block slice with random block values.
     #[inline(always)]
     pub fn random_blocks(&mut self, buf: &mut [Block]) {
-        let bytes: &mut [u8] = bytemuck::cast_slice_mut(buf);
+        let len = buf.len();
+        // SAFETY: Block is repr(transparent) over [u8; 16]
+        let bytes: &mut [u8] = unsafe {
+            std::slice::from_raw_parts_mut(buf.as_mut_ptr() as *mut u8, len * Block::LEN)
+        };
         self.fill_bytes(bytes);
     }
 }

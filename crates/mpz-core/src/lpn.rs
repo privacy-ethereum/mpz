@@ -6,6 +6,7 @@ use crate::{prp::Prp, Block};
 use rand::Rng;
 use rayon::prelude::*;
 
+
 /// An LPN encoder.
 ///
 /// The `seed` defines a sparse binary matrix `A` with at most `D` non-zero
@@ -48,11 +49,17 @@ impl<const D: usize> LpnEncoder<D> {
         let mut index: [Block; D] = std::array::from_fn(|_| {
             let i = cnt;
             cnt += 1;
-            Block::from(bytemuck::cast::<_, [u8; 16]>([pos as u64, i]))
+            let bytes: [u8; 16] = zerocopy::transmute!([pos as u64, i]);
+            Block::from(bytes)
         });
 
         prp.permute_many_blocks(&mut index);
-        let index = bytemuck::cast_slice_mut::<_, u32>(&mut index);
+        // SAFETY: Block is repr(transparent) over [u8; 16] (128 bits).
+        // Transmuting to a slice of u32 (32 bits) is safe if length is correct.
+        let index: &mut [u32] = unsafe {
+            let len = index.len() * (Block::LEN / std::mem::size_of::<u32>());
+            std::slice::from_raw_parts_mut(index.as_mut_ptr() as *mut u32, len)
+        };
 
         for (i, y) in y.iter_mut().enumerate().take(4) {
             for ind in index[i * D..(i + 1) * D].iter_mut() {
@@ -69,10 +76,19 @@ impl<const D: usize> LpnEncoder<D> {
         // (D + 4 - 1) / 4
         let block_size = D.div_ceil(4);
         let mut index = (0..block_size)
-            .map(|i| Block::from(bytemuck::cast::<_, [u8; 16]>([pos as u64, i as u64])))
+            .map(|i| {
+                let bytes: [u8; 16] = zerocopy::transmute!([pos as u64, i as u64]);
+                Block::from(bytes)
+            })
             .collect::<Vec<Block>>();
         prp.permute_block_inplace(&mut index);
-        let index = bytemuck::cast_slice_mut::<_, u32>(&mut index);
+        // SAFETY: Block is repr(transparent) over [u8; 16] (128 bits).
+        // Transmuting to a slice of u32 (32 bits) is safe if length is correct.
+        let index_slice = index.as_mut_slice();
+        let index: &mut [u32] = unsafe {
+            let len = index_slice.len() * (Block::LEN / std::mem::size_of::<u32>());
+            std::slice::from_raw_parts_mut(index_slice.as_mut_ptr() as *mut u32, len)
+        };
 
         for ind in index.iter_mut().take(D) {
             *ind &= self.mask;
@@ -179,6 +195,7 @@ impl LpnParameters {
 mod tests {
     use crate::{lpn::LpnEncoder, prp::Prp, Block};
 
+
     impl<const D: usize> LpnEncoder<D> {
         #[allow(dead_code)]
         fn compute_four_rows_non_indep(&self, y: &mut [Block], x: &[Block], pos: usize, prp: &Prp) {
@@ -186,11 +203,17 @@ mod tests {
             let mut index = [0; D].map(|_| {
                 let i: u64 = cnt;
                 cnt += 1;
-                Block::from(bytemuck::cast::<_, [u8; 16]>([pos as u64, i]))
+                let bytes: [u8; 16] = zerocopy::transmute!([pos as u64, i]);
+                Block::from(bytes)
             });
 
             prp.permute_many_blocks(&mut index);
-            let index: &mut [u32] = bytemuck::cast_slice_mut::<_, u32>(&mut index);
+            // SAFETY: Block is repr(transparent) over [u8; 16] (128 bits).
+            // Transmuting to a slice of u32 (32 bits) is safe if length is correct.
+            let index: &mut [u32] = unsafe {
+                let len = index.len() * (Block::LEN / std::mem::size_of::<u32>());
+                std::slice::from_raw_parts_mut(index.as_mut_ptr() as *mut u32, len)
+            };
 
             for (i, y) in y[pos..].iter_mut().enumerate().take(4) {
                 for ind in index[i * D..(i + 1) * D].iter_mut() {
