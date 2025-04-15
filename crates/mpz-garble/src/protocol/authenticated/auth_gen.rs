@@ -27,10 +27,10 @@ struct PendingFlush {
     cot: Option<Box<dyn Output<COTReceiverOutput<Block>> + Send>>,
 }
 
-#[derive(Debug, Clone, Default)]
-struct PrepAuthBits {
+#[derive(Default)]
+struct Prep {
+    cot: Option<PendingFlush>,
     choices: Vec<bool>,
-    macs: Vec<Mac>,
     keys: Vec<Key>,
 }
 
@@ -38,11 +38,9 @@ struct PrepAuthBits {
 // #[derive(Debug)]
 pub struct AuthGen<S,R> {
     store: Arc<Mutex<AuthGenStore<S,R>>>,
-    call_stack: Vec<(Call, Slice)>,
+    call_stack: Vec<(Call, Slice, Prep)>,
     // preprocessed: Vec<(Vec<Slice>, Slice)>,
     prg: Prg,
-    pending_flush: Option<PendingFlush>,
-    prep_auth_bits: PrepAuthBits,
 }
 
 impl<S,R> AuthGen<S,R> 
@@ -54,8 +52,6 @@ impl<S,R> AuthGen<S,R>
             call_stack: Vec::new(),
             prg: Prg::new_with_seed(seed),
             // preprocessed: Vec::new(),
-            pending_flush: None,
-            prep_auth_bits: PrepAuthBits::default(),
         }
     }
 
@@ -66,10 +62,10 @@ impl<S,R> AuthGen<S,R>
     //         .collect()
     // }
 
-    fn take_execute_calls(&mut self) -> Vec<(Call, Slice)> {
+    fn take_execute_calls(&mut self) -> Vec<(Call, Slice, Prep)> {
         let store = self.store.try_lock().unwrap();
         self.call_stack
-            .filter_drain(|(call, _)| call.inputs().iter().all(|slice| store.is_committed(*slice)))
+            .filter_drain(|(call, _, _)| call.inputs().iter().all(|slice| store.is_committed(*slice)))
             .collect()
     }
 
@@ -195,7 +191,6 @@ where
         cot_receiver.alloc(num_and_shares).unwrap();
 
         let keys: Vec<Key> = (0..num_and_shares).map(|_| self.prg.random()).collect::<Vec<_>>();
-        self.prep_auth_bits.keys.extend_from_slice(&keys);
         // Queue COT, we don't need the output here.
         _ = cot_sender
             .queue_send_cot(Key::as_blocks(&keys))
@@ -203,7 +198,6 @@ where
             .unwrap();
 
         let choices: Vec<bool> = (0..num_and_shares).map(|_| self.prg.random()).collect::<Vec<_>>();
-        self.prep_auth_bits.choices.extend_from_slice(&choices);
         let cot = if num_and_shares > 0 {
             let output = cot_receiver
                 .queue_recv_cot(&choices)
@@ -213,9 +207,7 @@ where
             None
         };
 
-        self.pending_flush = Some(PendingFlush { cot });
-
-        self.call_stack.push((call, output));
+        self.call_stack.push((call, output, Prep { cot: Some(PendingFlush { cot }), choices, keys }));
         Ok(output)
     }
 }
@@ -244,7 +236,7 @@ where
         let store = self.store.try_lock().unwrap();
         self.call_stack
             .iter()
-            .any(|(call, _)| call.inputs().iter().all(|slice| store.is_set_keys(*slice)))
+            .any(|(call, _, _)| call.inputs().iter().all(|slice| store.is_set_keys(*slice)))
     }
 
     async fn preprocess(&mut self, ctx: &mut Context) -> Result<()> {
@@ -290,12 +282,15 @@ where
             self
                 .call_stack
                 .iter()
-                .any(|(call, _)| call.inputs().iter().all(|slice| store.is_committed(*slice)))
+                .any(|(call, _, _)| call.inputs().iter().all(|slice| store.is_committed(*slice)))
     }
 
     async fn execute(&mut self, ctx: &mut Context) -> Result<()> {
-        let delta = *self.store.try_lock().unwrap().delta();
+        // if !self.preprocessed.is_empty() {
+        //     self.execute_preprocessed()?;
+        // }
 
+        let delta = *self.store.try_lock().unwrap().delta();
         while !self.call_stack.is_empty() {
             let calls = self.take_execute_calls();
 
@@ -303,43 +298,49 @@ where
                 break;
             }
 
-            let Some(PendingFlush { cot }) = self.pending_flush.take() else {
-                return Err(VmError::execute("Unexpected flush".to_string()));
-            };
-
-            self.pending_flush = None;
-        
-            if let Some(mut cot) = cot {
-                let COTReceiverOutput { msgs: macs, .. } = cot
-                    .try_recv()
-                    .map_err(VmError::execute)?
-                    .ok_or_else(|| VmError::execute("COT output is not ready"))?;
-                let macs = Mac::from_blocks(macs);
-                self.prep_auth_bits.macs.extend_from_slice(&macs);
-            }
-
-            let choices = self.prep_auth_bits.choices.clone();
-            let macs = self.prep_auth_bits.macs.clone();
-            let keys = self.prep_auth_bits.keys.clone();
-
-            let mut and_shares = Vec::new();
-            for ((value, mac), key) in choices.iter().zip(macs).zip(keys) {
-                and_shares.push(AuthBitShare {
-                    value: *value,
-                    mac,
-                    key,
-                });
+            let mut call_data = Vec::new();
+            for (call, slice, prep) in calls {
+                let and_shares = if let Prep { cot: Some(PendingFlush{cot}), choices, keys } = prep {
+                    if let Some(mut cot_box) = cot {
+                        let cot_output = cot_box
+                            .try_recv()
+                            .map_err(VmError::execute)?
+                            .ok_or_else(|| VmError::execute("COT output is not ready"))?;
+                        
+                        let COTReceiverOutput { msgs: macs, .. } = cot_output;
+                        let macs = Mac::from_blocks(macs);
+                        
+                        // Create auth bit shares for this call
+                        let mut and_shares = Vec::new();
+                        for ((value, mac), key) in choices.iter().zip(macs).zip(keys) {
+                            and_shares.push(AuthBitShare {
+                                value: *value,
+                                mac,
+                                key,
+                            });
+                        }
+                        Some(and_shares)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+                
+                if let Some(shares) = and_shares {
+                    call_data.push((call, slice, shares));
+                }
             }
 
             let store = self.store.clone();
 
             let outputs = ctx
                 .map(
-                    calls,
-                    async move |ctx: &mut Context, (call, output): (Call, Slice)| {
-                        generate(ctx, store.clone(), delta, call, output, and_shares.clone()).await
+                    call_data.into_iter().collect::<Vec<_>>(),
+                    async move |ctx, (call, output, and_shares)| {
+                        generate(ctx, store.clone(), delta, call, output, and_shares).await
                     },
-                    |(call, _)| call.circ().and_count(),
+                    |(call, _, _)| call.circ().and_count(),
                 )
                 .await
                 .map_err(VmError::execute)?;
@@ -347,9 +348,9 @@ where
             outputs.into_iter().collect::<Result<()>>()?;
         }
 
-        // self.mark_executed()?;
-
         Ok(())
+
+        // self.mark_executed()?;
     }
 }
 

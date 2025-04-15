@@ -1,0 +1,267 @@
+warning: unused import: `core::num`
+ --> crates/mpz-garble/src/protocol/authenticated/auth_eval.rs:2:5
+  |
+2 | use core::num;
+  |     ^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` on by default
+
+warning: unused import: `hashbrown::HashMap`
+ --> crates/mpz-garble/src/protocol/authenticated/auth_eval.rs:6:5
+  |
+6 | use hashbrown::HashMap;
+  |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `Disjoint` and `RangeSet`
+  --> crates/mpz-garble/src/protocol/authenticated/auth_eval.rs:10:13
+   |
+10 |     range::{Disjoint, RangeSet},
+   |             ^^^^^^^^  ^^^^^^^^
+
+warning: unused imports: `AuthGarbledCircuit` and `evaluate_garbled_circuits`
+  --> crates/mpz-garble/src/protocol/authenticated/auth_eval.rs:16:39
+   |
+16 | use mpz_garble_core::{AuthEvalOutput, AuthGarbledCircuit, evaluate_garbled_circuits, fpre::AuthBitS...
+   |                                       ^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `auth_eval::receive_garbled_circuit`
+  --> crates/mpz-garble/src/protocol/authenticated/auth_eval.rs:24:13
+   |
+24 | use crate::{auth_eval::receive_garbled_circuit, store::AuthEvalStore};
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `core::num`
+ --> crates/mpz-garble/src/protocol/authenticated/auth_gen.rs:2:5
+  |
+2 | use core::num;
+  |     ^^^^^^^^^
+
+warning: unused import: `hashbrown::HashMap`
+ --> crates/mpz-garble/src/protocol/authenticated/auth_gen.rs:6:5
+  |
+6 | use hashbrown::HashMap;
+  |     ^^^^^^^^^^^^^^^^^^
+
+warning: unused imports: `Disjoint` and `RangeSet`
+  --> crates/mpz-garble/src/protocol/authenticated/auth_gen.rs:10:13
+   |
+10 |     range::{Disjoint, RangeSet},
+   |             ^^^^^^^^  ^^^^^^^^
+
+warning: unused imports: `AuthGarbledCircuit` and `evaluate_garbled_circuits`
+  --> crates/mpz-garble/src/protocol/authenticated/auth_gen.rs:16:38
+   |
+16 | use mpz_garble_core::{AuthGenOutput, AuthGarbledCircuit, evaluate_garbled_circuits, fpre::AuthBitSh...
+   |                                      ^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `Mutex`
+ --> crates/mpz-garble/src/store/auth_gen.rs:2:19
+  |
+2 | use tokio::sync::{Mutex, OwnedMutexGuard};
+  |                   ^^^^^
+
+warning: unused import: `Mutex`
+ --> crates/mpz-garble/src/store/auth_eval.rs:2:19
+  |
+2 | use tokio::sync::{Mutex, OwnedMutexGuard};
+  |                   ^^^^^
+
+warning: unused variable: `ctx`
+   --> crates/mpz-garble/src/protocol/authenticated/auth_eval.rs:298:36
+    |
+298 |     async fn preprocess(&mut self, ctx: &mut Context) -> Result<()> {
+    |                                    ^^^ help: if this is intentional, prefix it with an underscore: `_ctx`
+    |
+    = note: `#[warn(unused_variables)]` on by default
+
+warning: unused variable: `ctx`
+   --> crates/mpz-garble/src/protocol/authenticated/auth_gen.rs:250:36
+    |
+250 |     async fn preprocess(&mut self, ctx: &mut Context) -> Result<()> {
+    |                                    ^^^ help: if this is intentional, prefix it with an underscore: `_ctx`
+
+warning: method `is_set_masks` is never used
+  --> crates/mpz-garble/src/store/auth_gen.rs:42:19
+   |
+20 | impl<S,R> AuthGenStore<S,R>
+   | --------------------------- method in this implementation
+...
+42 |     pub(crate) fn is_set_masks(&self, slice: Slice) -> bool {
+   |                   ^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` on by default
+
+warning: methods `is_set_macs`, `is_set_masks`, and `mark_output_preprocessed` are never used
+  --> crates/mpz-garble/src/store/auth_eval.rs:39:19
+   |
+21 | impl<S, R> AuthEvalStore<S, R>
+   | ------------------------------ methods in this implementation
+...
+39 |     pub(crate) fn is_set_macs(&self, slice: Slice) -> bool {
+   |                   ^^^^^^^^^^^
+...
+43 |     pub(crate) fn is_set_masks(&self, slice: Slice) -> bool {
+   |                   ^^^^^^^^^^^^
+...
+79 |     pub(crate) fn mark_output_preprocessed(&mut self, slice: Slice) -> Result<(), Error> {
+   |                   ^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `mpz-garble` (lib test) generated 15 warnings (run `cargo fix --lib -p mpz-garble --tests` to apply 11 suggestions)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.19s
+     Running unittests src/lib.rs (target/debug/deps/clmul-e53daa6ab57739e0)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/matrix_transpose-cc2a4ca3bed46ac7)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/mpz_circuits-814f4c010b3b1003)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 11 filtered out; finished in 0.00s
+
+     Running unittests src/bin/parse.rs (target/debug/deps/parse-fb21c721421269fd)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/mpz_cointoss-586a9638a5b0c8b1)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/mpz_cointoss_core-7088a310ae90e02c)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/mpz_common-d9e267c41ce3f8ee)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/mpz_core-b798e39c7997df45)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 17 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/mpz_fields-cb9f29396120b357)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 9 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/deps/mpz_garble-62e67c84fe88b8d1)
+
+running 1 test
+gen started flush
+gen acquired cot
+gen sent flush
+eval started flush
+eval acquired cot
+eval sent flush
+eval core flushing cot receiver
+gen core flushing cot sender
+eval core flushed cot receiver
+eval core flushing cot sender
+gen core flushed cot sender
+gen core flushing cot receiver
+eval core flushed cot sender
+Eval's complete flush
+gen_masks: RangeSet { ranges: [0..128] }
+eval_masks: RangeSet { ranges: [128..256] }
+gen_reveal: RangeSet { ranges: [] }
+eval_reveal: RangeSet { ranges: [] }
+labels: RangeSet { ranges: [] }
+decode_info: RangeSet { ranges: [] }
+gen_decode: RangeSet { ranges: [] }
+eval_decode: RangeSet { ranges: [] }
+eval ended flush
+eval acquired cot
+eval sent flush
+gen core flushed cot receiver
+Gen's complete flush
+gen_masks: RangeSet { ranges: [0..128] }
+eval_masks: RangeSet { ranges: [128..256] }
+gen_reveal: RangeSet { ranges: [] }
+eval_reveal: RangeSet { ranges: [] }
+labels: RangeSet { ranges: [] }
+decode_info: RangeSet { ranges: [] }
+gen_decode: RangeSet { ranges: [] }
+eval_decode: RangeSet { ranges: [] }
+gen ended flush
+gen started flush
+gen acquired cot
+gen sent flush
+gen core flushing cot sender
+gen core flushed cot sender
+gen core flushing cot receiver
+gen core flushed cot receiver
+Gen's complete flush
+gen_masks: RangeSet { ranges: [] }
+eval_masks: RangeSet { ranges: [] }
+gen_reveal: RangeSet { ranges: [0..128] }
+eval_reveal: RangeSet { ranges: [128..256] }
+labels: RangeSet { ranges: [] }
+decode_info: RangeSet { ranges: [] }
+gen_decode: RangeSet { ranges: [] }
+eval_decode: RangeSet { ranges: [] }
+gen ended flush
+gen started flush
+gen acquired cot
+gen sent flush
+eval core flushing cot receiver
+eval core flushed cot receiver
+eval core flushing cot sender
+eval core flushed cot sender
+Eval's complete flush
+gen_masks: RangeSet { ranges: [] }
+eval_masks: RangeSet { ranges: [] }
+gen_reveal: RangeSet { ranges: [0..128] }
+eval_reveal: RangeSet { ranges: [128..256] }
+labels: RangeSet { ranges: [] }
+decode_info: RangeSet { ranges: [] }
+gen_decode: RangeSet { ranges: [] }
+eval_decode: RangeSet { ranges: [] }
+eval ended flush
+eval acquired cot
+eval sent flush
+eval core flushing cot receiver
+eval core flushed cot receiver
+eval core flushing cot sender
+eval core flushed cot sender
+Eval's complete flush
+gen_masks: RangeSet { ranges: [] }
+eval_masks: RangeSet { ranges: [] }
+gen_reveal: RangeSet { ranges: [] }
+eval_reveal: RangeSet { ranges: [] }
+labels: RangeSet { ranges: [0..256] }
+decode_info: RangeSet { ranges: [] }
+gen_decode: RangeSet { ranges: [] }
+eval_decode: RangeSet { ranges: [] }
+eval ended flush
+gen core flushing cot sender
+gen core flushed cot sender
+gen core flushing cot receiver
+gen core flushed cot receiver
+Gen's complete flush
+gen_masks: RangeSet { ranges: [] }
+eval_masks: RangeSet { ranges: [] }
+gen_reveal: RangeSet { ranges: [] }
+eval_reveal: RangeSet { ranges: [] }
+labels: RangeSet { ranges: [0..256] }
+decode_info: RangeSet { ranges: [] }
+gen_decode: RangeSet { ranges: [] }
+eval_decode: RangeSet { ranges: [] }
+gen ended flush
