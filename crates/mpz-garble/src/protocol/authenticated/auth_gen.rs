@@ -225,6 +225,7 @@ where
     }
 
     async fn flush(&mut self, ctx: &mut Context) -> Result<()> {
+        println!("gen final flush");
         let mut store = self.store.try_lock().unwrap();
         if store.wants_flush() {
             store.flush(ctx).await.map_err(VmError::memory)?;
@@ -372,22 +373,21 @@ async fn generate<S,R>(
     S: COTSender<Block> + Flush + Send + 'static,
     R: COTReceiver<bool, Block> + Flush + Send + 'static,
 {
+    println!("gen executing");
     let (circ, inputs) = call.into_parts();
 
     let mut input_keys = Vec::with_capacity(circ.inputs().len());
-    let mut input_masked_values = Vec::with_capacity(circ.inputs().len());
     let mut input_auth_bits = Vec::with_capacity(circ.inputs().len());
     {
         let lock = store.lock().await;
         for input in inputs {
             input_keys.extend_from_slice(lock.try_get_keys(input).map_err(VmError::memory)?);
-            // TODO: This is a hack, we should not be converting to a bitvec
-            let masked_values = lock.try_get_masked_values(input).map_err(VmError::memory)?.to_bitvec();
-            input_masked_values.extend(masked_values);
+            println!("gen got input keys");
             let mask_bits = lock.try_get_mask_bits(input).map_err(VmError::memory)?;
+            println!("gen got input mask bits");
             let mask_macs = lock.try_get_mask_macs(input).map_err(VmError::memory)?;
             let mask_keys = lock.try_get_mask_keys(input).map_err(VmError::memory)?;
-            
+            println!("gen got input mask keys");
             for ((value, mac), key) in mask_bits.iter().zip(mask_macs).zip(mask_keys) {
                 input_auth_bits.push(AuthBitShare {
                     value: *value,
@@ -410,9 +410,6 @@ async fn generate<S,R>(
     io.feed(auth_hash).await?;
     io.flush().await?;
 
-    // TODO: Authenticate these with output labels
-    let output_masked_values: Vec<bool> = io.expect_next().await?;
-    let output_masked_values = BitVec::from_iter(output_masked_values);
     let output_bits: Vec<_> = output_auth_bits.iter().map(|share| share.value).collect();
     let output_macs: Vec<_> = output_auth_bits.iter().map(|share| share.mac).collect();
     let output_keys: Vec<_> = output_auth_bits.iter().map(|share| share.key).collect();
@@ -420,12 +417,13 @@ async fn generate<S,R>(
     let output_bits = BitVec::from_iter(output_bits);
     let mut lock = store.lock().await;
     println!("gen setting output");
-    lock.set_output(output, &output_labels, &output_bits, &output_macs, &output_keys, &output_masked_values)
+    lock.set_output(output, &output_labels, &output_bits, &output_macs, &output_keys)
         .map_err(VmError::memory)?;
-    println!("gen output set");
+    println!("gen output set to {:?}", output);
     // if let Mode::Execute = mode {
         lock.mark_output_complete(output).map_err(VmError::memory)?;
     // }
+    println!("gen marked output complete");
 
     Ok(())
 }

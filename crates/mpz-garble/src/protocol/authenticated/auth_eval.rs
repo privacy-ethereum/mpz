@@ -456,10 +456,6 @@ where
     // TODO: Handle error
     assert_eq!(gen_hash, auth_hash);
 
-    // TODO: Authenticate these with output labels
-    io.feed(masked_output_values.clone()).await?;
-    io.flush().await?;
-
     let output_bits: Vec<_> = output_auth_bits.iter().map(|share| share.value).collect();
     let output_macs: Vec<_> = output_auth_bits.iter().map(|share| share.mac).collect();
     let output_keys: Vec<_> = output_auth_bits.iter().map(|share| share.key).collect();
@@ -470,6 +466,6 @@ where
     println!("eval setting output");
     lock.set_output(output, &output_labels, &output_bits, &output_macs, &output_keys, &masked_output_values)
         .map_err(VmError::memory)?;
-    println!("eval output set");
+    println!("eval output set to {:?}", output);
     Ok(())
 }

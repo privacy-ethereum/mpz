@@ -162,13 +162,13 @@ impl<S, R> AuthGenStore<S, R> {
     }
 
     /// Sets the keys and masks for output data.
-    pub fn set_output(&mut self, slice: Slice, keys: &[Key], mask_bits: &BitSlice, mask_macs: &[Mac], mask_keys: &[Key], masked_values: &BitSlice) -> Result<()> {
+    pub fn set_output(&mut self, slice: Slice, keys: &[Key], mask_bits: &BitSlice, mask_macs: &[Mac], mask_keys: &[Key]) -> Result<()> {
         self.key_store.try_set(slice, keys)?;
         self.mask_store.try_set_bits(slice, mask_bits)?;
         self.mask_store.try_set_macs(slice, mask_macs)?;
         self.mask_store.try_set_keys(slice, mask_keys)?;
-        self.masked_value_store.try_set(slice, masked_values)?;
-        self.view.set_preprocessed(slice.to_range())?;
+        // self.masked_value_store.try_set(slice, masked_values)?;
+        self.view.set_output(slice.to_range())?;
 
         Ok(())
     }
@@ -407,23 +407,37 @@ where
         }
 
         // Expected output labels
-        let mut output_labels = Vec::with_capacity(view.decode_info.len());
+        let mut output_keys: Vec<Key> = Vec::with_capacity(view.decode_info.len());
         for range in view.decode_info.iter_ranges() {
             let slice = Slice::from_range_unchecked(range);
-            let data = self.masked_value_store.try_get(slice)?;
-            output_labels.extend(self.key_store.authenticate(slice, data)?);
+            let keys = self.key_store.try_get(slice)?;
+            output_keys.extend(keys);
         }
 
-        // Verify eval's output labels
-        for (index, (expected, actual)) in labels.iter().zip(output_labels.iter()).enumerate() {
-            if expected != actual {
+        let mut masked_outputs = Vec::new();
+        for (index, (key, mac)) in output_keys.iter().zip(labels.iter()).enumerate() {
+            let bit = if *mac == key.auth(false, self.delta()) {
+                false
+            } else if *mac == key.auth(true, self.delta()) {
+                true
+            } else {
                 return Err(ErrorRepr::OutputLabelMismatch {
                     index,
-                    expected: *expected,
-                    actual: *actual,
                 }.into());
-            }
+            };
+            masked_outputs.push(bit);
         }
+        
+        let masked_outputs = BitVec::from_iter(masked_outputs.iter());
+
+        dbg!("gen received and checked masked output labels for {:?}", view.decode_info.clone());
+        i = 0;
+        for range in view.decode_info.iter_ranges() {
+            let slice = Slice::from_range_unchecked(range);
+            self.masked_value_store.try_set(slice, &masked_outputs[i..i + slice.len()])?;
+            i += slice.len();
+        }
+        dbg!("gen set masked output values for {:?}", view.decode_info.clone());
 
         if let Some(ShareProof { bits, macs }) = decode_share_proof {
             self.mask_store.check_share(&view.eval_decode, &bits, &macs)?;
@@ -588,11 +602,9 @@ enum ErrorRepr {
         expected: AuthFlushView,
         actual: AuthFlushView,
     },
-    #[error("output label mismatch: index={index:?}, expected={expected:?}, actual={actual:?}")]
+    #[error("output label mismatch: index={index:?}")]
     OutputLabelMismatch {
-        index: usize,
-        expected: Mac,
-        actual: Mac,
+        index: usize
     },
 }
 

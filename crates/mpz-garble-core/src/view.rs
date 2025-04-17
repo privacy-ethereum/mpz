@@ -516,7 +516,6 @@ impl AuthView {
         }
 
         self.output.preprocessed |= &range;
-        // TODO: if preprocessed, can also decode to Eval
 
         Ok(())
     }
@@ -531,12 +530,10 @@ impl AuthView {
         self.output.preprocessed |= &range;
         self.output.complete |= &range;
         
-        // Eval sends labels to gen to authenticate masked outputs
+        // Eval sends labels to gen to authenticate masked outputs, flush handles sending decode (bit,mac) afterwards 
         self.flush.decode_info |= range.intersection(&self.decode.all) - &self.decode.decode_info;
-
-        // Send decode info for outputs
-        self.flush.gen_decode |= range.intersection(&self.decode.all) - &self.decode.complete;
-        self.flush.eval_decode |= range.intersection(&self.decode.all) - &self.decode.complete;
+        dbg!("added this decode info to view: {:?}", self.flush.decode_info.clone());
+        dbg!("wants flush: {:?}", self.wants_flush());
 
         Ok(())
     }
@@ -614,8 +611,8 @@ impl AuthView {
 
         let output = range.intersection(&self.output.complete);
         self.flush.decode_info |= &output;
-        self.flush.gen_decode |= gen_decode_input | &output;
-        self.flush.eval_decode |= eval_decode_input | &output;
+        self.flush.gen_decode |= gen_decode_input;
+        self.flush.eval_decode |= eval_decode_input;
 
         Ok(())
     }
@@ -649,9 +646,9 @@ impl AuthView {
         // send masked labels, can be done in parallel with decode info
         self.flush.labels |= view.gen_reveal.clone() | view.eval_reveal.clone() | view.public_decode.clone();
 
-        // Send decode info for inputs (outputs handled in set_output)
-        self.flush.gen_decode |= view.gen_reveal.intersection(&self.decode.all) - &self.decode.complete;
-        self.flush.eval_decode |= view.eval_reveal.intersection(&self.decode.all) - &self.decode.complete;
+        // Send decode info for inputs / outputs
+        self.flush.gen_decode |= (view.gen_reveal | view.decode_info.clone()).intersection(&self.decode.all) - &self.decode.complete;
+        self.flush.eval_decode |= (view.eval_reveal | view.decode_info.clone()).intersection(&self.decode.all) - &self.decode.complete;
     }
 }
 
