@@ -29,7 +29,6 @@ mod tests {
         is_vm::<AuthEval<IdealCOTSender, IdealCOTReceiver>>();
     }
 
-    // TODO: test with public inputs
     #[tokio::test]
     async fn test_authenticated() {
         let mut rng = StdRng::seed_from_u64(0);
@@ -150,7 +149,7 @@ mod tests {
                 let msg_2: Array<U8, 16> = gb.alloc().unwrap();
 
                 gb.mark_private(key).unwrap();
-                gb.mark_private(key_2).unwrap();
+                gb.mark_public(key_2).unwrap();
                 gb.mark_blind(msg).unwrap();
                 gb.mark_blind(msg_2).unwrap();
 
@@ -190,7 +189,7 @@ mod tests {
                 let mut ciphertext_2 = gb.decode(ciphertext_2).unwrap();
 
                 gb.assign(key, [0u8; 16]).unwrap();
-                gb.assign(key_2, [0u8; 16]).unwrap();
+                gb.assign(key_2, [69u8; 16]).unwrap();
                 gb.commit(key).unwrap();
                 gb.commit(key_2).unwrap();
                 gb.commit(msg).unwrap();
@@ -207,7 +206,7 @@ mod tests {
                 let msg_2: Array<U8, 16> = ev.alloc().unwrap();
 
                 ev.mark_blind(key).unwrap();
-                ev.mark_blind(key_2).unwrap();
+                ev.mark_public(key_2).unwrap();
                 ev.mark_private(msg).unwrap();
                 ev.mark_private(msg_2).unwrap();    
 
@@ -246,6 +245,7 @@ mod tests {
                 let mut ciphertext = ev.decode(ciphertext).unwrap();
                 let mut ciphertext_2 = ev.decode(ciphertext_2).unwrap();
 
+                ev.assign(key_2, [69u8; 16]).unwrap();
                 ev.assign(msg, [42u8; 16]).unwrap();
                 ev.assign(msg_2, [42u8; 16]).unwrap();
                 ev.commit(key).unwrap();

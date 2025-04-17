@@ -217,7 +217,7 @@ where
         let view = self.view.flush().clone();
 
         // Send OT keys for masks.
-        let masks = view.gen_masks.clone() | view.eval_masks.clone();
+        let masks = view.gen_masks.clone() | view.eval_masks.clone() | view.public.clone();
         if !masks.is_empty() {
             let keys = (0..masks.len()).map(|_| self.prg.random()).collect::<Vec<_>>();
             // Store keys in mask store.
@@ -255,18 +255,32 @@ where
             None
         };
 
-        // Prove Gen's share of Eval input wires.
-        let share_proof = if !view.eval_reveal.is_empty() {
-            let (bits, macs) = self.mask_store.prove_share(&view.eval_reveal)?;
+        // Prove Gen's share of Eval input wires and public wires.
+        let share_proof = if !view.eval_reveal.is_empty() || !view.public_decode.is_empty() {
+            let (bits1, macs1) = self.mask_store.prove_share(&view.eval_reveal)?;
             // Set masked_value_store using sent bits
             let mut i = 0;
             for range in view.eval_reveal.iter_ranges() {
                 let slice = Slice::from_range_unchecked(range);
                 self.masked_value_store
-                    .try_set(slice, &bits[i..i + slice.len()])?;
+                    .try_set(slice, &bits1[i..i + slice.len()])?;
                 i += slice.len();
             }
-            Some(ShareProof { bits, macs })
+
+            let (bits2, macs2) = self.mask_store.prove_share(&view.public_decode)?;
+            
+            i = 0;
+            for range in view.public_decode.iter_ranges() {
+                let slice = Slice::from_range_unchecked(range);
+                self.masked_value_store
+                    .try_set(slice, &bits2[i..i + slice.len()])?;
+                let data = self.data_store.try_get(slice)?;
+                self.masked_value_store.update_xor(slice, &data)?;
+                i += slice.len();
+            }
+            
+            let bits = BitVec::from_iter(bits1.iter().chain(bits2.iter()));
+            Some(ShareProof { bits, macs: [macs1, macs2].concat() })
         } else {
             None
         };
@@ -347,7 +361,7 @@ where
         }
 
         // Receive OT macs for masks, expects COT to be flushed.
-        let masks = view.gen_masks.clone() | view.eval_masks.clone();
+        let masks = view.gen_masks.clone() | view.eval_masks.clone() | view.public.clone();
         let mut i = 0;
         if let Some(mut cot) = cot {
             let COTReceiverOutput { msgs: macs, .. } = cot
@@ -363,14 +377,24 @@ where
         }
 
         if let Some(ShareProof { bits, macs }) = share_proof {
-            self.mask_store.check_share(&view.gen_reveal, &bits, &macs)?;
+            let bits1 = bits[0..view.gen_reveal.len()].to_bitvec();
+            let bits2 = bits[view.gen_reveal.len()..].to_bitvec();
+            self.mask_store.check_share(&view.gen_reveal, &bits1, &macs[0..view.gen_reveal.len()])?;
+            self.mask_store.check_share(&view.public_decode, &bits2, &macs[view.gen_reveal.len()..])?;
 
-            // Update masked values of gen's input wires with share proof bits
+            // Update masked values of gen's input wires and public wires with share proof bits
             let mut i = 0;
             for range in view.gen_reveal.iter_ranges() {
                 let slice = Slice::from_range_unchecked(range);
-                    self.masked_value_store.update_xor(slice, &bits[i..i + slice.len()])?;
-                    i += slice.len();
+                self.masked_value_store.update_xor(slice, &bits1[i..i + slice.len()])?;
+                i += slice.len();
+            }
+
+            i = 0;
+            for range in view.public_decode.iter_ranges() {
+                let slice = Slice::from_range_unchecked(range);
+                self.masked_value_store.update_xor(slice, &bits2[i..i + slice.len()])?;
+                i += slice.len();
             }
         }
 
@@ -479,6 +503,18 @@ where
     type Error = Error;
 
     fn mark_public_raw(&mut self, slice: Slice) -> Result<()> {
+        // Allocate both sender and receiver COTs for public data.
+        self.cot_sender
+            .try_lock()
+            .unwrap()
+            .alloc(slice.len())
+            .map_err(Error::cot)?;
+
+        self.cot_receiver
+            .try_lock()
+            .unwrap()
+            .alloc(slice.len())
+            .map_err(Error::cot)?;
         self.view.mark_public_raw(slice).map_err(Error::from)
     }
 

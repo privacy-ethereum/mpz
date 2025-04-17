@@ -80,6 +80,8 @@ impl FlushView {
 #[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
 pub(crate) struct AuthFlushView {
 
+    /// Both send public input masks via COTs. 
+    pub(crate) public: RangeSet,
     /// Both send Gen input masks via COTs. 
     pub(crate) gen_masks: RangeSet,
     /// Both send Eval input masks via COTs. 
@@ -88,6 +90,8 @@ pub(crate) struct AuthFlushView {
     pub(crate) gen_reveal: RangeSet,
     /// Gen sends share and MACs for eval's inputs.
     pub(crate) eval_reveal: RangeSet,
+    /// Both reveal shares of public inputs, which is then verified by the other party. 
+    pub(crate) public_decode: RangeSet,
     /// Gen sends masked input labels to Eval.
     pub(crate) labels: RangeSet,
     /// Eval sends output labels to Gen to authenticate masked output
@@ -101,10 +105,12 @@ pub(crate) struct AuthFlushView {
 impl AuthFlushView {
     /// Returns `true` if the flush state is empty.
     pub(crate) fn is_empty(&self) -> bool {
-        self.gen_masks.is_empty()
+        self.public.is_empty()
+            && self.gen_masks.is_empty()
             && self.eval_masks.is_empty()
             && self.gen_reveal.is_empty()
             && self.eval_reveal.is_empty()
+            && self.public_decode.is_empty()
             && self.labels.is_empty()
             && self.decode_info.is_empty()
             && self.gen_decode.is_empty()
@@ -113,10 +119,12 @@ impl AuthFlushView {
 
     /// Clears the flush state.
     fn clear(&mut self) {
+        self.public.clear();
         self.gen_masks.clear();
         self.eval_masks.clear();
         self.gen_reveal.clear();
         self.eval_reveal.clear();
+        self.public_decode.clear();
         self.labels.clear();
         self.decode_info.clear();
         self.gen_decode.clear();
@@ -566,15 +574,13 @@ impl AuthView {
 
         match self.role {
             Role::Garbler => {
-                // Send MACs for visible data.
+                self.flush.public |= public;
                 self.flush.gen_masks |= private;
-                // Send MACs with OT for blind data.
                 self.flush.eval_masks |= blind;
             }
             Role::Evaluator => {
-                // Receive MACs for public and blind data.
+                self.flush.public |= public;
                 self.flush.gen_masks |= blind;
-                // Receive MACs with OT for private data.
                 self.flush.eval_masks |= private;
             }
         }
@@ -617,9 +623,12 @@ impl AuthView {
     pub(crate) fn complete_flush(&mut self, view: AuthFlushView) {
         self.input.complete |= &view.gen_reveal;
         self.input.complete |= &view.eval_reveal;
+        self.input.complete |= &view.public_decode;
         
+        println!("public: {:?}", &view.public);
         println!("gen_masks: {:?}", &view.gen_masks);
         println!("eval_masks: {:?}", &view.eval_masks);
+        println!("public_decode: {:?}", &view.public_decode);
         println!("gen_reveal: {:?}", &view.gen_reveal);
         println!("eval_reveal: {:?}", &view.eval_reveal);
         println!("labels: {:?}", &view.labels);
@@ -635,10 +644,11 @@ impl AuthView {
         // Reveal opposite shares for inputs whose auth bits have been set, send own half masked inputs, check opposite shares.
         self.flush.gen_reveal |= view.gen_masks;
         self.flush.eval_reveal |= view.eval_masks;
+        self.flush.public_decode |= view.public;
 
         // send masked labels, can be done in parallel with decode info
-        self.flush.labels |= view.gen_reveal.clone() | view.eval_reveal.clone();
-        
+        self.flush.labels |= view.gen_reveal.clone() | view.eval_reveal.clone() | view.public_decode.clone();
+
         // Send decode info for inputs (outputs handled in set_output)
         self.flush.gen_decode |= view.gen_reveal.intersection(&self.decode.all) - &self.decode.complete;
         self.flush.eval_decode |= view.eval_reveal.intersection(&self.decode.all) - &self.decode.complete;

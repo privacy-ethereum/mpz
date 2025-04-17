@@ -208,6 +208,7 @@ where
         };
 
         self.call_stack.push((call, output, Prep { cot: Some(PendingFlush { cot }), choices, keys }));
+        println!("gen pushed to call stack");
         Ok(output)
     }
 }
