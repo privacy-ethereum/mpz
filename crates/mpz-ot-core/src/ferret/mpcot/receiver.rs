@@ -1,4 +1,5 @@
 use std::array::from_fn;
+use super::utils::padded_log2_and_length;
 
 use mpz_core::{aes::AesEncryptor, lpn::LpnType, prg::Prg, utils::slices_from_lengths, Block};
 use rand_core::SeedableRng;
@@ -73,22 +74,17 @@ impl MPCOTReceiver<state::Initialized> {
                 let mut spcot_lengths = vec![];
                 for (item, bucket_length) in cuckoo.iter().zip(buckets.iter_buckets()) {
                     // pad to power of 2.
-                    let power_of_two = (bucket_length + 1)
-                        .checked_next_power_of_two()
-                        .expect("bucket length should be less than usize::MAX / 2 - 1");
+                    let (log2_len, padded_len) = crate::utils::padded_log2_and_length(bucket_length);
 
                     if let Some(x) = item {
                         let (_, pos) = buckets.get(x.value as usize)[x.hash_idx as usize];
-
                         idxs.push(pos);
                     } else {
-                        // Acc.to p.10 "if T[j] is empty ... then the receiver's input p_j can
-                        // point to this extra cell".
                         idxs.push(bucket_length);
                     }
-
-                    spcot_log2_lengths.push(power_of_two.ilog2() as usize);
-                    spcot_lengths.push(power_of_two);
+                    
+                    spcot_log2_lengths.push(log2_len);
+                    spcot_lengths.push(padded_len);                    
                 }
 
                 (

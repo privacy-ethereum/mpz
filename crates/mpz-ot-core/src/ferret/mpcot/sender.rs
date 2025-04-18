@@ -1,4 +1,5 @@
 use std::array::from_fn;
+use super::utils::padded_log2_and_length;
 
 use mpz_core::{aes::AesEncryptor, lpn::LpnType, prg::Prg, utils::slices_from_lengths, Block};
 use rand_core::SeedableRng;
@@ -69,15 +70,11 @@ impl MPCOTSender<Initialized> {
                 // bucket.
                 let mut bs = vec![];
                 let mut spcot_lengths = vec![];
-                for len in buckets.iter_buckets() {
-                    let power_of_two = (len + 1)
-                        .checked_next_power_of_two()
-                        .expect("bucket length should be less than usize::MAX / 2 - 1");
-
-                    bs.push(power_of_two.ilog2() as usize);
-                    spcot_lengths.push(power_of_two);
+                for bucket_len in buckets.iter_buckets() {
+                    let (log2_len, padded_len) = padded_log2_and_length(bucket_len);
+                    bs.push(log2_len);
+                    spcot_lengths.push(padded_len);
                 }
-
                 (
                     Extension::Uniform {
                         len,
