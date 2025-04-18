@@ -306,6 +306,22 @@ impl AuthGen {
         Ok(data)
     }
 
+    /// Generates digest, hash for equality check
+    pub fn check_equality<'a>(
+        &'a mut self, 
+        g: Vec<Block>, 
+    ) -> Result<(Block, Block, Block), AuthGeneratorError> {
+        let mut digest = self.cipher.ccr(g[0]);
+        for i in 1..g.len() {
+            digest = self.cipher.ccr(g[i]);
+        }
+
+        let salt = Block::new((rand::random::<u128>()).to_be_bytes());
+        let hash = self.cipher.tccr(salt, digest);
+
+        Ok((digest, salt, hash))
+    }
+
     /// Triple generation, Round 4
     pub fn generate_pre_4<'a>(
         &'a mut self,

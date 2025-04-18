@@ -40,11 +40,21 @@ pub async fn generate(
     let dr: Vec<bool> = io.expect_next().await?;
 
     let data = gb.generate_pre_3(delta, &mut g, d, dr).unwrap();
-    io.feed(g.clone()).await?;
+    
+    
+    // Secure equality check
+    let (digest, salt, hash) = gb.check_equality(g).unwrap();
+    io.feed(hash).await?;
     io.flush().await?;
-    let gr: Vec<Block> = io.expect_next().await?;
-    // TODO: Do a secure equality check
-    assert_eq!(g, gr);
+    
+    let digest_recv: Block = io.expect_next().await?;
+    if digest != digest_recv {
+        return Err(AuthGeneratorError(ErrorRepr::EqualityCheckFailed));
+    }
+
+    io.feed(salt).await?;
+    io.flush().await?;
+
     
     io.feed(data.clone()).await?;
     io.flush().await?;
@@ -79,6 +89,8 @@ enum ErrorRepr {
     Core(#[from] mpz_garble_core::AuthGeneratorError),
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
+    #[error("equality check failed")]
+    EqualityCheckFailed,
 }
 
 impl From<std::io::Error> for AuthGeneratorError {

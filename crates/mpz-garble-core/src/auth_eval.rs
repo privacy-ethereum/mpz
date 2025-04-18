@@ -307,6 +307,28 @@ impl AuthEval {
         Ok(data)
     }
 
+    /// Generates digest for equality check
+    pub fn check_equality<'a>(
+        &'a mut self, 
+        g: Vec<Block>, 
+    ) -> Result<Block, AuthEvaluatorError> {
+        let mut digest = self.cipher.ccr(g[0]);
+        for i in 1..g.len() {
+            digest = self.cipher.ccr(g[i]);
+        }
+        Ok(digest)
+    }
+
+    /// Uses received salt to generate expected hash for equality check
+    pub fn check_salt<'a>(
+        &'a mut self, 
+        salt: Block, 
+        digest: Block,
+    ) -> Result<Block, AuthEvaluatorError> {
+        let hash = self.cipher.tccr(salt, digest);
+        Ok(hash)
+    }
+        
     /// Triple generation, Round 4
     pub fn evaluate_pre_4<'a>(
         &'a mut self,

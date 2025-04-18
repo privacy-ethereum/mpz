@@ -65,12 +65,21 @@ pub async fn evaluate(
     let dr: Vec<bool> = io.expect_next().await?;
 
     let data = ev.evaluate_pre_3(delta, &mut g, d, dr).unwrap();
-    io.feed(g.clone()).await?;
-    io.flush().await?;
-    let gr: Vec<Block> = io.expect_next().await?;
-    // TODO: Do a secure equality check
-    assert_eq!(g, gr);
     
+
+    // Secure equality check
+    let digest = ev.check_equality(g).unwrap();
+    let hash_recv: Block = io.expect_next().await?;
+    io.feed(digest).await?;
+    io.flush().await?;
+    
+    let salt_recv: Block = io.expect_next().await?;
+
+    let expected_hash = ev.check_salt(salt_recv, digest).unwrap();
+    if expected_hash != hash_recv {
+        return Err(AuthEvaluatorError(ErrorRepr::EqualityCheckFailed));
+    }
+
     io.feed(data.clone()).await?;
     io.flush().await?;
     let data_recv: Vec<bool> = io.expect_next().await?;
@@ -110,6 +119,8 @@ enum ErrorRepr {
     Core(#[from] mpz_garble_core::AuthEvaluatorError),
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
+    #[error("equality check failed")]
+    EqualityCheckFailed,
 }
 
 impl From<std::io::Error> for AuthEvaluatorError {
