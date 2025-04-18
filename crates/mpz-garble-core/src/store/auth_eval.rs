@@ -45,6 +45,7 @@ pub struct AuthEvalStore<S, R> {
     data_store: BitStore,
     view: AuthView,
     buffer_decode: Vec<DecodeOp<BitVec>>,
+    auth_hash: Block,
     // Whether the store is waiting for a flush.
     pending: bool,
     // Pending COT flush
@@ -64,6 +65,7 @@ impl<S, R> AuthEvalStore<S, R> {
             data_store: BitStore::default(),
             view: AuthView::new_evaluator(),
             buffer_decode: Vec::default(),
+            auth_hash: Block::default(),
             pending: false,
             pending_flush: None,
         }
@@ -156,7 +158,16 @@ impl<S, R> AuthEvalStore<S, R> {
     pub fn try_get_mask_keys(&self, slice: Slice) -> Result<&[Key]> {
         self.mask_store.try_get_keys(slice).map_err(Error::from)
     }
-    
+
+    /// Updates the auth hash.
+    pub fn update_hash(&mut self, hash: Block) {
+        self.auth_hash ^= hash;
+    }
+
+    /// Returns the auth hash.
+    pub fn get_hash(&self) -> Block {
+        self.auth_hash
+    }
 
     /// Sets the MACs for a slice corresponding to output.
     pub fn set_output(&mut self, slice: Slice, macs: &[Mac], mask_bits: &BitSlice, mask_macs: &[Mac], mask_keys: &[Key], masked_values: &BitSlice) -> Result<()> {

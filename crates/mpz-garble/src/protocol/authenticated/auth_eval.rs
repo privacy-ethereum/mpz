@@ -398,6 +398,14 @@ where
             outputs.into_iter().collect::<Result<()>>()?;
         }
 
+        // Should I move this somewhere else? Maybe flush it whenever a decode operation is called?
+        let io = ctx.io_mut();
+        let hash = self.store.try_lock().unwrap().get_hash();
+        let recv_hash: Block = io.expect_next().await?;
+        if recv_hash != hash {
+            Err(VmError::execute("Auth hash mismatch"))?;
+        }
+
         Ok(())
     }
 }
@@ -450,11 +458,11 @@ where
         .await
         .map_err(VmError::execute)?;
 
-    let io = ctx.io_mut();
-    let gen_hash: Block = io.expect_next().await?;
-
-    // TODO: Handle error
-    assert_eq!(gen_hash, auth_hash);
+    // let io = ctx.io_mut();
+    // let gen_hash: Block = io.expect_next().await?;
+    // if gen_hash != auth_hash {
+    //     Err(VmError::execute("Auth hash mismatch"))?;
+    // }
 
     let output_bits: Vec<_> = output_auth_bits.iter().map(|share| share.value).collect();
     let output_macs: Vec<_> = output_auth_bits.iter().map(|share| share.mac).collect();
@@ -466,6 +474,7 @@ where
     println!("eval setting output");
     lock.set_output(output, &output_labels, &output_bits, &output_macs, &output_keys, &masked_output_values)
         .map_err(VmError::memory)?;
+    lock.update_hash(auth_hash);
     println!("eval output set to {:?}", output);
     Ok(())
 }

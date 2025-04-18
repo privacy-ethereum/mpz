@@ -68,6 +68,14 @@ impl<S, R> AuthEvalStore<S, R>
         self.core.try_get_mask_keys(slice).map_err(Error::from)
     }
 
+    pub(crate) fn update_hash(&mut self, hash: Block) {
+        self.core.update_hash(hash);
+    }
+
+    pub(crate) fn get_hash(&self) -> Block {
+        self.core.get_hash()
+    }
+
     pub(crate) fn alloc_output(&mut self, len: usize) -> Slice {
         self.core.alloc_output(len)
     }

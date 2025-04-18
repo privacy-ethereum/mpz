@@ -44,6 +44,7 @@ pub struct AuthGenStore<S, R> {
     data_store: BitStore,
     view: AuthView,
     buffer_decode: Vec<DecodeOp<BitVec>>,
+    auth_hash: Block,
     // Whether the store is waiting for a flush.
     pending: bool,
     // Pending COT flush
@@ -64,6 +65,7 @@ impl<S, R> AuthGenStore<S, R> {
             data_store: BitStore::new(),
             view: AuthView::new_generator(),
             buffer_decode: Vec::new(),
+            auth_hash: Block::default(),
             pending: false,
             pending_flush: None,
         }
@@ -150,6 +152,16 @@ impl<S, R> AuthGenStore<S, R> {
     /// Returns masks if they are set.
     pub fn try_get_mask_keys(&self, slice: Slice) -> Result<&[Key]> {
         self.mask_store.try_get_keys(slice).map_err(Error::from)
+    }
+
+    /// Updates the auth hash.
+    pub fn update_hash(&mut self, hash: Block) {
+        self.auth_hash ^= hash;
+    }
+
+    /// Returns the auth hash.
+    pub fn get_hash(&self) -> Block {
+        self.auth_hash
     }
 
     /// Allocates uninitialized memory for output values.

@@ -350,8 +350,12 @@ where
             outputs.into_iter().collect::<Result<()>>()?;
         }
 
+        // Should I move this somewhere else? Maybe flush it whenever a decode operation is called?
+        let io = ctx.io_mut();
+        let hash = self.store.try_lock().unwrap().get_hash();
+        io.feed(hash).await?;
+        io.flush().await?;
         Ok(())
-
         // self.mark_executed()?;
     }
 }
@@ -406,9 +410,9 @@ async fn generate<S,R>(
         .await
         .map_err(VmError::execute)?;
 
-    let io = ctx.io_mut();
-    io.feed(auth_hash).await?;
-    io.flush().await?;
+    // let io = ctx.io_mut();
+    // io.feed(auth_hash).await?;
+    // io.flush().await?;
 
     let output_bits: Vec<_> = output_auth_bits.iter().map(|share| share.value).collect();
     let output_macs: Vec<_> = output_auth_bits.iter().map(|share| share.mac).collect();
@@ -419,6 +423,7 @@ async fn generate<S,R>(
     println!("gen setting output");
     lock.set_output(output, &output_labels, &output_bits, &output_macs, &output_keys)
         .map_err(VmError::memory)?;
+    lock.update_hash(auth_hash);
     println!("gen output set to {:?}", output);
     // if let Mode::Execute = mode {
         lock.mark_output_complete(output).map_err(VmError::memory)?;
