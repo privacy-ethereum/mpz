@@ -74,7 +74,7 @@ impl MPCOTReceiver<state::Initialized> {
                 let mut spcot_lengths = vec![];
                 for (item, bucket_length) in cuckoo.iter().zip(buckets.iter_buckets()) {
                     // pad to power of 2.
-                    let (log2_len, padded_len) = crate::utils::padded_log2_and_length(bucket_length);
+                    let (log2_len, padded_len) = padded_log2_and_length(bucket_length);
 
                     if let Some(x) = item {
                         let (_, pos) = buckets.get(x.value as usize)[x.hash_idx as usize];
