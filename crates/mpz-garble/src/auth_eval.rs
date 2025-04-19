@@ -11,6 +11,7 @@ use mpz_memory_core::correlated::{Delta, Mac};
 use serio::{SinkExt, stream::IoStreamExt};
 
 use mpz_core::Block;
+use mpz_cointoss::{cointoss_receiver, CointossError};
 
 #[tracing::instrument(fields(thread = %ctx.id()), skip_all)]
 pub async fn receive_garbled_circuit(
@@ -48,8 +49,11 @@ pub async fn evaluate(
     input_auth_bits: &[AuthBitShare],
     shares: &[AuthBitShare],
 ) -> Result<AuthEvalOutput, AuthEvaluatorError> {
-    // TODO: use cointossing to generate random seed
-    let seed = 0;
+    // use cointossing to generate random seed
+    let receiver_seed = vec![Block::random(&mut rand::rng())];
+    let receiver_output = cointoss_receiver(ctx, receiver_seed).await?;
+    let seed = u64::from_le_bytes(receiver_output[0].as_bytes()[..8].try_into().unwrap());
+    
     let bucket_size = (SSP as f64 / (circ.and_count() as f64).log2()).ceil() as usize;
     let mut ev = AuthEvalCore::new(seed, bucket_size);
     let io = ctx.io_mut();  
@@ -121,6 +125,8 @@ enum ErrorRepr {
     Io(#[from] std::io::Error),
     #[error("equality check failed")]
     EqualityCheckFailed,
+    #[error("cointoss error: {0}")]
+    Cointoss(#[from] CointossError),
 }
 
 impl From<std::io::Error> for AuthEvaluatorError {
@@ -132,5 +138,11 @@ impl From<std::io::Error> for AuthEvaluatorError {
 impl From<mpz_garble_core::AuthEvaluatorError> for AuthEvaluatorError {
     fn from(err: mpz_garble_core::AuthEvaluatorError) -> Self {
         AuthEvaluatorError(ErrorRepr::Core(err))
+    }
+}
+
+impl From<CointossError> for AuthEvaluatorError {
+    fn from(err: CointossError) -> Self {
+        AuthEvaluatorError(ErrorRepr::Cointoss(err))
     }
 }

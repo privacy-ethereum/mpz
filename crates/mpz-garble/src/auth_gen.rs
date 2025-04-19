@@ -7,6 +7,7 @@ use mpz_garble_core::{AuthGen as AuthGenCore, AuthGenOutput, SSP};
 use mpz_memory_core::correlated::{Delta, Key};
 use mpz_garble_core::fpre::AuthBitShare;
 use serio::{SinkExt, stream::IoStreamExt};
+use mpz_cointoss::{cointoss_sender, CointossError};
 
 /// Generate a garbled circuit, streaming the encrypted gates to the evaluator
 ///
@@ -23,8 +24,11 @@ pub async fn generate(
     input_auth_bits: &[AuthBitShare],
     shares: &[AuthBitShare],
 ) -> Result<AuthGenOutput, AuthGeneratorError> {
-    // TODO: use cointossing to generate random seed
-    let seed = 0;
+    // use cointossing to generate random seed
+    let sender_seed = vec![Block::random(&mut rand::rng())];
+    let sender_output = cointoss_sender(ctx, sender_seed).await?;
+    let seed = u64::from_le_bytes(sender_output[0].as_bytes()[..8].try_into().unwrap());
+    
     let bucket_size = (SSP as f64 / (circ.and_count() as f64).log2()).ceil() as usize;
     let mut gb = AuthGenCore::new(seed, bucket_size);
     let io = ctx.io_mut();
@@ -91,6 +95,8 @@ enum ErrorRepr {
     Io(#[from] std::io::Error),
     #[error("equality check failed")]
     EqualityCheckFailed,
+    #[error("cointoss error: {0}")]
+    Cointoss(#[from] CointossError),
 }
 
 impl From<std::io::Error> for AuthGeneratorError {
@@ -102,5 +108,11 @@ impl From<std::io::Error> for AuthGeneratorError {
 impl From<mpz_garble_core::AuthGeneratorError> for AuthGeneratorError {
     fn from(err: mpz_garble_core::AuthGeneratorError) -> Self {
         AuthGeneratorError(ErrorRepr::Core(err))
+    }
+}
+
+impl From<CointossError> for AuthGeneratorError {
+    fn from(err: CointossError) -> Self {
+        AuthGeneratorError(ErrorRepr::Cointoss(err))
     }
 }

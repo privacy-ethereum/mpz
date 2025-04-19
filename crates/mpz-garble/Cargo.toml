@@ -15,6 +15,7 @@ rayon = ["mpz-common/rayon", "mpz-garble-core/rayon"]
 mock = ["mpz-ot/ideal"]
 
 [dependencies]
+mpz-cointoss = { workspace = true }
 mpz-circuits.workspace = true
 mpz-common = { workspace = true, features = ["test-utils", "executor"] }
 mpz-memory-core = { workspace = true }
