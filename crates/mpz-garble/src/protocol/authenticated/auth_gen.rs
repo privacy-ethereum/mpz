@@ -27,6 +27,7 @@ struct PendingFlush {
     cot: Option<Box<dyn Output<COTReceiverOutput<Block>> + Send>>,
 }
 
+/// Preprocessed auth bits for each call.
 #[derive(Default)]
 struct Prep {
     cot: Option<PendingFlush>,
@@ -34,8 +35,7 @@ struct Prep {
     keys: Vec<Key>,
 }
 
-/// Semi-honest garbler.
-// #[derive(Debug)]
+/// Authenticated garbler.
 pub struct AuthGen<S,R> {
     store: Arc<Mutex<AuthGenStore<S,R>>>,
     call_stack: Vec<(Call, Slice, Prep)>,
@@ -186,29 +186,26 @@ where
         let bucket_size = (SSP as f64 / (call.circ().and_count() as f64).log2()).ceil() as usize;
         let num_and_shares = call.circ().and_count()*(3*bucket_size+1);
 
-        // need a better way to handle this error
-        cot_sender.alloc(num_and_shares).unwrap();
-        cot_receiver.alloc(num_and_shares).unwrap();
+        cot_sender.alloc(num_and_shares).map_err(VmError::call)?;
+        cot_receiver.alloc(num_and_shares).map_err(VmError::call)?;
 
         let keys: Vec<Key> = (0..num_and_shares).map(|_| self.prg.random()).collect::<Vec<_>>();
         // Queue COT, we don't need the output here.
         _ = cot_sender
             .queue_send_cot(Key::as_blocks(&keys))
-            // TODO: Handle error
-            .unwrap();
+            .map_err(VmError::call)?;
 
         let choices: Vec<bool> = (0..num_and_shares).map(|_| self.prg.random()).collect::<Vec<_>>();
         let cot = if num_and_shares > 0 {
             let output = cot_receiver
                 .queue_recv_cot(&choices)
-                .unwrap();
+                .map_err(VmError::call)?;
             Some(Box::new(output) as Box<dyn Output<COTReceiverOutput<Block>> + Send>)
         } else {
             None
         };
 
         self.call_stack.push((call, output, Prep { cot: Some(PendingFlush { cot }), choices, keys }));
-        println!("gen pushed to call stack");
         Ok(output)
     }
 }
@@ -225,7 +222,6 @@ where
     }
 
     async fn flush(&mut self, ctx: &mut Context) -> Result<()> {
-        println!("gen final flush");
         let mut store = self.store.try_lock().unwrap();
         if store.wants_flush() {
             store.flush(ctx).await.map_err(VmError::memory)?;
@@ -300,6 +296,7 @@ where
                 break;
             }
 
+            // For calls that aren't dependent on each other
             let mut call_data = Vec::new();
             for (call, slice, prep) in calls {
                 let and_shares = if let Prep { cot: Some(PendingFlush{cot}), choices, keys } = prep {
@@ -377,7 +374,6 @@ async fn generate<S,R>(
     S: COTSender<Block> + Flush + Send + 'static,
     R: COTReceiver<bool, Block> + Flush + Send + 'static,
 {
-    println!("gen executing");
     let (circ, inputs) = call.into_parts();
 
     let mut input_keys = Vec::with_capacity(circ.inputs().len());
@@ -386,12 +382,9 @@ async fn generate<S,R>(
         let lock = store.lock().await;
         for input in inputs {
             input_keys.extend_from_slice(lock.try_get_keys(input).map_err(VmError::memory)?);
-            println!("gen got input keys");
             let mask_bits = lock.try_get_mask_bits(input).map_err(VmError::memory)?;
-            println!("gen got input mask bits");
             let mask_macs = lock.try_get_mask_macs(input).map_err(VmError::memory)?;
             let mask_keys = lock.try_get_mask_keys(input).map_err(VmError::memory)?;
-            println!("gen got input mask keys");
             for ((value, mac), key) in mask_bits.iter().zip(mask_macs).zip(mask_keys) {
                 input_auth_bits.push(AuthBitShare {
                     value: *value,
@@ -410,25 +403,18 @@ async fn generate<S,R>(
         .await
         .map_err(VmError::execute)?;
 
-    // let io = ctx.io_mut();
-    // io.feed(auth_hash).await?;
-    // io.flush().await?;
-
     let output_bits: Vec<_> = output_auth_bits.iter().map(|share| share.value).collect();
     let output_macs: Vec<_> = output_auth_bits.iter().map(|share| share.mac).collect();
     let output_keys: Vec<_> = output_auth_bits.iter().map(|share| share.key).collect();
 
     let output_bits = BitVec::from_iter(output_bits);
     let mut lock = store.lock().await;
-    println!("gen setting output");
     lock.set_output(output, &output_labels, &output_bits, &output_macs, &output_keys)
         .map_err(VmError::memory)?;
     lock.update_hash(auth_hash);
-    println!("gen output set to {:?}", output);
     // if let Mode::Execute = mode {
         lock.mark_output_complete(output).map_err(VmError::memory)?;
     // }
-    println!("gen marked output complete");
 
     Ok(())
 }

@@ -32,7 +32,7 @@ pub async fn receive_garbled_circuit(
     Ok(AuthGarbledCircuit { gates })
 }
 
-/// Evaluate a garbled circuit, streaming the encrypted gates from the evaluator
+/// Evaluate an authenticated garbled circuit, streaming the encrypted gates from the evaluator
 /// in batches.
 ///
 /// # Blocking
@@ -49,7 +49,7 @@ pub async fn evaluate(
     input_auth_bits: &[AuthBitShare],
     shares: &[AuthBitShare],
 ) -> Result<AuthEvalOutput, AuthEvaluatorError> {
-    // use cointossing to generate random seed
+    // Use cointoss to agree on a random seed
     let receiver_seed = vec![Block::random(&mut rand::rng())];
     let receiver_output = cointoss_receiver(ctx, receiver_seed).await?;
     let seed = u64::from_le_bytes(receiver_output[0].as_bytes()[..8].try_into().unwrap());
@@ -58,6 +58,7 @@ pub async fn evaluate(
     let mut ev = AuthEvalCore::new(seed, bucket_size);
     let io = ctx.io_mut();  
 
+    // Function independent pre-processing: using auth bits to generate auth triples
     let (c, mut g) = ev.evaluate_pre_1(&circ, delta, input_auth_bits, shares).unwrap();
     io.feed(g.clone()).await?;
     io.flush().await?;
@@ -71,7 +72,7 @@ pub async fn evaluate(
     let data = ev.evaluate_pre_3(delta, &mut g, d, dr).unwrap();
     
 
-    // Secure equality check
+    // Secure equality check for authenticity of triples
     let digest = ev.check_equality(g).unwrap();
     let hash_recv: Block = io.expect_next().await?;
     io.feed(digest).await?;
@@ -89,8 +90,10 @@ pub async fn evaluate(
     let data_recv: Vec<bool> = io.expect_next().await?;
 
     ev.evaluate_pre_4(data, data_recv).unwrap();
+    
+    
+    // Function dependent pre-processing: generate auth bits for all wires in the circuit
     ev.evaluate_free(&circ).unwrap();
-
     let (px, py) = ev.evaluate_de(&circ).unwrap();
     io.feed((px,py)).await?;
     io.flush().await?;
@@ -106,13 +109,14 @@ pub async fn evaluate(
     let output = ev_consumer.finish()?;
     let masked_values = output.masked_values.clone();
 
+    // TODO: For preprocessing, send all the masked values at the end
     io.feed(masked_values).await?;
     io.flush().await?;
 
     Ok(output)
 }
 
-/// Garbled circuit evaluator error.
+/// Authenticated evaluator error.
 #[derive(Debug, thiserror::Error)]
 #[error(transparent)]
 pub(crate) struct AuthEvaluatorError(#[from] ErrorRepr);

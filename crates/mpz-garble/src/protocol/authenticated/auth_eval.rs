@@ -27,14 +27,14 @@ struct PendingFlush {
     cot: Option<Box<dyn Output<COTReceiverOutput<Block>> + Send>>,
 }
 
+/// Preprocessed auth bits for each call.
 #[derive(Default)]
 struct Prep {
     cot: Option<PendingFlush>,
     choices: Vec<bool>,
     keys: Vec<Key>,
 }
-/// Semi-honest evaluator.
-// #[derive(Debug)]
+/// Authenticated evaluator.
 pub struct AuthEval<S, R> {
     store: Arc<Mutex<AuthEvalStore<S, R>>>,
     call_stack: Vec<(Call, Slice, Prep)>,
@@ -226,22 +226,20 @@ where
         let bucket_size = (SSP as f64 / (call.circ().and_count() as f64).log2()).ceil() as usize;
         let num_and_shares = call.circ().and_count()*(3*bucket_size+1);
 
-        // need a better way to handle this error
-        cot_sender.alloc(num_and_shares).unwrap();
-        cot_receiver.alloc(num_and_shares).unwrap();
+        cot_sender.alloc(num_and_shares).map_err(VmError::call)?;
+        cot_receiver.alloc(num_and_shares).map_err(VmError::call)?;
 
         let keys: Vec<Key> = (0..num_and_shares).map(|_| self.prg.random()).collect::<Vec<_>>();
         // Queue COT, we don't need the output here.
         _ = cot_sender
             .queue_send_cot(Key::as_blocks(&keys))
-            // TODO: Handle error
-            .unwrap();
+            .map_err(VmError::call)?;
 
         let choices: Vec<bool> = (0..num_and_shares).map(|_| self.prg.random()).collect::<Vec<_>>();
         let cot = if num_and_shares > 0 {
             let output = cot_receiver
                 .queue_recv_cot(&choices)
-                .unwrap();
+                .map_err(VmError::call)?;
             Some(Box::new(output) as Box<dyn Output<COTReceiverOutput<Block>> + Send>)
         } else {
             None
@@ -347,7 +345,7 @@ where
                 break;
             }
 
-            // for circuits that can be executed in parallel
+            // For calls that aren't dependent on each other
             let mut call_data = Vec::new();
             for (call, slice, prep) in calls {
                 let and_shares = if let Prep { cot: Some(PendingFlush { cot }), choices, keys } = prep {
@@ -431,7 +429,6 @@ where
         let lock = store.lock().await;
         for input in inputs {
             input_macs.extend_from_slice(lock.try_get_macs(input).map_err(VmError::memory)?);
-            // TODO: This is a hack, we should not be converting to a bitvec
             let masked_values = lock.try_get_masked_values(input).map_err(VmError::memory)?.to_bitvec();
             input_masked_values.extend(masked_values);
             let mask_bits = lock.try_get_mask_bits(input).map_err(VmError::memory)?;
@@ -458,12 +455,6 @@ where
         .await
         .map_err(VmError::execute)?;
 
-    // let io = ctx.io_mut();
-    // let gen_hash: Block = io.expect_next().await?;
-    // if gen_hash != auth_hash {
-    //     Err(VmError::execute("Auth hash mismatch"))?;
-    // }
-
     let output_bits: Vec<_> = output_auth_bits.iter().map(|share| share.value).collect();
     let output_macs: Vec<_> = output_auth_bits.iter().map(|share| share.mac).collect();
     let output_keys: Vec<_> = output_auth_bits.iter().map(|share| share.key).collect();
@@ -471,10 +462,8 @@ where
     let output_bits = BitVec::from_iter(output_bits);
     let masked_output_values = BitVec::from_iter(masked_output_values);
     let mut lock = store.lock().await;
-    println!("eval setting output");
     lock.set_output(output, &output_labels, &output_bits, &output_macs, &output_keys, &masked_output_values)
         .map_err(VmError::memory)?;
     lock.update_hash(auth_hash);
-    println!("eval output set to {:?}", output);
     Ok(())
 }

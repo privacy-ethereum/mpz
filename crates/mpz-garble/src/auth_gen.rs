@@ -9,7 +9,7 @@ use mpz_garble_core::fpre::AuthBitShare;
 use serio::{SinkExt, stream::IoStreamExt};
 use mpz_cointoss::{cointoss_sender, CointossError};
 
-/// Generate a garbled circuit, streaming the encrypted gates to the evaluator
+/// Generate an authenticated garbled circuit, streaming the encrypted gates to the evaluator
 ///
 /// # Blocking
 ///
@@ -24,7 +24,7 @@ pub async fn generate(
     input_auth_bits: &[AuthBitShare],
     shares: &[AuthBitShare],
 ) -> Result<AuthGenOutput, AuthGeneratorError> {
-    // use cointossing to generate random seed
+    // Use cointoss to agree on a random seed
     let sender_seed = vec![Block::random(&mut rand::rng())];
     let sender_output = cointoss_sender(ctx, sender_seed).await?;
     let seed = u64::from_le_bytes(sender_output[0].as_bytes()[..8].try_into().unwrap());
@@ -33,6 +33,7 @@ pub async fn generate(
     let mut gb = AuthGenCore::new(seed, bucket_size);
     let io = ctx.io_mut();
 
+    // Function independent pre-processing: using auth bits to generate auth triples
     let (c, mut g) = gb.generate_pre_1(&circ, delta, input_auth_bits, shares).unwrap();
     io.feed(g.clone()).await?;
     io.flush().await?;
@@ -46,7 +47,7 @@ pub async fn generate(
     let data = gb.generate_pre_3(delta, &mut g, d, dr).unwrap();
     
     
-    // Secure equality check
+    // Secure equality check for authenticity of triples
     let (digest, salt, hash) = gb.check_equality(g).unwrap();
     io.feed(hash).await?;
     io.flush().await?;
@@ -65,8 +66,9 @@ pub async fn generate(
     let data_recv: Vec<bool> = io.expect_next().await?;
 
     gb.generate_pre_4(data, data_recv).unwrap();
+    
+    // Function dependent pre-processing: generate auth bits for all wires in the circuit
     gb.generate_free(&circ).unwrap();
-
     let (px, py) = gb.generate_de(&circ).unwrap();
     io.feed((px,py)).await?;
     io.flush().await?;
@@ -78,11 +80,12 @@ pub async fn generate(
     }
     io.flush().await?;
 
+    // TODO: For preprocessing, receive all the masked values at the end
     let masked_values: Vec<bool> = io.expect_next().await?;
     Ok(gb_iter.finish(masked_values)?)
 }
 
-/// Garbler error.
+/// Authenticated generator error.
 #[derive(Debug, thiserror::Error)]
 #[error(transparent)]
 pub(crate) struct AuthGeneratorError(#[from] ErrorRepr);

@@ -152,36 +152,28 @@ where
     }
 
     async fn flush(&mut self, ctx: &mut Context) -> Result<(), Self::Error> {
-        println!("eval started flush");
         while self.core.wants_flush() {
             let flush = self.core.send_flush()?;
             let mut cot_sender = self.core.acquire_cot_sender();
             let mut cot_receiver = self.core.acquire_cot_receiver();
-            println!("eval acquired cot");
             let (flush, (), ()) = ctx
             .try_join3(
                 async |ctx| {
                     ctx.io_mut().send(flush).await?;
-                    println!("eval sent flush");
                     ctx.io_mut().expect_next().await.map_err(Error::from)
                 },
                 async move |ctx| {
-                    println!("eval core flushing cot receiver");
                     let ret = cot_receiver.flush(ctx).await.map_err(Error::cot);
-                    println!("eval core flushed cot receiver");
                     ret
                 },
                 async move |ctx| {
-                    println!("eval core flushing cot sender");
                     let ret = cot_sender.flush(ctx).await.map_err(Error::cot);
-                    println!("eval core flushed cot sender");
                     ret
                 },
             )
             .await??;
 
             self.core.receive_flush(flush)?;
-            println!("eval ended flush");
         }
 
         Ok(())

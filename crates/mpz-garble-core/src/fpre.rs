@@ -1,6 +1,5 @@
-// fpre.rs
-
-// TODO: Move all of this code elsewhere, maybe into correlated.rs
+// TODO: Move all of this code elsewhere, maybe into correlated.rs. This code is not used in the auth garbling implementation right now.
+// Mostly helpful as a reference for understanding the function independent preprocessing of auth garbling.
 
 use std::ops::Add;
 use std::iter::zip;

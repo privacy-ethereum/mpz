@@ -149,36 +149,28 @@ where
 
     async fn flush(&mut self, ctx: &mut Context) -> Result<(), Self::Error> {
         while self.core.wants_flush() {
-            println!("gen started flush");
             let flush = self.core.send_flush()?;
             let mut cot_sender = self.core.acquire_cot_sender();
             let mut cot_receiver = self.core.acquire_cot_receiver();
 
-            println!("gen acquired cot");
             let (flush, (), ()) = ctx
             .try_join3(
                 async |ctx| {
                     ctx.io_mut().send(flush).await?;
-                    println!("gen sent flush");
                     ctx.io_mut().expect_next().await.map_err(Error::from)
                 },
                 async move |ctx| {
-                    println!("gen core flushing cot sender");
                     let ret = cot_sender.flush(ctx).await.map_err(Error::cot);
-                    println!("gen core flushed cot sender");
                     ret
                 },
                 async move |ctx| {
-                    println!("gen core flushing cot receiver");
                     let ret = cot_receiver.flush(ctx).await.map_err(Error::cot);
-                    println!("gen core flushed cot receiver");
                     ret
                 },
             )
             .await??;
 
             self.core.receive_flush(flush)?;
-            println!("gen ended flush");
         }
 
         Ok(())

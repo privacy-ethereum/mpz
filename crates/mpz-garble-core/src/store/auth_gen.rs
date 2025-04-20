@@ -442,14 +442,12 @@ where
         
         let masked_outputs = BitVec::from_iter(masked_outputs.iter());
 
-        dbg!("gen received and checked masked output labels for {:?}", view.decode_info.clone());
         i = 0;
         for range in view.decode_info.iter_ranges() {
             let slice = Slice::from_range_unchecked(range);
             self.masked_value_store.try_set(slice, &masked_outputs[i..i + slice.len()])?;
             i += slice.len();
         }
-        dbg!("gen set masked output values for {:?}", view.decode_info.clone());
 
         if let Some(ShareProof { bits, macs }) = decode_share_proof {
             self.mask_store.check_share(&view.eval_decode, &bits, &macs)?;
@@ -465,7 +463,6 @@ where
             }
         }
 
-        println!("Gen's complete flush");
         self.view.complete_flush(view);
         self.flush_decode()?;
         self.pending = false;

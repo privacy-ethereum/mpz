@@ -311,8 +311,6 @@ where
             labels.extend(self.mac_store.try_get(slice)?);
         }
 
-        dbg!("eval sent masked output labels for {:?}", view.decode_info.clone());
-
         // Prove Eval's share of Eval's input wires for decoding.
         let decode_share_proof = if !view.eval_decode.is_empty() {
             let (bits, macs) = self.mask_store.prove_share(&view.eval_decode)?;
@@ -430,7 +428,6 @@ where
                 i += slice.len();
             }
         }
-        println!("Eval's complete flush");
         self.view.complete_flush(view);
         self.flush_decode()?;
         self.pending = false;
