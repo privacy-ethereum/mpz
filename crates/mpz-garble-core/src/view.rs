@@ -532,8 +532,6 @@ impl AuthView {
         
         // Eval sends labels to gen to authenticate masked outputs, flush handles sending decode (bit,mac) afterwards 
         self.flush.decode_info |= range.intersection(&self.decode.all) - &self.decode.decode_info;
-        dbg!("added this decode info to view: {:?}", self.flush.decode_info.clone());
-        dbg!("wants flush: {:?}", self.wants_flush());
 
         Ok(())
     }
@@ -621,17 +619,6 @@ impl AuthView {
         self.input.complete |= &view.gen_reveal;
         self.input.complete |= &view.eval_reveal;
         self.input.complete |= &view.public_decode;
-        
-        println!("public: {:?}", &view.public);
-        println!("gen_masks: {:?}", &view.gen_masks);
-        println!("eval_masks: {:?}", &view.eval_masks);
-        println!("public_decode: {:?}", &view.public_decode);
-        println!("gen_reveal: {:?}", &view.gen_reveal);
-        println!("eval_reveal: {:?}", &view.eval_reveal);
-        println!("labels: {:?}", &view.labels);
-        println!("decode_info: {:?}", &view.decode_info);
-        println!("gen_decode: {:?}", &view.gen_decode);
-        println!("eval_decode: {:?}", &view.eval_decode);
 
         self.decode.decode_info |= view.decode_info.clone();
         self.decode.complete |= view.gen_decode.clone() | view.eval_decode.clone();
