@@ -140,6 +140,11 @@ impl Receiver<state::Setup> {
                 payload.len(),
             ));
         }
+        // Check that all queued transfers can be processed.
+        let total_queued = self.queue.iter().map(|q| q.count).sum();
+        if total_queued > payload.len() {
+            return Err(ReceiverError::PayloadTooSmall(total_queued, payload.len()));
+        }
 
         let mut msgs =
             decryption_keys
