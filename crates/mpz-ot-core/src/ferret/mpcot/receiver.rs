@@ -256,7 +256,7 @@ use state::{Extension, Initialized};
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rand::{rngs::StdRng, Rng, SeedableRng};
+    use rand::{Rng, SeedableRng, rngs::StdRng};
 
     #[test]
     fn test_indices_not_regular() {
@@ -265,14 +265,14 @@ mod tests {
         let interval_len = 8;
         let idx_count = 4;
         let mut idxs: Vec<_> = (0..idx_count)
-            .map(|i| rng.gen_range(interval_len * i..interval_len * (i + 1)))
+            .map(|i| rng.random_range(interval_len * i..interval_len * (i + 1)))
             .collect();
 
         //Corrupt an index.
         idxs[idx_count - 1] = idxs[idx_count - 2];
 
         assert!(matches!(
-            MPCOTReceiver::new(rng.gen(), LpnType::Regular)
+            MPCOTReceiver::new(rng.random(), LpnType::Regular)
                 .start_extend(&idxs, interval_len * idx_count)
                 .unwrap_err(),
             MPCOTReceiverError(ErrorRepr::NotRegular)

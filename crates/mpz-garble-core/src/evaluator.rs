@@ -290,7 +290,7 @@ pub fn evaluate_garbled_circuits(
             let mut ev = Evaluator::default();
             let mut outputs = Vec::with_capacity(circs.len());
             for (circ, inputs, garbled_circuit) in circs {
-                let mut consumer = ev.evaluate(&circ, inputs)?;
+                let mut consumer = ev.evaluate(&circ, &inputs)?;
                 for gate in garbled_circuit.gates {
                     consumer.next(gate);
                 }

@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::{components::GateType, Circuit, CircuitBuilder};
+use crate::{Circuit, CircuitBuilder, components::GateType};
 use regex::{Captures, Regex};
 
 static HEADER_PATTERN: &str = r"(?m)^(?P<gate_count>\d+)\s+(?P<wire_count>\d+)\s*\n(?P<input_line>\d+(?:\s+\d+)*)\s*\n(?P<output_line>\d+(?:\s+\d+)*)\s*$";
@@ -197,8 +197,8 @@ mod tests {
     #[ignore = "expensive"]
     fn test_parse_aes() {
         use aes::{
-            cipher::{BlockEncrypt, KeyInit},
             Aes128,
+            cipher::{BlockEncrypt, KeyInit},
         };
 
         let circ = Circuit::parse("circuits/bristol/aes_128_reverse.txt").unwrap();
