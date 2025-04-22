@@ -219,15 +219,8 @@ where
     }
 
     fn wants_preprocess(&self) -> bool {
-        let mut idx_outputs = RangeSet::default();
-        self.call_stack.iter().any(|(call, output)| {
-            let ready = call
-                .inputs()
-                .iter()
-                .all(|input| input.to_range().is_disjoint(&idx_outputs));
-            idx_outputs |= output.to_range();
-            ready
-        })
+        // The first call in the call stack is always ready for preprocessing.
+        !self.call_stack.is_empty()
     }
 
     async fn preprocess(&mut self, ctx: &mut Context) -> Result<()> {
