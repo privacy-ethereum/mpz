@@ -269,6 +269,12 @@ impl fmt::Display for Slice {
     }
 }
 
+impl ToRaw for Slice {
+    fn to_raw(&self) -> Slice {
+        *self
+    }
+}
+
 impl From<Slice> for Range {
     fn from(slice: Slice) -> Self {
         slice.to_range()
