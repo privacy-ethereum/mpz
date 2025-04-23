@@ -1,25 +1,25 @@
 [workspace]
 members = [
-    "crates/mpz-core",
-    "crates/mpz-common",
-    "crates/mpz-fields",
-    "crates/mpz-circuits",
-    "crates/mpz-cointoss",
-    "crates/mpz-cointoss-core",
-    "crates/mpz-ot",
-    "crates/mpz-ot-core",
-    "crates/mpz-garble",
-    "crates/mpz-garble-core",
-    "crates/mpz-share-conversion-core",
-    "crates/mpz-share-conversion",
+    "crates/core",
+    "crates/common",
+    "crates/fields",
+    "crates/circuits",
+    "crates/cointoss",
+    "crates/cointoss-core",
+    "crates/ot",
+    "crates/ot-core",
+    "crates/garble",
+    "crates/garble-core",
+    "crates/share-conversion-core",
+    "crates/share-conversion",
     "crates/matrix-transpose",
     "crates/clmul",
-    "crates/mpz-ole-core",
-    "crates/mpz-ole",
-    "crates/mpz-memory-core",
-    "crates/mpz-vm-core",
-    "crates/mpz-zk-core",
-    "crates/mpz-zk",
+    "crates/ole-core",
+    "crates/ole",
+    "crates/memory-core",
+    "crates/vm-core",
+    "crates/zk-core",
+    "crates/zk",
 ]
 resolver = "2"
 
@@ -37,23 +37,23 @@ unexpected_cfgs = { level = "warn", check-cfg = [
 # enum_glob_use = "deny"
 
 [workspace.dependencies]
-mpz-core = { path = "crates/mpz-core" }
-mpz-common = { path = "crates/mpz-common" }
-mpz-fields = { path = "crates/mpz-fields" }
-mpz-circuits = { path = "crates/mpz-circuits" }
-mpz-cointoss = { path = "crates/mpz-cointoss" }
-mpz-cointoss-core = { path = "crates/mpz-cointoss-core" }
-mpz-ot = { path = "crates/mpz-ot" }
-mpz-ot-core = { path = "crates/mpz-ot-core" }
-mpz-garble = { path = "crates/mpz-garble" }
-mpz-garble-core = { path = "crates/mpz-garble-core" }
-mpz-share-conversion-core = { path = "crates/mpz-share-conversion-core" }
-mpz-ole = { path = "crates/mpz-ole" }
-mpz-ole-core = { path = "crates/mpz-ole-core" }
-mpz-memory-core = { path = "crates/mpz-memory-core" }
-mpz-vm-core = { path = "crates/mpz-vm-core" }
-mpz-zk-core = { path = "crates/mpz-zk-core" }
-mpz-zk = { path = "crates/mpz-zk" }
+mpz-core = { path = "crates/core" }
+mpz-common = { path = "crates/common" }
+mpz-fields = { path = "crates/fields" }
+mpz-circuits = { path = "crates/circuits" }
+mpz-cointoss = { path = "crates/cointoss" }
+mpz-cointoss-core = { path = "crates/cointoss-core" }
+mpz-ot = { path = "crates/ot" }
+mpz-ot-core = { path = "crates/ot-core" }
+mpz-garble = { path = "crates/garble" }
+mpz-garble-core = { path = "crates/garble-core" }
+mpz-share-conversion-core = { path = "crates/share-conversion-core" }
+mpz-ole = { path = "crates/ole" }
+mpz-ole-core = { path = "crates/ole-core" }
+mpz-memory-core = { path = "crates/memory-core" }
+mpz-vm-core = { path = "crates/vm-core" }
+mpz-zk-core = { path = "crates/zk-core" }
+mpz-zk = { path = "crates/zk" }
 clmul = { path = "crates/clmul" }
 matrix-transpose = { path = "crates/matrix-transpose" }
 
