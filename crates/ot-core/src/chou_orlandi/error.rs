@@ -24,6 +24,8 @@ pub enum ReceiverError {
     IdMismatch(TransferId, TransferId),
     #[error("count mismatch: receiver expected {0} but sender sent {1}")]
     CountMismatch(usize, usize),
+    #[error("payload too small: receiver expected at least {0} but sender sent {1}")]
+    PayloadTooSmall(usize, usize),
 }
 
 /// Errors that can occur during verification of the receiver's choices.
