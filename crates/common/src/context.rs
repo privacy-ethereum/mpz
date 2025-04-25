@@ -48,7 +48,12 @@ impl Context {
         }
     }
 
-    pub(crate) fn from_io(io: Io) -> Self {
+    /// Creates a new single-threaded context from an I/O channel.
+    ///
+    /// # Arguments
+    ///
+    /// * `io` - The I/O channel used by the context.
+    pub fn from_io(io: Io) -> Self {
         Self {
             id: ThreadId::default(),
             io,
