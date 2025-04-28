@@ -47,7 +47,7 @@ struct Block {
 }
 
 /// SHA-256 hasher.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Sha256 {
     state: Option<Array<U32, 8>>,
     blocks: Vec<Block>,
