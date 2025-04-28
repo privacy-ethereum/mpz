@@ -1,26 +1,25 @@
 [workspace]
 members = [
-    "crates/mpz-core",
-    "crates/mpz-common",
-    "crates/mpz-fields",
-    "crates/mpz-circuits",
-    "crates/mpz-circuits-macros",
-    "crates/mpz-cointoss",
-    "crates/mpz-cointoss-core",
-    "crates/mpz-ot",
-    "crates/mpz-ot-core",
-    "crates/mpz-garble",
-    "crates/mpz-garble-core",
-    "crates/mpz-share-conversion-core",
-    "crates/mpz-share-conversion",
+    "crates/core",
+    "crates/common",
+    "crates/fields",
+    "crates/circuits",
+    "crates/cointoss",
+    "crates/cointoss-core",
+    "crates/ot",
+    "crates/ot-core",
+    "crates/garble",
+    "crates/garble-core",
+    "crates/share-conversion-core",
+    "crates/share-conversion",
     "crates/matrix-transpose",
     "crates/clmul",
-    "crates/mpz-ole-core",
-    "crates/mpz-ole",
-    "crates/mpz-memory-core",
-    "crates/mpz-vm-core",
-    "crates/mpz-zk-core",
-    "crates/mpz-zk",
+    "crates/ole-core",
+    "crates/ole",
+    "crates/memory-core",
+    "crates/vm-core",
+    "crates/zk-core",
+    "crates/zk",
 ]
 resolver = "2"
 
@@ -38,33 +37,34 @@ unexpected_cfgs = { level = "warn", check-cfg = [
 # enum_glob_use = "deny"
 
 [workspace.dependencies]
-mpz-core = { path = "crates/mpz-core" }
-mpz-common = { path = "crates/mpz-common" }
-mpz-fields = { path = "crates/mpz-fields" }
-mpz-circuits = { path = "crates/mpz-circuits" }
-mpz-circuits-macros = { path = "crates/mpz-circuits-macros" }
-mpz-cointoss = { path = "crates/mpz-cointoss" }
-mpz-cointoss-core = { path = "crates/mpz-cointoss-core" }
-mpz-ot = { path = "crates/mpz-ot" }
-mpz-ot-core = { path = "crates/mpz-ot-core" }
-mpz-garble = { path = "crates/mpz-garble" }
-mpz-garble-core = { path = "crates/mpz-garble-core" }
-mpz-share-conversion-core = { path = "crates/mpz-share-conversion-core" }
-mpz-ole = { path = "crates/mpz-ole" }
-mpz-ole-core = { path = "crates/mpz-ole-core" }
-mpz-memory-core = { path = "crates/mpz-memory-core" }
-mpz-vm-core = { path = "crates/mpz-vm-core" }
-mpz-zk-core = { path = "crates/mpz-zk-core" }
-mpz-zk = { path = "crates/mpz-zk" }
+mpz-core = { path = "crates/core" }
+mpz-common = { path = "crates/common" }
+mpz-fields = { path = "crates/fields" }
+mpz-circuits = { path = "crates/circuits" }
+mpz-cointoss = { path = "crates/cointoss" }
+mpz-cointoss-core = { path = "crates/cointoss-core" }
+mpz-ot = { path = "crates/ot" }
+mpz-ot-core = { path = "crates/ot-core" }
+mpz-garble = { path = "crates/garble" }
+mpz-garble-core = { path = "crates/garble-core" }
+mpz-share-conversion-core = { path = "crates/share-conversion-core" }
+mpz-ole = { path = "crates/ole" }
+mpz-ole-core = { path = "crates/ole-core" }
+mpz-memory-core = { path = "crates/memory-core" }
+mpz-vm-core = { path = "crates/vm-core" }
+mpz-zk-core = { path = "crates/zk-core" }
+mpz-zk = { path = "crates/zk" }
 clmul = { path = "crates/clmul" }
 matrix-transpose = { path = "crates/matrix-transpose" }
 
 tlsn-utils = { git = "https://github.com/tlsnotary/tlsn-utils", rev = "425614e" }
 
 # rand
-rand_chacha = "0.3"
-rand = "0.8"
-rand_core = "0.6"
+rand_chacha = "0.9"
+rand = "0.9"
+rand_core = "0.9"
+rand_core_06 = { package = "rand_core", version = "0.6" }
+rand_08 = { package = "rand", version = "0.8" }
 
 # crypto
 cipher = "0.4"
@@ -73,7 +73,7 @@ blake3 = "1.3.3"
 aes = "0.8"
 ctr = "0.9"
 digest = "0.10"
-curve25519-dalek = "4.0.0-rc.0"
+curve25519-dalek = "4.1"
 elliptic-curve = "0.11"
 merlin = "3"
 p256 = "0.10"
@@ -88,7 +88,6 @@ futures = "0.3"
 futures-util = "0.3"
 tokio = { version = "1.23", default-features = false }
 tokio-util = "0.7"
-scoped-futures = "0.1.3"
 pollster = "0.3"
 pin-project-lite = "0.2"
 
@@ -135,7 +134,7 @@ hybrid-array = "0.2.0-rc.8"
 typenum = "1"
 # DO NOT BUMP, SEE https://github.com/privacy-scaling-explorations/mpz/issues/61
 generic-array = "0.14"
-itybity = "0.2"
+itybity = "0.3"
 enum-try-as-inner = "0.1.0"
 bitvec = "1.0"
 hashbrown = "0.14.5"

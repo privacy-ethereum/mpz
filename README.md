@@ -18,14 +18,14 @@ This project is currently under active development and should not be used in pro
 
 ## Crates
 
-  - [`mpz-core`](./crates/mpz-core/) - Core cryptographic primitives.
-  - [`mpz-common`](./crates/mpz-common) - Common functionalities needed for modeling protocol execution, I/O, and multi-threading.
-  - [`mpz-fields`](./crates/mpz-fields/) - Finite-fields.
-  - [`mpz-circuits`](./crates/mpz-circuits/) ([`macros`](./crates/mpz-circuits-macros/)) - Boolean circuit DSL.
-  - [`mpz-ot`](./crates/mpz-ot) ([`core`](./crates/mpz-ot-core/)) - Oblivious transfer protocols.
-  - [`mpz-garble`](./crates/mpz-garble/) ([`core`](./crates/mpz-garble-core/)) - Boolean garbled circuit protocols.
-  - [`mpz-share-conversion`](./crates/mpz-share-conversion/) ([`core`](./crates/mpz-share-conversion-core/)) - Multiplicative-to-Additive and Additive-to-Multiplicative share conversion protocols for a variety of fields.
-  - [`mpz-cointoss`](./crates/mpz-cointoss/) ([`core`](./crates/mpz-cointoss-core/)) - 2-party cointoss protocol.
+  - [`core`](./crates/core/) - Core cryptographic primitives.
+  - [`common`](./crates/common) - Common functionalities needed for modeling protocol execution, I/O, and multi-threading.
+  - [`fields`](./crates/fields/) - Finite-fields.
+  - [`circuits`](./crates/circuits/) ([`macros`](./crates/circuits-macros/)) - Boolean circuit DSL.
+  - [`ot`](./crates/ot) ([`core`](./crates/ot-core/)) - Oblivious transfer protocols.
+  - [`garble`](./crates/garble/) ([`core`](./crates/garble-core/)) - Boolean garbled circuit protocols.
+  - [`share-conversion`](./crates/share-conversion/) ([`core`](./crates/share-conversion-core/)) - Multiplicative-to-Additive and Additive-to-Multiplicative share conversion protocols for a variety of fields.
+  - [`cointoss`](./crates/cointoss/) ([`core`](./crates/cointoss-core/)) - 2-party cointoss protocol.
   - [`matrix-transpose`](./crates/matrix-transpose/) - Bit-wise matrix transposition.
   - [`clmul`](./crates/clmul/) - Carry-less multiplication.
 

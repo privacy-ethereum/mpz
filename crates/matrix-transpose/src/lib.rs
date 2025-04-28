@@ -1,6 +1,5 @@
 #![cfg_attr(
     feature = "simd-transpose",
-    feature(slice_split_at_unchecked),
     feature(portable_simd),
     feature(stmt_expr_attributes),
     feature(slice_as_chunks)
@@ -76,14 +75,14 @@ pub enum TransposeError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rand::{distributions::Standard, prelude::*};
+    use rand::{distr::StandardUniform, prelude::*};
 
     fn random_vec<T>(elements: usize) -> Vec<T>
     where
-        Standard: Distribution<T>,
+        StandardUniform: Distribution<T>,
     {
-        let mut rng = thread_rng();
-        (0..elements).map(|_| rng.gen::<T>()).collect()
+        let mut rng = rand::rng();
+        (0..elements).map(|_| rng.random::<T>()).collect()
     }
 
     fn transpose_naive(data: &[u8], row_width: usize) -> Vec<u8> {
