@@ -72,7 +72,7 @@ impl fmt::Display for ThreadId {
             if i > 0 {
                 write!(f, "/")?;
             }
-            write!(f, "{}", byte)?;
+            write!(f, "{byte}")?;
         }
 
         Ok(())
