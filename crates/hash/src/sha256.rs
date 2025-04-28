@@ -57,20 +57,39 @@ pub struct Sha256 {
 impl Sha256 {
     /// Creates a new SHA-256 hasher.
     pub fn new() -> Self {
-        Self {
-            state: None,
-            blocks: Vec::new(),
-            processed: 0,
-        }
+        Self::default()
+    }
+
+    /// Creates a new SHA-256 hasher initialized with the IV.
+    pub fn new_with_init(vm: &mut dyn Vm<Binary>) -> Result<Self, Sha256Error> {
+        let mut hasher = Self::new();
+        hasher.get_or_init_state(vm)?;
+
+        Ok(hasher)
     }
 
     /// Creates a new SHA-256 hasher with the provided state.
+    ///
+    /// # Arguments
+    ///
+    /// * `state` - The state of the hasher.
+    /// * `processed` - The number of bits compressed in the state.
     pub fn new_from_state(state: Array<U32, 8>, processed: usize) -> Self {
         Self {
             state: Some(state),
             blocks: Vec::new(),
             processed,
         }
+    }
+
+    /// Returns `true` if the hasher has no data in the internal buffer.
+    pub fn is_empty(&self) -> bool {
+        self.blocks.is_empty()
+    }
+
+    /// Returns the number of bits in the internal buffer.
+    pub fn buffered(&self) -> usize {
+        self.blocks.iter().map(|b| b.len).sum::<usize>()
     }
 
     /// Returns the hash state and the length of data compressed so far.
@@ -151,7 +170,9 @@ impl Sha256 {
     }
 
     /// Finalizes the hash.
-    pub fn finalize(mut self, vm: &mut dyn Vm<Binary>) -> Result<Array<U8, 32>, Sha256Error> {
+    pub fn finalize(&self, vm: &mut dyn Vm<Binary>) -> Result<Array<U8, 32>, Sha256Error> {
+        let mut hasher = self.clone();
+
         // begin with the original message of length L bits
         // append a single '1' bit
         // append K '0' bits, where K is the minimum number >= 0 such that (L + 1 + K +
@@ -180,12 +201,12 @@ impl Sha256 {
         vm.assign_raw(padding, padding_data)?;
         vm.commit_raw(padding)?;
 
-        self.update_slice(padding);
-        self.compress(vm)?;
+        hasher.update_slice(padding);
+        hasher.compress(vm)?;
 
-        debug_assert!(self.blocks.is_empty());
+        debug_assert!(hasher.blocks.is_empty());
 
-        let state = self.get_or_init_state(vm)?;
+        let state = hasher.get_or_init_state(vm)?;
         let call = Call::builder(SERIALIZE_STATE.clone())
             .arg(state)
             .build()
