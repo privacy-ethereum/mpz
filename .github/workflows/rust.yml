@@ -66,21 +66,19 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      matrix:
-        target: [x86_64-unknown-linux-gnu, aarch64-unknown-linux-gnu]
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Rust nightly with Miri
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: nightly
-          components: miri
+      - name: Install Miri
+        run: |
+          rustup toolchain install nightly --component miri
+          rustup override set nightly
+          cargo miri setup
 
       - uses: Swatinem/rust-cache@v2.7.7
 
-      - name: Test with Miri on ${{ matrix.target }}
-        run: |
-          cargo version --verbose
-          cargo miri setup
-          cargo miri test -p clmul -p matrix-transpose --target ${{ matrix.target }}
+      - name: Test with Miri on x86_64
+        run: cargo miri test -p clmul -p matrix-transpose --target x86_64-unknown-linux-gnu
+      
+      - name: Test with Miri on aarch64
+        run: cargo miri test -p clmul -p matrix-transpose --target aarch64-unknown-linux-gnu
