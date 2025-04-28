@@ -59,32 +59,30 @@ impl ClmulX86 {
     #[inline]
     #[target_feature(enable = "pclmulqdq")]
     unsafe fn clmul_unsafe(self, x: Self) -> (ClmulX86, ClmulX86) {
-        unsafe {
-            let h = self.0;
-            let y = x.0;
+        let h = self.0;
+        let y = x.0;
 
-            let h0 = h;
-            let h1 = _mm_shuffle_epi32(h, 0x0E);
-            let h2 = _mm_xor_si128(h0, h1);
-            let y0 = y;
+        let h0 = h;
+        let h1 = _mm_shuffle_epi32(h, 0x0E);
+        let h2 = _mm_xor_si128(h0, h1);
+        let y0 = y;
 
-            // Multiply values partitioned to 64-bit parts
-            let y1 = _mm_shuffle_epi32(y, 0x0E);
-            let y2 = _mm_xor_si128(y0, y1);
-            let t0 = _mm_clmulepi64_si128(y0, h0, 0x00);
-            let t1 = _mm_clmulepi64_si128(y, h, 0x11);
-            let t2 = _mm_clmulepi64_si128(y2, h2, 0x00);
-            let t2 = _mm_xor_si128(t2, _mm_xor_si128(t0, t1));
-            let v0 = t0;
-            let v1 = _mm_xor_si128(_mm_shuffle_epi32(t0, 0x0E), t2);
-            let v2 = _mm_xor_si128(t1, _mm_shuffle_epi32(t2, 0x0E));
-            let v3 = _mm_shuffle_epi32(t1, 0x0E);
+        // Multiply values partitioned to 64-bit parts
+        let y1 = _mm_shuffle_epi32(y, 0x0E);
+        let y2 = _mm_xor_si128(y0, y1);
+        let t0 = _mm_clmulepi64_si128(y0, h0, 0x00);
+        let t1 = _mm_clmulepi64_si128(y, h, 0x11);
+        let t2 = _mm_clmulepi64_si128(y2, h2, 0x00);
+        let t2 = _mm_xor_si128(t2, _mm_xor_si128(t0, t1));
+        let v0 = t0;
+        let v1 = _mm_xor_si128(_mm_shuffle_epi32(t0, 0x0E), t2);
+        let v2 = _mm_xor_si128(t1, _mm_shuffle_epi32(t2, 0x0E));
+        let v3 = _mm_shuffle_epi32(t1, 0x0E);
 
-            (
-                ClmulX86(_mm_unpacklo_epi64(v0, v1)),
-                ClmulX86(_mm_unpacklo_epi64(v2, v3)),
-            )
-        }
+        (
+            ClmulX86(_mm_unpacklo_epi64(v0, v1)),
+            ClmulX86(_mm_unpacklo_epi64(v2, v3)),
+        )
     }
 
     #[inline(always)]
