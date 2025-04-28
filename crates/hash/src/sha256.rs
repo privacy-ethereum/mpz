@@ -40,14 +40,14 @@ const IV: [u32; 8] = [
 /// Block size in bits.
 const BLOCK_SIZE: usize = 512;
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 struct Block {
     data: Vec<Slice>,
     len: usize,
 }
 
 /// SHA-256 hasher.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct Sha256 {
     state: Option<Array<U32, 8>>,
     blocks: Vec<Block>,
