@@ -73,7 +73,7 @@ impl Sha256 {
     /// # Arguments
     ///
     /// * `state` - The state of the hasher.
-    /// * `processed` - The number of bits compressed in the state.
+    /// * `processed` - The number of blocks compressed in the state.
     pub fn new_from_state(state: Array<U32, 8>, processed: usize) -> Self {
         Self {
             state: Some(state),
@@ -92,7 +92,7 @@ impl Sha256 {
         self.blocks.iter().map(|b| b.len).sum::<usize>()
     }
 
-    /// Returns the hash state and the length of data compressed so far.
+    /// Returns the hash state and the number of blocks compressed so far.
     pub fn state(&self) -> Option<(Array<U32, 8>, usize)> {
         self.state.map(|state| (state, self.processed))
     }
@@ -156,9 +156,9 @@ impl Sha256 {
                 .expect("compress circuit should have 512 bit input");
 
             state = vm.call(call)?;
-            self.processed += BLOCK_SIZE;
         }
 
+        self.processed += pos;
         self.state = Some(state);
 
         debug_assert!(
@@ -181,7 +181,7 @@ impl Sha256 {
         // such that the bits in the message are: <original message of length L> 1 <K
         // zeros> <L as 64 bit integer> , (the number of bits will be a multiple of 512)
 
-        let len = self.processed + self.blocks.iter().map(|b| b.len).sum::<usize>();
+        let len = (self.processed * BLOCK_SIZE) + self.blocks.iter().map(|b| b.len).sum::<usize>();
         let total_len = (len + 1 + 64).next_multiple_of(BLOCK_SIZE);
         let padding_len = total_len - len;
 
