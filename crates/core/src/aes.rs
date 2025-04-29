@@ -1,7 +1,7 @@
 //! Fixed-key AES cipher
 
 use aes::Aes128Enc;
-use cipher::{BlockEncrypt, KeyInit};
+use cipher::{BlockCipherEncrypt, KeyInit};
 use once_cell::sync::Lazy;
 
 use crate::Block;
@@ -38,10 +38,10 @@ impl FixedKeyAes {
     #[inline]
     pub fn tccr(&self, tweak: Block, block: Block) -> Block {
         let mut h1 = block;
-        self.aes.encrypt_block(h1.as_generic_array_mut());
+        self.aes.encrypt_block(h1.as_array_mut());
 
         let mut h2 = h1 ^ tweak;
-        self.aes.encrypt_block(h2.as_generic_array_mut());
+        self.aes.encrypt_block(h2.as_array_mut());
 
         h1 ^ h2
     }
@@ -60,15 +60,13 @@ impl FixedKeyAes {
     #[inline]
     pub fn tccr_many<const N: usize>(&self, tweaks: &[Block; N], blocks: &mut [Block; N]) {
         // Store π(x) in `blocks`
-        self.aes
-            .encrypt_blocks(Block::as_generic_array_mut_slice(blocks));
+        self.aes.encrypt_blocks(Block::as_array_mut_slice(blocks));
 
         // Write π(x) ⊕ i into `buf`
         let mut buf: [Block; N] = std::array::from_fn(|i| blocks[i] ^ tweaks[i]);
 
         // Write π(π(x) ⊕ i) in `buf`
-        self.aes
-            .encrypt_blocks(Block::as_generic_array_mut_slice(&mut buf));
+        self.aes.encrypt_blocks(Block::as_array_mut_slice(&mut buf));
 
         // Write π(π(x) ⊕ i) ⊕ π(x) into `blocks`
         blocks
@@ -84,7 +82,7 @@ impl FixedKeyAes {
     #[inline]
     pub fn cr(&self, block: Block) -> Block {
         let mut h = block;
-        self.aes.encrypt_block(h.as_generic_array_mut());
+        self.aes.encrypt_block(h.as_array_mut());
         h ^ block
     }
 
@@ -100,8 +98,7 @@ impl FixedKeyAes {
     pub fn cr_many<const N: usize>(&self, blocks: &mut [Block; N]) {
         let mut buf = *blocks;
 
-        self.aes
-            .encrypt_blocks(Block::as_generic_array_mut_slice(&mut buf));
+        self.aes.encrypt_blocks(Block::as_array_mut_slice(&mut buf));
 
         blocks
             .iter_mut()
@@ -155,27 +152,26 @@ impl AesEncryptor {
     /// Encrypt a block.
     #[inline(always)]
     pub fn encrypt_block(&self, mut blk: Block) -> Block {
-        self.0.encrypt_block(blk.as_generic_array_mut());
+        self.0.encrypt_block(blk.as_array_mut());
         blk
     }
 
     /// Encrypt a block in-place.
     pub fn encrypt_block_inplace(&self, blk: &mut Block) {
-        self.0.encrypt_block(blk.as_generic_array_mut());
+        self.0.encrypt_block(blk.as_array_mut());
     }
 
     /// Encrypt many blocks in-place.
     #[inline(always)]
     pub fn encrypt_many_blocks<const N: usize>(&self, blks: &mut [Block; N]) {
         self.0
-            .encrypt_blocks(Block::as_generic_array_mut_slice(blks.as_mut_slice()));
+            .encrypt_blocks(Block::as_array_mut_slice(blks.as_mut_slice()));
     }
 
     /// Encrypt slice of blocks in-place.
     #[inline]
     pub fn encrypt_blocks(&self, blks: &mut [Block]) {
-        self.0
-            .encrypt_blocks(Block::as_generic_array_mut_slice(blks));
+        self.0.encrypt_blocks(Block::as_array_mut_slice(blks));
     }
 
     /// Encrypt many blocks with many keys.

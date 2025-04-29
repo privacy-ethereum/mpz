@@ -40,7 +40,7 @@ pub(crate) const DEFAULT_BATCH_SIZE: usize = MAX_BATCH_SIZE / BYTES_PER_GATE;
 mod tests {
     use aes::{
         Aes128,
-        cipher::{BlockEncrypt, KeyInit},
+        cipher::{BlockCipherEncrypt, KeyInit},
     };
     use itybity::{FromBitIterator, IntoBitIterator, ToBits};
     use mpz_circuits::circuits::{AES128, xor};

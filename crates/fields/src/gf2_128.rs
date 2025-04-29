@@ -1,13 +1,15 @@
 //! This module implements the extension field GF(2^128).
 
-use hybrid_array::Array;
+use hybrid_array::{
+    Array,
+    typenum::{U16, U128},
+};
 use itybity::{BitLength, FromBitIterator, GetBit, Lsb0, Msb0};
 use rand::{distr::StandardUniform, prelude::Distribution};
 use serde::{Deserialize, Serialize};
 use std::ops::{Add, Mul, Neg, Sub};
 
 use mpz_core::Block;
-use typenum::{U16, U128};
 
 use crate::{Field, FieldError};
 
@@ -198,7 +200,7 @@ mod tests {
     };
     use ghash_rc::{
         GHash,
-        universal_hash::{NewUniversalHash, UniversalHash},
+        universal_hash::{KeyInit, UniversalHash},
     };
     use mpz_core::{Block, prg::Prg};
     use rand::SeedableRng;
@@ -250,8 +252,8 @@ mod tests {
         let b = Block::random(&mut rng);
 
         let mut g = GHash::new(&a.to_bytes().into());
-        g.update(&b.to_bytes().into());
-        let expected = Block::from(g.finalize().into_bytes());
+        g.update(&[b.into()]);
+        let expected = Block::from(g.finalize());
 
         // GHASH reverses the bits of the blocks before performing multiplication
         // then reverses the output.

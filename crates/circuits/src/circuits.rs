@@ -85,7 +85,7 @@ mod tests {
     #[test]
     #[cfg(feature = "aes")]
     fn test_aes128() {
-        use aes::cipher::{BlockEncrypt, KeyInit};
+        use aes::cipher::{BlockCipherEncrypt, KeyInit};
         use rand::{Rng, SeedableRng, rngs::StdRng};
 
         fn aes_128(key: [u8; 16], msg: [u8; 16]) -> [u8; 16] {
