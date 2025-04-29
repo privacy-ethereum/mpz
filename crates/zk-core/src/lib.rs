@@ -13,7 +13,7 @@ pub use verifier::{Verifier, VerifierError};
 
 #[cfg(test)]
 mod tests {
-    use aes::cipher::{BlockEncrypt, KeyInit};
+    use aes::cipher::{BlockCipherEncrypt, KeyInit};
     use blake3::Hasher;
     use mpz_circuits::circuits::AES128;
     use mpz_core::bitvec::BitVec;

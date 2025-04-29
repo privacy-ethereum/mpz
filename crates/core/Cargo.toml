@@ -30,7 +30,7 @@ bcs = "0.1.5"
 rand_core_06 = { workspace = true }
 rand_core = { workspace = true }
 bytemuck = { workspace = true, features = ["derive"] }
-generic-array.workspace = true
+hybrid-array.workspace = true
 rayon = { workspace = true, optional = true }
 cfg-if.workspace = true
 bitvec = { workspace = true, features = ["serde"] }
