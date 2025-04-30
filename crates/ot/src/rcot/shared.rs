@@ -23,14 +23,23 @@ mod tests {
 
         let (ideal_send, ideal_recv) = ideal_rcot(Block::random(&mut rng), Block::random(&mut rng));
 
-        let rcots: Vec<_> = SharedRCOTSender::new(n, ideal_send)
-            .zip(SharedRCOTReceiver::new(n, ideal_recv))
-            .collect();
+        let sender = SharedRCOTSender::new(ideal_send);
+        let receiver = SharedRCOTReceiver::new(ideal_recv);
 
-        assert_eq!(rcots.len(), 8);
+        let mut senders = vec![sender];
+        let mut receivers = vec![receiver];
+        for _ in 1..n {
+            senders.push(senders[0].clone());
+            receivers.push(receivers[0].clone());
+        }
 
-        let tasks: Vec<_> = rcots
+        // Drop a pair to make sure it is adaptive.
+        senders.pop();
+        receivers.pop();
+
+        let tasks: Vec<_> = senders
             .into_iter()
+            .zip(receivers)
             .map(|(send, recv)| tokio::spawn(test_rcot(send, recv, 128, cycles)))
             .collect();
 

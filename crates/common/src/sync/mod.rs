@@ -2,10 +2,12 @@
 
 mod async_mutex;
 mod async_syncer;
+mod barrier;
 mod mutex;
 
 pub use async_mutex::AsyncMutex;
 pub use async_syncer::AsyncSyncer;
+pub use barrier::{AdaptiveBarrier, BarrierResult, Waiters};
 pub use mutex::{Mutex, MutexError};
 
 use std::{
