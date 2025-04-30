@@ -26,6 +26,12 @@ impl Clone for AdaptiveBarrier {
     }
 }
 
+impl Default for AdaptiveBarrier {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[derive(Debug)]
 struct Waiter {
     id: usize,
