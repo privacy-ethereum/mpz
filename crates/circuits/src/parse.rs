@@ -198,7 +198,7 @@ mod tests {
     fn test_parse_aes() {
         use aes::{
             Aes128,
-            cipher::{BlockEncrypt, KeyInit},
+            cipher::{BlockCipherEncrypt, KeyInit},
         };
 
         let circ = Circuit::parse("circuits/bristol/aes_128_reverse.txt").unwrap();

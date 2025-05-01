@@ -246,6 +246,30 @@ impl Slice {
         self.size
     }
 
+    /// Divides one slice into two at an index.
+    ///
+    /// The first will contain all indices from `[0, mid)` (excluding the index
+    /// mid itself) and the second will contain all indices from `[mid, len)`
+    /// (excluding the index len itself).
+    ///
+    /// # Panics
+    ///
+    /// Panics if `mid > len`.
+    pub fn split_at(&self, mid: usize) -> (Self, Self) {
+        assert!(mid <= self.len(), "index is out of bounds of slice");
+
+        (
+            Self {
+                ptr: self.ptr,
+                size: mid,
+            },
+            Self {
+                ptr: Ptr(self.ptr.0 + mid),
+                size: self.size - mid,
+            },
+        )
+    }
+
     /// Returns the memory range of the slice.
     #[inline]
     pub fn to_range(&self) -> Range {
@@ -641,6 +665,22 @@ impl_repr_for_tuples!(T0, T1, T2, T3, T4, T5, T6, T7);
 mod tests {
     use super::*;
     use crate::binary::U8;
+
+    #[test]
+    fn test_slice_split_at() {
+        let slice = Slice::from_range_unchecked(0..10);
+
+        let (left, right) = slice.split_at(4);
+
+        assert_eq!(left.ptr.0, 0);
+        assert_eq!(left.size, 4);
+        assert_eq!(right.ptr.0, 4);
+        assert_eq!(right.size, 6);
+
+        let data = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+        assert_eq!(data[left], [0, 1, 2, 3]);
+        assert_eq!(data[right], [4, 5, 6, 7, 8, 9]);
+    }
 
     #[test]
     fn test_vector_split_off() {
