@@ -134,16 +134,11 @@ impl Receiver<state::Setup> {
 
         // Check that the number of ciphertexts does not exceed the number of pending
         // keys
-        if payload.len() > decryption_keys.len() {
+        if payload.len() != decryption_keys.len() {
             return Err(ReceiverError::CountMismatch(
                 decryption_keys.len(),
                 payload.len(),
             ));
-        }
-        // Check that all queued transfers can be processed.
-        let total_queued = self.queue.iter().map(|q| q.count).sum();
-        if total_queued > payload.len() {
-            return Err(ReceiverError::PayloadTooSmall(total_queued, payload.len()));
         }
 
         let mut msgs =
