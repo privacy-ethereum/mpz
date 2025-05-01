@@ -287,3 +287,33 @@ pub mod state {
 
     opaque_debug::implement!(Setup);
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        chou_orlandi::{ReceiverError, msgs::SenderPayload, tests::setup},
+        ot::OTReceiver,
+    };
+    use mpz_core::Block;
+
+    #[test]
+    fn test_receive_count_err() {
+        let (_, mut receiver) = setup();
+
+        _ = receiver.queue_recv_ot(&[true, false]).unwrap();
+
+        matches!(
+            receiver.receive(SenderPayload {
+                payload: vec![[Block::ZERO; 2]],
+            }),
+            Err(ReceiverError::CountMismatch(2, 1))
+        );
+
+        matches!(
+            receiver.receive(SenderPayload {
+                payload: vec![[Block::ZERO; 2]; 3],
+            }),
+            Err(ReceiverError::CountMismatch(2, 3))
+        );
+    }
+}

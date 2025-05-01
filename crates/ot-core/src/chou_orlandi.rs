@@ -67,7 +67,7 @@ mod tests {
             .collect()
     }
 
-    fn setup() -> (Sender<sender_state::Setup>, Receiver<receiver_state::Setup>) {
+    pub(crate) fn setup() -> (Sender<sender_state::Setup>, Receiver<receiver_state::Setup>) {
         let sender = Sender::new_with_seed(SENDER_SEED);
         let receiver = Receiver::new_with_seed(RECEIVER_SEED);
 
