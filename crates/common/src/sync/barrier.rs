@@ -16,6 +16,54 @@ pub struct AdaptiveBarrier {
     state: Arc<Mutex<State>>,
 }
 
+impl AdaptiveBarrier {
+    /// Creates a new barrier.
+    pub fn new() -> Self {
+        let mut state = State::default();
+        let id = state.register();
+
+        Self {
+            id,
+            state: Arc::new(Mutex::new(state)),
+        }
+    }
+
+    /// Waits until all instances of the barrier have arrived.
+    ///
+    /// Returns `true` if this instance has been elected as the leader.
+    pub async fn wait(&mut self) -> BarrierResult {
+        let recv = {
+            let mut state = self.state.lock().unwrap();
+
+            // Early return if this is the only instance.
+            if state.alive == 1 {
+                return BarrierResult::Leader(Waiters::empty());
+            }
+
+            if !state.is_pending() {
+                state.start();
+            } else {
+                state.arrive();
+            }
+
+            let recv = state.wait(self.id);
+
+            if state.is_ready() {
+                state.wake_leader();
+            }
+
+            recv
+        };
+
+        match recv.await {
+            Ok(result) => result,
+            // The only case where this can happen is if the leader drops the result,
+            // in which case we can just proceed.
+            Err(_) => BarrierResult::Waiter,
+        }
+    }
+}
+
 impl Clone for AdaptiveBarrier {
     fn clone(&self) -> Self {
         let id = self.state.lock().unwrap().register();
@@ -29,6 +77,14 @@ impl Clone for AdaptiveBarrier {
 impl Default for AdaptiveBarrier {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl Drop for AdaptiveBarrier {
+    fn drop(&mut self) {
+        if let Ok(mut state) = self.state.lock() {
+            state.deregister();
+        }
     }
 }
 
@@ -164,62 +220,6 @@ impl State {
 
         self.arrived = 0;
         self.expected = 0;
-    }
-}
-
-impl AdaptiveBarrier {
-    /// Creates a new barrier.
-    pub fn new() -> Self {
-        let mut state = State::default();
-        let id = state.register();
-
-        Self {
-            id,
-            state: Arc::new(Mutex::new(state)),
-        }
-    }
-
-    /// Waits until all instances of the barrier have arrived.
-    ///
-    /// Returns `true` if this instance has been elected as the leader.
-    pub async fn wait(&mut self) -> BarrierResult {
-        let recv = {
-            let mut state = self.state.lock().unwrap();
-
-            // Early return if this is the only instance.
-            if state.alive == 1 {
-                return BarrierResult::Leader(Waiters::empty());
-            }
-
-            if !state.is_pending() {
-                state.start();
-            } else {
-                state.arrive();
-            }
-
-            let recv = state.wait(self.id);
-
-            if state.is_ready() {
-                state.wake_leader();
-            }
-
-            recv
-        };
-
-        match recv.await {
-            Ok(result) => result,
-            // The only case where this can happen is if the leader drops the result,
-            // in which case we can just proceed.
-            Err(_) => BarrierResult::Waiter,
-        }
-    }
-}
-
-impl Drop for AdaptiveBarrier {
-    fn drop(&mut self) {
-        if let Ok(mut state) = self.state.lock() {
-            state.deregister();
-        }
     }
 }
 
