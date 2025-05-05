@@ -1,5 +1,5 @@
 use std::{
-    collections::VecDeque,
+    collections::{HashMap, VecDeque},
     mem::take,
     sync::{Arc, Mutex as StdMutex},
 };
@@ -8,27 +8,51 @@ use async_trait::async_trait;
 use mpz_common::{
     Context, Flush,
     future::{MaybeDone, Sender, new_output},
+    sync::AdaptiveBarrier,
 };
 use mpz_ot_core::{
     TransferId,
     rcot::{RCOTReceiver, RCOTReceiverOutput},
 };
-use tokio::sync::{Barrier, Mutex};
+use tokio::sync::Mutex;
+
+#[derive(Debug)]
+struct Buffer<U, V> {
+    count: usize,
+    inputs: Vec<U>,
+    macs: Vec<V>,
+}
+
+impl<U, V> Buffer<U, V> {
+    fn new(count: usize) -> Self {
+        Self {
+            count,
+            inputs: Vec::with_capacity(count),
+            macs: Vec::with_capacity(count),
+        }
+    }
+}
 
 #[derive(Debug)]
 struct State<U, V> {
-    allocs: Vec<usize>,
-    inputs: Vec<Vec<U>>,
-    macs: Vec<Vec<V>>,
+    id_next: usize,
+    alloc: usize,
+    buffers: HashMap<usize, Buffer<U, V>>,
 }
 
 impl<U, V> State<U, V> {
-    fn new(n: usize) -> Self {
+    fn new() -> Self {
         Self {
-            allocs: vec![0; n],
-            inputs: (0..n).map(|_| Vec::new()).collect(),
-            macs: (0..n).map(|_| Vec::new()).collect(),
+            id_next: 0,
+            alloc: 0,
+            buffers: HashMap::new(),
         }
+    }
+
+    fn register(&mut self) -> usize {
+        let id = self.id_next;
+        self.id_next += 1;
+        id
     }
 }
 
@@ -44,7 +68,7 @@ pub struct SharedRCOTReceiver<T, U, V> {
     id: usize,
     transfer_id: TransferId,
     inner: Arc<Mutex<T>>,
-    barrier: Arc<Barrier>,
+    barrier: AdaptiveBarrier,
     state: Arc<StdMutex<State<U, V>>>,
     inputs: Vec<U>,
     macs: Vec<V>,
@@ -57,26 +81,45 @@ where
     U: Copy + Send,
     V: Copy + Send,
 {
-    /// Returns an iterator yielding `n` instances of `SharedRCOTReceiver`.
-    pub fn new(n: usize, inner: T) -> impl Iterator<Item = Self> {
+    /// Creates a new shared RCOT receiver.
+    pub fn new(inner: T) -> Self {
         let inner = Arc::new(Mutex::new(inner));
-        let barrier = Arc::new(Barrier::new(n));
-        let state = Arc::new(StdMutex::new(State::new(n)));
+        let barrier = AdaptiveBarrier::new();
+        let mut state = State::new();
+        let id = state.register();
 
-        (0..n).map(move |id| Self {
+        Self {
             id,
             transfer_id: TransferId::default(),
-            inner: inner.clone(),
-            barrier: barrier.clone(),
-            state: state.clone(),
+            inner,
+            barrier,
+            state: Arc::new(StdMutex::new(state)),
             inputs: Vec::new(),
             macs: Vec::new(),
             queue: VecDeque::new(),
-        })
+        }
     }
+}
 
-    fn is_leader(&self) -> bool {
-        self.id == 0
+impl<T, U, V> Clone for SharedRCOTReceiver<T, U, V>
+where
+    U: Copy + Send,
+    V: Copy + Send,
+{
+    fn clone(&self) -> Self {
+        let mut state = self.state.lock().unwrap();
+        let id = state.register();
+
+        Self {
+            id,
+            transfer_id: TransferId::default(),
+            inner: self.inner.clone(),
+            barrier: self.barrier.clone(),
+            state: self.state.clone(),
+            inputs: Vec::new(),
+            macs: Vec::new(),
+            queue: VecDeque::new(),
+        }
     }
 }
 
@@ -90,7 +133,18 @@ where
     type Future = MaybeDone<RCOTReceiverOutput<U, V>>;
 
     fn alloc(&mut self, count: usize) -> Result<(), Self::Error> {
-        self.state.lock().unwrap().allocs[self.id] += count;
+        let mut state = self.state.lock().unwrap();
+
+        state.alloc += count;
+
+        if let Some(buffer) = state.buffers.get_mut(&self.id) {
+            buffer.count += count;
+            buffer.inputs.reserve(count);
+            buffer.macs.reserve(count);
+        } else {
+            state.buffers.insert(self.id, Buffer::new(count));
+        }
+
         Ok(())
     }
 
@@ -144,12 +198,7 @@ where
     type Error = SharedRCOTReceiverError;
 
     fn wants_flush(&self) -> bool {
-        self.state
-            .lock()
-            .unwrap()
-            .allocs
-            .iter()
-            .any(|&alloc| alloc > 0)
+        !self.state.lock().unwrap().buffers.is_empty()
     }
 
     async fn flush(&mut self, ctx: &mut Context) -> Result<(), Self::Error> {
@@ -157,16 +206,16 @@ where
             return Ok(());
         }
 
-        self.barrier.wait().await;
+        let barrier_result = self.barrier.wait().await;
 
-        if self.is_leader() {
+        if barrier_result.is_leader() {
             let mut inner = self.inner.lock().await;
 
             {
                 let state = self.state.lock().unwrap();
-                for alloc in state.allocs.iter() {
+                for buffer in state.buffers.values() {
                     inner
-                        .alloc(*alloc)
+                        .alloc(buffer.count)
                         .map_err(SharedRCOTReceiverError::inner)?;
                 }
             }
@@ -177,25 +226,26 @@ where
                 .map_err(SharedRCOTReceiverError::inner)?;
 
             let state = &mut (*self.state.lock().unwrap());
-            for (id, alloc) in state.allocs.iter_mut().enumerate() {
-                let alloc = take(alloc);
+            let mut buffers = state.buffers.iter_mut().collect::<Vec<_>>();
+            buffers.sort_by_key(|(id, _)| *id);
+
+            for (_, buffer) in buffers {
                 let output = inner
-                    .try_recv_rcot(alloc)
+                    .try_recv_rcot(buffer.count)
                     .map_err(SharedRCOTReceiverError::inner)?;
 
-                state.inputs[id].extend_from_slice(&output.choices);
-                state.macs[id].extend_from_slice(&output.msgs);
+                buffer.inputs.extend_from_slice(&output.choices);
+                buffer.macs.extend_from_slice(&output.msgs);
             }
         }
-
-        self.barrier.wait().await;
+        barrier_result.proceed();
 
         {
             let mut state = self.state.lock().unwrap();
-            self.inputs.extend_from_slice(&state.inputs[self.id]);
-            self.macs.extend_from_slice(&state.macs[self.id]);
-            state.inputs[self.id].clear();
-            state.macs[self.id].clear();
+            if let Some(buffer) = state.buffers.remove(&self.id) {
+                self.inputs.extend_from_slice(&buffer.inputs);
+                self.macs.extend_from_slice(&buffer.macs);
+            }
         }
 
         for queued in take(&mut self.queue) {

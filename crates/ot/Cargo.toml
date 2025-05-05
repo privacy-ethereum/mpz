@@ -17,7 +17,7 @@ test-utils = ["mpz-ot-core/test-utils"]
 
 [dependencies]
 mpz-core.workspace = true
-mpz-common.workspace = true
+mpz-common = { workspace = true, features = ["sync"] }
 mpz-cointoss.workspace = true
 mpz-ot-core.workspace = true
 

@@ -1,5 +1,5 @@
 use std::{
-    collections::VecDeque,
+    collections::{HashMap, VecDeque},
     mem::take,
     sync::{Arc, Mutex as StdMutex},
 };
@@ -8,25 +8,49 @@ use async_trait::async_trait;
 use mpz_common::{
     Context, Flush,
     future::{MaybeDone, Sender, new_output},
+    sync::AdaptiveBarrier,
 };
 use mpz_ot_core::{
     TransferId,
     rcot::{RCOTSender, RCOTSenderOutput},
 };
-use tokio::sync::{Barrier, Mutex};
+use tokio::sync::Mutex;
+
+#[derive(Debug)]
+struct Buffer<U> {
+    count: usize,
+    keys: Vec<U>,
+}
+
+impl<U> Buffer<U> {
+    fn new(count: usize) -> Self {
+        Self {
+            count,
+            keys: Vec::with_capacity(count),
+        }
+    }
+}
 
 #[derive(Debug)]
 struct State<U> {
-    allocs: Vec<usize>,
-    keys: Vec<Vec<U>>,
+    id_next: usize,
+    alloc: usize,
+    buffers: HashMap<usize, Buffer<U>>,
 }
 
 impl<U> State<U> {
-    fn new(n: usize) -> Self {
+    fn new() -> Self {
         Self {
-            allocs: vec![0; n],
-            keys: (0..n).map(|_| Vec::new()).collect(),
+            id_next: 0,
+            alloc: 0,
+            buffers: HashMap::new(),
         }
+    }
+
+    fn register(&mut self) -> usize {
+        let id = self.id_next;
+        self.id_next += 1;
+        id
     }
 }
 
@@ -42,7 +66,7 @@ pub struct SharedRCOTSender<T, U> {
     id: usize,
     transfer_id: TransferId,
     inner: Arc<Mutex<T>>,
-    barrier: Arc<Barrier>,
+    barrier: AdaptiveBarrier,
     state: Arc<StdMutex<State<U>>>,
     delta: U,
     keys: Vec<U>,
@@ -54,27 +78,46 @@ where
     T: RCOTSender<U>,
     U: Copy + Send,
 {
-    /// Returns an iterator yielding `n` instances of `SharedRCOTSender`.
-    pub fn new(n: usize, inner: T) -> impl Iterator<Item = Self> {
+    /// Creates a new shared RCOT sender.
+    pub fn new(inner: T) -> Self {
         let delta = inner.delta();
         let inner = Arc::new(Mutex::new(inner));
-        let barrier = Arc::new(Barrier::new(n));
-        let state = Arc::new(StdMutex::new(State::new(n)));
+        let barrier = AdaptiveBarrier::new();
 
-        (0..n).map(move |id| Self {
+        let mut state = State::new();
+        let id = state.register();
+
+        Self {
             id,
             transfer_id: TransferId::default(),
             inner: inner.clone(),
             barrier: barrier.clone(),
-            state: state.clone(),
+            state: Arc::new(StdMutex::new(state)),
             delta,
             keys: Vec::new(),
             queue: VecDeque::new(),
-        })
+        }
     }
+}
 
-    fn is_leader(&self) -> bool {
-        self.id == 0
+impl<T, U> Clone for SharedRCOTSender<T, U>
+where
+    U: Clone,
+{
+    fn clone(&self) -> Self {
+        let mut state = self.state.lock().unwrap();
+        let id = state.register();
+
+        Self {
+            id,
+            transfer_id: TransferId::default(),
+            inner: self.inner.clone(),
+            barrier: self.barrier.clone(),
+            state: self.state.clone(),
+            delta: self.delta.clone(),
+            keys: Vec::new(),
+            queue: VecDeque::new(),
+        }
     }
 }
 
@@ -87,7 +130,17 @@ where
     type Future = MaybeDone<RCOTSenderOutput<U>>;
 
     fn alloc(&mut self, count: usize) -> Result<(), Self::Error> {
-        self.state.lock().unwrap().allocs[self.id] += count;
+        let mut state = self.state.lock().unwrap();
+
+        state.alloc += count;
+
+        if let Some(buffer) = state.buffers.get_mut(&self.id) {
+            buffer.count += count;
+            buffer.keys.reserve(count);
+        } else {
+            state.buffers.insert(self.id, Buffer::new(count));
+        }
+
         Ok(())
     }
 
@@ -142,12 +195,7 @@ where
     type Error = SharedRCOTSenderError;
 
     fn wants_flush(&self) -> bool {
-        self.state
-            .lock()
-            .unwrap()
-            .allocs
-            .iter()
-            .any(|&alloc| alloc > 0)
+        !self.state.lock().unwrap().buffers.is_empty()
     }
 
     async fn flush(&mut self, ctx: &mut Context) -> Result<(), Self::Error> {
@@ -155,15 +203,14 @@ where
             return Ok(());
         }
 
-        self.barrier.wait().await;
-
-        if self.is_leader() {
+        let barrier_result = self.barrier.wait().await;
+        if barrier_result.is_leader() {
             let mut inner = self.inner.lock().await;
 
             {
                 let state = self.state.lock().unwrap();
-                for alloc in state.allocs.iter() {
-                    inner.alloc(*alloc).map_err(SharedRCOTSenderError::inner)?;
+                for Buffer { count, .. } in state.buffers.values() {
+                    inner.alloc(*count).map_err(SharedRCOTSenderError::inner)?;
                 }
             }
 
@@ -173,22 +220,24 @@ where
                 .map_err(SharedRCOTSenderError::inner)?;
 
             let state = &mut (*self.state.lock().unwrap());
-            for (id, alloc) in state.allocs.iter_mut().enumerate() {
-                let alloc = take(alloc);
+            let mut buffers = state.buffers.iter_mut().collect::<Vec<_>>();
+            buffers.sort_by_key(|(id, _)| *id);
+
+            for (_, buffer) in buffers {
                 let keys = inner
-                    .try_send_rcot(alloc)
+                    .try_send_rcot(buffer.count)
                     .map_err(SharedRCOTSenderError::inner)?
                     .keys;
-                state.keys[id].extend_from_slice(&keys);
+                buffer.keys.extend_from_slice(&keys);
             }
         }
-
-        self.barrier.wait().await;
+        barrier_result.proceed();
 
         {
             let mut state = self.state.lock().unwrap();
-            self.keys.extend_from_slice(&state.keys[self.id]);
-            state.keys[self.id].clear();
+            if let Some(Buffer { keys, .. }) = state.buffers.remove(&self.id) {
+                self.keys.extend_from_slice(&keys);
+            }
         }
 
         for queued in take(&mut self.queue) {
