@@ -227,6 +227,8 @@ where
     }
 
     async fn execute(&mut self, ctx: &mut Context) -> Result<()> {
+        self.mark_executed()?;
+
         let delta = *self.store.try_lock().unwrap().delta();
 
         while !self.call_stack.is_empty() {
