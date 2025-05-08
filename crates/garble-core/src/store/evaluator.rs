@@ -98,11 +98,6 @@ impl<COT> EvaluatorStore<COT> {
         self.mac_store.is_set(slice)
     }
 
-    /// Returns whether the slice is committed.
-    pub fn is_committed(&self, slice: Slice) -> bool {
-        self.view.is_committed(slice.to_range())
-    }
-
     /// Returns the MACs for a slice.
     pub fn try_get_macs(&self, slice: Slice) -> Result<&[Mac]> {
         self.mac_store.try_get(slice).map_err(Error::from)
@@ -303,6 +298,10 @@ where
 impl<COT> Memory<Binary> for EvaluatorStore<COT> {
     type Error = Error;
 
+    fn is_alloc_raw(&self, slice: Slice) -> bool {
+        self.view.is_alloc(slice.to_range())
+    }
+
     fn alloc_raw(&mut self, size: usize) -> Result<Slice> {
         self.view.alloc_input(size);
         self.mac_store.alloc(size);
@@ -313,11 +312,19 @@ impl<COT> Memory<Binary> for EvaluatorStore<COT> {
         Ok(slice)
     }
 
+    fn is_assigned_raw(&self, slice: Slice) -> bool {
+        self.data_store.is_set(slice)
+    }
+
     fn assign_raw(&mut self, slice: Slice, data: BitVec) -> Result<()> {
         self.view.assign(slice.to_range())?;
         self.data_store.try_set(slice, &data)?;
 
         Ok(())
+    }
+
+    fn is_committed_raw(&self, slice: Slice) -> bool {
+        self.view.is_committed(slice.to_range())
     }
 
     fn commit_raw(&mut self, slice: Slice) -> Result<()> {

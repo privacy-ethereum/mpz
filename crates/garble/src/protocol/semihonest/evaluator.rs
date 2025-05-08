@@ -59,7 +59,11 @@ impl<COT> Evaluator<COT> {
         let store = self.store.try_lock().unwrap();
         self.call_stack
             // Extract only a call which has all its inputs committed.
-            .filter_drain(|(call, _)| call.inputs().iter().all(|input| store.is_committed(*input)))
+            .filter_drain(|(call, _)| {
+                call.inputs()
+                    .iter()
+                    .all(|input| store.is_committed_raw(*input))
+            })
             .collect()
     }
 
@@ -69,7 +73,9 @@ impl<COT> Evaluator<COT> {
             let (calls, outputs): (Vec<_>, Vec<_>) = self
                 .preprocessed
                 .extract_if(|_, (call, _)| {
-                    call.inputs().iter().all(|input| store.is_committed(*input))
+                    call.inputs()
+                        .iter()
+                        .all(|input| store.is_committed_raw(*input))
                 })
                 .map(|(output, (call, garbled_circuit))| {
                     let (circ, inputs) = call.into_parts();
@@ -115,6 +121,10 @@ impl<COT> Evaluator<COT> {
 impl<COT> Memory<Binary> for Evaluator<COT> {
     type Error = VmError;
 
+    fn is_alloc_raw(&self, slice: Slice) -> bool {
+        self.store.try_lock().unwrap().is_alloc_raw(slice)
+    }
+
     fn alloc_raw(&mut self, size: usize) -> Result<Slice> {
         self.store
             .try_lock()
@@ -123,12 +133,20 @@ impl<COT> Memory<Binary> for Evaluator<COT> {
             .map_err(VmError::memory)
     }
 
+    fn is_assigned_raw(&self, slice: Slice) -> bool {
+        self.store.try_lock().unwrap().is_assigned_raw(slice)
+    }
+
     fn assign_raw(&mut self, slice: Slice, value: BitVec) -> Result<()> {
         self.store
             .try_lock()
             .unwrap()
             .assign_raw(slice, value)
             .map_err(VmError::memory)
+    }
+
+    fn is_committed_raw(&self, slice: Slice) -> bool {
+        self.store.try_lock().unwrap().is_committed_raw(slice)
     }
 
     fn commit_raw(&mut self, slice: Slice) -> Result<()> {
@@ -261,13 +279,15 @@ where
 
     fn wants_execute(&self) -> bool {
         let store = self.store.try_lock().unwrap();
-        self.preprocessed
-            .iter()
-            .any(|(_, (call, _))| call.inputs().iter().all(|input| store.is_committed(*input)))
-            || self
-                .call_stack
+        self.preprocessed.iter().any(|(_, (call, _))| {
+            call.inputs()
                 .iter()
-                .any(|(call, _)| call.inputs().iter().all(|input| store.is_committed(*input)))
+                .all(|input| store.is_committed_raw(*input))
+        }) || self.call_stack.iter().any(|(call, _)| {
+            call.inputs()
+                .iter()
+                .all(|input| store.is_committed_raw(*input))
+        })
     }
 
     async fn execute(&mut self, ctx: &mut Context) -> Result<()> {

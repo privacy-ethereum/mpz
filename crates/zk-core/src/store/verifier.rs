@@ -49,11 +49,6 @@ impl VerifierStore {
         self.key_store.delta()
     }
 
-    /// Returns whether the data is committed.
-    pub fn is_committed(&self, slice: Slice) -> bool {
-        self.view.is_committed(slice.to_range())
-    }
-
     /// Returns `true` if the store wants keys.
     pub fn wants_keys(&self) -> bool {
         !self.view.flush().commit.is_empty()
@@ -180,12 +175,20 @@ impl VerifierStore {
 impl Memory<Binary> for VerifierStore {
     type Error = Error;
 
+    fn is_alloc_raw(&self, slice: Slice) -> bool {
+        self.view.is_alloc(slice.to_range())
+    }
+
     fn alloc_raw(&mut self, size: usize) -> Result<Slice> {
         self.view.alloc_input(size);
         self.key_store.alloc(size);
         let slice = self.data_store.alloc(size);
 
         Ok(slice)
+    }
+
+    fn is_assigned_raw(&self, slice: Slice) -> bool {
+        self.data_store.is_set(slice)
     }
 
     fn assign_raw(&mut self, slice: Slice, data: BitVec) -> Result<()> {
@@ -202,6 +205,10 @@ impl Memory<Binary> for VerifierStore {
         }
 
         Ok(())
+    }
+
+    fn is_committed_raw(&self, slice: Slice) -> bool {
+        self.view.is_committed(slice.to_range())
     }
 
     fn commit_raw(&mut self, slice: Slice) -> Result<()> {

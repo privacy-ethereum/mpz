@@ -41,7 +41,11 @@ impl<COT> Garbler<COT> {
     fn take_execute_calls(&mut self) -> Vec<(Call, Slice)> {
         let store = self.store.try_lock().unwrap();
         self.call_stack
-            .filter_drain(|(call, _)| call.inputs().iter().all(|slice| store.is_committed(*slice)))
+            .filter_drain(|(call, _)| {
+                call.inputs()
+                    .iter()
+                    .all(|slice| store.is_committed_raw(*slice))
+            })
             .collect()
     }
 
@@ -51,7 +55,9 @@ impl<COT> Garbler<COT> {
         loop {
             let outputs = self
                 .preprocessed
-                .filter_drain(|(inputs, _)| inputs.iter().all(|input| store.is_committed(*input)))
+                .filter_drain(|(inputs, _)| {
+                    inputs.iter().all(|input| store.is_committed_raw(*input))
+                })
                 .map(|(_, output)| output)
                 .collect::<Vec<_>>();
 
@@ -73,6 +79,10 @@ impl<COT> Garbler<COT> {
 impl<COT> Memory<Binary> for Garbler<COT> {
     type Error = VmError;
 
+    fn is_alloc_raw(&self, slice: Slice) -> bool {
+        self.store.try_lock().unwrap().is_alloc_raw(slice)
+    }
+
     fn alloc_raw(&mut self, size: usize) -> Result<Slice> {
         self.store
             .try_lock()
@@ -81,12 +91,20 @@ impl<COT> Memory<Binary> for Garbler<COT> {
             .map_err(VmError::memory)
     }
 
+    fn is_assigned_raw(&self, slice: Slice) -> bool {
+        self.store.try_lock().unwrap().is_assigned_raw(slice)
+    }
+
     fn assign_raw(&mut self, slice: Slice, value: BitVec) -> Result<()> {
         self.store
             .try_lock()
             .unwrap()
             .assign_raw(slice, value)
             .map_err(VmError::memory)
+    }
+
+    fn is_committed_raw(&self, slice: Slice) -> bool {
+        self.store.try_lock().unwrap().is_committed_raw(slice)
     }
 
     fn commit_raw(&mut self, slice: Slice) -> Result<()> {
@@ -219,11 +237,12 @@ where
         let store = self.store.try_lock().unwrap();
         self.preprocessed
             .iter()
-            .any(|(inputs, _)| inputs.iter().all(|input| store.is_committed(*input)))
-            || self
-                .call_stack
-                .iter()
-                .any(|(call, _)| call.inputs().iter().all(|slice| store.is_committed(*slice)))
+            .any(|(inputs, _)| inputs.iter().all(|input| store.is_committed_raw(*input)))
+            || self.call_stack.iter().any(|(call, _)| {
+                call.inputs()
+                    .iter()
+                    .all(|slice| store.is_committed_raw(*slice))
+            })
     }
 
     async fn execute(&mut self, ctx: &mut Context) -> Result<()> {

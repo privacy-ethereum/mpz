@@ -28,10 +28,6 @@ impl<COT> GarblerStore<COT> {
         self.core.delta()
     }
 
-    pub(crate) fn is_committed(&self, slice: Slice) -> bool {
-        self.core.is_committed(slice)
-    }
-
     pub(crate) fn is_set_keys(&self, slice: Slice) -> bool {
         self.core.is_set_keys(slice)
     }
@@ -56,12 +52,24 @@ impl<COT> GarblerStore<COT> {
 impl<COT> Memory<Binary> for GarblerStore<COT> {
     type Error = Error;
 
+    fn is_alloc_raw(&self, slice: Slice) -> bool {
+        self.core.is_alloc_raw(slice)
+    }
+
     fn alloc_raw(&mut self, size: usize) -> Result<Slice, Self::Error> {
         self.core.alloc_raw(size).map_err(Error::from)
     }
 
+    fn is_assigned_raw(&self, slice: Slice) -> bool {
+        self.core.is_assigned_raw(slice)
+    }
+
     fn assign_raw(&mut self, slice: Slice, data: BitVec) -> Result<(), Self::Error> {
         self.core.assign_raw(slice, data).map_err(Error::from)
+    }
+
+    fn is_committed_raw(&self, slice: Slice) -> bool {
+        self.core.is_committed_raw(slice)
     }
 
     fn commit_raw(&mut self, slice: Slice) -> Result<(), Self::Error> {

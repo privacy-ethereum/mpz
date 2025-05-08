@@ -102,6 +102,10 @@ impl View {
         &self.vis
     }
 
+    pub(crate) fn is_alloc(&self, range: Range) -> bool {
+        range.end <= self.len
+    }
+
     fn alloc(&mut self, size: usize) -> Range {
         let range = self.len..self.len + size;
         self.len += size;
@@ -325,6 +329,17 @@ mod tests {
             Role::Prover => View::new_prover(),
             Role::Verifier => View::new_verifier(),
         }
+    }
+
+    #[rstest]
+    #[case::prover(Role::Prover)]
+    #[case::verifier(Role::Verifier)]
+    fn test_is_alloc(#[case] role: Role) {
+        let mut view = new(role);
+
+        view.alloc_input(10);
+
+        assert!(view.is_alloc(0..10));
     }
 
     #[rstest]

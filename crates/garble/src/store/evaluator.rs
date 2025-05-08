@@ -25,10 +25,6 @@ impl<COT> EvaluatorStore<COT> {
         }
     }
 
-    pub(crate) fn is_committed(&self, slice: Slice) -> bool {
-        self.core.is_committed(slice)
-    }
-
     pub(crate) fn try_get_macs(&self, slice: Slice) -> Result<&[Mac], Error> {
         self.core.try_get_macs(slice).map_err(Error::from)
     }
@@ -55,12 +51,24 @@ impl<COT> EvaluatorStore<COT> {
 impl<COT> Memory<Binary> for EvaluatorStore<COT> {
     type Error = Error;
 
+    fn is_alloc_raw(&self, slice: Slice) -> bool {
+        self.core.is_alloc_raw(slice)
+    }
+
     fn alloc_raw(&mut self, size: usize) -> Result<Slice, Self::Error> {
         self.core.alloc_raw(size).map_err(Error::from)
     }
 
+    fn is_assigned_raw(&self, slice: Slice) -> bool {
+        self.core.is_assigned_raw(slice)
+    }
+
     fn assign_raw(&mut self, slice: Slice, data: BitVec) -> Result<(), Self::Error> {
         self.core.assign_raw(slice, data).map_err(Error::from)
+    }
+
+    fn is_committed_raw(&self, slice: Slice) -> bool {
+        self.core.is_committed_raw(slice)
     }
 
     fn commit_raw(&mut self, slice: Slice) -> Result<(), Self::Error> {
