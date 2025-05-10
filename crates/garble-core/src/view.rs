@@ -109,6 +109,10 @@ impl View {
         }
     }
 
+    pub(crate) fn is_alloc(&self, range: Range) -> bool {
+        range.end <= self.len
+    }
+
     fn alloc(&mut self, size: usize) -> Range {
         let range = self.len..self.len + size;
         self.len += size;

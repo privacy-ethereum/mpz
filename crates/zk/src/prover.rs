@@ -102,7 +102,7 @@ where
         self.callstack.iter().any(|(call, _)| {
             call.inputs()
                 .iter()
-                .all(|input| self.store.is_committed(*input))
+                .all(|input| self.store.is_committed_raw(*input))
         })
     }
 
@@ -114,7 +114,7 @@ where
                 .filter_drain(|(call, _)| {
                     call.inputs()
                         .iter()
-                        .all(|input| self.store.is_committed(*input))
+                        .all(|input| self.store.is_committed_raw(*input))
                 })
                 .map(|(call, output)| {
                     let input_macs = call
@@ -230,12 +230,24 @@ where
 {
     type Error = VmError;
 
+    fn is_alloc_raw(&self, slice: Slice) -> bool {
+        self.store.is_alloc_raw(slice)
+    }
+
     fn alloc_raw(&mut self, size: usize) -> VmResult<Slice> {
         self.store.alloc_raw(size).map_err(VmError::memory)
     }
 
+    fn is_assigned_raw(&self, slice: Slice) -> bool {
+        self.store.is_assigned_raw(slice)
+    }
+
     fn assign_raw(&mut self, slice: Slice, data: BitVec) -> VmResult<()> {
         self.store.assign_raw(slice, data).map_err(VmError::memory)
+    }
+
+    fn is_committed_raw(&self, slice: Slice) -> bool {
+        self.store.is_committed_raw(slice)
     }
 
     fn commit_raw(&mut self, slice: Slice) -> VmResult<()> {

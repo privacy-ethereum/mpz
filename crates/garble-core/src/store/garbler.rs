@@ -239,6 +239,10 @@ where
 impl<COT> Memory<Binary> for GarblerStore<COT> {
     type Error = Error;
 
+    fn is_alloc_raw(&self, slice: Slice) -> bool {
+        self.view.is_alloc(slice.to_range())
+    }
+
     fn alloc_raw(&mut self, size: usize) -> Result<Slice> {
         let keys = (0..size).map(|_| self.prg.random()).collect::<Vec<_>>();
         self.view.alloc_input(size);
@@ -248,11 +252,19 @@ impl<COT> Memory<Binary> for GarblerStore<COT> {
         Ok(slice)
     }
 
+    fn is_assigned_raw(&self, slice: Slice) -> bool {
+        self.data_store.is_set(slice)
+    }
+
     fn assign_raw(&mut self, slice: Slice, data: BitVec) -> Result<()> {
         self.view.assign(slice.to_range())?;
         self.data_store.try_set(slice, &data)?;
 
         Ok(())
+    }
+
+    fn is_committed_raw(&self, slice: Slice) -> bool {
+        self.view.is_committed(slice.to_range())
     }
 
     fn commit_raw(&mut self, slice: Slice) -> Result<()> {

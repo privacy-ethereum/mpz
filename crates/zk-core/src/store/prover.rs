@@ -44,16 +44,6 @@ impl ProverStore {
         self.mac_store.is_set(slice)
     }
 
-    /// Returns whether the data is set for a slice.
-    pub fn is_set_data(&self, slice: Slice) -> bool {
-        self.data_store.is_set(slice)
-    }
-
-    /// Returns whether the data is committed.
-    pub fn is_committed(&self, slice: Slice) -> bool {
-        self.view.is_committed(slice.to_range())
-    }
-
     /// Returns `true` if the store wants MACs.
     pub fn wants_macs(&self) -> bool {
         !self.view.flush().commit.is_empty()
@@ -209,6 +199,10 @@ impl Default for ProverStore {
 impl Memory<Binary> for ProverStore {
     type Error = Error;
 
+    fn is_alloc_raw(&self, slice: Slice) -> bool {
+        self.view.is_alloc(slice.to_range())
+    }
+
     fn alloc_raw(&mut self, size: usize) -> Result<Slice> {
         self.view.alloc_input(size);
         self.mac_store.alloc(size);
@@ -216,6 +210,10 @@ impl Memory<Binary> for ProverStore {
         let slice = self.data_store.alloc(size);
 
         Ok(slice)
+    }
+
+    fn is_assigned_raw(&self, slice: Slice) -> bool {
+        self.data_store.is_set(slice)
     }
 
     fn assign_raw(&mut self, slice: Slice, data: BitVec) -> Result<()> {
@@ -232,6 +230,10 @@ impl Memory<Binary> for ProverStore {
         }
 
         Ok(())
+    }
+
+    fn is_committed_raw(&self, slice: Slice) -> bool {
+        self.view.is_committed(slice.to_range())
     }
 
     fn commit_raw(&mut self, slice: Slice) -> Result<()> {

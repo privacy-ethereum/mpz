@@ -25,11 +25,20 @@ pub trait Memory<T: MemoryType> {
     /// Memory error type.
     type Error: std::error::Error + Send + Sync + 'static;
 
+    /// Returns `true` if the slice is allocated.
+    fn is_alloc_raw(&self, slice: Slice) -> bool;
+
     /// Allocates a new slice of memory.
     fn alloc_raw(&mut self, size: usize) -> Result<Slice, Self::Error>;
 
+    /// Returns `true` if the slice is assigned.
+    fn is_assigned_raw(&self, slice: Slice) -> bool;
+
     /// Assigns data to the slice.
     fn assign_raw(&mut self, slice: Slice, data: T::Raw) -> Result<(), Self::Error>;
+
+    /// Returns `true` if the slice is committed.
+    fn is_committed_raw(&self, slice: Slice) -> bool;
 
     /// Commits the slice of memory.
     fn commit_raw(&mut self, slice: Slice) -> Result<(), Self::Error>;
@@ -45,6 +54,14 @@ pub trait Memory<T: MemoryType> {
 
 /// Extension trait for [`Memory`].
 pub trait MemoryExt<T: MemoryType>: Memory<T> {
+    /// Returns `true` if the value is allocated.
+    fn is_alloc<R>(&self, value: R) -> bool
+    where
+        R: Repr<T>,
+    {
+        self.is_alloc_raw(value.to_raw())
+    }
+
     /// Allocates a new value.
     fn alloc<R>(&mut self) -> Result<R, Self::Error>
     where
@@ -64,12 +81,28 @@ pub trait MemoryExt<T: MemoryType>: Memory<T> {
         Ok(Vector::from_raw(slice))
     }
 
+    /// Returns `true` if the value is assigned.
+    fn is_assigned<R>(&self, value: R) -> bool
+    where
+        R: Repr<T>,
+    {
+        self.is_assigned_raw(value.to_raw())
+    }
+
     /// Assigns the value to memory.
     fn assign<R>(&mut self, value: R, clear: R::Clear) -> Result<(), Self::Error>
     where
         R: Repr<T>,
     {
         self.assign_raw(value.to_raw(), clear.into_clear())
+    }
+
+    /// Returns `true` if the value is committed.
+    fn is_committed<R>(&self, value: R) -> bool
+    where
+        R: Repr<T>,
+    {
+        self.is_committed_raw(value.to_raw())
     }
 
     /// Commits the value to memory.
