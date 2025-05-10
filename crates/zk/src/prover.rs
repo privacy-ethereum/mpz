@@ -211,13 +211,15 @@ where
         let output = self.store.alloc_output(call.circ().outputs().len());
 
         let mut count = call.circ().and_count();
+        if count > 0 {
+            // If the callstack is empty, we allocate more for the consistency check.
+            if self.callstack.is_empty() {
+                count += 128
+            }
 
-        // If the callstack is empty, we allocate more for the consistency check.
-        if self.callstack.is_empty() {
-            count += 128
+            self.ot.alloc(count).map_err(VmError::execute)?;
         }
 
-        self.ot.alloc(count).map_err(VmError::execute)?;
         self.callstack.push((call, output));
 
         Ok(output)
