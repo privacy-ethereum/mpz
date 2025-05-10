@@ -130,6 +130,10 @@ where
     type Future = MaybeDone<RCOTSenderOutput<U>>;
 
     fn alloc(&mut self, count: usize) -> Result<(), Self::Error> {
+        if count == 0 {
+            return Ok(());
+        }
+
         let mut state = self.state.lock().unwrap();
 
         state.alloc += count;
