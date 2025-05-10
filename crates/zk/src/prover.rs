@@ -239,7 +239,7 @@ where
     }
 
     fn is_assigned_raw(&self, slice: Slice) -> bool {
-        self.store.is_alloc_raw(slice)
+        self.store.is_assigned_raw(slice)
     }
 
     fn assign_raw(&mut self, slice: Slice, data: BitVec) -> VmResult<()> {
