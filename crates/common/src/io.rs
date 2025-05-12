@@ -11,10 +11,11 @@ use pin_project_lite::pin_project;
 use serio::{Framed, Sink, Stream, channel::MemoryDuplex, codec::Bincode};
 use tokio_util::{
     codec::{Framed as TokioFramed, LengthDelimitedCodec},
-    compat::FuturesAsyncReadCompatExt as _,
+    compat::{Compat, FuturesAsyncReadCompatExt as _},
 };
 
-trait Duplex:
+/// A trait for Sink and Stream functionality.
+pub trait Duplex:
     futures::Stream<Item = Result<BytesMut, std::io::Error>>
     + futures::Sink<Bytes, Error = std::io::Error>
 {
@@ -26,26 +27,29 @@ impl<T> Duplex for T where
 {
 }
 
-trait DuplexFrameLimited<T, U> {
+trait DuplexFrameLimited: Duplex {
     /// Sets a new maximum frame length and returns a [`WithFrameLimit`].
     ///
     /// # Arguments
     ///
     /// * `max_frame_len` - The new maximum frame length in bytes.
-    fn with_max_frame_limit(&mut self, max_frame_len: usize) -> WithFrameLimit<'_, T>;
+    fn with_max_frame_limit(&mut self, max_frame_len: usize) -> Box<dyn Duplex + '_>;
 }
 
-impl<T, U> DuplexFrameLimited<T, U> for Framed<TokioFramed<T, LengthDelimitedCodec>, U> {
-    fn with_max_frame_limit(&mut self, max_frame_len: usize) -> WithFrameLimit<'_, T> {
-        let old_frame_limit = self.inner().codec().max_frame_length();
-        self.inner_mut()
-            .codec_mut()
-            .set_max_frame_length(max_frame_len);
+impl<T> DuplexFrameLimited for TokioFramed<Compat<T>, LengthDelimitedCodec>
+where
+    T: AsyncRead + AsyncWrite + Unpin,
+{
+    fn with_max_frame_limit(&mut self, max_frame_len: usize) -> Box<dyn Duplex + '_> {
+        let old_frame_limit = self.codec().max_frame_length();
+        self.codec_mut().set_max_frame_length(max_frame_len);
 
-        WithFrameLimit {
+        let limited = WithFrameLimit {
             old_frame_limit,
-            framed: self.inner_mut(),
-        }
+            framed: self,
+        };
+
+        Box::new(limited)
     }
 }
 
@@ -124,6 +128,18 @@ impl Io {
         }
     }
 
+    /// Sets a new maximum frame length and returns a [`WithFrameLimit`].
+    ///
+    /// # Arguments
+    ///
+    /// * `max_frame_len` - The new maximum frame length in bytes.
+    pub fn with_frame_limit(&mut self, max_frame_len: usize) -> Box<dyn Duplex + '_> {
+        match &mut self.inner {
+            Inner::Transport { framed } => framed.inner_mut().with_max_frame_limit(max_frame_len),
+            Inner::Memory { channel } => Box::new(self),
+        }
+    }
+
     #[cfg(any(test, feature = "test-utils"))]
     pub(crate) fn from_channel(duplex: MemoryDuplex) -> Self {
         Self {
@@ -136,7 +152,7 @@ pin_project! {
     #[project = InnerProj]
     enum Inner {
         /// I/O over a framed bytes transport.
-        Transport { #[pin] framed: Framed<Box<dyn Duplex + Send + Sync + Unpin>, Bincode> },
+        Transport { #[pin] framed: Framed<Box<dyn DuplexFrameLimited + Send + Sync + Unpin>, Bincode> },
         /// I/O over a memory channel.
         Memory { #[pin] channel: MemoryDuplex }
     }
