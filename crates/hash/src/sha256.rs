@@ -11,7 +11,7 @@ use mpz_core::bitvec::BitVec;
 use mpz_vm_core::{
     Call, CallableExt, Vm, VmError,
     memory::{
-        Array, MemoryExt, Repr, Slice, ViewExt,
+        Array, MemoryExt, Slice, ToRaw, Vector, ViewExt,
         binary::{Binary, U8, U32},
     },
 };
@@ -126,10 +126,7 @@ impl Sha256 {
     }
 
     /// Updates the hash with the provided data.
-    pub fn update<T>(&mut self, data: &T)
-    where
-        T: Repr<Binary>,
-    {
+    pub fn update(&mut self, data: &Vector<U8>) {
         self.update_slice(data.to_raw());
     }
 
