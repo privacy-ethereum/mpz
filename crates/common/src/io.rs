@@ -15,7 +15,7 @@ use tokio_util::{
 };
 
 /// A trait for Sink and Stream functionality.
-pub trait Duplex:
+trait Duplex:
     futures::Stream<Item = Result<BytesMut, std::io::Error>>
     + futures::Sink<Bytes, Error = std::io::Error>
 {
@@ -27,83 +27,85 @@ impl<T> Duplex for T where
 {
 }
 
-trait DuplexFrameLimited: Duplex {
-    /// Sets a new maximum frame length and returns a [`WithFrameLimit`].
+trait FrameLimit {
+    /// Sets a new maximum frame length.
     ///
     /// # Arguments
     ///
-    /// * `max_frame_len` - The new maximum frame length in bytes.
-    fn with_max_frame_limit(&mut self, max_frame_len: usize) -> Box<dyn Duplex + '_>;
+    /// * `frame_limit` - The new maximum frame length in bytes.
+    fn set_frame_limit(&mut self, frame_limit: usize);
+
+    /// Returns the current frame limit, if available.
+    fn frame_limit(&self) -> Option<usize>;
 }
 
-impl<T> DuplexFrameLimited for TokioFramed<Compat<T>, LengthDelimitedCodec>
-where
-    T: AsyncRead + AsyncWrite + Unpin,
-{
-    fn with_max_frame_limit(&mut self, max_frame_len: usize) -> Box<dyn Duplex + '_> {
-        let old_frame_limit = self.codec().max_frame_length();
-        self.codec_mut().set_max_frame_length(max_frame_len);
+impl<T> FrameLimit for TokioFramed<Compat<T>, LengthDelimitedCodec> {
+    fn set_frame_limit(&mut self, frame_limit: usize) {
+        self.codec_mut().set_max_frame_length(frame_limit);
+    }
 
-        let limited = WithFrameLimit {
-            old_frame_limit,
-            framed: self,
-        };
-
-        Box::new(limited)
+    fn frame_limit(&self) -> Option<usize> {
+        let limit = self.codec().max_frame_length();
+        Some(limit)
     }
 }
+
+trait DuplexFrameLimited: Duplex + FrameLimit {}
+
+impl<T> DuplexFrameLimited for T where T: Duplex + FrameLimit {}
 
 pin_project! {
-    /// Wrapper around [`Framed`] to temporarily set a new maximum frame length.
-    pub struct WithFrameLimit<'a, T> {
-        old_frame_limit: usize,
+    /// Wrapper around [`Io`] to temporarily set a frame limit.
+    pub struct WithLimit<'a> {
+        old_limit: Option<usize>,
         #[pin]
-        framed: &'a mut TokioFramed<T, LengthDelimitedCodec>,
+        io: &'a mut Io,
     }
 
-    impl<'a, T> PinnedDrop for WithFrameLimit<'a, T> {
-        fn drop(this: Pin<&mut Self>) {
-            let frame_limit = this.old_frame_limit;
-            this.project()
-                .framed
-                .codec_mut()
-                .set_max_frame_length(frame_limit);
+    impl<'a> PinnedDrop for WithLimit<'a> {
+        fn drop(mut this: Pin<&mut Self>) {
+            let Some(old_limit) = this.old_limit else {
+                return;
+            };
+            let Inner::Transport { ref mut framed } = this.io.inner else {
+                return;
+            };
+            framed.inner_mut().set_frame_limit(old_limit);
         }
     }
 }
 
-impl<T> futures::Stream for WithFrameLimit<'_, T>
-where
-    TokioFramed<T, LengthDelimitedCodec>:
-        futures::Stream<Item = Result<BytesMut, std::io::Error>> + Unpin,
-{
-    type Item = Result<BytesMut, std::io::Error>;
+impl Stream for WithLimit<'_> {
+    type Error = std::io::Error;
 
-    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        self.project().framed.poll_next(cx)
+    fn poll_next<Item: serio::Deserialize>(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+    ) -> Poll<Option<Result<Item, Self::Error>>> {
+        self.project().io.poll_next(cx)
     }
 }
 
-impl<T> futures::Sink<Bytes> for WithFrameLimit<'_, T>
-where
-    TokioFramed<T, LengthDelimitedCodec>: futures::Sink<Bytes, Error = std::io::Error> + Unpin,
-{
+impl Sink for WithLimit<'_> {
     type Error = std::io::Error;
 
     fn poll_ready(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.project().framed.poll_ready(cx)
+        self.project().io.poll_ready(cx)
     }
 
-    fn start_send(self: Pin<&mut Self>, item: Bytes) -> Result<(), Self::Error> {
-        self.project().framed.start_send(item)
+    fn start_send<Item: serio::Serialize>(
+        self: Pin<&mut Self>,
+        item: Item,
+    ) -> Result<(), Self::Error> {
+        self.project().io.start_send(item)
     }
 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.project().framed.poll_flush(cx)
+        self.project().io.poll_flush(cx)
     }
 
     fn poll_close(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.project().framed.poll_close(cx)
+        self.project().io.poll_close(cx)
     }
 }
 
@@ -128,15 +130,24 @@ impl Io {
         }
     }
 
-    /// Sets a new maximum frame length and returns a [`WithFrameLimit`].
+    /// Returns a frame limited Io.
     ///
     /// # Arguments
     ///
-    /// * `max_frame_len` - The new maximum frame length in bytes.
-    pub fn with_frame_limit(&mut self, max_frame_len: usize) -> Box<dyn Duplex + '_> {
-        match &mut self.inner {
-            Inner::Transport { framed } => framed.inner_mut().with_max_frame_limit(max_frame_len),
-            Inner::Memory { channel } => Box::new(self),
+    /// * `frame_limit` - The new maximum frame length in bytes.
+    pub fn with_limit(&mut self, frame_limit: usize) -> WithLimit<'_> {
+        let old_limit = match &self.inner {
+            Inner::Transport { framed } => framed.inner().frame_limit(),
+            Inner::Memory { channel: _ } => None,
+        };
+
+        if let Inner::Transport { ref mut framed } = self.inner {
+            framed.inner_mut().set_frame_limit(frame_limit);
+        };
+
+        WithLimit {
+            old_limit,
+            io: self,
         }
     }
 
