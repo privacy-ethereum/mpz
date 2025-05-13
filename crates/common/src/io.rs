@@ -75,6 +75,13 @@ pin_project! {
     }
 }
 
+impl<'a> WithLimit<'a> {
+    #[cfg(test)]
+    fn frame_limit(&self) -> Option<usize> {
+        self.io.frame_limit()
+    }
+}
+
 impl Stream for WithLimit<'_> {
     type Error = std::io::Error;
 
@@ -157,6 +164,14 @@ impl Io {
             inner: Inner::Memory { channel: duplex },
         }
     }
+
+    #[cfg(test)]
+    fn frame_limit(&self) -> Option<usize> {
+        match &self.inner {
+            Inner::Transport { framed } => framed.inner().frame_limit(),
+            Inner::Memory { channel: _ } => None,
+        }
+    }
 }
 
 pin_project! {
@@ -231,5 +246,33 @@ impl Stream for Io {
             Inner::Transport { framed } => framed.size_hint(),
             Inner::Memory { channel } => channel.size_hint(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Io;
+    use tokio_util::compat::TokioAsyncReadCompatExt;
+
+    #[test]
+    fn test_frame_limit() {
+        let (a, b) = tokio::io::duplex(1024);
+
+        let mut a = Io::from_io(a.compat());
+        let mut b = Io::from_io(b.compat());
+
+        let old_limit = a.frame_limit().unwrap();
+        let new_limit = 2 * old_limit;
+
+        {
+            let a = a.with_limit(new_limit);
+            let b = b.with_limit(new_limit);
+
+            assert_eq!(a.frame_limit().unwrap(), new_limit);
+            assert_eq!(b.frame_limit().unwrap(), new_limit);
+        }
+
+        assert_eq!(a.frame_limit().unwrap(), old_limit);
+        assert_eq!(b.frame_limit().unwrap(), old_limit);
     }
 }
