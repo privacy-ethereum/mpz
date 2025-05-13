@@ -14,7 +14,6 @@ use tokio_util::{
     compat::{Compat, FuturesAsyncReadCompatExt as _},
 };
 
-/// A trait for Sink and Stream functionality.
 trait Duplex:
     futures::Stream<Item = Result<BytesMut, std::io::Error>>
     + futures::Sink<Bytes, Error = std::io::Error>
@@ -137,7 +136,7 @@ impl Io {
         }
     }
 
-    /// Returns a frame limited Io.
+    /// Adjusts the frame limit temporarily and returns a [`WithLimit`].
     ///
     /// # Arguments
     ///
