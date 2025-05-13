@@ -75,7 +75,7 @@ pin_project! {
     }
 }
 
-impl<'a> WithLimit<'a> {
+impl WithLimit<'_> {
     #[cfg(test)]
     fn frame_limit(&self) -> Option<usize> {
         self.io.frame_limit()
