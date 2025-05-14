@@ -18,15 +18,6 @@ trait Duplex:
     futures::Stream<Item = Result<BytesMut, std::io::Error>>
     + futures::Sink<Bytes, Error = std::io::Error>
 {
-}
-
-impl<T> Duplex for T where
-    T: futures::Stream<Item = Result<BytesMut, std::io::Error>>
-        + futures::Sink<Bytes, Error = std::io::Error>
-{
-}
-
-trait FrameLimit {
     /// Sets a new maximum frame length.
     ///
     /// # Arguments
@@ -34,24 +25,22 @@ trait FrameLimit {
     /// * `frame_limit` - The new maximum frame length in bytes.
     fn set_frame_limit(&mut self, frame_limit: usize);
 
-    /// Returns the current frame limit, if available.
-    fn frame_limit(&self) -> Option<usize>;
+    /// Returns the current frame limit.
+    fn frame_limit(&self) -> usize;
 }
 
-impl<T> FrameLimit for TokioFramed<Compat<T>, LengthDelimitedCodec> {
+impl<T> Duplex for TokioFramed<Compat<T>, LengthDelimitedCodec>
+where
+    T: AsyncRead + AsyncWrite,
+{
     fn set_frame_limit(&mut self, frame_limit: usize) {
         self.codec_mut().set_max_frame_length(frame_limit);
     }
 
-    fn frame_limit(&self) -> Option<usize> {
-        let limit = self.codec().max_frame_length();
-        Some(limit)
+    fn frame_limit(&self) -> usize {
+        self.codec().max_frame_length()
     }
 }
-
-trait DuplexFrameLimited: Duplex + FrameLimit {}
-
-impl<T> DuplexFrameLimited for T where T: Duplex + FrameLimit {}
 
 pin_project! {
     /// Wrapper around [`Io`] to temporarily set a frame limit.
@@ -63,13 +52,13 @@ pin_project! {
 
     impl<'a> PinnedDrop for WithLimit<'a> {
         fn drop(mut this: Pin<&mut Self>) {
-            let Some(old_limit) = this.old_limit else {
-                return;
-            };
-            let Inner::Transport { ref mut framed } = this.io.inner else {
-                return;
-            };
-            framed.inner_mut().set_frame_limit(old_limit);
+            let old_limit = this
+                .old_limit
+                .expect("old limit is always set for transport variant");
+
+            if let Inner::Transport { framed } = &mut this.io.inner {
+                framed.inner_mut().set_frame_limit(old_limit);
+            }
         }
     }
 }
@@ -142,13 +131,13 @@ impl Io {
     ///
     /// * `frame_limit` - The new maximum frame length in bytes.
     pub fn with_limit(&mut self, frame_limit: usize) -> WithLimit<'_> {
-        let old_limit = match &self.inner {
-            Inner::Transport { framed } => framed.inner().frame_limit(),
+        let old_limit = match &mut self.inner {
+            Inner::Transport { framed } => {
+                let old_limit = framed.inner().frame_limit();
+                framed.inner_mut().set_frame_limit(frame_limit);
+                Some(old_limit)
+            }
             Inner::Memory { channel: _ } => None,
-        };
-
-        if let Inner::Transport { ref mut framed } = self.inner {
-            framed.inner_mut().set_frame_limit(frame_limit);
         };
 
         WithLimit {
@@ -167,7 +156,7 @@ impl Io {
     #[cfg(test)]
     fn frame_limit(&self) -> Option<usize> {
         match &self.inner {
-            Inner::Transport { framed } => framed.inner().frame_limit(),
+            Inner::Transport { framed } => Some(framed.inner().frame_limit()),
             Inner::Memory { channel: _ } => None,
         }
     }
@@ -177,7 +166,7 @@ pin_project! {
     #[project = InnerProj]
     enum Inner {
         /// I/O over a framed bytes transport.
-        Transport { #[pin] framed: Framed<Box<dyn DuplexFrameLimited + Send + Sync + Unpin>, Bincode> },
+        Transport { #[pin] framed: Framed<Box<dyn Duplex + Send + Sync + Unpin>, Bincode> },
         /// I/O over a memory channel.
         Memory { #[pin] channel: MemoryDuplex }
     }
