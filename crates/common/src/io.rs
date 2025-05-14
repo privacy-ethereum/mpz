@@ -52,11 +52,8 @@ pin_project! {
 
     impl<'a> PinnedDrop for WithLimit<'a> {
         fn drop(mut this: Pin<&mut Self>) {
-            let old_limit = this
-                .old_limit
-                .expect("old limit is always set for transport variant");
-
-            if let Inner::Transport { framed } = &mut this.io.inner {
+            if let (Some(old_limit), Inner::Transport { framed }) = (this.old_limit, &mut this.io.inner)
+            {
                 framed.inner_mut().set_frame_limit(old_limit);
             }
         }
