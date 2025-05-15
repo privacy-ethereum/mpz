@@ -28,6 +28,12 @@ impl Key {
         self.0.lsb()
     }
 
+    /// Sets the pointer bit.
+    #[inline]
+    pub fn set_pointer(&mut self, bit: bool) {
+        self.0.set_lsb(bit);
+    }
+
     /// Adjusts the truth value of the corresponding MAC.
     #[inline]
     pub fn adjust(&mut self, adjust: bool, delta: &Delta) {

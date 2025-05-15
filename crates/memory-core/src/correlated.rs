@@ -55,11 +55,13 @@
 
 mod keys;
 mod macs;
+mod auth;
 
 use std::{ops::BitXor, sync::LazyLock};
 
 pub use keys::{Key, KeyStore, KeyStoreError};
 pub use macs::{Mac, MacStore, MacStoreError};
+pub use auth::{AuthBit, AuthBitStore, AuthBitStoreError};
 
 use mpz_core::{
     Block,
@@ -103,10 +105,26 @@ impl Delta {
         Self(value)
     }
 
+    /// Set the pointer bit of the Delta
+    #[inline]
+    pub fn set_lsb(mut self, value: bool) -> Self {
+        self.0.set_lsb(value);
+        self
+    }
+
     /// Generate a random block using the provided RNG
     #[inline]
     pub fn random<R: Rng + CryptoRng + ?Sized>(rng: &mut R) -> Self {
         Self::new(rng.random())
+    }
+
+    #[inline]
+    pub fn mul_bool(self, value: bool) -> Block {
+        if value {
+            self.0
+        } else {
+            Block::ZERO
+        }
     }
 
     /// Returns the inner block

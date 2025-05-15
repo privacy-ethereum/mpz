@@ -142,6 +142,15 @@ impl Block {
         (self.0[0] & 1) == 1
     }
 
+    /// multiplies the block with a boolean
+    #[inline]
+    pub fn mul_bool(self, bit: bool) -> Self {
+        if bit {
+            self
+        } else {
+            Self::ZERO
+        }
+    }
     /// Let `x0` and `x1` be the lower and higher halves of `x`, respectively.
     /// This function compute ``sigma( x = x0 || x1 ) = x1 || (x0 xor x1)``.
     #[inline(always)]

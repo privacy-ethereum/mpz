@@ -15,6 +15,7 @@ rayon = ["mpz-common/rayon", "mpz-garble-core/rayon"]
 mock = ["mpz-ot/ideal"]
 
 [dependencies]
+mpz-cointoss = { workspace = true }
 mpz-circuits.workspace = true
 mpz-common = { workspace = true, features = ["test-utils", "executor"] }
 mpz-memory-core = { workspace = true }
@@ -25,6 +26,8 @@ mpz-vm-core = { workspace = true }
 tlsn-utils.workspace = true
 serio.workspace = true
 
+aes = { workspace = true, features = [] }
+cipher.workspace = true
 async-trait.workspace = true
 rand.workspace = true
 thiserror.workspace = true
@@ -40,6 +43,7 @@ tokio = { workspace = true, features = ["sync"] }
 [dev-dependencies]
 mpz-common = { workspace = true, features = ["test-utils", "ideal"] }
 mpz-ot = { workspace = true, features = ["ideal"] }
+mpz-ot-core = { workspace = true, features = ["test-utils"] }
 rstest = { workspace = true }
 criterion = { workspace = true, features = ["async_tokio"] }
 tokio = { workspace = true, features = [
@@ -52,4 +56,8 @@ tracing-subscriber = { workspace = true, features = ["fmt"] }
 
 [[bench]]
 name = "semihonest"
+harness = false
+
+[[bench]]
+name = "authenticated"
 harness = false

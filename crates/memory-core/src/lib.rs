@@ -126,6 +126,7 @@ pub trait MemoryExt<T: MemoryType>: Memory<T> {
     /// Decodes the value.
     ///
     /// Returns a future which will resolve to the value when it is ready.
+    /// Also decodes the evaluator's inputs if included in the decode range.
     fn decode<R>(&mut self, value: R) -> Result<DecodeFutureTyped<T::Raw, R::Clear>, Self::Error>
     where
         R: Repr<T>,

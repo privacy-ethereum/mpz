@@ -12,6 +12,13 @@ pub struct GarbledCircuit {
     pub gates: Vec<EncryptedGate>,
 }
 
+/// A garbled circuit.
+#[derive(Debug, Clone)]
+pub struct AuthGarbledCircuit {
+    /// Encrypted gates.
+    pub gates: Vec<AuthHalfGate>,
+}
+
 /// Encrypted gate truth table
 ///
 /// For the half-gate garbling scheme a truth table will typically have 2 rows,
@@ -53,6 +60,43 @@ impl<const N: usize> EncryptedGateBatch<N> {
 
     /// Returns the inner array.
     pub fn into_array(self) -> [EncryptedGate; N] {
+        self.0
+    }
+}
+
+/// An authenticated half gate
+#[derive(Debug, Default, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct AuthHalfGate {
+    #[serde(with = "serde_arrays")]
+    pub(crate) gates: [Block; 2],
+    pub(crate) mask: bool,
+}
+
+impl AuthHalfGate {
+    /// Creates a new authenticated half gate
+    pub fn new(gates: [Block; 2], mask: bool) -> Self {
+        Self { gates, mask }
+    }
+}
+
+/// A batch of authenticated half gates.
+///
+/// # Parameters
+///
+/// - `N`: The size of a batch.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AuthHalfGateBatch<const N: usize = DEFAULT_BATCH_SIZE>(
+    #[serde(with = "serde_arrays")] [AuthHalfGate; N],
+);
+
+impl<const N: usize> AuthHalfGateBatch<N> {
+    /// Creates a new batch of authenticated half gates.
+    pub fn new(batch: [AuthHalfGate; N]) -> Self {
+        Self(batch)
+    }
+
+    /// Returns the inner array.
+    pub fn into_array(self) -> [AuthHalfGate; N] {
         self.0
     }
 }

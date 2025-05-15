@@ -1,17 +1,21 @@
 //! Memory stores.
 
 mod evaluator;
+mod auth_eval;
 mod garbler;
+mod auth_gen;
 
 pub use evaluator::{EvaluatorStore, EvaluatorStoreError};
+pub use auth_eval::{AuthEvalStore, AuthEvalStoreError};
 pub use garbler::{GarblerStore, GarblerStoreError};
+pub use auth_gen::{AuthGenStore, AuthGenStoreError};
 
 use blake3::Hash;
 use mpz_core::bitvec::BitVec;
 use mpz_memory_core::correlated::{Mac, MacCommitment};
 use serde::{Deserialize, Serialize};
 
-use crate::view::FlushView;
+use crate::view::{AuthFlushView, FlushView};
 
 /// Flush message sent by the garbler.
 #[derive(Debug, Serialize, Deserialize)]
@@ -27,6 +31,21 @@ pub struct GarblerFlush {
     mac_commitments: Vec<MacCommitment>,
 }
 
+/// Flush message sent by auth generator.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AuthGenFlush {
+    /// Flush view.
+    view: AuthFlushView,
+    /// Share proof.
+    share_proof: Option<ShareProof>,
+    /// Half masked inputs.
+    half_masked_inputs: BitVec,
+    /// Input labels.
+    labels: Vec<Mac>,
+    /// Decode share proof.
+    decode_share_proof: Option<ShareProof>,
+}
+
 /// Flush message sent by the evaluator.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(try_from = "validation::EvaluatorFlushUnchecked")]
@@ -37,6 +56,21 @@ pub struct EvaluatorFlush {
     mac_proof: Option<MacProof>,
 }
 
+/// Flush message sent by auth evaluator.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AuthEvalFlush {
+    /// Flush view.
+    view: AuthFlushView,
+    /// Share proof.
+    share_proof: Option<ShareProof>,
+    /// Half masked inputs.
+    half_masked_inputs: BitVec,
+    /// Output labels.
+    labels: Vec<Mac>,
+    /// Decode share proof.
+    decode_share_proof: Option<ShareProof>,
+}
+
 /// MAC proof sent from the evaluator to the garbler to prove
 /// the output of a circuit.
 #[derive(Debug, Serialize, Deserialize)]
@@ -45,6 +79,14 @@ pub struct MacProof {
     proof: Hash,
 }
 
+/// Share proof sent from the generator to the evaluator to prove inputs shares
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ShareProof {
+    bits: BitVec,
+    macs: Vec<Mac>,
+}
+
+// TODO: Add validation for auth flush messages
 mod validation {
     use super::*;
 
@@ -207,5 +249,103 @@ mod tests {
         assert_eq!(val_a_gb, val_a);
         assert_eq!(val_b_gb, val_b);
         assert_eq!(val_c_gb, val_c);
+    }
+
+    #[test]
+    fn test_auth_store_decode() {
+        let mut rng = StdRng::seed_from_u64(0);
+        let delta_a = Delta::random(&mut rng).set_lsb(true);
+        let delta_b = Delta::random(&mut rng).set_lsb(false);
+        let cot_gen = IdealCOT::new(delta_a.into_inner());
+        let cot_eval = IdealCOT::new(delta_b.into_inner());
+        let mut gb = AuthGenStore::new(rng.random(), delta_a, cot_gen.clone(), cot_eval.clone());
+        let mut ev = AuthEvalStore::new(rng.random(), delta_b, cot_eval.clone(), cot_gen.clone());
+
+        let val_a = [0u8; 16];
+        let val_b = [42u8; 16];
+        let val_c = [69u8; 16];
+
+        let ref_a_gen: Array<U8, 16> = gb.alloc().unwrap();
+        gb.mark_public(ref_a_gen).unwrap();
+        let ref_b_gen: Array<U8, 16> = gb.alloc().unwrap();
+        gb.mark_private(ref_b_gen).unwrap();
+        let ref_c_gen: Array<U8, 16> = gb.alloc().unwrap();
+        gb.mark_blind(ref_c_gen).unwrap();
+
+        let ref_a_ev: Array<U8, 16> = ev.alloc().unwrap();
+        ev.mark_public(ref_a_ev).unwrap();
+        let ref_b_ev: Array<U8, 16> = ev.alloc().unwrap();
+        ev.mark_blind(ref_b_ev).unwrap();
+        let ref_c_ev: Array<U8, 16> = ev.alloc().unwrap();
+        ev.mark_private(ref_c_ev).unwrap();
+
+        gb.assign(ref_a_gen, val_a).unwrap();
+        gb.assign(ref_b_gen, val_b).unwrap();
+
+        ev.assign(ref_a_ev, val_a).unwrap();
+        ev.assign(ref_c_ev, val_c).unwrap();
+
+        gb.commit(ref_a_gen).unwrap();
+        gb.commit(ref_b_gen).unwrap();
+        gb.commit(ref_c_gen).unwrap();
+
+        ev.commit(ref_a_ev).unwrap();
+        ev.commit(ref_b_ev).unwrap();
+        ev.commit(ref_c_ev).unwrap();
+
+        assert!(gb.wants_flush());
+        assert!(ev.wants_flush());
+
+        let gen_flush = gb.send_flush().unwrap();
+        let ev_flush = ev.send_flush().unwrap();
+
+        gb.acquire_cot_sender().flush().unwrap();
+        ev.acquire_cot_sender().flush().unwrap();
+
+        gb.receive_flush(ev_flush).unwrap();
+        ev.receive_flush(gen_flush).unwrap();
+
+        let mut fut_a_gen = gb.decode(ref_a_gen).unwrap();
+        let mut fut_b_gen = gb.decode(ref_b_gen).unwrap();
+        let mut fut_c_gen = gb.decode(ref_c_gen).unwrap();
+
+        let mut fut_a_ev = ev.decode(ref_a_ev).unwrap();
+        let mut fut_b_ev = ev.decode(ref_b_ev).unwrap();
+        let mut fut_c_ev = ev.decode(ref_c_ev).unwrap();
+
+        assert!(gb.wants_flush());
+        assert!(ev.wants_flush());
+
+        let gen_flush = gb.send_flush().unwrap();
+        let ev_flush = ev.send_flush().unwrap();
+
+        gb.receive_flush(ev_flush).unwrap();
+        ev.receive_flush(gen_flush).unwrap();
+
+        assert!(gb.wants_flush());
+        assert!(ev.wants_flush());
+
+        let gen_flush = gb.send_flush().unwrap();
+        let ev_flush = ev.send_flush().unwrap();
+
+        gb.receive_flush(ev_flush).unwrap();
+        ev.receive_flush(gen_flush).unwrap();
+
+        assert!(!gb.wants_flush());
+        assert!(!ev.wants_flush());
+
+        let val_a_gen = fut_a_gen.try_recv().unwrap().unwrap();
+        let val_a_ev = fut_a_ev.try_recv().unwrap().unwrap();
+        let val_b_gen = fut_b_gen.try_recv().unwrap().unwrap();
+        let val_b_ev = fut_b_ev.try_recv().unwrap().unwrap();
+        let val_c_gen = fut_c_gen.try_recv().unwrap().unwrap();
+        let val_c_ev = fut_c_ev.try_recv().unwrap().unwrap();
+
+        assert_eq!(val_a_gen, val_a_ev);
+        assert_eq!(val_b_gen, val_b_ev);
+        assert_eq!(val_c_gen, val_c_ev);
+        assert_eq!(val_a_gen, val_a);
+        assert_eq!(val_b_gen, val_b);
+        assert_eq!(val_c_gen, val_c);
     }
 }

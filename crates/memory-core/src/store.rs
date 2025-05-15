@@ -227,6 +227,24 @@ impl BitStore {
 
         Ok(())
     }
+
+    /// Updates the bits at the given slice by XORing with the provided bits
+    pub fn update_xor(&mut self, slice: Slice, bits: &BitSlice) -> Result<()> {
+        assert_eq!(
+            slice.size,
+            bits.len(),
+            "bits are not the same length as the slice"
+        );
+
+        self.try_get_mut(slice)?
+            .iter_mut()
+            .zip(bits)
+            .for_each(|(mut bit, update)| {
+                *bit ^= *update;
+            });
+
+        Ok(())
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
