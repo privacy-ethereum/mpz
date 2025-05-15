@@ -1,9 +1,9 @@
 use mpz_memory_core::{Slice, View as ViewTrait, binary::Binary, view::VisibilityView};
+use rangeset::{Difference, Disjoint, Intersection, Subset, Union};
 use serde::{Deserialize, Serialize};
-use utils::range::{Difference, Disjoint, Intersection, Subset, Union};
 
 type Range = std::ops::Range<usize>;
-type RangeSet = utils::range::RangeSet<usize>;
+type RangeSet = rangeset::RangeSet<usize>;
 type Result<T, E = ViewError> = core::result::Result<T, E>;
 
 #[derive(Debug, Default)]

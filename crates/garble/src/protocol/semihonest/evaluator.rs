@@ -2,11 +2,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use hashbrown::HashMap;
+use rangeset::{Disjoint, RangeSet};
 use tokio::sync::Mutex;
-use utils::{
-    filter_drain::FilterDrain,
-    range::{Disjoint, RangeSet},
-};
 
 use mpz_common::{Context, Flush};
 use mpz_core::{Block, bitvec::BitVec};
@@ -39,7 +36,7 @@ impl<COT> Evaluator<COT> {
         let mut idx_outputs = RangeSet::default();
         self.call_stack
             // Extract calls which have no dependencies on other prior calls.
-            .filter_drain(|(call, output)| {
+            .extract_if(.., |(call, output)| {
                 if call
                     .inputs()
                     .iter()
@@ -59,7 +56,7 @@ impl<COT> Evaluator<COT> {
         let store = self.store.try_lock().unwrap();
         self.call_stack
             // Extract only a call which has all its inputs committed.
-            .filter_drain(|(call, _)| {
+            .extract_if(.., |(call, _)| {
                 call.inputs()
                     .iter()
                     .all(|input| store.is_committed_raw(*input))

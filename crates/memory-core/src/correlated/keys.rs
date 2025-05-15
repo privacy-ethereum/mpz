@@ -7,7 +7,7 @@ use mpz_core::{
     bitvec::{BitSlice, BitVec},
 };
 use rand::{distr::StandardUniform, prelude::Distribution};
-use utils::range::Disjoint;
+use rangeset::Disjoint;
 
 use crate::{
     RangeSet, Slice,

@@ -21,7 +21,6 @@ mpz-ot-core = { workspace = true }
 mpz-common = { workspace = true, features = ["future"] }
 mpz-memory-core = { workspace = true }
 mpz-vm-core = { workspace = true }
-tlsn-utils = { workspace = true }
 
 aes = { workspace = true, features = [] }
 cipher.workspace = true
@@ -33,6 +32,7 @@ regex = { workspace = true, optional = true }
 once_cell.workspace = true
 opaque-debug.workspace = true
 rayon = { workspace = true, optional = true }
+rangeset = { workspace = true, features = ["serde"] }
 serde = { workspace = true, features = ["derive"] }
 serde_arrays.workspace = true
 thiserror.workspace = true

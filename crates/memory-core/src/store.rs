@@ -1,9 +1,9 @@
 use mpz_core::bitvec::{BitSlice, BitVec};
-use utils::range::Subset;
+use rangeset::Subset;
 
 use crate::{Ptr, Slice};
 
-type RangeSet = utils::range::RangeSet<usize>;
+type RangeSet = rangeset::RangeSet<usize>;
 type Result<T> = core::result::Result<T, StoreError>;
 
 /// A linear store.

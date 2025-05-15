@@ -8,10 +8,10 @@ workspace = true
 
 [dependencies]
 mpz-core = { workspace = true }
-tlsn-utils = { workspace = true }
 blake3 = { workspace = true }
 thiserror = { workspace = true }
 rand = { workspace = true }
+rangeset = { workspace = true, features = ["serde"] }
 serde = { workspace = true, features = ["derive"] }
 itybity = { workspace = true }
 futures = { workspace = true }

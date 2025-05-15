@@ -11,7 +11,6 @@ use mpz_memory_core::{
     store::{BitStore, StoreError},
 };
 use mpz_ot_core::cot::COTSender;
-use utils::filter_drain::FilterDrain;
 
 use crate::{
     store::{EvaluatorFlush, GarblerFlush, MacProof},
@@ -121,7 +120,7 @@ impl<COT> GarblerStore<COT> {
     fn flush_decode(&mut self) -> Result<()> {
         for mut op in self
             .buffer_decode
-            .filter_drain(|op| self.data_store.is_set(op.slice))
+            .extract_if(.., |op| self.data_store.is_set(op.slice))
         {
             let data = self.data_store.try_get(op.slice)?;
             op.send(data.to_bitvec())?;
