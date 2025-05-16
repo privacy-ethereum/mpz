@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use rangeset::{Difference, Intersection};
 use tokio::sync::{Mutex, OwnedMutexGuard};
 
 use mpz_common::future::Output;
@@ -11,10 +12,6 @@ use mpz_memory_core::{
     store::{BitStore, Store, StoreError},
 };
 use mpz_ot_core::cot::{COTReceiver, COTReceiverOutput};
-use utils::{
-    filter_drain::FilterDrain,
-    range::{Difference, Intersection},
-};
 
 use crate::{
     store::{EvaluatorFlush, GarblerFlush, MacProof},
@@ -129,7 +126,7 @@ impl<COT> EvaluatorStore<COT> {
 
         for mut op in self
             .buffer_decode
-            .filter_drain(|op| self.data_store.is_set(op.slice))
+            .extract_if(.., |op| self.data_store.is_set(op.slice))
         {
             let data = self.data_store.try_get(op.slice)?;
             op.send(data.to_bitvec())?;

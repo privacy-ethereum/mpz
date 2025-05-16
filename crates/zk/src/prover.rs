@@ -9,7 +9,6 @@ use mpz_vm_core::{
 };
 use mpz_zk_core::{Prover as Core, ProverError, store::ProverStore};
 use serio::{SinkExt, stream::IoStreamExt};
-use utils::filter_drain::FilterDrain;
 
 #[derive(Debug)]
 pub struct Prover<OT> {
@@ -111,7 +110,7 @@ where
         while !self.callstack.is_empty() {
             let ready_calls: Vec<_> = self
                 .callstack
-                .filter_drain(|(call, _)| {
+                .extract_if(.., |(call, _)| {
                     call.inputs()
                         .iter()
                         .all(|input| self.store.is_committed_raw(*input))

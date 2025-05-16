@@ -17,7 +17,7 @@ use std::{
 use mpz_core::bitvec::{BitSlice, BitVec};
 use serde::{Deserialize, Serialize};
 
-pub(crate) type RangeSet = utils::range::RangeSet<usize>;
+pub(crate) type RangeSet = rangeset::RangeSet<usize>;
 pub(crate) type Range = std::ops::Range<usize>;
 
 /// Virtual-machine memory.

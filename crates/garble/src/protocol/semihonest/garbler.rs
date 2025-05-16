@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use tokio::sync::Mutex;
-use utils::filter_drain::FilterDrain;
 
 use mpz_common::{Context, Flush};
 use mpz_core::{Block, bitvec::BitVec};
@@ -34,14 +33,16 @@ impl<COT> Garbler<COT> {
     fn take_preprocess_calls(&mut self) -> Vec<(Call, Slice)> {
         let store = self.store.try_lock().unwrap();
         self.call_stack
-            .filter_drain(|(call, _)| call.inputs().iter().all(|slice| store.is_set_keys(*slice)))
+            .extract_if(.., |(call, _)| {
+                call.inputs().iter().all(|slice| store.is_set_keys(*slice))
+            })
             .collect()
     }
 
     fn take_execute_calls(&mut self) -> Vec<(Call, Slice)> {
         let store = self.store.try_lock().unwrap();
         self.call_stack
-            .filter_drain(|(call, _)| {
+            .extract_if(.., |(call, _)| {
                 call.inputs()
                     .iter()
                     .all(|slice| store.is_committed_raw(*slice))
@@ -55,7 +56,7 @@ impl<COT> Garbler<COT> {
         loop {
             let outputs = self
                 .preprocessed
-                .filter_drain(|(inputs, _)| {
+                .extract_if(.., |(inputs, _)| {
                     inputs.iter().all(|input| store.is_committed_raw(*input))
                 })
                 .map(|(_, output)| output)

@@ -22,10 +22,10 @@ mpz-ot.workspace = true
 mpz-garble-core.workspace = true
 mpz-core.workspace = true
 mpz-vm-core = { workspace = true }
-tlsn-utils.workspace = true
 serio.workspace = true
 
 async-trait.workspace = true
+rangeset = { workspace = true, features = ["serde"] }
 rand.workspace = true
 thiserror.workspace = true
 derive_builder.workspace = true

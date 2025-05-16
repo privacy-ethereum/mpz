@@ -7,7 +7,6 @@ edition = "2024"
 mpz-circuits = { workspace = true }
 mpz-memory-core = { workspace = true }
 mpz-common = { workspace = true }
-tlsn-utils = { workspace = true }
 thiserror = { workspace = true }
 futures = { workspace = true }
 async-trait = { workspace = true }

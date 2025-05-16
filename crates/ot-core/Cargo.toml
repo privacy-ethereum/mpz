@@ -20,8 +20,6 @@ mpz-common = { workspace = true, features = ["future"] }
 clmul.workspace = true
 matrix-transpose.workspace = true
 
-tlsn-utils.workspace = true
-
 aes.workspace = true
 ctr.workspace = true
 blake3 = { workspace = true, features = ["serde"] }

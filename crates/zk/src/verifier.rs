@@ -13,7 +13,6 @@ use mpz_vm_core::{
 };
 use mpz_zk_core::{Verifier as Core, VerifierError, store::VerifierStore};
 use serio::{SinkExt, stream::IoStreamExt};
-use utils::filter_drain::FilterDrain;
 
 #[derive(Debug)]
 pub struct Verifier<OT> {
@@ -107,7 +106,7 @@ where
         while !self.callstack.is_empty() {
             let ready_calls: Vec<_> = self
                 .callstack
-                .filter_drain(|(call, _)| {
+                .extract_if(.., |(call, _)| {
                     call.inputs()
                         .iter()
                         .all(|input| self.store.is_committed_raw(*input))

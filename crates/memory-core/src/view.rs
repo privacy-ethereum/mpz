@@ -1,5 +1,5 @@
+use rangeset::{Difference, Disjoint, Subset};
 use serde::{Deserialize, Serialize};
-use utils::range::{Difference, Disjoint, Subset};
 
 use crate::{Range, RangeSet};
 
