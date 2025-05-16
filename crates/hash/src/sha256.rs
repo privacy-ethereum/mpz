@@ -98,7 +98,7 @@ impl Sha256 {
     }
 
     /// Updates the hash with the provided data.
-    pub fn update_slice(&mut self, mut data: Slice) {
+    fn update_slice(&mut self, mut data: Slice) {
         if data.len() == 0 {
             return;
         }
