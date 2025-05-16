@@ -120,13 +120,15 @@ where
             let flush = self.core.send_flush()?;
             let mut cot = self.core.acquire_cot();
 
+            //------------------------------------------
+            let flush_size = bincode::serialized_size(&flush).unwrap();
+            println!("evaluator flush size: {}", &flush_size);
+            //------------------------------------------
+
             let (flush, ()) = ctx
                 .try_join(
                     async |ctx| {
-                        ctx.io_mut()
-                            .with_limit(1024 * 1024 * 1024)
-                            .send(flush)
-                            .await?;
+                        ctx.io_mut().send(flush).await?;
                         ctx.io_mut()
                             .with_limit(1024 * 1024 * 1024)
                             .expect_next()

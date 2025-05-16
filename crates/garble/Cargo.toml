@@ -36,6 +36,7 @@ serde = { workspace = true, features = ["derive"] }
 hashbrown = { workspace = true }
 futures = { workspace = true }
 tokio = { workspace = true, features = ["sync"] }
+bincode = { workspace = true }
 
 [dev-dependencies]
 mpz-common = { workspace = true, features = ["test-utils", "ideal"] }
