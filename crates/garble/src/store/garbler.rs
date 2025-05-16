@@ -123,8 +123,15 @@ where
             let (flush, ()) = ctx
                 .try_join(
                     async |ctx| {
-                        ctx.io_mut().send(flush).await?;
-                        ctx.io_mut().expect_next().await.map_err(Error::from)
+                        ctx.io_mut()
+                            .with_limit(1024 * 1024 * 1024)
+                            .send(flush)
+                            .await?;
+                        ctx.io_mut()
+                            .with_limit(1024 * 1024 * 1024)
+                            .expect_next()
+                            .await
+                            .map_err(Error::from)
                     },
                     async move |ctx| cot.flush(ctx).await.map_err(Error::cot),
                 )
