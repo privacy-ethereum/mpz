@@ -20,6 +20,7 @@ pub use garbler::{
     EncryptedGateBatchIter, EncryptedGateIter, Garbler, GarblerError, GarblerOutput,
 };
 pub use mpz_memory_core::correlated::{Delta, Key, Mac};
+pub use view::FlushView;
 
 const KB: usize = 1024;
 const BYTES_PER_GATE: usize = 32;

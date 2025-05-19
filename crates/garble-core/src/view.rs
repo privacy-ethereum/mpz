@@ -1,6 +1,8 @@
-use mpz_memory_core::{Slice, View as ViewTrait, binary::Binary, view::VisibilityView};
-use rangeset::{Difference, Disjoint, Intersection, Subset};
+use mpz_memory_core::{
+    Slice, View as ViewTrait, binary::Binary, correlated::Mac, view::VisibilityView,
+};
 use serde::{Deserialize, Serialize};
+use utils::range::{Difference, Disjoint, Intersection, Subset};
 
 type Range = std::ops::Range<usize>;
 type RangeSet = rangeset::RangeSet<usize>;
@@ -36,8 +38,9 @@ struct DecodeView {
     all: RangeSet,
 }
 
+/// Information on the content of the expected flushes.
 #[derive(Debug, Default, Clone, PartialEq, Serialize, Deserialize)]
-pub(crate) struct FlushView {
+pub struct FlushView {
     /// Ranges for which the garbler is to send MACs.
     pub(crate) macs: RangeSet,
     /// Ranges for which the garbler is to send MACs using oblivious
@@ -50,6 +53,29 @@ pub(crate) struct FlushView {
 }
 
 impl FlushView {
+    /// Returns the expected garbler flush size in bytes.
+    pub fn garbler_flush_size(&self) -> usize {
+        let macs = self.macs.len() * Mac::BIT_SIZE;
+        let decode_info = self.decode_info.len();
+        let mac_commitments = self.decode_info.len() * Mac::BIT_SIZE * 2;
+
+        // Add 128 bytes of cushion room.
+        (macs + decode_info + mac_commitments) / 8 + self.size() + 128
+    }
+
+    /// Returns the expected evaluator flush size in bytes.
+    /// [`blake3`]
+    pub fn evaluator_flush_size(&self) -> usize {
+        let proof_size = if self.decode.is_empty() {
+            0
+        } else {
+            blake3::OUT_LEN
+        };
+
+        // Add 128 bytes of cushion room.
+        self.decode.len() / 8 + proof_size + self.size() + 128
+    }
+
     /// Returns `true` if the flush state is empty.
     pub(crate) fn is_empty(&self) -> bool {
         self.macs.is_empty()
@@ -64,6 +90,16 @@ impl FlushView {
         self.ot.clear();
         self.decode_info.clear();
         self.decode.clear();
+    }
+
+    /// Returns the size in bytes for [`FlushView`].
+    fn size(&self) -> usize {
+        let range_count = self.macs.len_ranges()
+            + self.ot.len_ranges()
+            + self.decode_info.len_ranges()
+            + self.decode.len_ranges();
+
+        range_count * 2 * usize::BITS as usize / 8
     }
 }
 

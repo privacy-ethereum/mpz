@@ -27,6 +27,13 @@ pub struct GarblerFlush {
     mac_commitments: Vec<MacCommitment>,
 }
 
+impl GarblerFlush {
+    /// Returns the inner [`FlushView`].
+    pub fn view(&self) -> &FlushView {
+        &self.view
+    }
+}
+
 /// Flush message sent by the evaluator.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(try_from = "validation::EvaluatorFlushUnchecked")]
@@ -35,6 +42,13 @@ pub struct EvaluatorFlush {
     view: FlushView,
     /// Proof of MACs for decoding.
     mac_proof: Option<MacProof>,
+}
+
+impl EvaluatorFlush {
+    /// Returns the inner [`FlushView`].
+    pub fn view(&self) -> &FlushView {
+        &self.view
+    }
 }
 
 /// MAC proof sent from the evaluator to the garbler to prove
