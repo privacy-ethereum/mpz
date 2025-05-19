@@ -1,8 +1,8 @@
 use mpz_memory_core::{
     Slice, View as ViewTrait, binary::Binary, correlated::Mac, view::VisibilityView,
 };
+use rangeset::{Difference, Disjoint, Intersection, Subset};
 use serde::{Deserialize, Serialize};
-use utils::range::{Difference, Disjoint, Intersection, Subset};
 
 type Range = std::ops::Range<usize>;
 type RangeSet = rangeset::RangeSet<usize>;
