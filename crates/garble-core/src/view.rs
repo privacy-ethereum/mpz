@@ -64,7 +64,6 @@ impl FlushView {
     }
 
     /// Returns the expected evaluator flush size in bytes.
-    /// [`blake3`]
     pub fn evaluator_flush_size(&self) -> usize {
         let proof_size = if self.decode.is_empty() {
             0
