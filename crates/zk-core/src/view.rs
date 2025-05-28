@@ -268,7 +268,7 @@ impl View {
         self.input.complete |= &view.commit;
         // Since the verifier learned the plaintext of the proven ranges, those ranges
         // are now decoded.
-        self.decode.complete |= view.prove;
+        self.decode.complete |= &view.prove;
 
         self.flush.clear();
 

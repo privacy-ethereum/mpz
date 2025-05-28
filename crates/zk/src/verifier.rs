@@ -12,7 +12,7 @@ use mpz_vm_core::{
     },
 };
 use mpz_zk_core::{Verifier as Core, VerifierError, store::VerifierStore};
-use serio::{SinkExt, stream::IoStreamExt};
+use serio::stream::IoStreamExt;
 
 #[derive(Debug)]
 pub struct Verifier<OT> {
@@ -74,8 +74,7 @@ where
         }
 
         while self.store.wants_flush() {
-            let flush = self.store.send_flush().map_err(VmError::memory)?;
-            ctx.io_mut().send(flush).await?;
+            self.store.mark_flush_pending().map_err(VmError::memory)?;
             let flush = ctx.io_mut().expect_next().await?;
             self.store
                 .receive_flush(flush, &mut self.transcript)

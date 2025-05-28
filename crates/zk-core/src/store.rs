@@ -18,11 +18,6 @@ pub struct ProverFlush {
     mac_proof: Option<(BitVec, Hash)>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct VerifierFlush {
-    view: FlushView,
-}
-
 mod validation {
     use super::*;
 
@@ -130,25 +125,25 @@ mod tests {
         assert!(verifier.wants_flush());
         assert!(prover.wants_flush());
 
-        let flush_v = verifier.send_flush().unwrap();
+        verifier.mark_flush_pending().unwrap();
         let flush_p = prover.send_flush(&mut prover_transcript).unwrap();
 
         verifier
             .receive_flush(flush_p, &mut verifier_transcript)
             .unwrap();
-        prover.receive_flush(flush_v).unwrap();
+        prover.complete_flush().unwrap();
 
         // Prove
         assert!(verifier.wants_flush());
         assert!(prover.wants_flush());
 
-        let flush_v = verifier.send_flush().unwrap();
+        verifier.mark_flush_pending().unwrap();
         let flush_p = prover.send_flush(&mut prover_transcript).unwrap();
 
         verifier
             .receive_flush(flush_p, &mut verifier_transcript)
             .unwrap();
-        prover.receive_flush(flush_v).unwrap();
+        prover.complete_flush().unwrap();
 
         let b_v = b_v.try_recv().unwrap().unwrap();
 
