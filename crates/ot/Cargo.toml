@@ -1,6 +1,6 @@
 [package]
 name = "mpz-ot"
-version = "0.1.0"
+version = "0.1.0-alpha.3"
 edition = "2024"
 
 [lints]
