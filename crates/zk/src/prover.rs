@@ -77,7 +77,7 @@ where
         }
 
         while self.store.wants_flush() {
-            let flush: mpz_zk_core::store::ProverFlush = self
+            let flush = self
                 .store
                 .send_flush(&mut self.transcript)
                 .map_err(VmError::memory)?;
