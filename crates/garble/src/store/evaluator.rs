@@ -120,11 +120,21 @@ where
             let flush = self.core.send_flush()?;
             let mut cot = self.core.acquire_cot();
 
+            let garbler_flush_size = flush.view().garbler_flush_size();
+            let evaluator_flush_size = flush.view().evaluator_flush_size();
+
             let (flush, ()) = ctx
                 .try_join(
-                    async |ctx| {
-                        ctx.io_mut().send(flush).await?;
-                        ctx.io_mut().expect_next().await.map_err(Error::from)
+                    async move |ctx| {
+                        ctx.io_mut()
+                            .with_limit(evaluator_flush_size)
+                            .send(flush)
+                            .await?;
+                        ctx.io_mut()
+                            .with_limit(garbler_flush_size)
+                            .expect_next()
+                            .await
+                            .map_err(Error::from)
                     },
                     async move |ctx| cot.flush(ctx).await.map_err(Error::cot),
                 )
