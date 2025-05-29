@@ -30,15 +30,6 @@ impl<COT> Garbler<COT> {
         }
     }
 
-    fn take_preprocess_calls(&mut self) -> Vec<(Call, Slice)> {
-        let store = self.store.try_lock().unwrap();
-        self.call_stack
-            .extract_if(.., |(call, _)| {
-                call.inputs().iter().all(|slice| store.is_set_keys(*slice))
-            })
-            .collect()
-    }
-
     fn take_execute_calls(&mut self) -> Vec<(Call, Slice)> {
         let store = self.store.try_lock().unwrap();
         self.call_stack
@@ -74,6 +65,11 @@ impl<COT> Garbler<COT> {
         }
 
         Ok(())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn store(&self) -> Arc<Mutex<GarblerStore<COT>>> {
+        self.store.clone()
     }
 }
 
@@ -202,34 +198,71 @@ where
     }
 
     async fn preprocess(&mut self, ctx: &mut Context) -> Result<()> {
-        let delta = *self.store.try_lock().unwrap().delta();
+        let (delta, mut cot) = {
+            let store = self.store.try_lock().unwrap();
+            (*store.delta(), store.acquire_cot())
+        };
 
-        while !self.call_stack.is_empty() {
-            let calls = self.take_preprocess_calls();
+        let mut call_stack = std::mem::take(&mut self.call_stack);
+        let store = self.store.clone();
 
-            if calls.is_empty() {
-                break;
-            } else {
-                for (call, output) in &calls {
-                    let inputs = call.inputs().to_vec();
-                    self.preprocessed.push((inputs, *output));
-                }
-            }
+        let (_, (mut preprocessed, call_stack)) = ctx
+            .try_join(
+                async move |ctx| {
+                    if cot.wants_flush() {
+                        // This flush is primarily intended to perform OT setup
+                        // concurrently with preprocessing.
+                        cot.flush(ctx).await.map_err(VmError::execute)?;
+                    }
+                    Ok::<_, VmError>(())
+                },
+                async move |ctx| {
+                    let mut preprocessed = Vec::new();
 
-            let store = self.store.clone();
-            let outputs = ctx
-                .map(
-                    calls,
-                    async move |ctx: &mut Context, (call, output): (Call, Slice)| {
-                        generate(ctx, store.clone(), delta, call, output, Mode::Preprocess).await
-                    },
-                    |(call, _)| call.circ().and_count(),
-                )
-                .await
-                .map_err(VmError::execute)?;
+                    while !call_stack.is_empty() {
+                        let calls = take_preprocess_calls(store.clone(), &mut call_stack);
 
-            outputs.into_iter().collect::<Result<()>>()?;
-        }
+                        if calls.is_empty() {
+                            break;
+                        } else {
+                            for (call, output) in &calls {
+                                let inputs = call.inputs().to_vec();
+                                preprocessed.push((inputs, *output));
+                            }
+                        }
+
+                        let store = store.clone();
+                        let outputs = ctx
+                            .map(
+                                calls,
+                                async move |ctx: &mut Context, (call, output): (Call, Slice)| {
+                                    generate(
+                                        ctx,
+                                        store.clone(),
+                                        delta,
+                                        call,
+                                        output,
+                                        Mode::Preprocess,
+                                    )
+                                    .await
+                                },
+                                |(call, _)| call.circ().and_count(),
+                            )
+                            .await
+                            .map_err(VmError::execute)?;
+
+                        outputs.into_iter().collect::<Result<()>>()?;
+                    }
+
+                    Ok::<_, VmError>((preprocessed, call_stack))
+                },
+            )
+            .await
+            .map_err(VmError::execute)??;
+
+        self.preprocessed.append(&mut preprocessed);
+
+        let _ = std::mem::replace(&mut self.call_stack, call_stack);
 
         Ok(())
     }
@@ -317,4 +350,16 @@ async fn generate<COT>(
     }
 
     Ok(())
+}
+
+fn take_preprocess_calls<COT>(
+    store: Arc<Mutex<GarblerStore<COT>>>,
+    call_stack: &mut Vec<(Call, Slice)>,
+) -> Vec<(Call, Slice)> {
+    let store = store.try_lock().unwrap();
+    call_stack
+        .extract_if(.., |(call, _)| {
+            call.inputs().iter().all(|slice| store.is_set_keys(*slice))
+        })
+        .collect()
 }

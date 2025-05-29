@@ -8,6 +8,7 @@ use mpz_garble_core::{
 use mpz_memory_core::{DecodeFuture, Memory, Slice, View, binary::Binary};
 use mpz_ot::cot::COTReceiver;
 use serio::{SinkExt, stream::IoStreamExt};
+use tokio::sync::OwnedMutexGuard;
 
 type Error = EvaluatorStoreError;
 type Result<T, E = Error> = core::result::Result<T, E>;
@@ -23,6 +24,11 @@ impl<COT> EvaluatorStore<COT> {
         Self {
             core: Core::new(cot),
         }
+    }
+
+    /// Returns a lock on the COT receiver.
+    pub(crate) fn acquire_cot(&self) -> OwnedMutexGuard<COT> {
+        self.core.acquire_cot()
     }
 
     pub(crate) fn try_get_macs(&self, slice: Slice) -> Result<&[Mac], Error> {
