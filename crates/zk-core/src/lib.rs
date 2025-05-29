@@ -110,12 +110,12 @@ mod tests {
         assert!(verifier_store.wants_flush());
 
         let flush_p = prover_store.send_flush(&mut prover_transcript).unwrap();
-        let flush_v = verifier_store.send_flush().unwrap();
+        verifier_store.mark_flush_pending().unwrap();
 
-        prover_store.receive_flush(flush_v).unwrap();
         verifier_store
             .receive_flush(flush_p, &mut verifier_transcript)
             .unwrap();
+        prover_store.complete_flush().unwrap();
 
         let mut prover = Prover::default();
         let mut verifier = Verifier::new(delta);
@@ -192,12 +192,12 @@ mod tests {
         assert!(verifier_store.wants_flush());
 
         let flush_p = prover_store.send_flush(&mut prover_transcript).unwrap();
-        let flush_v = verifier_store.send_flush().unwrap();
+        verifier_store.mark_flush_pending().unwrap();
 
-        prover_store.receive_flush(flush_v).unwrap();
         verifier_store
             .receive_flush(flush_p, &mut verifier_transcript)
             .unwrap();
+        prover_store.complete_flush().unwrap();
 
         let out_p = out_p.try_recv().unwrap().unwrap();
         let out_v = out_v.try_recv().unwrap().unwrap();

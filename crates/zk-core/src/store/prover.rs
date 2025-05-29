@@ -9,8 +9,8 @@ use mpz_memory_core::{
 use zerocopy::IntoBytes;
 
 use crate::{
-    store::{ProverFlush, VerifierFlush},
-    view::{FlushView, View, ViewError},
+    store::ProverFlush,
+    view::{View, ViewError},
 };
 
 type Error = ProverStoreError;
@@ -147,20 +147,12 @@ impl ProverStore {
         Ok(flush)
     }
 
-    pub fn receive_flush(&mut self, flush: VerifierFlush) -> Result<()> {
+    pub fn complete_flush(&mut self) -> Result<()> {
         if !self.pending {
             return Err(ErrorRepr::UnexpectedFlush.into());
         }
 
-        let VerifierFlush { view } = flush;
-
-        if &view != self.view.flush() {
-            return Err(ErrorRepr::Flush {
-                expected: self.view.flush().clone(),
-                actual: view,
-            }
-            .into());
-        }
+        let view = self.view.flush().clone();
 
         self.view.complete_flush(view);
         self.flush_decode()?;
@@ -293,11 +285,6 @@ enum ErrorRepr {
     WrongMacCount { expected: usize, actual: usize },
     #[error("store was not expecting a flush")]
     UnexpectedFlush,
-    #[error("verifier flush view mismatch: expected {expected:?}, got {actual:?}")]
-    Flush {
-        expected: FlushView,
-        actual: FlushView,
-    },
 }
 
 impl From<MacStoreError> for ProverStoreError {

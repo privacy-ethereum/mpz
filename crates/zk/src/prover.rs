@@ -8,7 +8,7 @@ use mpz_vm_core::{
     memory::{DecodeFuture, Memory, Repr, Slice, View, binary::Binary, correlated::Mac},
 };
 use mpz_zk_core::{Prover as Core, ProverError, store::ProverStore};
-use serio::{SinkExt, stream::IoStreamExt};
+use serio::SinkExt;
 
 #[derive(Debug)]
 pub struct Prover<OT> {
@@ -82,8 +82,7 @@ where
                 .send_flush(&mut self.transcript)
                 .map_err(VmError::memory)?;
             ctx.io_mut().send(flush).await?;
-            let flush = ctx.io_mut().expect_next().await?;
-            self.store.receive_flush(flush).map_err(VmError::memory)?;
+            self.store.complete_flush().map_err(VmError::memory)?;
         }
 
         Ok(())

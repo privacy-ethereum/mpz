@@ -9,7 +9,7 @@ use mpz_memory_core::{
 use zerocopy::IntoBytes;
 
 use crate::{
-    store::{ProverFlush, VerifierFlush},
+    store::ProverFlush,
     view::{FlushView, View, ViewError},
 };
 
@@ -96,18 +96,14 @@ impl VerifierStore {
         Ok(())
     }
 
-    pub fn send_flush(&mut self) -> Result<VerifierFlush> {
+    pub fn mark_flush_pending(&mut self) -> Result<()> {
         if self.pending {
             return Err(ErrorRepr::UnexpectedFlush.into());
         }
 
         self.pending = true;
 
-        let flush = VerifierFlush {
-            view: self.view.flush().clone(),
-        };
-
-        Ok(flush)
+        Ok(())
     }
 
     pub fn receive_flush(&mut self, flush: ProverFlush, transcript: &mut Hasher) -> Result<()> {
