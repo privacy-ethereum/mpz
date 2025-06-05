@@ -206,7 +206,13 @@ where
         let mut call_stack = std::mem::take(&mut self.call_stack);
         let store = self.store.clone();
 
-        let (_, mut preprocessed) = ctx
+        // All calls will be added to preprocessed once preprocessing completes.
+        let mut preprocessed = call_stack
+            .iter()
+            .map(|(call, output)| (call.inputs().to_vec(), *output))
+            .collect::<Vec<_>>();
+
+        let (_, _) = ctx
             .try_join(
                 async move |ctx| {
                     // This flush is primarily intended to perform OT setup
@@ -214,19 +220,12 @@ where
                     cot.flush(ctx).await.map_err(VmError::execute)
                 },
                 async move |ctx| {
-                    let mut preprocessed = Vec::new();
-
                     while !call_stack.is_empty() {
                         let calls = take_preprocess_calls(&mut call_stack);
 
                         // There must be at least one call ready for preprocessing
                         // in a non-empty call stack.
                         debug_assert!(!calls.is_empty());
-
-                        for (call, output) in &calls {
-                            let inputs = call.inputs().to_vec();
-                            preprocessed.push((inputs, *output));
-                        }
 
                         let store = store.clone();
                         let outputs = ctx
@@ -251,7 +250,7 @@ where
                         outputs.into_iter().collect::<Result<()>>()?;
                     }
 
-                    Ok::<_, VmError>(preprocessed)
+                    Ok::<_, VmError>(())
                 },
             )
             .await
