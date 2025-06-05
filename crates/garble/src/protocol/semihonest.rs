@@ -5,6 +5,30 @@ mod garbler;
 
 pub use evaluator::Evaluator;
 pub use garbler::Garbler;
+use mpz_memory_core::Slice;
+use mpz_vm_core::Call;
+use rangeset::{Disjoint, RangeSet};
+
+/// Takes those calls from the `call_stack` which are ready for preprocessing.
+fn take_preprocess_calls(call_stack: &mut Vec<(Call, Slice)>) -> Vec<(Call, Slice)> {
+    let mut idx_outputs = RangeSet::default();
+    call_stack
+        // Extract calls which have no dependencies on other prior calls.
+        .extract_if(.., |(call, output)| {
+            if call
+                .inputs()
+                .iter()
+                .all(|input| input.to_range().is_disjoint(&idx_outputs))
+            {
+                idx_outputs |= output.to_range();
+                true
+            } else {
+                idx_outputs |= output.to_range();
+                false
+            }
+        })
+        .collect()
+}
 
 #[cfg(test)]
 mod tests {

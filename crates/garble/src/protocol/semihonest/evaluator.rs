@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use hashbrown::HashMap;
-use rangeset::{Disjoint, RangeSet};
 use tokio::sync::Mutex;
 
 use mpz_common::{Context, Flush};
@@ -12,7 +11,10 @@ use mpz_memory_core::{DecodeFuture, Memory, Slice, View, binary::Binary};
 use mpz_ot::cot::COTReceiver;
 use mpz_vm_core::{Call, Callable, Execute, Result, VmError};
 
-use crate::{evaluator::receive_garbled_circuit, store::EvaluatorStore};
+use crate::{
+    evaluator::receive_garbled_circuit, protocol::semihonest::take_preprocess_calls,
+    store::EvaluatorStore,
+};
 
 /// Semi-honest evaluator.
 #[derive(Debug)]
@@ -228,7 +230,7 @@ where
 
         let mut call_stack = std::mem::take(&mut self.call_stack);
 
-        let (_, (preprocessed, call_stack)) = ctx
+        let (_, preprocessed) = ctx
             .try_join(
                 async move |ctx| {
                     // This flush is primarily intended to perform OT setup
@@ -241,9 +243,9 @@ where
                     while !call_stack.is_empty() {
                         let calls = take_preprocess_calls(&mut call_stack);
 
-                        if calls.is_empty() {
-                            break;
-                        }
+                        // There must be at least one call ready for preprocessing
+                        // in a non-empty call stack.
+                        debug_assert!(!calls.is_empty());
 
                         let mut outputs = ctx
                             .map(
@@ -262,13 +264,11 @@ where
                         preprocessed.append(&mut outputs);
                     }
 
-                    Ok::<_, VmError>((preprocessed, call_stack))
+                    Ok::<_, VmError>(preprocessed)
                 },
             )
             .await
             .map_err(VmError::execute)??;
-
-        let _ = std::mem::replace(&mut self.call_stack, call_stack);
 
         let mut store = self.store.try_lock().unwrap();
         for output in preprocessed {
@@ -360,24 +360,4 @@ async fn evaluate<COT>(
         .map_err(VmError::memory)?;
 
     Ok(())
-}
-
-fn take_preprocess_calls(call_stack: &mut Vec<(Call, Slice)>) -> Vec<(Call, Slice)> {
-    let mut idx_outputs = RangeSet::default();
-    call_stack
-        // Extract calls which have no dependencies on other prior calls.
-        .extract_if(.., |(call, output)| {
-            if call
-                .inputs()
-                .iter()
-                .all(|input| input.to_range().is_disjoint(&idx_outputs))
-            {
-                idx_outputs |= output.to_range();
-                true
-            } else {
-                idx_outputs |= output.to_range();
-                false
-            }
-        })
-        .collect()
 }

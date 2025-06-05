@@ -10,7 +10,7 @@ use mpz_memory_core::{DecodeFuture, Memory, Slice, View, binary::Binary, correla
 use mpz_ot::cot::COTSender;
 use mpz_vm_core::{Call, Callable, Execute, Result, VmError};
 
-use crate::store::GarblerStore;
+use crate::{protocol::semihonest::take_preprocess_calls, store::GarblerStore};
 
 /// Semi-honest garbler.
 #[derive(Debug)]
@@ -206,7 +206,7 @@ where
         let mut call_stack = std::mem::take(&mut self.call_stack);
         let store = self.store.clone();
 
-        let (_, (mut preprocessed, call_stack)) = ctx
+        let (_, mut preprocessed) = ctx
             .try_join(
                 async move |ctx| {
                     if cot.wants_flush() {
@@ -220,15 +220,15 @@ where
                     let mut preprocessed = Vec::new();
 
                     while !call_stack.is_empty() {
-                        let calls = take_preprocess_calls(store.clone(), &mut call_stack);
+                        let calls = take_preprocess_calls(&mut call_stack);
 
-                        if calls.is_empty() {
-                            break;
-                        } else {
-                            for (call, output) in &calls {
-                                let inputs = call.inputs().to_vec();
-                                preprocessed.push((inputs, *output));
-                            }
+                        // There must be at least one call ready for preprocessing
+                        // in a non-empty call stack.
+                        debug_assert!(!calls.is_empty());
+
+                        for (call, output) in &calls {
+                            let inputs = call.inputs().to_vec();
+                            preprocessed.push((inputs, *output));
                         }
 
                         let store = store.clone();
@@ -254,15 +254,13 @@ where
                         outputs.into_iter().collect::<Result<()>>()?;
                     }
 
-                    Ok::<_, VmError>((preprocessed, call_stack))
+                    Ok::<_, VmError>(preprocessed)
                 },
             )
             .await
             .map_err(VmError::execute)??;
 
         self.preprocessed.append(&mut preprocessed);
-
-        let _ = std::mem::replace(&mut self.call_stack, call_stack);
 
         Ok(())
     }
@@ -352,14 +350,14 @@ async fn generate<COT>(
     Ok(())
 }
 
-fn take_preprocess_calls<COT>(
-    store: Arc<Mutex<GarblerStore<COT>>>,
-    call_stack: &mut Vec<(Call, Slice)>,
-) -> Vec<(Call, Slice)> {
-    let store = store.try_lock().unwrap();
-    call_stack
-        .extract_if(.., |(call, _)| {
-            call.inputs().iter().all(|slice| store.is_set_keys(*slice))
-        })
-        .collect()
-}
+// fn take_preprocess_calls<COT>(
+//     store: Arc<Mutex<GarblerStore<COT>>>,
+//     call_stack: &mut Vec<(Call, Slice)>,
+// ) -> Vec<(Call, Slice)> {
+//     let store = store.try_lock().unwrap();
+//     call_stack
+//         .extract_if(.., |(call, _)| {
+//             call.inputs().iter().all(|slice| store.is_set_keys(*slice))
+//         })
+//         .collect()
+// }
