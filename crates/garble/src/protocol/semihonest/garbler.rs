@@ -209,12 +209,9 @@ where
         let (_, mut preprocessed) = ctx
             .try_join(
                 async move |ctx| {
-                    if cot.wants_flush() {
-                        // This flush is primarily intended to perform OT setup
-                        // concurrently with preprocessing.
-                        cot.flush(ctx).await.map_err(VmError::execute)?;
-                    }
-                    Ok::<_, VmError>(())
+                    // This flush is primarily intended to perform OT setup
+                    // concurrently with preprocessing.
+                    cot.flush(ctx).await.map_err(VmError::execute)
                 },
                 async move |ctx| {
                     let mut preprocessed = Vec::new();
