@@ -247,8 +247,8 @@ mod tests {
         let (mut cot_send, mut cot_recv) = ideal_cot(delta.into_inner());
 
         // Put the sender and the receiver in a state where they want to flush.
-        let _ = cot_send.queue_send_cot(&[Block::default()]).unwrap();
-        let _ = cot_recv.queue_recv_cot(&[true]).unwrap();
+        drop(cot_send.queue_send_cot(&[Block::default()]).unwrap());
+        drop(cot_recv.queue_recv_cot(&[true]).unwrap());
         assert!(cot_send.wants_flush());
         assert!(cot_recv.wants_flush());
 
