@@ -212,7 +212,7 @@ where
             .map(|(call, output)| (call.inputs().to_vec(), *output))
             .collect::<Vec<_>>();
 
-        let (_, _) = ctx
+        ctx
             .try_join(
                 async move |ctx| {
                     // This flush is primarily intended to perform OT setup
