@@ -346,14 +346,3 @@ async fn generate<COT>(
     Ok(())
 }
 
-// fn take_preprocess_calls<COT>(
-//     store: Arc<Mutex<GarblerStore<COT>>>,
-//     call_stack: &mut Vec<(Call, Slice)>,
-// ) -> Vec<(Call, Slice)> {
-//     let store = store.try_lock().unwrap();
-//     call_stack
-//         .extract_if(.., |(call, _)| {
-//             call.inputs().iter().all(|slice| store.is_set_keys(*slice))
-//         })
-//         .collect()
-// }
