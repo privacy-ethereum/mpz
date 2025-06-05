@@ -8,6 +8,7 @@ use mpz_garble_core::{
 use mpz_memory_core::{DecodeFuture, Memory, Slice, View, binary::Binary};
 use mpz_ot::cot::COTSender;
 use serio::{SinkExt, stream::IoStreamExt};
+use tokio::sync::OwnedMutexGuard;
 
 type Error = GarblerStoreError;
 
@@ -26,6 +27,11 @@ impl<COT> GarblerStore<COT> {
 
     pub(crate) fn delta(&self) -> &Delta {
         self.core.delta()
+    }
+
+    /// Returns a lock on the COT sender.
+    pub(crate) fn acquire_cot(&self) -> OwnedMutexGuard<COT> {
+        self.core.acquire_cot()
     }
 
     pub(crate) fn is_set_keys(&self, slice: Slice) -> bool {

@@ -10,7 +10,7 @@ use mpz_memory_core::{DecodeFuture, Memory, Slice, View, binary::Binary, correla
 use mpz_ot::cot::COTSender;
 use mpz_vm_core::{Call, Callable, Execute, Result, VmError};
 
-use crate::store::GarblerStore;
+use crate::{protocol::semihonest::take_preprocess_calls, store::GarblerStore};
 
 /// Semi-honest garbler.
 #[derive(Debug)]
@@ -28,15 +28,6 @@ impl<COT> Garbler<COT> {
             call_stack: Vec::new(),
             preprocessed: Vec::new(),
         }
-    }
-
-    fn take_preprocess_calls(&mut self) -> Vec<(Call, Slice)> {
-        let store = self.store.try_lock().unwrap();
-        self.call_stack
-            .extract_if(.., |(call, _)| {
-                call.inputs().iter().all(|slice| store.is_set_keys(*slice))
-            })
-            .collect()
     }
 
     fn take_execute_calls(&mut self) -> Vec<(Call, Slice)> {
@@ -74,6 +65,11 @@ impl<COT> Garbler<COT> {
         }
 
         Ok(())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn store(&self) -> Arc<Mutex<GarblerStore<COT>>> {
+        self.store.clone()
     }
 }
 
@@ -202,34 +198,57 @@ where
     }
 
     async fn preprocess(&mut self, ctx: &mut Context) -> Result<()> {
-        let delta = *self.store.try_lock().unwrap().delta();
+        let (delta, mut cot) = {
+            let store = self.store.try_lock().unwrap();
+            (*store.delta(), store.acquire_cot())
+        };
 
-        while !self.call_stack.is_empty() {
-            let calls = self.take_preprocess_calls();
+        let mut call_stack = std::mem::take(&mut self.call_stack);
+        let store = self.store.clone();
 
-            if calls.is_empty() {
-                break;
-            } else {
-                for (call, output) in &calls {
-                    let inputs = call.inputs().to_vec();
-                    self.preprocessed.push((inputs, *output));
+        // All calls will be added to preprocessed once preprocessing completes.
+        let mut preprocessed = call_stack
+            .iter()
+            .map(|(call, output)| (call.inputs().to_vec(), *output))
+            .collect::<Vec<_>>();
+
+        ctx.try_join(
+            async move |ctx| {
+                // This flush is primarily intended to perform OT setup
+                // concurrently with preprocessing.
+                cot.flush(ctx).await.map_err(VmError::execute)
+            },
+            async move |ctx| {
+                while !call_stack.is_empty() {
+                    let calls = take_preprocess_calls(&mut call_stack);
+
+                    // There must be at least one call ready for preprocessing
+                    // in a non-empty call stack.
+                    debug_assert!(!calls.is_empty());
+
+                    let store = store.clone();
+                    let outputs = ctx
+                        .map(
+                            calls,
+                            async move |ctx: &mut Context, (call, output): (Call, Slice)| {
+                                generate(ctx, store.clone(), delta, call, output, Mode::Preprocess)
+                                    .await
+                            },
+                            |(call, _)| call.circ().and_count(),
+                        )
+                        .await
+                        .map_err(VmError::execute)?;
+
+                    outputs.into_iter().collect::<Result<()>>()?;
                 }
-            }
 
-            let store = self.store.clone();
-            let outputs = ctx
-                .map(
-                    calls,
-                    async move |ctx: &mut Context, (call, output): (Call, Slice)| {
-                        generate(ctx, store.clone(), delta, call, output, Mode::Preprocess).await
-                    },
-                    |(call, _)| call.circ().and_count(),
-                )
-                .await
-                .map_err(VmError::execute)?;
+                Ok::<_, VmError>(())
+            },
+        )
+        .await
+        .map_err(VmError::execute)??;
 
-            outputs.into_iter().collect::<Result<()>>()?;
-        }
+        self.preprocessed.append(&mut preprocessed);
 
         Ok(())
     }

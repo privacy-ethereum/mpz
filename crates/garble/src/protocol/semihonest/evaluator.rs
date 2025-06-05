@@ -2,7 +2,6 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use hashbrown::HashMap;
-use rangeset::{Disjoint, RangeSet};
 use tokio::sync::Mutex;
 
 use mpz_common::{Context, Flush};
@@ -12,7 +11,10 @@ use mpz_memory_core::{DecodeFuture, Memory, Slice, View, binary::Binary};
 use mpz_ot::cot::COTReceiver;
 use mpz_vm_core::{Call, Callable, Execute, Result, VmError};
 
-use crate::{evaluator::receive_garbled_circuit, store::EvaluatorStore};
+use crate::{
+    evaluator::receive_garbled_circuit, protocol::semihonest::take_preprocess_calls,
+    store::EvaluatorStore,
+};
 
 /// Semi-honest evaluator.
 #[derive(Debug)]
@@ -30,26 +32,6 @@ impl<COT> Evaluator<COT> {
             call_stack: Vec::new(),
             preprocessed: HashMap::new(),
         }
-    }
-
-    fn take_preprocess_calls(&mut self) -> Vec<(Call, Slice)> {
-        let mut idx_outputs = RangeSet::default();
-        self.call_stack
-            // Extract calls which have no dependencies on other prior calls.
-            .extract_if(.., |(call, output)| {
-                if call
-                    .inputs()
-                    .iter()
-                    .all(|input| input.to_range().is_disjoint(&idx_outputs))
-                {
-                    idx_outputs |= output.to_range();
-                    true
-                } else {
-                    idx_outputs |= output.to_range();
-                    false
-                }
-            })
-            .collect()
     }
 
     fn take_execute_calls(&mut self) -> Vec<(Call, Slice)> {
@@ -112,6 +94,11 @@ impl<COT> Evaluator<COT> {
         }
 
         Ok(())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn store(&self) -> Arc<Mutex<EvaluatorStore<COT>>> {
+        self.store.clone()
     }
 }
 
@@ -239,36 +226,58 @@ where
     }
 
     async fn preprocess(&mut self, ctx: &mut Context) -> Result<()> {
-        while !self.call_stack.is_empty() {
-            let calls = self.take_preprocess_calls();
+        let mut cot = self.store.try_lock().unwrap().acquire_cot();
 
-            if calls.is_empty() {
-                break;
-            }
+        let mut call_stack = std::mem::take(&mut self.call_stack);
 
-            let outputs = ctx
-                .map(
-                    calls,
-                    async move |ctx, (call, output): (Call, Slice)| {
-                        let garbled_circuit = receive_garbled_circuit(ctx, call.circ())
+        let (_, preprocessed) = ctx
+            .try_join(
+                async move |ctx| {
+                    // This flush is primarily intended to perform OT setup
+                    // concurrently with preprocessing.
+                    cot.flush(ctx).await.map_err(VmError::execute)
+                },
+                async move |ctx| {
+                    let mut preprocessed = Vec::new();
+
+                    while !call_stack.is_empty() {
+                        let calls = take_preprocess_calls(&mut call_stack);
+
+                        // There must be at least one call ready for preprocessing
+                        // in a non-empty call stack.
+                        debug_assert!(!calls.is_empty());
+
+                        let mut outputs = ctx
+                            .map(
+                                calls,
+                                async move |ctx, (call, output): (Call, Slice)| {
+                                    let garbled_circuit = receive_garbled_circuit(ctx, call.circ())
+                                        .await
+                                        .map_err(VmError::execute)?;
+                                    Ok::<_, VmError>((call, output, garbled_circuit))
+                                },
+                                |(call, _)| call.circ().and_count(),
+                            )
                             .await
                             .map_err(VmError::execute)?;
-                        Ok::<_, VmError>((call, output, garbled_circuit))
-                    },
-                    |(call, _)| call.circ().and_count(),
-                )
-                .await
-                .map_err(VmError::execute)?;
 
-            let mut store = self.store.try_lock().unwrap();
-            for output in outputs {
-                let (call, output, garbled_circuit) = output?;
+                        preprocessed.append(&mut outputs);
+                    }
 
-                self.preprocessed.insert(output, (call, garbled_circuit));
-                store
-                    .mark_output_preprocessed(output)
-                    .map_err(VmError::memory)?;
-            }
+                    Ok::<_, VmError>(preprocessed)
+                },
+            )
+            .await
+            .map_err(VmError::execute)??;
+
+        let mut store = self.store.try_lock().unwrap();
+        for output in preprocessed {
+            let (call, output, garbled_circuit) = output?;
+
+            self.preprocessed.insert(output, (call, garbled_circuit));
+            store
+                .mark_output_preprocessed(output)
+                .map_err(VmError::memory)?;
         }
 
         Ok(())
