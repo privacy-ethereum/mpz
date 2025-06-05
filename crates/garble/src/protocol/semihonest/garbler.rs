@@ -212,49 +212,41 @@ where
             .map(|(call, output)| (call.inputs().to_vec(), *output))
             .collect::<Vec<_>>();
 
-        ctx
-            .try_join(
-                async move |ctx| {
-                    // This flush is primarily intended to perform OT setup
-                    // concurrently with preprocessing.
-                    cot.flush(ctx).await.map_err(VmError::execute)
-                },
-                async move |ctx| {
-                    while !call_stack.is_empty() {
-                        let calls = take_preprocess_calls(&mut call_stack);
+        ctx.try_join(
+            async move |ctx| {
+                // This flush is primarily intended to perform OT setup
+                // concurrently with preprocessing.
+                cot.flush(ctx).await.map_err(VmError::execute)
+            },
+            async move |ctx| {
+                while !call_stack.is_empty() {
+                    let calls = take_preprocess_calls(&mut call_stack);
 
-                        // There must be at least one call ready for preprocessing
-                        // in a non-empty call stack.
-                        debug_assert!(!calls.is_empty());
+                    // There must be at least one call ready for preprocessing
+                    // in a non-empty call stack.
+                    debug_assert!(!calls.is_empty());
 
-                        let store = store.clone();
-                        let outputs = ctx
-                            .map(
-                                calls,
-                                async move |ctx: &mut Context, (call, output): (Call, Slice)| {
-                                    generate(
-                                        ctx,
-                                        store.clone(),
-                                        delta,
-                                        call,
-                                        output,
-                                        Mode::Preprocess,
-                                    )
+                    let store = store.clone();
+                    let outputs = ctx
+                        .map(
+                            calls,
+                            async move |ctx: &mut Context, (call, output): (Call, Slice)| {
+                                generate(ctx, store.clone(), delta, call, output, Mode::Preprocess)
                                     .await
-                                },
-                                |(call, _)| call.circ().and_count(),
-                            )
-                            .await
-                            .map_err(VmError::execute)?;
+                            },
+                            |(call, _)| call.circ().and_count(),
+                        )
+                        .await
+                        .map_err(VmError::execute)?;
 
-                        outputs.into_iter().collect::<Result<()>>()?;
-                    }
+                    outputs.into_iter().collect::<Result<()>>()?;
+                }
 
-                    Ok::<_, VmError>(())
-                },
-            )
-            .await
-            .map_err(VmError::execute)??;
+                Ok::<_, VmError>(())
+            },
+        )
+        .await
+        .map_err(VmError::execute)??;
 
         self.preprocessed.append(&mut preprocessed);
 
@@ -345,4 +337,3 @@ async fn generate<COT>(
 
     Ok(())
 }
-
