@@ -60,7 +60,7 @@ impl FlushView {
         let mac_commitments = self.decode_info.len() * Mac::BIT_SIZE * 2;
 
         // Add 128 bytes of cushion room.
-        (macs + decode_info + mac_commitments) / 8 + self.size() + 128
+        (macs + decode_info + mac_commitments) / 8 + self.size() + 1280
     }
 
     /// Returns the expected evaluator flush size in bytes.
@@ -72,7 +72,7 @@ impl FlushView {
         };
 
         // Add 128 bytes of cushion room.
-        self.decode.len() / 8 + proof_size + self.size() + 128
+        self.decode.len() / 8 + proof_size + self.size() + 1280
     }
 
     /// Returns `true` if the flush state is empty.
