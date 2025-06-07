@@ -55,16 +55,17 @@ pub struct FlushView {
 impl FlushView {
     /// Returns the expected garbler flush size in bytes.
     pub fn garbler_flush_size(&self) -> usize {
-        let macs = self.macs.len() * Mac::BIT_SIZE;
-        let decode_info = self.decode_info.len();
-        let mac_commitments = self.decode_info.len() * Mac::BIT_SIZE * 2;
+        let macs = self.macs.len() * Mac::BYTE_SIZE;
+        let decode_info = self.decode_info.len().div_ceil(8);
+        let mac_commitments = self.decode_info.len() * Mac::BYTE_SIZE * 2;
 
         // Add 1024 bytes of cushion room.
-        (macs + decode_info + mac_commitments) / 8 + self.size() + 1024
+        macs + decode_info + mac_commitments + 1024
     }
 
     /// Returns the expected evaluator flush size in bytes.
     pub fn evaluator_flush_size(&self) -> usize {
+        let decode_info = self.decode_info.len().div_ceil(8);
         let proof_size = if self.decode.is_empty() {
             0
         } else {
@@ -72,7 +73,7 @@ impl FlushView {
         };
 
         // Add 1024 bytes of cushion room.
-        self.decode.len() / 8 + proof_size + self.size() + 1024
+        decode_info + proof_size + 1024
     }
 
     /// Returns `true` if the flush state is empty.
@@ -89,16 +90,6 @@ impl FlushView {
         self.ot.clear();
         self.decode_info.clear();
         self.decode.clear();
-    }
-
-    /// Returns the size in bytes for [`FlushView`].
-    fn size(&self) -> usize {
-        let range_count = self.macs.len_ranges()
-            + self.ot.len_ranges()
-            + self.decode_info.len_ranges()
-            + self.decode.len_ranges();
-
-        range_count * 2 * usize::BITS as usize / 8
     }
 }
 
@@ -337,21 +328,25 @@ impl View {
         Ok(())
     }
 
-    pub(crate) fn complete_flush(&mut self, view: FlushView) {
-        self.input.complete |= view.macs;
-        self.input.complete |= &view.ot;
-        self.decode.decode_info |= &view.decode_info;
-        self.decode.complete |= view.decode;
+    pub(crate) fn complete_flush(&mut self) {
+        self.input.complete |= &self.flush.macs;
+        self.input.complete |= &self.flush.ot;
+        self.decode.decode_info |= &self.flush.decode_info;
+        self.decode.complete |= &self.flush.decode;
+
+        let ready_inputs = self.flush.ot.intersection(&self.decode.all);
+        let ready_outputs = self
+            .flush
+            .decode_info
+            .intersection(&self.output.complete)
+            .difference(&self.decode.complete);
 
         self.flush.clear();
 
         // Decode evaluator inputs if they are ready.
-        self.flush.decode |= view.ot.intersection(&self.decode.all);
+        self.flush.decode |= ready_inputs;
         // Decode outputs if they are ready.
-        self.flush.decode |= view
-            .decode_info
-            .intersection(&self.output.complete)
-            .difference(&self.decode.complete);
+        self.flush.decode |= ready_outputs;
     }
 }
 

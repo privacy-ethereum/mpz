@@ -22,7 +22,7 @@ pub struct Mac(Block);
 impl Mac {
     /// Public MACs.
     pub const PUBLIC: [Mac; 2] = [Mac(MAC_ZERO), Mac(MAC_ONE)];
-    pub const BIT_SIZE: usize = 128;
+    pub const BYTE_SIZE: usize = 16;
 
     /// Creates a new MAC.
     #[inline]
