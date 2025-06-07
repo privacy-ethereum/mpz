@@ -183,7 +183,7 @@ where
 {
     /// Returns the flush view.
     pub fn flush_view(&self) -> &FlushView {
-        &self.view.flush()
+        self.view.flush()
     }
 
     /// Sends a flush to the garbler.
