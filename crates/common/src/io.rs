@@ -122,6 +122,14 @@ impl Io {
         }
     }
 
+    /// Returns the maximum message size that can be received.
+    pub fn limit(&self) -> usize {
+        match &self.inner {
+            Inner::Transport { framed } => framed.inner().frame_limit(),
+            Inner::Memory { channel: _ } => usize::MAX,
+        }
+    }
+
     /// Adjusts the frame limit temporarily and returns a [`WithLimit`].
     ///
     /// # Arguments

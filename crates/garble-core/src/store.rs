@@ -11,14 +11,10 @@ use mpz_core::bitvec::BitVec;
 use mpz_memory_core::correlated::{Mac, MacCommitment};
 use serde::{Deserialize, Serialize};
 
-use crate::view::FlushView;
-
 /// Flush message sent by the garbler.
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(try_from = "validation::GarblerFlushUnchecked")]
 pub struct GarblerFlush {
-    /// Flush view.
-    view: FlushView,
     /// MACs sent directly to the evaluator.
     macs: Vec<Mac>,
     /// Key bits for decoding.
@@ -27,28 +23,11 @@ pub struct GarblerFlush {
     mac_commitments: Vec<MacCommitment>,
 }
 
-impl GarblerFlush {
-    /// Returns the inner [`FlushView`].
-    pub fn view(&self) -> &FlushView {
-        &self.view
-    }
-}
-
 /// Flush message sent by the evaluator.
 #[derive(Debug, Serialize, Deserialize)]
-#[serde(try_from = "validation::EvaluatorFlushUnchecked")]
 pub struct EvaluatorFlush {
-    /// Flush view.
-    view: FlushView,
     /// Proof of MACs for decoding.
     mac_proof: Option<MacProof>,
-}
-
-impl EvaluatorFlush {
-    /// Returns the inner [`FlushView`].
-    pub fn view(&self) -> &FlushView {
-        &self.view
-    }
 }
 
 /// MAC proof sent from the evaluator to the garbler to prove
@@ -64,7 +43,6 @@ mod validation {
 
     #[derive(Debug, Deserialize)]
     pub(super) struct GarblerFlushUnchecked {
-        pub view: FlushView,
         pub macs: Vec<Mac>,
         pub key_bits: BitVec,
         pub mac_commitments: Vec<MacCommitment>,
@@ -75,52 +53,19 @@ mod validation {
 
         fn try_from(value: GarblerFlushUnchecked) -> Result<Self, Self::Error> {
             let GarblerFlushUnchecked {
-                view: idx,
                 macs,
                 key_bits,
                 mac_commitments,
             } = value;
-
-            if idx.macs.len() != macs.len() {
-                return Err("garbler sent flush with invalid number of MACs".to_string());
-            }
-
-            if idx.decode_info.len() != key_bits.len() {
-                return Err("garbler sent flush with invalid number of key bits".to_string());
-            }
 
             if mac_commitments.len() != key_bits.len() {
                 return Err("garbler sent flush with invalid number of MAC commitments".to_string());
             }
 
             Ok(GarblerFlush {
-                view: idx,
                 macs,
                 key_bits,
                 mac_commitments,
-            })
-        }
-    }
-
-    #[derive(Debug, Deserialize)]
-    pub(super) struct EvaluatorFlushUnchecked {
-        pub view: FlushView,
-        pub macs: Option<MacProof>,
-    }
-
-    impl TryFrom<EvaluatorFlushUnchecked> for EvaluatorFlush {
-        type Error = String;
-
-        fn try_from(value: EvaluatorFlushUnchecked) -> Result<Self, Self::Error> {
-            let EvaluatorFlushUnchecked { view: idx, macs } = value;
-
-            if idx.decode.len() != macs.as_ref().map_or(0, |m| m.bits.len()) {
-                return Err("evaluator sent flush with invalid number of MACs".to_string());
-            }
-
-            Ok(EvaluatorFlush {
-                view: idx,
-                mac_proof: macs,
             })
         }
     }

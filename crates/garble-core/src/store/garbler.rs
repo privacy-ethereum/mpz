@@ -13,8 +13,9 @@ use mpz_memory_core::{
 use mpz_ot_core::cot::COTSender;
 
 use crate::{
+    FlushView,
     store::{EvaluatorFlush, GarblerFlush, MacProof},
-    view::{FlushView, View, ViewError},
+    view::{View, ViewError},
 };
 
 type Error = GarblerStoreError;
@@ -134,6 +135,11 @@ impl<COT> GarblerStore<COT>
 where
     COT: COTSender<Block>,
 {
+    /// Returns the flush view.
+    pub fn flush_view(&self) -> &FlushView {
+        self.view.flush()
+    }
+
     /// Sends a flush to the evaluator.
     ///
     /// This queues any necessary COTs.
@@ -184,7 +190,6 @@ where
         }
 
         let flush = GarblerFlush {
-            view,
             macs,
             key_bits,
             mac_commitments,
@@ -201,33 +206,30 @@ where
             return Err(ErrorRepr::UnexpectedFlush.into());
         }
 
-        let EvaluatorFlush {
-            view,
-            mac_proof: macs,
-        } = flush;
-
-        // Ensure the evaluators view is consistent.
-        if &view != self.view.flush() {
-            return Err(ErrorRepr::InconsistentFlush {
-                expected: Box::new(self.view.flush().clone()),
-                actual: Box::new(view.clone()),
-            }
-            .into());
-        }
+        let EvaluatorFlush { mac_proof } = flush;
 
         // Verify MACs and store the data.
-        if let Some(MacProof { mut bits, proof }) = macs {
-            self.key_store.verify(&view.decode, &mut bits, proof)?;
+        if let Some(MacProof { mut bits, proof }) = mac_proof {
+            if bits.len() != self.view.flush().decode.len() {
+                return Err(ErrorRepr::IncorrectMacCount {
+                    expected: self.view.flush().decode.len(),
+                    actual: bits.len(),
+                }
+                .into());
+            }
+
+            self.key_store
+                .verify(&self.view.flush().decode, &mut bits, proof)?;
 
             let mut i = 0;
-            for range in view.decode.iter_ranges() {
+            for range in self.view.flush().decode.iter_ranges() {
                 let slice = Slice::from_range_unchecked(range);
                 self.data_store.try_set(slice, &bits[i..i + slice.len()])?;
                 i += slice.len();
             }
         }
 
-        self.view.complete_flush(view);
+        self.view.complete_flush();
         self.flush_decode()?;
         self.pending = false;
 
@@ -341,13 +343,10 @@ enum ErrorRepr {
     Decode(#[from] DecodeError),
     #[error(transparent)]
     View(#[from] ViewError),
+    #[error("evaluator sent incorrect number of MAC bits, expected={expected}, actual={actual}")]
+    IncorrectMacCount { expected: usize, actual: usize },
     #[error("store was not expecting a flush")]
     UnexpectedFlush,
-    #[error("inconsistent flush: expected={expected:?}, actual={actual:?}")]
-    InconsistentFlush {
-        expected: Box<FlushView>,
-        actual: Box<FlushView>,
-    },
 }
 
 impl From<KeyStoreError> for GarblerStoreError {

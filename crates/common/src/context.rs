@@ -81,6 +81,11 @@ impl Context {
         &self.id
     }
 
+    /// Returns a reference to the thread's I/O channel.
+    pub fn io(&self) -> &Io {
+        &self.io
+    }
+
     /// Returns a mutable reference to the thread's I/O channel.
     pub fn io_mut(&mut self) -> &mut Io {
         &mut self.io

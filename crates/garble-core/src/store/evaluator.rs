@@ -14,8 +14,9 @@ use mpz_memory_core::{
 use mpz_ot_core::cot::{COTReceiver, COTReceiverOutput};
 
 use crate::{
+    FlushView,
     store::{EvaluatorFlush, GarblerFlush, MacProof},
-    view::{FlushView, View, ViewError},
+    view::{View, ViewError},
 };
 
 type Error = EvaluatorStoreError;
@@ -180,6 +181,11 @@ where
     COT: COTReceiver<bool, Block>,
     COT::Future: Send + 'static,
 {
+    /// Returns the flush view.
+    pub fn flush_view(&self) -> &FlushView {
+        self.view.flush()
+    }
+
     /// Sends a flush to the garbler.
     ///
     /// This queues any necessary COTs.
@@ -219,7 +225,7 @@ where
             None
         };
 
-        let flush = EvaluatorFlush { view, mac_proof };
+        let flush = EvaluatorFlush { mac_proof };
 
         self.pending = Some(PendingFlush { cot });
 
@@ -235,24 +241,22 @@ where
         };
 
         let GarblerFlush {
-            view,
             macs,
             key_bits,
             mac_commitments,
         } = flush;
 
-        // Ensure the garblers flush is consistent.
-        if &view != self.view.flush() {
-            return Err(ErrorRepr::InconsistentFlush {
-                expected: Box::new(view),
-                actual: Box::new(self.view.flush().clone()),
+        // Receive the MACs.
+        if macs.len() != self.view.flush().macs.len() {
+            return Err(ErrorRepr::IncorrectMacCount {
+                expected: self.view.flush().macs.len(),
+                actual: macs.len(),
             }
             .into());
         }
 
-        // Receive the MACs.
         let mut i = 0;
-        for range in view.macs.iter_ranges() {
+        for range in self.view.flush().macs.iter_ranges() {
             let slice = Slice::from_range_unchecked(range);
             self.mac_store.try_set(slice, &macs[i..i + slice.len()])?;
             i += slice.len();
@@ -267,7 +271,7 @@ where
             let macs = Mac::from_blocks(macs);
 
             i = 0;
-            for range in view.ot.iter_ranges() {
+            for range in self.view.flush().ot.iter_ranges() {
                 let slice = Slice::from_range_unchecked(range);
                 self.mac_store.try_set(slice, &macs[i..i + slice.len()])?;
                 i += slice.len();
@@ -275,8 +279,22 @@ where
         }
 
         // Receive the decode info.
+        if key_bits.len() != self.view.flush().decode_info.len() {
+            return Err(ErrorRepr::IncorrectDecodeCount {
+                expected: self.view.flush().decode_info.len(),
+                actual: key_bits.len(),
+            }
+            .into());
+        } else if mac_commitments.len() != self.view.flush().decode_info.len() {
+            return Err(ErrorRepr::IncorrectMacCommitmentCount {
+                expected: self.view.flush().decode_info.len(),
+                actual: mac_commitments.len(),
+            }
+            .into());
+        }
+
         i = 0;
-        for range in view.decode_info.iter_ranges() {
+        for range in self.view.flush().decode_info.iter_ranges() {
             let slice = Slice::from_range_unchecked(range);
             self.key_bit_store
                 .try_set(slice, &key_bits[i..i + slice.len()])?;
@@ -285,7 +303,7 @@ where
             i += slice.len();
         }
 
-        self.view.complete_flush(view);
+        self.view.complete_flush();
         self.flush_decode()?;
 
         Ok(())
@@ -401,11 +419,16 @@ enum ErrorRepr {
     View(#[from] ViewError),
     #[error("store was not expecting a flush")]
     UnexpectedFlush,
-    #[error("inconsistent flush: expected={expected:?}, actual={actual:?}")]
-    InconsistentFlush {
-        expected: Box<FlushView>,
-        actual: Box<FlushView>,
-    },
+    #[error("generator sent incorrect number of MACs, expected={expected}, actual={actual}")]
+    IncorrectMacCount { expected: usize, actual: usize },
+    #[error(
+        "generator sent incorrect number of MAC commitments, expected={expected}, actual={actual}"
+    )]
+    IncorrectMacCommitmentCount { expected: usize, actual: usize },
+    #[error(
+        "generator sent incorrect number of decoding bits, expected={expected}, actual={actual}"
+    )]
+    IncorrectDecodeCount { expected: usize, actual: usize },
     #[error("invalid MAC commitment: {0}")]
     MacCommitment(#[from] MacCommitmentError),
 }
