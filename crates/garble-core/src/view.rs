@@ -65,7 +65,7 @@ impl FlushView {
 
     /// Returns the expected evaluator flush size in bytes.
     pub fn evaluator_flush_size(&self) -> usize {
-        let decode_info = self.decode_info.len().div_ceil(8);
+        let decode = self.decode.len().div_ceil(8);
         let proof_size = if self.decode.is_empty() {
             0
         } else {
@@ -73,7 +73,7 @@ impl FlushView {
         };
 
         // Add 1024 bytes of cushion room.
-        decode_info + proof_size + 1024
+        decode + proof_size + 1024
     }
 
     /// Returns `true` if the flush state is empty.

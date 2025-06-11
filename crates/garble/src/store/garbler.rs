@@ -126,11 +126,12 @@ where
             let flush = self.core.send_flush()?;
             let mut cot = self.core.acquire_cot();
 
+            let flush_size = self.core.flush_view().garbler_flush_size();
             let expected_size = self.core.flush_view().evaluator_flush_size();
             let (flush, ()) = ctx
                 .try_join(
                     async move |ctx| {
-                        ctx.io_mut().send(flush).await?;
+                        ctx.io_mut().with_limit(flush_size).send(flush).await?;
 
                         // Adjust the limit to expected size.
                         let limit = ctx.io().limit().max(expected_size);
