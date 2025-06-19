@@ -8,7 +8,7 @@
 
 mpz is a collection of multi-party computation libraries written in Rust 🦀.
 
-This project strives to provide safe, performant, modular and portable MPC software with a focus on usability.
+The scope of this project is currently limited to being used to implement [TLSNotary](https://github.com/tlsnotary/tlsn). It is not intended for general public use.
 
 See [our design doc](./DESIGN.md) for information on design choices, standards and project structure.
 
