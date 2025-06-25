@@ -154,7 +154,7 @@ impl GetBit<Lsb0> for P256 {
 
 impl GetBit<Msb0> for P256 {
     fn get_bit(&self, index: usize) -> bool {
-        MontBackend::<FqConfig, 4>::into_bigint(self.0).get_bit(256 - index)
+        MontBackend::<FqConfig, 4>::into_bigint(self.0).get_bit(255 - index)
     }
 }
 
@@ -180,7 +180,10 @@ mod tests {
     use mpz_core::{Block, prg::Prg};
     use rand::{Rng, SeedableRng};
 
-    use crate::tests::{test_field_basic, test_field_bit_ops, test_field_compute_product_repeated};
+    use crate::tests::{
+        test_field_basic, test_field_bit_ops_lsb0, test_field_bit_ops_msb0,
+        test_field_compute_product_repeated,
+    };
 
     #[test]
     fn test_p256_basic() {
@@ -196,7 +199,8 @@ mod tests {
 
     #[test]
     fn test_p256_bit_ops() {
-        test_field_bit_ops::<P256>();
+        test_field_bit_ops_lsb0::<P256>();
+        test_field_bit_ops_msb0::<P256>();
     }
 
     #[test]
