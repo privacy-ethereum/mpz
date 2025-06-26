@@ -122,7 +122,7 @@ pub fn compute_product_repeated<T: Field>(powers: &mut Vec<T>, factor: T, count:
 #[cfg(test)]
 mod tests {
     use super::{Field, compute_product_repeated};
-    use itybity::{GetBit, Lsb0};
+    use itybity::{GetBit, Lsb0, Msb0};
     use mpz_core::{Block, prg::Prg};
     use rand::SeedableRng;
 
@@ -155,7 +155,7 @@ mod tests {
         assert_eq!(powers[2], powers[1] * factor);
     }
 
-    pub(crate) fn test_field_bit_ops<T: Field>() {
+    pub(crate) fn test_field_bit_ops_lsb0<T: Field>() {
         let mut a = vec![false; T::BIT_SIZE];
         let mut b = vec![false; T::BIT_SIZE];
 
@@ -170,5 +170,22 @@ mod tests {
 
         assert_eq!(b, T::two_pow(T::BIT_SIZE as u32 - 1));
         assert!(GetBit::<Lsb0>::get_bit(&b, T::BIT_SIZE - 1));
+    }
+
+    pub(crate) fn test_field_bit_ops_msb0<T: Field>() {
+        let mut a = vec![false; T::BIT_SIZE];
+        let mut b = vec![false; T::BIT_SIZE];
+
+        a[T::BIT_SIZE - 1] = true;
+        b[0] = true;
+
+        let a = T::from_msb0_iter(a);
+        let b = T::from_msb0_iter(b);
+
+        assert_eq!(a, T::one());
+        assert!(GetBit::<Msb0>::get_bit(&a, T::BIT_SIZE - 1));
+
+        assert_eq!(b, T::two_pow(T::BIT_SIZE as u32 - 1));
+        assert!(GetBit::<Msb0>::get_bit(&b, 0));
     }
 }

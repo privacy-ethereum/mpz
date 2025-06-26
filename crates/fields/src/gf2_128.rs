@@ -196,7 +196,10 @@ mod tests {
     use super::Gf2_128;
     use crate::{
         Field,
-        tests::{test_field_basic, test_field_bit_ops, test_field_compute_product_repeated},
+        tests::{
+            test_field_basic, test_field_bit_ops_lsb0, test_field_bit_ops_msb0,
+            test_field_compute_product_repeated,
+        },
     };
     use ghash_rc::{
         GHash,
@@ -219,7 +222,8 @@ mod tests {
 
     #[test]
     fn test_gf2_128_bit_ops() {
-        test_field_bit_ops::<Gf2_128>();
+        test_field_bit_ops_lsb0::<Gf2_128>();
+        test_field_bit_ops_msb0::<Gf2_128>();
     }
 
     #[test]
