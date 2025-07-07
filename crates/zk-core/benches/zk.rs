@@ -64,15 +64,26 @@ fn criterion_benchmark(c: &mut Criterion) {
 
         let mut prover = Prover::default();
         let mut verifier = Verifier::new(delta);
-        let mut prover_transcript = Hasher::default();
-        let mut verifier_transcript = Hasher::default();
+        let prover_transcript = Hasher::default();
+        let verifier_transcript = Hasher::default();
 
         b.iter(|| {
             let mut prover_execute = prover
-                .execute(AES128.clone(), &input_macs, &gate_masks, &gate_macs)
+                .execute(
+                    AES128.clone(),
+                    input_macs.clone(),
+                    gate_masks.clone(),
+                    gate_macs.clone(),
+                    prover_transcript.clone(),
+                )
                 .unwrap();
             let mut verifier_execute = verifier
-                .execute(AES128.clone(), &input_keys, &gate_keys)
+                .execute(
+                    AES128.clone(),
+                    input_keys.clone(),
+                    gate_keys.clone(),
+                    verifier_transcript.clone(),
+                )
                 .unwrap();
 
             let mut verifier_consumer = verifier_execute.consumer();
@@ -83,12 +94,8 @@ fn criterion_benchmark(c: &mut Criterion) {
             let output_macs = prover_execute.finish().unwrap();
             let output_keys = verifier_execute.finish().unwrap();
 
-            let uv = prover
-                .check(&mut prover_transcript, &svole_choices, &svole_ev)
-                .unwrap();
-            verifier
-                .check(&mut verifier_transcript, &svole_keys, uv)
-                .unwrap();
+            let uv = prover.check(&svole_choices, &svole_ev).unwrap();
+            verifier.check(&svole_keys, uv).unwrap();
 
             black_box((output_macs, output_keys))
         })

@@ -4,9 +4,10 @@ use blake3::Hasher;
 use mpz_circuits::{Circuit, Gate};
 use mpz_core::{Block, bitvec::BitVec};
 use mpz_memory_core::correlated::Mac;
+use zerocopy::IntoBytes;
 
 use crate::{
-    check::{Check, CheckError, Triple, UV},
+    check::{CheckError, ProverCheck, Triple, UV, compute_uv},
     store::ProverStoreError,
 };
 
@@ -14,16 +15,17 @@ type Result<T> = core::result::Result<T, ProverError>;
 
 #[derive(Debug, Default)]
 pub struct Prover {
-    check: Arc<Mutex<Check>>,
+    check: Arc<Mutex<ProverCheck>>,
 }
 
 impl Prover {
-    pub fn execute<'a>(
+    pub fn execute(
         &mut self,
         circ: Arc<Circuit>,
-        input_macs: &'a [Mac],
-        gate_masks: &'a [bool],
-        gate_macs: &'a [Mac],
+        input_macs: Vec<Mac>,
+        gate_masks: Vec<bool>,
+        gate_macs: Vec<Mac>,
+        transcript: Hasher,
     ) -> Result<ProverExecute> {
         if input_macs.len() != circ.inputs().len() {
             return Err(ErrorRepr::InputMacCount {
@@ -45,15 +47,13 @@ impl Prover {
             .into());
         }
 
-        let check_idx = self.check.lock().unwrap().reserve(circ.and_count());
-
         Ok(ProverExecute::new(
             circ,
-            input_macs.to_vec(),
-            gate_masks.to_vec(),
-            gate_macs.to_vec(),
+            input_macs,
+            gate_masks,
+            gate_macs,
+            transcript,
             self.check.clone(),
-            check_idx,
         ))
     }
 
@@ -63,12 +63,7 @@ impl Prover {
     }
 
     /// Executes the consistency check.
-    pub fn check(
-        &mut self,
-        transcript: &mut Hasher,
-        svole_choices: &[bool],
-        svole_ev: &[Block],
-    ) -> Result<UV> {
+    pub fn check(&mut self, svole_choices: &[bool], svole_ev: &[Block]) -> Result<UV> {
         if Arc::strong_count(&self.check) > 1 {
             return Err(ErrorRepr::Inprogress.into());
         }
@@ -76,7 +71,7 @@ impl Prover {
         self.check
             .lock()
             .unwrap()
-            .check_prover(transcript, svole_choices, svole_ev)
+            .check(svole_choices, svole_ev)
             .map_err(From::from)
     }
 }
@@ -90,11 +85,13 @@ pub struct ProverExecute {
     adjust: BitVec,
     gate_masks: Vec<bool>,
     gate_macs: Vec<Mac>,
-    check: Arc<Mutex<Check>>,
-    check_idx: usize,
-
+    /// The number of AND gates executed so far.
     counter: usize,
     and_count: usize,
+    /// The transcript to be used for the consistency check of this execution.
+    transcript: Hasher,
+    /// The consistency check value to be updated after this execution.
+    check: Arc<Mutex<ProverCheck>>,
 }
 
 impl ProverExecute {
@@ -103,8 +100,8 @@ impl ProverExecute {
         macs: Vec<Mac>,
         gate_masks: Vec<bool>,
         gate_macs: Vec<Mac>,
-        check: Arc<Mutex<Check>>,
-        check_idx: usize,
+        transcript: Hasher,
+        check: Arc<Mutex<ProverCheck>>,
     ) -> Self {
         let and_count = circ.and_count();
         Self {
@@ -114,10 +111,10 @@ impl ProverExecute {
             adjust: BitVec::default(),
             gate_masks,
             gate_macs,
-            check,
-            check_idx,
             counter: 0,
             and_count,
+            transcript,
+            check,
         }
     }
 
@@ -155,16 +152,21 @@ impl ProverExecute {
         }
     }
 
-    pub fn finish(self) -> Result<Vec<Mac>> {
+    /// Finishes the execution and preprocesses the consistency check values.
+    pub fn finish(mut self) -> Result<Vec<Mac>> {
         if self.counter != self.and_count {
             return Err(ErrorRepr::Incomplete.into());
         }
 
-        // Flush check state.
-        self.check
-            .lock()
-            .unwrap()
-            .write(self.check_idx, &self.triples, &self.adjust);
+        // Only update the consistency check value if there were actual AND
+        // gates in the execution.
+        if self.counter > 0 {
+            self.transcript
+                .update(&(self.adjust.as_raw_slice().as_bytes()[..self.adjust.len().div_ceil(8)]));
+
+            let (u, v) = compute_uv(&mut self.transcript, &self.triples);
+            self.check.lock().unwrap().update(u, v);
+        }
 
         Ok(self.macs[self.circ.outputs()].to_vec())
     }

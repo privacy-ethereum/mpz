@@ -144,10 +144,21 @@ mod tests {
         let gate_macs = Mac::from_blocks(gate_macs);
 
         let mut prover_exec = prover
-            .execute(AES128.clone(), &input_macs, &gate_masks, &gate_macs)
+            .execute(
+                AES128.clone(),
+                input_macs,
+                gate_masks,
+                gate_macs,
+                prover_transcript.clone(),
+            )
             .unwrap();
         let mut verifier_exec = verifier
-            .execute(AES128.clone(), &input_keys, &gate_keys)
+            .execute(
+                AES128.clone(),
+                input_keys,
+                gate_keys,
+                verifier_transcript.clone(),
+            )
             .unwrap();
         let mut verifier_consumer = verifier_exec.consumer();
 
@@ -174,12 +185,8 @@ mod tests {
             },
         ) = rcot.transfer(128).unwrap();
 
-        let uv = prover
-            .check(&mut prover_transcript, &svole_choices, &svole_ev)
-            .unwrap();
-        verifier
-            .check(&mut verifier_transcript, &svole_keys, uv)
-            .unwrap();
+        let uv = prover.check(&svole_choices, &svole_ev).unwrap();
+        verifier.check(&svole_keys, uv).unwrap();
 
         prover_store
             .set_output_macs(ct_p.to_raw(), &output_macs)

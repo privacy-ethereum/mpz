@@ -102,6 +102,7 @@ where
 
     async fn execute(&mut self, ctx: &mut Context) -> VmResult<()> {
         let mut verifier = Core::new(*self.store.delta());
+
         while !self.callstack.is_empty() {
             let ready_calls: Vec<_> = self
                 .callstack
@@ -139,7 +140,7 @@ where
                 let gate_keys = Key::from_blocks(gate_keys);
 
                 let execute = verifier
-                    .execute(circ, &input_keys, &gate_keys)
+                    .execute(circ, input_keys, gate_keys, self.transcript.clone())
                     .map_err(VmError::execute)?;
                 tasks.push((execute, output));
             }
@@ -149,6 +150,7 @@ where
                     tasks,
                     async move |ctx, (mut execute, output)| {
                         let mut consumer = execute.consumer();
+
                         while consumer.wants_adjust() {
                             let adjust: BitVec = ctx.io_mut().expect_next().await?;
                             for bit in adjust {
@@ -180,9 +182,7 @@ where
             } = self.ot.try_send_rcot(128).map_err(VmError::execute)?;
 
             let uv = ctx.io_mut().expect_next().await?;
-            verifier
-                .check(&mut self.transcript, &svole_keys, uv)
-                .map_err(VmError::execute)?;
+            verifier.check(&svole_keys, uv).map_err(VmError::execute)?;
         }
 
         Ok(())

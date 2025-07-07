@@ -4,9 +4,10 @@ use blake3::Hasher;
 use mpz_circuits::{Circuit, Gate};
 use mpz_core::{Block, bitvec::BitVec};
 use mpz_memory_core::correlated::{Delta, Key};
+use zerocopy::IntoBytes;
 
 use crate::{
-    check::{Check, CheckError, Triple, UV},
+    check::{CheckError, Triple, UV, VerifierCheck, compute_w},
     store::VerifierStoreError,
 };
 
@@ -14,7 +15,7 @@ type Result<T> = core::result::Result<T, VerifierError>;
 
 pub struct Verifier {
     delta: Delta,
-    check: Arc<Mutex<Check>>,
+    check: Arc<Mutex<VerifierCheck>>,
 }
 
 impl Verifier {
@@ -22,7 +23,7 @@ impl Verifier {
     pub fn new(delta: Delta) -> Self {
         Self {
             delta,
-            check: Arc::new(Mutex::new(Check::default())),
+            check: Arc::new(Mutex::new(VerifierCheck::default())),
         }
     }
 
@@ -30,12 +31,12 @@ impl Verifier {
     pub fn wants_check(&self) -> bool {
         self.check.lock().unwrap().wants_check()
     }
-
     pub fn execute(
         &mut self,
         circ: Arc<Circuit>,
-        input_keys: &[Key],
-        gate_keys: &[Key],
+        input_keys: Vec<Key>,
+        gate_keys: Vec<Key>,
+        transcript: Hasher,
     ) -> Result<VerifierExecute> {
         if input_keys.len() != circ.inputs().len() {
             return Err(ErrorRepr::InputKeyCount {
@@ -51,20 +52,18 @@ impl Verifier {
             .into());
         }
 
-        let check_idx = self.check.lock().unwrap().reserve(circ.and_count());
-
         Ok(VerifierExecute::new(
             circ,
             self.delta,
-            input_keys.to_vec(),
-            gate_keys.to_vec(),
+            input_keys,
+            gate_keys,
+            transcript,
             self.check.clone(),
-            check_idx,
         ))
     }
 
     /// Executes the consistency check.
-    pub fn check(&mut self, transcript: &mut Hasher, svole_keys: &[Block], uv: UV) -> Result<()> {
+    pub fn check(&mut self, svole_keys: &[Block], uv: UV) -> Result<()> {
         if Arc::strong_count(&self.check) > 1 {
             return Err(ErrorRepr::Inprogress.into());
         }
@@ -72,7 +71,7 @@ impl Verifier {
         self.check
             .lock()
             .unwrap()
-            .check_verifier(transcript, self.delta.as_block(), svole_keys, uv)
+            .check(self.delta.as_block(), svole_keys, uv)
             .map_err(From::from)
     }
 }
@@ -86,11 +85,13 @@ pub struct VerifierExecute {
     gate_keys: Vec<Key>,
     triples: Vec<Triple>,
     adjust: BitVec,
-    check: Arc<Mutex<Check>>,
-    check_idx: usize,
-
+    /// The number of AND gates executed so far.
     counter: usize,
     and_count: usize,
+    /// The transcript to be used for the consistency check of this execution.
+    transcript: Hasher,
+    /// The consistency check value to be updated after this execution.
+    check: Arc<Mutex<VerifierCheck>>,
 }
 
 impl VerifierExecute {
@@ -99,8 +100,8 @@ impl VerifierExecute {
         delta: Delta,
         keys: Vec<Key>,
         gate_keys: Vec<Key>,
-        check: Arc<Mutex<Check>>,
-        check_idx: usize,
+        hasher: Hasher,
+        check: Arc<Mutex<VerifierCheck>>,
     ) -> Self {
         let and_count = circ.and_count();
         Self {
@@ -110,10 +111,10 @@ impl VerifierExecute {
             gate_keys,
             triples: Vec::default(),
             adjust: BitVec::default(),
-            check,
-            check_idx,
             counter: 0,
             and_count,
+            transcript: hasher,
+            check,
         }
     }
 
@@ -156,16 +157,21 @@ impl VerifierExecute {
         consumer
     }
 
-    pub fn finish(self) -> Result<Vec<Key>> {
+    /// Finishes the execution and preprocesses the consistency check values.
+    pub fn finish(mut self) -> Result<Vec<Key>> {
         if self.counter < self.and_count {
             return Err(ErrorRepr::Incomplete.into());
         }
 
-        // Flush check state.
-        self.check
-            .lock()
-            .unwrap()
-            .write(self.check_idx, &self.triples, &self.adjust);
+        // Only update the consistency check value if there were actual AND
+        // gates in the execution.
+        if self.counter > 0 {
+            self.transcript
+                .update(&(self.adjust.as_raw_slice().as_bytes()[..self.adjust.len().div_ceil(8)]));
+
+            let w = compute_w(&mut self.transcript, &self.triples, self.delta.as_block());
+            self.check.lock().unwrap().update(w);
+        }
 
         Ok(self.keys[self.circ.outputs()].to_vec())
     }

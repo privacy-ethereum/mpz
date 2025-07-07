@@ -11,25 +11,19 @@ default = ["rayon"]
 rayon = ["mpz-zk-core/rayon", "mpz-common/rayon"]
 
 [dependencies]
+async-trait = { workspace = true }
+blake3 = { workspace = true, features = ["serde"] }
+futures = { workspace = true }
+serio = { workspace = true }
+thiserror = { workspace = true }
+mpz-common = { workspace = true }
+mpz-core = { workspace = true }
+mpz-ot = { workspace = true }
 mpz-vm-core = { workspace = true }
 mpz-zk-core = { workspace = true }
-mpz-ot = { workspace = true }
-mpz-core = { workspace = true }
-mpz-common = { workspace = true }
-futures = { workspace = true }
-thiserror = { workspace = true }
-async-trait = { workspace = true }
-serio = { workspace = true }
-blake3 = { workspace = true, features = ["serde"] }
 
 [dev-dependencies]
-tokio = { workspace = true, features = [
-    "net",
-    "macros",
-    "rt",
-    "rt-multi-thread",
-] }
-rand = { workspace = true }
+criterion = { workspace = true }
 mpz-circuits = { workspace = true }
 mpz-common = { workspace = true, features = [
     "test-utils",
@@ -37,7 +31,13 @@ mpz-common = { workspace = true, features = [
     "executor",
 ] }
 mpz-ot = { workspace = true, features = ["ideal"] }
-criterion = { workspace = true }
+rand = { workspace = true }
+tokio = { workspace = true, features = [
+    "net",
+    "macros",
+    "rt",
+    "rt-multi-thread",
+] }
 
 [[bench]]
 name = "zk"
