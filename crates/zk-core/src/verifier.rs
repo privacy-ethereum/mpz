@@ -52,7 +52,10 @@ impl Verifier {
             .into());
         }
 
+        let id = self.check.lock().unwrap().next_id();
+
         Ok(VerifierExecute::new(
+            id,
             circ,
             self.delta,
             input_keys,
@@ -63,7 +66,7 @@ impl Verifier {
     }
 
     /// Executes the consistency check.
-    pub fn check(&mut self, svole_keys: &[Block], uv: UV) -> Result<()> {
+    pub fn check(&mut self, svole_keys: &[Block], uv: Vec<UV>) -> Result<()> {
         if Arc::strong_count(&self.check) > 1 {
             return Err(ErrorRepr::Inprogress.into());
         }
@@ -74,11 +77,16 @@ impl Verifier {
             .check(self.delta.as_block(), svole_keys, uv)
             .map_err(From::from)
     }
+
+    pub fn total_circuits(&self) -> usize {
+        self.check.lock().unwrap().total_circuits()
+    }
 }
 
 /// Verifier circuit execution.
 #[derive(Debug)]
 pub struct VerifierExecute {
+    id: usize,
     circ: Arc<Circuit>,
     delta: Delta,
     keys: Vec<Key>,
@@ -96,6 +104,7 @@ pub struct VerifierExecute {
 
 impl VerifierExecute {
     fn new(
+        id: usize,
         circ: Arc<Circuit>,
         delta: Delta,
         keys: Vec<Key>,
@@ -105,6 +114,7 @@ impl VerifierExecute {
     ) -> Self {
         let and_count = circ.and_count();
         Self {
+            id,
             circ,
             delta,
             keys,
@@ -163,10 +173,10 @@ impl VerifierExecute {
             return Err(ErrorRepr::Incomplete.into());
         }
 
-        // Only update the consistency check value if there were actual AND
-        // gates in the execution.
+        // The consistency check will only be performed if there actually were
+        // AND gates in the execution.
         if self.counter > 0 {
-            // For 40-bit statistical security against the adverary guessing
+            // For 40-bit statistical security against the adversary guessing
             // the transcript, we require the circuit to consist of at least
             // 40 AND gates.
             if self.counter < 40 {
@@ -177,7 +187,7 @@ impl VerifierExecute {
                 .update(&(self.adjust.as_raw_slice().as_bytes()[..self.adjust.len().div_ceil(8)]));
 
             let w = compute_w(&mut self.transcript, &self.triples, self.delta.as_block());
-            self.check.lock().unwrap().update(w);
+            self.check.lock().unwrap().insert(w, self.id);
         }
 
         Ok(self.keys[self.circ.outputs()].to_vec())

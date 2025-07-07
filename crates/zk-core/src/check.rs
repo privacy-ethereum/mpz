@@ -1,5 +1,7 @@
 //! QuickSilver consistency check.
 
+use std::{collections::HashMap, mem};
+
 use blake3::Hasher;
 use mpz_core::Block;
 use serde::{Deserialize, Serialize};
@@ -24,98 +26,131 @@ pub(crate) struct Triple {
 
 /// Prover’s unblinded preprocessed values for the consistency check.
 ///
-/// These are random linear combinations aggregated over one or more
-/// circuit executions. The values `u` and `v` are kept private and will later
-/// be masked (blinded) with random elements to derive the public values
-/// `U = u + u*` and `V = v + v*` sent to the verifier.
+/// These are random linear combinations for each circuit execution. The
+/// values `u` and `v` are kept private and will later be masked (blinded)
+/// with random elements to derive the public values `U = u + u*` and
+/// `V = v + v*` sent to the verifier.
 #[derive(Debug, Default)]
 pub(crate) struct ProverCheck {
-    u: Option<Block>,
-    v: Option<Block>,
+    /// Maps an id to the preprocessed values `u` and `v` from a single
+    /// circuit execution.
+    uv: HashMap<usize, (Block, Block)>,
+    /// Next id to assign to the preprocessed values.
+    next_id: usize,
 }
 
 impl ProverCheck {
-    /// Aggregates the values for the consistency check.
-    pub fn update(&mut self, u: Block, v: Block) {
-        match &mut self.u {
-            Some(prev_u) => *prev_u ^= u,
-            None => self.u = Some(u),
-        }
-
-        match &mut self.v {
-            Some(prev_v) => *prev_v ^= v,
-            None => self.v = Some(v),
-        }
+    pub fn next_id(&mut self) -> usize {
+        let next_id = self.next_id;
+        self.next_id += 1;
+        next_id
     }
 
-    /// Executes the prover check, returning `U` and `V` defined in Figure 5,
-    /// Step 7.b.
-    pub fn check(&mut self, svole_choices: &[bool], svole_ev: &[Block]) -> Result<UV> {
-        let (a_0, a_1) = vole_receiver(
-            svole_choices.try_into().map_err(|_| CheckError::SVole)?,
-            svole_ev.try_into().map_err(|_| CheckError::SVole)?,
-        );
+    /// Inserts preprocessed values for the consistency check.
+    pub fn insert(&mut self, u: Block, v: Block, id: usize) {
+        self.uv.insert(id, (u, v));
+    }
 
-        let u = self.u.ok_or(CheckError::NoExecutions)?;
-        let v = self.v.ok_or(CheckError::NoExecutions)?;
+    /// Executes the prover check, returning `U` and `V` (for each circuit)
+    /// defined in Figure 5, Step 7.b.
+    pub fn check(&mut self, svole_choices: &[bool], svole_ev: &[Block]) -> Result<Vec<UV>> {
+        if self.total_circuits() * 128 != svole_choices.len() {
+            return Err(CheckError::SVole);
+        }
+        if svole_ev.len() != svole_choices.len() {
+            return Err(CheckError::SVole);
+        }
 
-        // Reset the values.
-        self.u = None;
-        self.v = None;
+        let uv = mem::take(&mut self.uv);
+        let mut uv: Vec<(usize, (Block, Block))> = uv.into_iter().collect();
+        uv.sort_by_key(|&(k, _)| k);
 
-        Ok(UV {
-            u: u ^ a_0,
-            v: v ^ a_1,
-        })
+        let uvs = uv
+            .iter()
+            .zip(svole_choices.chunks(128))
+            .zip(svole_ev.chunks(128))
+            .map(|(((_, (u, v)), svole_choices), svole_ev)| {
+                let (a_0, a_1) = vole_receiver(
+                    svole_choices.try_into().map_err(|_| CheckError::SVole)?,
+                    svole_ev.try_into().map_err(|_| CheckError::SVole)?,
+                );
+
+                Ok(UV {
+                    u: u ^ a_0,
+                    v: v ^ a_1,
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        Ok(uvs)
     }
 
     /// Returns `true` if there are gates to check.
     #[inline]
     pub(crate) fn wants_check(&self) -> bool {
-        // `true` if at least one AND gate was executed.
-        self.u.is_some()
+        !self.uv.is_empty()
+    }
+
+    /// Returns the number of circuits that need to be checked.
+    pub fn total_circuits(&self) -> usize {
+        self.uv.len()
     }
 }
 
 /// Verifier’s unmasked preprocessed values for the consistency check.
 ///
-/// This is a random linear combination aggregated over one or more
-/// circuit executions. The value will later be masked with a random
-/// element to derive `W`.
+/// This is a random linear combination for each circuit execution. The value
+/// will later be masked with a random element to derive `W`.
 #[derive(Debug, Default)]
 pub(crate) struct VerifierCheck {
-    w: Option<Block>,
+    /// Maps an id to the preprocessed values `w` from a single
+    /// circuit execution.
+    w: HashMap<usize, Block>,
+    /// Next id to assign to the preprocessed values.
+    next_id: usize,
 }
 
 impl VerifierCheck {
-    /// Aggregates the values for the consistency check.
-    pub fn update(&mut self, w: Block) {
-        match &mut self.w {
-            Some(prev_w) => *prev_w ^= w,
-            None => self.w = Some(w),
-        }
+    pub fn next_id(&mut self) -> usize {
+        let next_id = self.next_id;
+        self.next_id += 1;
+        next_id
+    }
+
+    /// Inserts a preprocessed value for the consistency check.
+    pub fn insert(&mut self, w: Block, id: usize) {
+        self.w.insert(id, w);
     }
 
     /// Executes the verifier check, returning `W` defined in Figure 5, Step
     /// 7.c.
-    pub fn check(&mut self, delta: &Block, svole_keys: &[Block], uv: UV) -> Result<()> {
-        let w = self.w.ok_or(CheckError::NoExecutions)?;
-
-        let b = vole_sender(
-            &svole_keys
-                .try_into()
-                .map_err(|_| CheckError::SVole)
-                .unwrap(),
-        );
-
-        let UV { u, v } = uv;
-
-        if w ^ b != u ^ delta.gfmul(v) {
-            return Err(CheckError::Invalid);
+    pub fn check(&mut self, delta: &Block, svole_keys: &[Block], uvs: Vec<UV>) -> Result<()> {
+        if self.total_circuits() * 128 != svole_keys.len() {
+            return Err(CheckError::SVole);
+        }
+        if self.total_circuits() != uvs.len() {
+            return Err(CheckError::SVole);
         }
 
-        // Reset the value.
-        self.w = None;
+        let w = mem::take(&mut self.w);
+        let mut w: Vec<(usize, Block)> = w.into_iter().collect();
+        w.sort_by_key(|&(k, _)| k);
+
+        w.iter()
+            .zip(uvs)
+            .zip(svole_keys.chunks(128))
+            .map(|(((_, w), uv), svole_keys)| {
+                let b = vole_sender(&svole_keys.try_into().map_err(|_| CheckError::SVole)?);
+
+                let UV { u, v } = uv;
+
+                if w ^ b != u ^ delta.gfmul(v) {
+                    return Err(CheckError::Invalid);
+                }
+
+                Ok(())
+            })
+            .collect::<Result<Vec<_>>>()?;
 
         Ok(())
     }
@@ -123,8 +158,13 @@ impl VerifierCheck {
     /// Returns `true` if there are gates to check.
     #[inline]
     pub(crate) fn wants_check(&self) -> bool {
-        // `true` if at least one AND gate was executed.
-        self.w.is_some()
+        !self.w.is_empty()
+    }
+
+    /// Returns the number of circuits that need to be checked.
+    #[inline]
+    pub fn total_circuits(&self) -> usize {
+        self.w.len()
     }
 }
 

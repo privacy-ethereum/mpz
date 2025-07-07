@@ -47,7 +47,10 @@ impl Prover {
             .into());
         }
 
+        let id = self.check.lock().unwrap().next_id();
+
         Ok(ProverExecute::new(
+            id,
             circ,
             input_macs,
             gate_masks,
@@ -63,7 +66,7 @@ impl Prover {
     }
 
     /// Executes the consistency check.
-    pub fn check(&mut self, svole_choices: &[bool], svole_ev: &[Block]) -> Result<UV> {
+    pub fn check(&mut self, svole_choices: &[bool], svole_ev: &[Block]) -> Result<Vec<UV>> {
         if Arc::strong_count(&self.check) > 1 {
             return Err(ErrorRepr::Inprogress.into());
         }
@@ -74,11 +77,16 @@ impl Prover {
             .check(svole_choices, svole_ev)
             .map_err(From::from)
     }
+
+    pub fn total_circuits(&self) -> usize {
+        self.check.lock().unwrap().total_circuits()
+    }
 }
 
 /// Prover circuit execution.
 #[derive(Debug)]
 pub struct ProverExecute {
+    id: usize,
     circ: Arc<Circuit>,
     macs: Vec<Mac>,
     triples: Vec<Triple>,
@@ -96,6 +104,7 @@ pub struct ProverExecute {
 
 impl ProverExecute {
     fn new(
+        id: usize,
         circ: Arc<Circuit>,
         macs: Vec<Mac>,
         gate_masks: Vec<bool>,
@@ -105,6 +114,7 @@ impl ProverExecute {
     ) -> Self {
         let and_count = circ.and_count();
         Self {
+            id,
             circ,
             macs,
             triples: Vec::default(),
@@ -158,10 +168,10 @@ impl ProverExecute {
             return Err(ErrorRepr::Incomplete.into());
         }
 
-        // Only update the consistency check value if there were actual AND
-        // gates in the execution.
+        // The consistency check will only be performed if there actually were
+        // AND gates in the execution.
         if self.counter > 0 {
-            // For 40-bit statistical security against the adverary guessing
+            // For 40-bit statistical security against the adversary guessing
             // the transcript, we require the circuit to consist of at least
             // 40 AND gates.
             if self.counter < 40 {
@@ -172,8 +182,9 @@ impl ProverExecute {
                 .update(&(self.adjust.as_raw_slice().as_bytes()[..self.adjust.len().div_ceil(8)]));
 
             let (u, v) = compute_uv(&mut self.transcript, &self.triples);
-            self.check.lock().unwrap().update(u, v);
-        }
+
+            self.check.lock().unwrap().insert(u, v, self.id);
+        };
 
         Ok(self.macs[self.circ.outputs()].to_vec())
     }

@@ -179,7 +179,10 @@ where
         if verifier.wants_check() {
             let RCOTSenderOutput {
                 keys: svole_keys, ..
-            } = self.ot.try_send_rcot(128).map_err(VmError::execute)?;
+            } = self
+                .ot
+                .try_send_rcot(verifier.total_circuits() * 128)
+                .map_err(VmError::execute)?;
 
             let uv = ctx.io_mut().expect_next().await?;
             verifier.check(&svole_keys, uv).map_err(VmError::execute)?;
@@ -198,10 +201,8 @@ where
 
         let mut count = call.circ().and_count();
         if count > 0 {
-            // If the callstack is empty, we allocate more for the consistency check.
-            if self.callstack.is_empty() {
-                count += 128
-            }
+            // Allocate for the consistency check for each circuit.
+            count += 128;
 
             self.ot.alloc(count).map_err(VmError::execute)?;
         }

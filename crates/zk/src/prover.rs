@@ -197,12 +197,14 @@ where
                 choices: svole_choices,
                 msgs: svole_ev,
                 ..
-            } = self.ot.try_recv_rcot(128).map_err(VmError::execute)?;
+            } = self
+                .ot
+                .try_recv_rcot(prover.total_circuits() * 128)
+                .map_err(VmError::execute)?;
 
             let uv = prover
                 .check(&svole_choices, &svole_ev)
                 .map_err(VmError::execute)?;
-
             ctx.io_mut().send(uv).await?;
         }
 
@@ -219,10 +221,8 @@ where
 
         let mut count = call.circ().and_count();
         if count > 0 {
-            // If the callstack is empty, we allocate more for the consistency check.
-            if self.callstack.is_empty() {
-                count += 128
-            }
+            // Allocate for the consistency check of this circuit.
+            count += 128;
 
             self.ot.alloc(count).map_err(VmError::execute)?;
         }
