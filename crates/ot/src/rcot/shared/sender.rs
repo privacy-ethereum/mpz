@@ -235,8 +235,12 @@ where
 
                 // Optimization: avoid expensive copying of `keys` potentially
                 // containing millions of elements.
-                let old_keys = std::mem::replace(&mut buffer.keys, keys);
-                buffer.keys.extend_from_slice(&old_keys);
+                if keys.len() > buffer.keys.len() {
+                    let old_keys = std::mem::replace(&mut buffer.keys, keys);
+                    buffer.keys.extend_from_slice(&old_keys);
+                } else {
+                    buffer.keys.extend_from_slice(&keys);
+                }
             }
         }
         barrier_result.proceed();
@@ -246,8 +250,12 @@ where
             if let Some(Buffer { keys, .. }) = state.buffers.remove(&self.id) {
                 // Optimization: avoid expensive copying of `keys` potentially
                 // containing millions of elements.
-                let old_keys = std::mem::replace(&mut self.keys, keys);
-                self.keys.extend_from_slice(&old_keys);
+                if keys.len() > self.keys.len() {
+                    let old_keys = std::mem::replace(&mut self.keys, keys);
+                    self.keys.extend_from_slice(&old_keys);
+                } else {
+                    self.keys.extend_from_slice(&keys);
+                }
             }
         }
 
