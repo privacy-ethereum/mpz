@@ -161,6 +161,13 @@ impl ProverExecute {
         // Only update the consistency check value if there were actual AND
         // gates in the execution.
         if self.counter > 0 {
+            // For 40-bit statistical security against the adverary guessing
+            // the transcript, we require the circuit to consist of at least
+            // 40 AND gates.
+            if self.counter < 40 {
+                return Err(ErrorRepr::InsufficientEntropy.into());
+            }
+
             self.transcript
                 .update(&(self.adjust.as_raw_slice().as_bytes()[..self.adjust.len().div_ceil(8)]));
 
@@ -262,6 +269,8 @@ enum ErrorRepr {
     Incomplete,
     #[error("cannot run consistency check while execution is in progress")]
     Inprogress,
+    #[error("cannot run consistency check with insufficient transcript entropy")]
+    InsufficientEntropy,
     #[error(transparent)]
     Check(CheckError),
     #[error("cannot return Macs: {0}")]
