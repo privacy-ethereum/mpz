@@ -110,7 +110,7 @@ uid-mux = { version = "0.2" }
 # testing
 rstest = "0.12"
 pretty_assertions = "1"
-criterion = "0.5"
+criterion = { version = "0.5", default-features = false }
 
 # config
 cfg-if = "1"
