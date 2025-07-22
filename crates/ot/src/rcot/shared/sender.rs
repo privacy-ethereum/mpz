@@ -232,7 +232,15 @@ where
                     .try_send_rcot(buffer.count)
                     .map_err(SharedRCOTSenderError::inner)?
                     .keys;
-                buffer.keys.extend_from_slice(&keys);
+
+                // Optimization: avoid expensive copying of `keys` potentially
+                // containing millions of elements.
+                if keys.len() > buffer.keys.len() {
+                    let old_keys = std::mem::replace(&mut buffer.keys, keys);
+                    buffer.keys.extend_from_slice(&old_keys);
+                } else {
+                    buffer.keys.extend_from_slice(&keys);
+                }
             }
         }
         barrier_result.proceed();
@@ -240,7 +248,14 @@ where
         {
             let mut state = self.state.lock().unwrap();
             if let Some(Buffer { keys, .. }) = state.buffers.remove(&self.id) {
-                self.keys.extend_from_slice(&keys);
+                // Optimization: avoid expensive copying of `keys` potentially
+                // containing millions of elements.
+                if keys.len() > self.keys.len() {
+                    let old_keys = std::mem::replace(&mut self.keys, keys);
+                    self.keys.extend_from_slice(&old_keys);
+                } else {
+                    self.keys.extend_from_slice(&keys);
+                }
             }
         }
 

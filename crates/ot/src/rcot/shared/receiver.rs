@@ -238,8 +238,17 @@ where
                     .try_recv_rcot(buffer.count)
                     .map_err(SharedRCOTReceiverError::inner)?;
 
-                buffer.inputs.extend_from_slice(&output.choices);
-                buffer.macs.extend_from_slice(&output.msgs);
+                // Optimization: avoid expensive copying of `choices` and
+                // `msgs` potentially containing millions of elements.
+                if output.choices.len() > buffer.inputs.len() {
+                    let old_inputs = std::mem::replace(&mut buffer.inputs, output.choices);
+                    let old_macs = std::mem::replace(&mut buffer.macs, output.msgs);
+                    buffer.inputs.extend_from_slice(&old_inputs);
+                    buffer.macs.extend_from_slice(&old_macs);
+                } else {
+                    buffer.inputs.extend_from_slice(&output.choices);
+                    buffer.macs.extend_from_slice(&output.msgs);
+                }
             }
         }
         barrier_result.proceed();
@@ -247,8 +256,17 @@ where
         {
             let mut state = self.state.lock().unwrap();
             if let Some(buffer) = state.buffers.remove(&self.id) {
-                self.inputs.extend_from_slice(&buffer.inputs);
-                self.macs.extend_from_slice(&buffer.macs);
+                // Optimization: avoid expensive copying of `inputs` and
+                // `macs` potentially containing millions of elements.
+                if buffer.inputs.len() > self.inputs.len() {
+                    let old_inputs = std::mem::replace(&mut self.inputs, buffer.inputs);
+                    let old_macs = std::mem::replace(&mut self.macs, buffer.macs);
+                    self.inputs.extend_from_slice(&old_inputs);
+                    self.macs.extend_from_slice(&old_macs);
+                } else {
+                    self.inputs.extend_from_slice(&buffer.inputs);
+                    self.macs.extend_from_slice(&buffer.macs);
+                }
             }
         }
 
