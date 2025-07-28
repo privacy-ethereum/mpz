@@ -78,28 +78,26 @@ impl CircuitBuilder {
     /// The output of the gate.
     pub fn add_xor_gate(&mut self, x: Node<Feed>, y: Node<Feed>) -> Node<Feed> {
         // if either input is a constant, we can simplify the gate
-        if x.id() == 0 && y.id() == 0 {
+        if (x.id() == 0 && y.id() == 0) || (x.id() == 1 && y.id() == 1) {
             self.get_const_zero()
-        } else if x.id() == 1 && y.id() == 1 {
-            return self.get_const_zero();
         } else if x.id() == 0 {
-            return y;
+            y
         } else if y.id() == 0 {
-            return x;
+            x
         } else if x.id() == 1 {
             let out = self.add_feed();
             self.gates.push(Gate::Inv {
                 x: y.into(),
                 z: out,
             });
-            return out;
+            out
         } else if y.id() == 1 {
             let out = self.add_feed();
             self.gates.push(Gate::Inv {
                 x: x.into(),
                 z: out,
             });
-            return out;
+            out
         } else {
             let out = self.add_feed();
             self.gates.push(Gate::Xor {
@@ -108,7 +106,7 @@ impl CircuitBuilder {
                 z: out,
             });
             self.xor_count += 1;
-            return out;
+            out
         }
     }
 
@@ -127,9 +125,9 @@ impl CircuitBuilder {
         if x.id() == 0 || y.id() == 0 {
             self.get_const_zero()
         } else if x.id() == 1 {
-            return y;
+            y
         } else if y.id() == 1 {
-            return x;
+            x
         } else {
             let out = self.add_feed();
             self.gates.push(Gate::And {
@@ -138,7 +136,7 @@ impl CircuitBuilder {
                 z: out,
             });
             self.and_count += 1;
-            return out;
+            out
         }
     }
 

@@ -105,7 +105,7 @@ impl MPCOTReceiver<state::Initialized> {
                 let count = idxs.len();
                 // The length of each interval.
                 let k = len / count;
-                if len % count != 0 {
+                if !len.is_multiple_of(count) {
                     return Err(ErrorRepr::Params {
                         count,
                         len,

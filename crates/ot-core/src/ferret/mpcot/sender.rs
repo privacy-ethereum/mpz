@@ -89,7 +89,7 @@ impl MPCOTSender<Initialized> {
             }
             Initialized::Regular => {
                 let k = len / count;
-                if len % count != 0 {
+                if !len.is_multiple_of(count) {
                     return Err(ErrorRepr::Params {
                         count,
                         len,
