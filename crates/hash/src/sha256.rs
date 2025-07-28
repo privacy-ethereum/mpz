@@ -105,13 +105,14 @@ impl Sha256 {
 
         // If the last block is not full, add the data to it.
         if let Some(block) = self.blocks.last_mut()
-            && block.len < BLOCK_SIZE {
-                let diff = BLOCK_SIZE - block.len;
-                let (left, right) = data.split_at(diff.min(data.len()));
-                block.data.push(left);
-                block.len += left.len();
-                data = right;
-            }
+            && block.len < BLOCK_SIZE
+        {
+            let diff = BLOCK_SIZE - block.len;
+            let (left, right) = data.split_at(diff.min(data.len()));
+            block.data.push(left);
+            block.len += left.len();
+            data = right;
+        }
 
         // Partition the rest of the data into blocks.
         while data.len() > 0 {

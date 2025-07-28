@@ -390,7 +390,10 @@ pub struct Array<T, const N: usize> {
 impl<T, const N: usize> Array<T, N> {
     pub(crate) const fn new(slice: Slice) -> Self {
         assert!(N > 0, "array size must be greater than 0");
-        assert!(slice.size.is_multiple_of(N), "slice size must be a multiple of N");
+        assert!(
+            slice.size.is_multiple_of(N),
+            "slice size must be a multiple of N"
+        );
 
         Self {
             slice,
