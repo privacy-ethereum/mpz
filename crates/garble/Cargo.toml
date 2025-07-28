@@ -10,8 +10,8 @@ workspace = true
 name = "mpz_garble"
 
 [features]
-default = ["mock"]
-rayon = ["mpz-common/rayon", "mpz-garble-core/rayon"]
+default = []
+rayon = ["mpz-garble-core/rayon", "mpz-ot/rayon", "mpz-core/rayon"]
 mock = ["mpz-ot/ideal"]
 
 [dependencies]
@@ -29,7 +29,6 @@ rangeset = { workspace = true, features = ["serde"] }
 rand.workspace = true
 thiserror.workspace = true
 derive_builder.workspace = true
-itybity.workspace = true
 tracing.workspace = true
 opaque-debug.workspace = true
 serde = { workspace = true, features = ["derive"] }

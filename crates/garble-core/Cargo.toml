@@ -10,9 +10,14 @@ workspace = true
 name = "mpz_garble_core"
 
 [features]
-default = ["rayon"]
-rayon = ["dep:rayon"]
-force-st = []
+default = []
+rayon = [
+    "dep:rayon",
+    "mpz-core/rayon",
+    "mpz-ot-core/rayon",
+    "itybity/rayon",
+    "blake3/rayon",
+]
 
 [dependencies]
 mpz-core.workspace = true

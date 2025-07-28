@@ -7,9 +7,8 @@ edition = "2024"
 workspace = true
 
 [features]
-default = ["rayon"]
-rayon = ["dep:rayon", "mpz-core/rayon"]
-force-st = []
+default = []
+rayon = ["dep:rayon", "mpz-core/rayon", "blake3/rayon", "itybity/rayon"]
 
 [dependencies]
 mpz-core = { workspace = true }

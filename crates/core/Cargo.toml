@@ -10,7 +10,7 @@ name = "mpz_core"
 workspace = true
 
 [features]
-default = ["cointoss", "rayon"]
+default = ["cointoss"]
 cointoss = ["dep:rand_chacha"]
 rayon = ["dep:rayon"]
 
