@@ -275,7 +275,7 @@ pub fn evaluate_garbled_circuits(
     circs: Vec<(Arc<Circuit>, Vec<Mac>, GarbledCircuit)>,
 ) -> Result<Vec<EvaluatorOutput>, EvaluatorError> {
     cfg_if! {
-        if #[cfg(all(feature = "rayon", not(feature = "force-st")))] {
+        if #[cfg(feature = "rayon")] {
             use rayon::prelude::*;
 
             circs.into_par_iter().map(|(circ, inputs, garbled_circuit)| {

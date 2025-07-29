@@ -4,7 +4,6 @@
 
 use crate::{Block, prp::Prp};
 use rand::Rng;
-use rayon::prelude::*;
 
 /// An LPN encoder.
 ///
@@ -100,6 +99,8 @@ impl<const D: usize> LpnEncoder<D> {
 
         cfg_if::cfg_if! {
             if #[cfg(feature = "rayon")]{
+                use rayon::prelude::*;
+
                 let iter = y.par_chunks_exact_mut(4).enumerate();
             }else{
                 let iter = y.chunks_exact_mut(4).enumerate();

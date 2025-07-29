@@ -16,8 +16,6 @@
 )]
 
 pub mod context;
-#[cfg(any(test, feature = "cpu"))]
-pub mod cpu;
 #[cfg(any(test, feature = "future"))]
 pub mod future;
 mod id;

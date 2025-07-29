@@ -7,8 +7,8 @@ edition = "2024"
 workspace = true
 
 [features]
-default = ["rayon"]
-rayon = ["mpz-zk-core/rayon", "mpz-common/rayon"]
+default = []
+rayon = ["mpz-zk-core/rayon", "blake3/rayon"]
 
 [dependencies]
 mpz-vm-core = { workspace = true }

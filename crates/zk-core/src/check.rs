@@ -99,7 +99,7 @@ impl Check {
         let chis = self.compute_chis(chi);
         let macs = mem::take(&mut self.triples);
         cfg_if! {
-            if #[cfg(all(feature = "rayon", not(feature = "force-st")))] {
+            if #[cfg(feature = "rayon")] {
                 use rayon::prelude::*;
 
                 let (mut u, mut v) = macs
@@ -162,7 +162,7 @@ impl Check {
         let chis = self.compute_chis(chi);
         let keys = mem::take(&mut self.triples);
         cfg_if! {
-            if #[cfg(all(feature = "rayon", not(feature = "force-st")))] {
+            if #[cfg(feature = "rayon")] {
                 use rayon::prelude::*;
 
                 let mut w = keys
