@@ -1,0 +1,29 @@
+[package]
+name = "mpz-hash"
+version = "0.1.0-alpha.3"
+edition = "2024"
+
+[dependencies]
+mpz-core = { workspace = true }
+mpz-circuits = { workspace = true }
+mpz-vm-core = { workspace = true }
+
+itybity = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+mpz-common = { workspace = true }
+mpz-garble = { workspace = true }
+mpz-ot = { workspace = true }
+rand = { workspace = true }
+rstest = { workspace = true }
+sha2 = { workspace = true }
+tokio = { workspace = true, features = [
+    "net",
+    "macros",
+    "rt",
+    "rt-multi-thread",
+] }
+
+[lints]
+workspace = true

@@ -1,0 +1,56 @@
+[package]
+name = "mpz-core"
+version = "0.1.0-alpha.3"
+edition = "2024"
+
+[lib]
+name = "mpz_core"
+
+[lints]
+workspace = true
+
+[features]
+default = ["cointoss"]
+cointoss = ["dep:rand_chacha"]
+rayon = ["dep:rayon"]
+
+[dependencies]
+aes = { workspace = true, features = [] }
+cipher.workspace = true
+blake3.workspace = true
+clmul.workspace = true
+rand.workspace = true
+rand_chacha = { workspace = true, optional = true }
+serde = { workspace = true, features = ["derive"] }
+thiserror.workspace = true
+once_cell.workspace = true
+itybity.workspace = true
+opaque-debug.workspace = true
+bcs = "0.1.5"
+rand_core_06 = { workspace = true }
+rand_core = { workspace = true }
+bytemuck = { workspace = true, features = ["derive"] }
+hybrid-array.workspace = true
+rayon = { workspace = true, optional = true }
+cfg-if.workspace = true
+bitvec = { workspace = true, features = ["serde"] }
+
+[dev-dependencies]
+rstest.workspace = true
+criterion.workspace = true
+
+[[bench]]
+name = "aes"
+harness = false
+
+[[bench]]
+name = "ggm"
+harness = false
+
+[[bench]]
+name = "prg"
+harness = false
+
+[[bench]]
+name = "lpn"
+harness = false

@@ -1,0 +1,28 @@
+[package]
+name = "mpz-share-conversion-core"
+version = "0.1.0-alpha.3"
+edition = "2024"
+
+[lints]
+workspace = true
+
+[lib]
+name = "mpz_share_conversion_core"
+
+[features]
+default = []
+test-utils = []
+
+[dependencies]
+mpz-fields.workspace = true
+mpz-core.workspace = true
+mpz-common = { workspace = true, features = ["future"] }
+mpz-ole-core = { workspace = true }
+
+rand.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+mpz-ole-core = { workspace = true, features = ["test-utils"] }
+mpz-core.workspace = true

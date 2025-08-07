@@ -1,0 +1,34 @@
+[package]
+name = "mpz-fields"
+version = "0.1.0-alpha.3"
+edition = "2024"
+
+[lints]
+workspace = true
+
+[lib]
+name = "mpz_fields"
+
+[dependencies]
+mpz-core.workspace = true
+
+rand.workspace = true
+ark-ff.workspace = true
+ark-secp256r1.workspace = true
+ark-serialize.workspace = true
+num-bigint.workspace = true
+opaque-debug.workspace = true
+serde.workspace = true
+itybity.workspace = true
+typenum.workspace = true
+hybrid-array.workspace = true
+thiserror.workspace = true
+rand_08.workspace = true
+
+[dev-dependencies]
+ghash_rc.workspace = true
+criterion.workspace = true
+
+[[bench]]
+name = "inverse_gf2_128"
+harness = false

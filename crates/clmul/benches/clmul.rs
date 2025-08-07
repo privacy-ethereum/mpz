@@ -1,4 +1,4 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, black_box, criterion_group, criterion_main};
 
 use clmul::Clmul;
 use rand::{Rng, SeedableRng};
@@ -6,8 +6,8 @@ use rand_chacha::ChaCha12Rng;
 
 fn criterion_benchmark(c: &mut Criterion) {
     let mut rng = ChaCha12Rng::seed_from_u64(0);
-    let a: [u8; 16] = rng.gen();
-    let b: [u8; 16] = rng.gen();
+    let a: [u8; 16] = rng.random();
+    let b: [u8; 16] = rng.random();
     let a = Clmul::new(&a);
     let b = Clmul::new(&b);
 
