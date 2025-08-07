@@ -8,7 +8,7 @@ use mpz_vm_core::{
     memory::{Array, binary::U8, correlated::Delta},
     prelude::*,
 };
-use mpz_zk::{Prover, Verifier};
+use mpz_zk::{Prover, ProverConfig, Verifier, VerifierConfig};
 use rand::{Rng, SeedableRng, rngs::StdRng};
 
 fn criterion_benchmark(c: &mut Criterion) {
@@ -28,8 +28,8 @@ fn criterion_benchmark(c: &mut Criterion) {
             block_on(async {
                 let (ot_send, ot_recv) = ideal_rcot(rng.random(), delta.into_inner());
 
-                let mut prover = Prover::new(ot_recv);
-                let mut verifier = Verifier::new(delta, ot_send);
+                let mut prover = Prover::new(ProverConfig::default(), ot_recv);
+                let mut verifier = Verifier::new(VerifierConfig::default(), delta, ot_send);
 
                 futures::join!(
                     {

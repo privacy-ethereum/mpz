@@ -14,21 +14,25 @@ use mpz_vm_core::{
 use mpz_zk_core::{Verifier as Core, VerifierError, store::VerifierStore};
 use serio::stream::IoStreamExt;
 
+use crate::{callstack::CallStack, config::VerifierConfig};
+
 #[derive(Debug)]
 pub struct Verifier<OT> {
+    config: VerifierConfig,
     store: VerifierStore,
     ot: OT,
-    callstack: Vec<(Call, Slice)>,
+    callstack: CallStack,
     transcript: Hasher,
 }
 
 impl<OT> Verifier<OT> {
     /// Creates a new prover.
-    pub fn new(delta: Delta, ot: OT) -> Self {
+    pub fn new(config: VerifierConfig, delta: Delta, ot: OT) -> Self {
         Self {
+            config,
             store: VerifierStore::new(delta),
             ot,
-            callstack: Vec::default(),
+            callstack: CallStack::default(),
             transcript: Hasher::default(),
         }
     }
@@ -102,13 +106,26 @@ where
 
     async fn execute(&mut self, ctx: &mut Context) -> VmResult<()> {
         let mut verifier = Core::new(*self.store.delta());
+
+        // How many gates are to be checked.
+        let mut to_be_checked = 0;
+
         while !self.callstack.is_empty() {
             let ready_calls: Vec<_> = self
                 .callstack
                 .extract_if(.., |(call, _)| {
-                    call.inputs()
-                        .iter()
-                        .all(|input| self.store.is_committed_raw(*input))
+                    if to_be_checked >= self.config.batch_size() {
+                        false
+                    } else {
+                        let is_ready = call
+                            .inputs()
+                            .iter()
+                            .all(|input| self.store.is_committed_raw(*input));
+                        if is_ready {
+                            to_be_checked += call.circ().and_count();
+                        }
+                        is_ready
+                    }
                 })
                 .map(|(call, output)| {
                     let input_keys = call
@@ -172,9 +189,27 @@ where
                     .set_output_keys(output, &output_keys)
                     .map_err(VmError::memory)?;
             }
+
+            if to_be_checked >= self.config.batch_size() {
+                debug_assert!(verifier.wants_check());
+
+                let RCOTSenderOutput {
+                    keys: svole_keys, ..
+                } = self.ot.try_send_rcot(128).map_err(VmError::execute)?;
+
+                let uv = ctx.io_mut().expect_next().await?;
+                verifier
+                    .check(&mut self.transcript, &svole_keys, uv)
+                    .map_err(VmError::execute)?;
+
+                to_be_checked = 0;
+            }
         }
 
+        // Check the last partial batch.
         if verifier.wants_check() {
+            debug_assert!(to_be_checked > 0);
+
             let RCOTSenderOutput {
                 keys: svole_keys, ..
             } = self.ot.try_send_rcot(128).map_err(VmError::execute)?;
@@ -196,15 +231,31 @@ where
     fn call_raw(&mut self, call: Call) -> VmResult<Slice> {
         let output = self.store.alloc_output(call.circ().outputs().len());
 
-        let mut count = call.circ().and_count();
-        if count > 0 {
-            // If the callstack is empty, we allocate more for the consistency check.
-            if self.callstack.is_empty() {
-                count += 128
-            }
+        let count = call.circ().and_count();
 
-            self.ot.alloc(count).map_err(VmError::execute)?;
+        if count == 0 {
+            self.callstack.push((call, output));
+            return Ok(output);
         }
+
+        // The number of additional consistency checks to allocate for.
+        let mut check_count = 0;
+
+        let partial_len = self.callstack.and_count() % self.config.batch_size();
+
+        if partial_len == 0 {
+            // Allocate for the first batch or when the previous batch
+            // landed exactly on the batch boundary.
+            check_count += 1;
+        }
+
+        // Using -1 because we allocate whenever a batch boundary is
+        // **crossed**, not when we land exactly on the boundary.
+        check_count += (partial_len + count - 1) / self.config.batch_size();
+
+        self.ot
+            .alloc(count + check_count * 128)
+            .map_err(VmError::execute)?;
 
         self.callstack.push((call, output));
 
