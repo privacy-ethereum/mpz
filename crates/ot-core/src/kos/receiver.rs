@@ -209,16 +209,6 @@ impl Receiver<state::Extension> {
         // Sample random weights.
         let chis: Vec<Block> = (0..m).map(|_| rng.random()).collect::<Vec<_>>();
 
-        fn compute_rlc(blocks: &[Block], chis: &[Block]) -> Block {
-            let (a, b) = blocks
-                .iter()
-                .zip(chis)
-                .map(|(q, chi)| q.clmul(*chi))
-                .reduce(|(_a, _b), (a, b)| (a ^ _a, b ^ _b))
-                .expect("iterator is not empty");
-            Block::reduce_gcm(a, b)
-        }
-
         // Figure 10, "Consistency check", point 2.
         // Compute the random linear combinations.
         cfg_if::cfg_if! {
@@ -234,7 +224,7 @@ impl Receiver<state::Extension> {
         let check_t = iter
             .map(|mut row| {
                 let last = row.pop().expect("row is not empty");
-                compute_rlc(&row, &chis) ^ last
+                Block::inn_prdt_red(&row, &chis) ^ last
             })
             .collect::<Vec<_>>();
 
@@ -245,7 +235,7 @@ impl Receiver<state::Extension> {
             .collect::<Vec<_>>();
         let last = xs.pop().expect("xs is not empty");
 
-        let check_x = compute_rlc(&xs, &chis) ^ last;
+        let check_x = Block::inn_prdt_red(&xs, &chis) ^ last;
 
         // Figure 10, "Transpose and randomize".
         // The matrix was already transposed earlier.
