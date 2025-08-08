@@ -423,7 +423,7 @@ pub mod state {
         /// This is a row-major matrix which has [CSP] rows.
         pub(super) unchecked_ts: Vec<Vec<Block>>,
 
-        /// Receiver's unchecked qs after transposing.
+        /// Receiver's unchecked ts after transposing.
         pub(super) unchecked_ts_trans: Vec<Block>,
 
         /// Receiver's unchecked choices.
