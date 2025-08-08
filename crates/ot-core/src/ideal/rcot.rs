@@ -35,20 +35,20 @@ struct ReceiverState {
 /// Ideal RCOT functionality.
 #[derive(Debug, Clone)]
 pub struct IdealRCOT {
-    inner: Arc<Mutex<Inner>>,
+    inner: Inner,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct Inner {
     delta: Block,
     prg: Prg,
 
-    sender_state: SenderState,
-    receiver_state: ReceiverState,
+    sender_state: Arc<Mutex<SenderState>>,
+    receiver_state: Arc<Mutex<ReceiverState>>,
 
-    keys: Vec<Block>,
-    msgs: Vec<Block>,
-    choices: Vec<bool>,
+    keys: Arc<Mutex<Vec<Block>>>,
+    msgs: Arc<Mutex<Vec<Block>>>,
+    choices: Arc<Mutex<Vec<bool>>>,
 }
 
 impl IdealRCOT {
@@ -60,23 +60,22 @@ impl IdealRCOT {
     /// * `delta` - Global correlation key.
     pub fn new(seed: Block, delta: Block) -> Self {
         IdealRCOT {
-            inner: Arc::new(Mutex::new(Inner {
+            inner: Inner {
                 delta,
                 prg: Prg::from_seed(seed),
-                sender_state: SenderState::default(),
-                receiver_state: ReceiverState::default(),
-                keys: Vec::new(),
-                msgs: Vec::new(),
-                choices: Vec::new(),
-            })),
+                sender_state: Arc::new(Mutex::new(SenderState::default())),
+                receiver_state: Arc::new(Mutex::new(ReceiverState::default())),
+                keys: Arc::new(Mutex::new(Vec::new())),
+                msgs: Arc::new(Mutex::new(Vec::new())),
+                choices: Arc::new(Mutex::new(Vec::new())),
+            },
         }
     }
 
     /// Allocates `count` random correlated OTs.
     pub fn alloc(&mut self, count: usize) {
-        let mut this = self.inner.lock().unwrap();
-        this.sender_state.alloc += count;
-        this.receiver_state.alloc += count;
+        self.inner.sender_state.try_lock().unwrap().alloc += count;
+        self.inner.receiver_state.try_lock().unwrap().alloc += count;
     }
 
     /// Transfers `count` random correlated OTs.
@@ -87,66 +86,82 @@ impl IdealRCOT {
         Ok((self.try_send_rcot(count)?, self.try_recv_rcot(count)?))
     }
 
-    /// Returns `true` if the functionality wants to be flushed.
-    pub fn wants_flush(&self) -> bool {
-        let this = self.inner.lock().unwrap();
-        let sender_count = this.sender_state.alloc;
-        let receiver_count = this.receiver_state.alloc;
+    /// Returns `true` if the sender wants to be flushed.
+    pub fn sender_wants_flush(&self) -> bool {
+        self.inner.sender_state.try_lock().unwrap().alloc > 0
+    }
 
-        sender_count > 0 || receiver_count > 0
+    /// Returns `true` if the receiver wants to be flushed.
+    pub fn receiver_wants_flush(&self) -> bool {
+        self.inner.receiver_state.try_lock().unwrap().alloc > 0
     }
 
     /// Flushes pending operations.
     pub fn flush(&mut self) -> Result<()> {
-        let mut this = self.inner.lock().unwrap();
-        if this.sender_state.alloc != this.receiver_state.alloc {
+        // It is safe to hold the locks for the duration of the flush, since
+        // only one party is executing the flush while the other is waiting
+        // at the barrier.
+        let mut sender_state = self.inner.sender_state.try_lock().unwrap();
+        let mut receiver_state = self.inner.receiver_state.try_lock().unwrap();
+        let mut keys_guard = self.inner.keys.try_lock().unwrap();
+        let mut choices_guard = self.inner.choices.try_lock().unwrap();
+        let mut msgs_guard = self.inner.msgs.try_lock().unwrap();
+
+        if sender_state.alloc != receiver_state.alloc {
             return Err(Error::new(format!(
                 "sender and receiver alloc out of sync: {} != {}",
-                this.sender_state.alloc, this.receiver_state.alloc
+                sender_state.alloc, receiver_state.alloc
             )));
         }
 
-        let count = this.sender_state.alloc;
+        let count = sender_state.alloc;
 
-        let keys = (0..count).map(|_| this.prg.random()).collect::<Vec<_>>();
-        let choices = (0..count).map(|_| this.prg.random()).collect::<Vec<_>>();
+        let keys = (0..count)
+            .map(|_| self.inner.prg.random())
+            .collect::<Vec<_>>();
+        let choices = (0..count)
+            .map(|_| self.inner.prg.random())
+            .collect::<Vec<_>>();
         let msgs = keys
             .iter()
             .zip(&choices)
-            .map(|(key, choice)| if *choice { *key ^ this.delta } else { *key })
+            .map(|(key, choice)| {
+                if *choice {
+                    *key ^ self.inner.delta
+                } else {
+                    *key
+                }
+            })
             .collect::<Vec<_>>();
 
-        this.keys.extend_from_slice(&keys);
-        this.choices.extend_from_slice(&choices);
-        this.msgs.extend_from_slice(&msgs);
+        keys_guard.extend_from_slice(&keys);
+        choices_guard.extend_from_slice(&choices);
+        msgs_guard.extend_from_slice(&msgs);
 
-        this.sender_state.alloc = 0;
-        this.receiver_state.alloc = 0;
+        sender_state.alloc = 0;
+        receiver_state.alloc = 0;
 
-        let mut i = 0;
-        for (count, sender) in mem::take(&mut this.sender_state.queue) {
-            let keys = this.keys[i..i + count].to_vec();
-            i += count;
+        let mut keys_len = keys_guard.len();
+        for (count, sender) in mem::take(&mut sender_state.queue) {
+            let split_keys = keys_guard.split_off(keys_len - count);
+            keys_len -= count;
             sender.send(RCOTSenderOutput {
-                id: this.sender_state.transfer_id.next(),
-                keys,
+                id: sender_state.transfer_id.next(),
+                keys: split_keys,
             });
         }
-        this.keys.drain(..i);
 
-        i = 0;
-        for (count, sender) in mem::take(&mut this.receiver_state.queue) {
-            let choices = this.choices[i..i + count].to_vec();
-            let keys = this.msgs[i..i + count].to_vec();
-            i += count;
+        let mut choices_len = choices_guard.len();
+        for (count, sender) in mem::take(&mut receiver_state.queue) {
+            let split_choices = choices_guard.split_off(choices_len - count);
+            let split_msgs = msgs_guard.split_off(choices_len - count);
+            choices_len -= count;
             sender.send(RCOTReceiverOutput {
-                id: this.receiver_state.transfer_id.next(),
-                choices,
-                msgs: keys,
+                id: receiver_state.transfer_id.next(),
+                choices: split_choices,
+                msgs: split_msgs,
             });
         }
-        this.choices.drain(..i);
-        this.msgs.drain(..i);
 
         Ok(())
     }
@@ -157,52 +172,60 @@ impl RCOTSender<Block> for IdealRCOT {
     type Future = MaybeDone<RCOTSenderOutput<Block>>;
 
     fn alloc(&mut self, count: usize) -> Result<()> {
-        let mut this = self.inner.lock().unwrap();
-        this.sender_state.alloc += count;
+        self.inner.sender_state.try_lock().unwrap().alloc += count;
         Ok(())
     }
 
     fn available(&self) -> usize {
-        let this = self.inner.lock().unwrap();
-        this.keys.len()
+        self.inner.keys.try_lock().unwrap().len()
     }
 
     fn delta(&self) -> Block {
-        let this = self.inner.lock().unwrap();
-        this.delta
+        self.inner.delta
     }
 
     fn try_send_rcot(&mut self, count: usize) -> Result<RCOTSenderOutput<Block>> {
-        let mut this = self.inner.lock().unwrap();
-        if count > this.keys.len() {
+        let mut sender_state = self.inner.sender_state.try_lock().unwrap();
+        let mut keys = self.inner.keys.try_lock().unwrap();
+        let keys_len: usize = keys.len();
+
+        if count > keys_len {
             return Err(Error::new(format!(
                 "not enough sender RCOTs available: {} < {}",
-                this.keys.len(),
-                count
+                keys_len, count
             )));
         }
 
-        let id = this.sender_state.transfer_id.next();
-        let keys = this.keys.drain(..count).collect();
+        let id = sender_state.transfer_id.next();
+        let split_keys = keys.split_off(keys_len - count);
 
-        Ok(RCOTSenderOutput { id, keys })
+        Ok(RCOTSenderOutput {
+            id,
+            keys: split_keys,
+        })
     }
 
     fn queue_send_rcot(
         &mut self,
         count: usize,
     ) -> Result<MaybeDone<RCOTSenderOutput<Block>>, Self::Error> {
-        let mut this = self.inner.lock().unwrap();
+        let mut sender_state = self.inner.sender_state.try_lock().unwrap();
+        let mut keys = self.inner.keys.try_lock().unwrap();
+        let keys_len: usize = keys.len();
+
         let (send, recv) = new_output();
 
-        let available = this.keys.len();
+        let available = keys_len;
         if available >= count {
-            let id = this.sender_state.transfer_id.next();
-            let keys = this.keys.drain(..count).collect();
+            let id = sender_state.transfer_id.next();
+            let split_keys = keys.split_off(keys_len - count);
 
-            send.send(RCOTSenderOutput { id, keys });
+            send.send(RCOTSenderOutput {
+                id,
+                keys: split_keys,
+            });
         } else {
-            this.sender_state.queue.push((count, send));
+            sender_state.queue.push((count, send));
         }
 
         Ok(recv)
@@ -214,33 +237,35 @@ impl RCOTReceiver<bool, Block> for IdealRCOT {
     type Future = MaybeDone<RCOTReceiverOutput<bool, Block>>;
 
     fn alloc(&mut self, count: usize) -> Result<()> {
-        let mut this = self.inner.lock().unwrap();
-        this.receiver_state.alloc += count;
+        self.inner.receiver_state.try_lock().unwrap().alloc += count;
         Ok(())
     }
 
     fn available(&self) -> usize {
-        let this = self.inner.lock().unwrap();
-        this.choices.len()
+        self.inner.choices.try_lock().unwrap().len()
     }
 
     fn try_recv_rcot(&mut self, count: usize) -> Result<RCOTReceiverOutput<bool, Block>> {
-        let mut this = self.inner.lock().unwrap();
-        if count > this.choices.len() {
+        let mut receiver_state = self.inner.receiver_state.try_lock().unwrap();
+        let mut choices = self.inner.choices.try_lock().unwrap();
+        let mut msgs = self.inner.msgs.try_lock().unwrap();
+        // choices and msgs are the same length.
+        let choices_len = choices.len();
+
+        if count > choices_len {
             return Err(Error::new(format!(
                 "not enough receiver RCOTs available: {} < {}",
-                this.choices.len(),
-                count
+                choices_len, count
             )));
         }
 
-        let choices = this.choices.drain(..count).collect();
-        let msgs = this.msgs.drain(..count).collect();
+        let split_choices = choices.split_off(choices_len - count);
+        let split_msgs = msgs.split_off(choices_len - count);
 
         Ok(RCOTReceiverOutput {
-            id: this.receiver_state.transfer_id.next(),
-            choices,
-            msgs,
+            id: receiver_state.transfer_id.next(),
+            choices: split_choices,
+            msgs: split_msgs,
         })
     }
 
@@ -248,18 +273,27 @@ impl RCOTReceiver<bool, Block> for IdealRCOT {
         &mut self,
         count: usize,
     ) -> Result<MaybeDone<RCOTReceiverOutput<bool, Block>>> {
-        let mut this = self.inner.lock().unwrap();
+        let mut receiver_state = self.inner.receiver_state.try_lock().unwrap();
+        let mut choices = self.inner.choices.try_lock().unwrap();
+        let mut msgs = self.inner.msgs.try_lock().unwrap();
+        // choices and msgs are the same length.
+        let choices_len = choices.len();
+
         let (send, recv) = new_output();
 
-        let available = this.choices.len();
+        let available = choices_len;
         if available >= count {
-            let id = this.receiver_state.transfer_id.next();
-            let choices = this.choices.drain(..count).collect();
-            let msgs = this.msgs.drain(..count).collect();
+            let id = receiver_state.transfer_id.next();
+            let split_choices = choices.split_off(choices_len - count);
+            let split_msgs = msgs.split_off(choices_len - count);
 
-            send.send(RCOTReceiverOutput { id, choices, msgs });
+            send.send(RCOTReceiverOutput {
+                id,
+                choices: split_choices,
+                msgs: split_msgs,
+            });
         } else {
-            this.receiver_state.queue.push((count, send));
+            receiver_state.queue.push((count, send));
         }
 
         Ok(recv)
