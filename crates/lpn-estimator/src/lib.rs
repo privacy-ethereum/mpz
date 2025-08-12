@@ -2,6 +2,8 @@ mod lpn;
 
 pub use lpn::LpnEstimator;
 
+use mpz_core::lpn::LpnParameters;
+
 /// The primal LPN type.
 #[derive(Copy, Clone, Debug)]
 pub enum LpnType {
@@ -17,6 +19,16 @@ pub struct LpnParams {
     k: u64,
     t: u64,
     s: f64,
+}
+
+impl From<LpnParams> for LpnParameters {
+    fn from(value: LpnParams) -> Self {
+        Self {
+            n: value.n as usize,
+            k: value.k as usize,
+            t: value.t as usize,
+        }
+    }
 }
 
 impl LpnParams {

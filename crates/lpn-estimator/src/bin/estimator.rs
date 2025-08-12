@@ -1,8 +1,14 @@
 use lpn_estimator::{LpnParams, LpnType};
+use quote::quote;
 
 fn main() {
-    eprintln!("\nThis program searches primal LPN instances over F2 satisfying a minimum bit security for a given secret length.");
-    eprintln!("Parameters: type, s, k, max_n (optional)");
+    eprintln!(
+        "\nThis program searches primal LPN instances over F2 satisfying a minimum bit security for a given secret length."
+    );
+    eprintln!(
+        "Output is a rust module file lpn_parms.rs, which can be included in other projects."
+    );
+    eprintln!("\nParameters: type, s, k, max_n (optional)");
     eprintln!("\ttype - either \"exact\" or \"regular\"");
     eprintln!("\ts - minimum bit security");
     eprintln!("\tk - length of secret");
@@ -37,15 +43,27 @@ fn main() {
 
     let lpns = LpnParams::scan(typ, s, k, max_n);
 
-    eprintln!("Computed the following primal LPN instances for:");
-    eprintln!("\ttype: {typ:?}");
-    eprintln!("\ts: {s}");
-    eprintln!("\tk: {k}");
-
-    println!("t, n, s");
+    // Safety check
     for lpn in lpns {
-        let (n, _, t) = lpn.nkt();
-        let s = lpn.security() as u64;
-        println!("{}, {}, {}", t, n, s);
+        assert!(lpn.security() >= s, "Computed security is below threshold.");
+        assert!(
+            lpn.nkt().1 >= k,
+            "Computed secret length is below threshold."
+        );
     }
+
+    let table = quote! {
+        //! This module is automatically generated with the crate `lpn-estimator` using the binary `estimator.rs`.
+        //! Do not edit manually!
+        //!
+        //! If you want to make changes run the estimator and replace this file with the genrated output.
+
+        use mpz_core::lpn::LpnParameters;
+
+        static LPN_PARAMS: &[LpnParameters] = [#(#lpns),*];
+
+    };
+    let generated_code = table.to_string();
+
+    println!("{}", generated_code);
 }
