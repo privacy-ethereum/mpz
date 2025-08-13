@@ -37,7 +37,7 @@ name = "estimator"
 path = "src/bin/estimator.rs"
 
 [[bin]]
-name = "lpn_checker"
+name = "lpn-checker"
 path = "src/bin/lpn_checker.rs"
 
 [[bench]]
