@@ -1,0 +1,18 @@
+# LPN Estimator
+
+This crate estimates the security of LPN instances, by computing the bit
+security from different attacks based on <https://eprint.iacr.org/2022/712>.
+So far exact and regular LPN over F_2 are supported.
+
+- `lpnestimator.com/estimator.py` is a reference implementation based on
+  <https://github.com/RabbitCabbage/LPN-Estimator/blob/main/home/estimator.py>.
+  The code has been copied and modified only to improve linting without changing
+  the logic.
+- `src/lpn.rs` is our own implementation.
+- In `src/bin` there are executable binaries:
+  - `exact.rs` estimates the bit security for an exact LPN instance.
+  - `regular.rs` estimates the bit security for a regular LPN instance.
+  - `estimator.rs` does code generation by creating a static array of LPN instances
+    satisfying a minium bit security. This is used in `crates/ot-core/ferret/config/`.
+  - `lpn-checker.rs` checks these static arrays against the reference
+    implementation in `lpnestimator.com/estimator.py`.
