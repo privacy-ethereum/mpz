@@ -16,6 +16,8 @@ cfg-if = "1.0"
 rayon = "1.10"
 syn = "2"
 quote = "1"
+proc-macro2 = "1"
+prettyplease = "0.2"
 
 [dev-dependencies]
 divan = "0.1"

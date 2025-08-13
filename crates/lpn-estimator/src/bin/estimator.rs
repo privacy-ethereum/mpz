@@ -1,12 +1,13 @@
 use lpn_estimator::{LpnParams, LpnType};
 use quote::quote;
+use syn::File;
 
 fn main() {
     eprintln!(
         "\nThis program searches primal LPN instances over F2 satisfying a minimum bit security for a given secret length."
     );
     eprintln!(
-        "Output is a rust module file lpn_parms.rs, which can be included in other projects."
+        "Output is formatted rust code written to STDOUT, which can be included as a module in other projects."
     );
     eprintln!("\nParameters: type, s, k, max_n (optional)");
     eprintln!("\ttype - either \"exact\" or \"regular\"");
@@ -41,29 +42,35 @@ fn main() {
         .next()
         .map(|n| n.parse().expect("Unable to parse number"));
 
-    let lpns = LpnParams::scan(typ, s, k, max_n);
+    let mut lpns = LpnParams::scan(typ, s, k, max_n);
 
-    // Safety check
-    for lpn in lpns {
-        assert!(lpn.security() >= s, "Computed security is below threshold.");
+    // Security checks
+    for lpn in lpns.iter() {
+        assert!(
+            lpn.security() >= s,
+            "security of computed lpn instance is too low"
+        );
         assert!(
             lpn.nkt().1 >= k,
-            "Computed secret length is below threshold."
+            "secret length of computed lpn instance is too low"
         );
     }
 
-    let table = quote! {
+    lpns.sort_by(|a, b| a.nkt().0.cmp(&b.nkt().0).then(a.nkt().1.cmp(&b.nkt().1)));
+
+    let lpn_params_module = quote! {
         //! This module is automatically generated with the crate `lpn-estimator` using the binary `estimator.rs`.
         //! Do not edit manually!
         //!
-        //! If you want to make changes run the estimator and replace this file with the genrated output.
+        //! If you want to make changes run the estimator and replace this file with the generated output.
 
         use mpz_core::lpn::LpnParameters;
 
-        static LPN_PARAMS: &[LpnParameters] = [#(#lpns),*];
-
+        pub static LPN_PARAMS: &[LpnParameters] = &[#(#lpns),*];
     };
-    let generated_code = table.to_string();
 
-    println!("{}", generated_code);
+    let lpn_params_code: File = syn::parse2(lpn_params_module).unwrap();
+    let pretty_code = prettyplease::unparse(&lpn_params_code);
+
+    println!("{}", pretty_code);
 }

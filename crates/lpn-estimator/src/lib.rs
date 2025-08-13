@@ -2,7 +2,8 @@ mod lpn;
 
 pub use lpn::LpnEstimator;
 
-use mpz_core::lpn::LpnParameters;
+use proc_macro2::TokenStream;
+use quote::{ToTokens, quote};
 
 /// The primal LPN type.
 #[derive(Copy, Clone, Debug)]
@@ -21,13 +22,20 @@ pub struct LpnParams {
     s: f64,
 }
 
-impl From<LpnParams> for LpnParameters {
-    fn from(value: LpnParams) -> Self {
-        Self {
-            n: value.n as usize,
-            k: value.k as usize,
-            t: value.t as usize,
-        }
+impl ToTokens for LpnParams {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        let n = self.n as usize;
+        let k = self.k as usize;
+        let t = self.t as usize;
+
+        let out = quote! {
+            LpnParameters {
+                n: #n,
+                k: #k,
+                t: #t
+            }
+        };
+        tokens.extend(out);
     }
 }
 

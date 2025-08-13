@@ -1,10 +1,16 @@
+use crate::ferret::cuckoo::HASH_NUM;
+use derive_builder::Builder;
+use mpz_core::lpn::{LpnParameters, LpnType};
 use std::{fmt::Debug, sync::Arc};
 
-use derive_builder::Builder;
-
-use mpz_core::lpn::{LpnParameters, LpnType};
-
-use crate::ferret::cuckoo::HASH_NUM;
+// mod exact;
+// use exact::LPN_PARAMS as EXACT_PARAMS;
+//
+// mod regular;
+// use regular::LPN_PARAMS as REGULAR_PARAMS;
+//
+// mod uniform;
+// use uniform::LPN_PARAMS as UNIFORM_PARAMS;
 
 /// Computational security parameter.
 pub(crate) const CSP: usize = 128;
