@@ -5,6 +5,8 @@ edition = "2024"
 
 [dependencies]
 mpz-core = { path = "../core/" }
+mpz-ot-core = { path = "../ot-core/" }
+
 opaque-debug = "0.3"
 bcs = "0.1"
 rand_core = "0.9"
@@ -35,8 +37,8 @@ name = "estimator"
 path = "src/bin/estimator.rs"
 
 [[bin]]
-name = "lpn_table_checker"
-path = "src/bin/lpn_table_checker.rs"
+name = "lpn_checker"
+path = "src/bin/lpn_checker.rs"
 
 [[bench]]
 name = "throughput"

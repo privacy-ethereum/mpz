@@ -54,21 +54,6 @@ impl LpnParams {
             LpnType::Regular => LpnEstimator::security_for_binary_regular(n, k, t),
         };
 
-        Self::new_with_security(typ, n, k, t, s)
-    }
-
-    /// Creates a primal LPN instance.
-    ///
-    /// This assumes that you provide the correct bit security for this instance.
-    ///
-    /// # Arguments
-    ///
-    /// * `typ` - The LPN type.
-    /// * `n` - The number of samples.
-    /// * `k` - The length of the secret.
-    /// * `t` - The hamming weight of the noise.
-    /// * `s` - The corresponding bit security.
-    pub fn new_with_security(typ: LpnType, n: u64, k: u64, t: u64, s: f64) -> Self {
         Self { typ, n, k, t, s }
     }
 

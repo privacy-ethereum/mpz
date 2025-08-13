@@ -3,14 +3,11 @@ use derive_builder::Builder;
 use mpz_core::lpn::{LpnParameters, LpnType};
 use std::{fmt::Debug, sync::Arc};
 
-// mod exact;
-// use exact::LPN_PARAMS as EXACT_PARAMS;
-//
-// mod regular;
-// use regular::LPN_PARAMS as REGULAR_PARAMS;
-//
-// mod uniform;
-// use uniform::LPN_PARAMS as UNIFORM_PARAMS;
+mod regular;
+pub use regular::LPN_PARAMS as REGULAR_PARAMS;
+
+mod uniform;
+pub use uniform::LPN_PARAMS as UNIFORM_PARAMS;
 
 /// Computational security parameter.
 pub(crate) const CSP: usize = 128;
@@ -144,49 +141,3 @@ fn iteration_cost(ty: LpnType, params: LpnParameters) -> usize {
         }
     }
 }
-
-static UNIFORM_PARAMS: &[LpnParameters] = &[
-    LpnParameters {
-        n: 545_656,
-        k: 34_643,
-        t: 1_050,
-    },
-    LpnParameters {
-        n: 1_071_888,
-        k: 40_800,
-        t: 1720,
-    },
-    LpnParameters {
-        n: 5_324_800,
-        k: 240_000,
-        t: 1_300,
-    },
-    LpnParameters {
-        n: 10_488_928,
-        k: 458_000,
-        t: 1280,
-    },
-];
-
-static REGULAR_PARAMS: &[LpnParameters] = &[
-    LpnParameters {
-        n: 518_656,
-        k: 34_643,
-        t: 1_013,
-    },
-    LpnParameters {
-        n: 1_740_800,
-        k: 66_400,
-        t: 1700,
-    },
-    LpnParameters {
-        n: 5_324_800,
-        k: 240_000,
-        t: 1_300,
-    },
-    LpnParameters {
-        n: 10_485_760,
-        k: 458_000,
-        t: 1280,
-    },
-];
