@@ -25,22 +25,23 @@ fn main() {
 fn check(lpns: Vec<LpnParameters>, typ: LpnType) {
     let ref_securities: Arc<Mutex<Vec<Option<f64>>>> = Arc::new(Mutex::new(vec![None; lpns.len()]));
 
-    for (k, &lpn) in lpns.iter().enumerate() {
+    for (i, &lpn) in lpns.iter().enumerate() {
         let ref_securities = ref_securities.clone();
 
         rayon::spawn(move || {
             let lpn = LpnParams::new(typ, lpn.n as u64, lpn.k as u64, lpn.t as u64);
+
             let security = lpn.security();
             let ref_security = compute_ref_security(&lpn);
-
-            let mut ref_securities = ref_securities.lock().unwrap();
-            ref_securities[k] = Some(ref_security);
 
             let (n, k, t) = lpn.nkt();
             println!(
                 "Checked {typ:?} LPN (n={}, k={}, t= {}): \tcomputed security: {:.2}, reference security: {:.2}",
                 n, k, t, security, ref_security
             );
+
+            let mut ref_securities = ref_securities.lock().unwrap();
+            ref_securities[i] = Some(ref_security);
         });
     }
 
