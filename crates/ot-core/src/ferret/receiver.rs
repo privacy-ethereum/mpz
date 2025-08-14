@@ -35,6 +35,7 @@ struct Queued {
 pub struct Receiver<COT> {
     cot: Arc<Mutex<COT>>,
     alloc: usize,
+    missing: usize,
     queue: VecDeque<Queued>,
     transfer_id: TransferId,
     prg: Prg,
@@ -54,6 +55,7 @@ where
         Self {
             cot: Arc::new(Mutex::new(cot)),
             alloc: 0,
+            missing: 0,
             queue: VecDeque::new(),
             transfer_id: TransferId::default(),
             prg: Prg::from_seed(seed),
@@ -77,12 +79,12 @@ where
 
     /// Returns `true` if the receiver wants to bootstrap.
     pub fn wants_bootstrap(&self) -> bool {
-        self.macs.is_empty()
+        self.macs.len() < self.config.bootstrap_cost()
     }
 
     /// Returns `true` if the receiver wants to extend.
     pub fn wants_extend(&self) -> bool {
-        self.alloc > 0
+        self.available() < self.alloc
     }
 
     /// Initializes the receiver.
@@ -102,11 +104,11 @@ where
 
     /// Allocates COTs for bootstrapping.
     pub fn alloc_bootstrap(&self) -> Result<()> {
-        let cost = self.config.bootstrap_cost();
+        let missing = self.config.bootstrap_cost() - self.macs.len();
         self.cot
             .try_lock()
             .map_err(|_| ErrorRepr::MutexLocked)?
-            .alloc(cost)
+            .alloc(missing)
             .map_err(Error::bootstrap)?;
 
         Ok(())
@@ -119,7 +121,8 @@ where
         };
 
         // If COTs are empty, we haven't bootstrapped from inner COT yet.
-        if self.macs.is_empty() {
+        if self.wants_bootstrap() {
+            let missing = self.config.bootstrap_cost() - self.macs.len();
             let RCOTReceiverOutput {
                 msgs: macs,
                 choices,
@@ -128,7 +131,7 @@ where
                 .cot
                 .try_lock()
                 .map_err(|_| ErrorRepr::MutexLocked)?
-                .try_recv_rcot(self.config.bootstrap_cost())
+                .try_recv_rcot(missing)
                 .map_err(|e| ErrorRepr::Bootstrap(Box::new(e)))?;
 
             self.macs.extend_from_slice(&macs);
@@ -136,7 +139,7 @@ where
         }
 
         let lpn_type = self.config.lpn_type();
-        let params = self.config.select_params(self.macs.len(), self.alloc);
+        let params = self.config.select_params(self.macs.len(), self.missing);
 
         let err = sample_error_indices(&mut self.prg, lpn_type, params.n, params.t);
 
@@ -265,8 +268,8 @@ where
         self.macs.extend_from_slice(&z);
         self.choices.extend_from_slice(&x);
 
-        self.alloc = self.alloc.saturating_sub(self.macs.len() - start);
-        if self.alloc == 0 {
+        self.missing = self.missing.saturating_sub(self.macs.len() - start);
+        if self.missing == 0 {
             // We've finished extending.
             self.process_queue();
         }
@@ -286,6 +289,7 @@ where
             let id = self.transfer_id.next();
             let macs = self.macs.split_off(self.macs.len() - next.count);
             let choices = self.choices.split_off(self.choices.len() - next.count);
+            self.alloc -= next.count;
 
             next.sender.send(RCOTReceiverOutput {
                 id,
@@ -305,6 +309,7 @@ where
 
     fn alloc(&mut self, count: usize) -> Result<()> {
         self.alloc += count;
+        self.missing += count;
         Ok(())
     }
 

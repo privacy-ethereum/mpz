@@ -35,6 +35,7 @@ struct Queued {
 pub struct Sender<COT> {
     cot: Arc<Mutex<COT>>,
     alloc: usize,
+    missing: usize,
     queue: VecDeque<Queued>,
     transfer_id: TransferId,
     prg: Prg,
@@ -55,6 +56,7 @@ where
         Self {
             cot: Arc::new(Mutex::new(cot)),
             alloc: 0,
+            missing: 0,
             queue: VecDeque::new(),
             transfer_id: TransferId::default(),
             prg: Prg::from_seed(seed),
@@ -78,12 +80,12 @@ where
 
     /// Returns `true` if the sender wants to bootstrap.
     pub fn wants_bootstrap(&self) -> bool {
-        self.keys.is_empty()
+        self.keys.len() < self.config.bootstrap_cost()
     }
 
     /// Returns `true` if the sender wants to extend.
     pub fn wants_extend(&self) -> bool {
-        self.alloc > 0
+        self.available() < self.alloc
     }
 
     /// Initializes the sender, receiving message from the receiver.
@@ -103,11 +105,11 @@ where
 
     /// Allocates COTs for bootstrapping.
     pub fn alloc_bootstrap(&self) -> Result<()> {
-        let cost = self.config.bootstrap_cost();
+        let missing = self.config.bootstrap_cost() - self.keys.len();
         self.cot
             .try_lock()
             .map_err(|_| ErrorRepr::MutexLocked)?
-            .alloc(cost)
+            .alloc(missing)
             .map_err(Error::bootstrap)?;
 
         Ok(())
@@ -120,18 +122,19 @@ where
         };
 
         // If COTs are empty, we haven't bootstrapped from inner COT yet.
-        if self.keys.is_empty() {
+        if self.wants_bootstrap() {
+            let missing = self.config.bootstrap_cost() - self.keys.len();
             let RCOTSenderOutput { keys, .. } = self
                 .cot
                 .try_lock()
                 .map_err(|_| ErrorRepr::MutexLocked)?
-                .try_send_rcot(self.config.bootstrap_cost())
+                .try_send_rcot(missing)
                 .map_err(|e| ErrorRepr::Bootstrap(Box::new(e)))?;
 
             self.keys.extend_from_slice(&keys);
         }
 
-        let params = self.config.select_params(self.keys.len(), self.alloc);
+        let params = self.config.select_params(self.keys.len(), self.missing);
 
         let (mpcot, spcot_lengths) = MPCOTSender::new(public_prg.random(), self.config.lpn_type())
             .start_extend(params.t, params.n)?;
@@ -245,8 +248,8 @@ where
         self.keys.truncate(self.keys.len() - params.k);
         self.keys.extend_from_slice(&y);
 
-        self.alloc = self.alloc.saturating_sub(self.keys.len() - start);
-        if self.alloc == 0 {
+        self.missing = self.missing.saturating_sub(self.keys.len() - start);
+        if self.missing == 0 {
             // We've finished extending.
             self.process_queue();
         }
@@ -265,6 +268,7 @@ where
 
             let id = self.transfer_id.next();
             let keys = self.keys.split_off(self.keys.len() - next.count);
+            self.alloc -= next.count;
 
             next.sender.send(RCOTSenderOutput { id, keys });
         }
@@ -280,6 +284,7 @@ where
 
     fn alloc(&mut self, count: usize) -> Result<()> {
         self.alloc += count;
+        self.missing += count;
         Ok(())
     }
 
