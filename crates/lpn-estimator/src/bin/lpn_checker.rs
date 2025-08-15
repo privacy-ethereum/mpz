@@ -12,9 +12,8 @@ const REFERENCE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/lpnestimator.com/e
 fn main() {
     println!(
         "\nThis program checks the bit security of our LPN instances in `ot-core/src/ferret/config` \
-        against a reference implementation."
+        against a reference implementation.\n"
     );
-    println!();
 
     check(UNIFORM_PARAMS.to_vec(), LpnType::Exact);
     println!();
@@ -34,7 +33,7 @@ fn check(lpns: Vec<LpnParameters>, typ: LpnType) {
             let security = lpn.security();
             let ref_security = compute_ref_security(&lpn);
 
-            let (n, k, t) = lpn.nkt();
+            let (n, k, t) = (lpn.n(), lpn.k(), lpn.t());
             println!(
                 "Checked {typ:?} LPN (n={}, k={}, t= {}): \tcomputed security: {:.2}, reference security: {:.2}",
                 n, k, t, security, ref_security
@@ -64,7 +63,7 @@ fn compute_ref_security(lpn: &LpnParams) -> f64 {
         LpnType::Regular => "regular",
     };
 
-    let (n, k, t) = lpn.nkt();
+    let (n, k, t) = (lpn.n(), lpn.k(), lpn.t());
 
     let security = Command::new("python")
         .arg(REFERENCE)
