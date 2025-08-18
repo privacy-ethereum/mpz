@@ -57,11 +57,11 @@ impl LpnParams {
         Self { typ, n, k, t, s }
     }
 
-    /// Scans the parameter space for LPN instances based on some fixed `t` and a minimum bit
-    /// security.
+    /// Scans the parameter space for LPN instances based on some fixed `t` and
+    /// a minimum bit security.
     ///
-    /// Tries to maximize `n` while keeping `k` small and staying above a minimum provided bit
-    /// security.
+    /// Tries to maximize `n` while keeping `k` small and staying above a
+    /// minimum provided bit security.
     ///
     /// # Arguments
     ///

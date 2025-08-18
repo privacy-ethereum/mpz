@@ -25,8 +25,8 @@ impl LpnEstimator {
         res
     }
 
-    /// Compute the bit security under the Pooled Gauss attack, see page 37 in this
-    /// [paper](https://eprint.iacr.org/2022/712.pdf). Note that it is the same for binary and
+    /// Compute the bit security under the Pooled Gauss attack, see page 37 in
+    /// this [paper](https://eprint.iacr.org/2022/712.pdf). Note that it is the same for binary and
     /// larger fields.
     ///
     /// # Arguments.
@@ -118,8 +118,8 @@ impl LpnEstimator {
         res
     }
 
-    /// The security of the lpn parameters under SD_ISD attack for binary field. See Therem 14 in
-    /// this [paper](https://eprint.iacr.org/2022/712.pdf).
+    /// The security of the lpn parameters under SD_ISD attack for binary field.
+    /// See Therem 14 in this [paper](https://eprint.iacr.org/2022/712.pdf).
     ///
     /// # Arguments.
     ///
@@ -319,8 +319,8 @@ impl LpnEstimator {
         min_cost
     }
 
-    /// The security of the lpn parameters under BJMM_ISD attack for binary field. See Therem 16 in
-    /// this [paper](https://eprint.iacr.org/2022/712.pdf).
+    /// The security of the lpn parameters under BJMM_ISD attack for binary
+    /// field. See Therem 16 in this [paper](https://eprint.iacr.org/2022/712.pdf).
     ///
     /// # Arguments.
     ///
@@ -343,8 +343,8 @@ impl LpnEstimator {
         res
     }
 
-    /// The security of the lpn parameters under SD attack for binary field. See The equation with
-    /// s = 0 in page 39 in this [paper](https://eprint.iacr.org/2022/712.pdf).
+    /// The security of the lpn parameters under SD attack for binary field. See
+    /// The equation with s = 0 in page 39 in this [paper](https://eprint.iacr.org/2022/712.pdf).
     ///
     /// # Arguments.
     ///
@@ -361,8 +361,8 @@ impl LpnEstimator {
         ((k + 1) as f64).log2() + cost
     }
 
-    /// The security of the lpn parameters under SD 2.0 attack for binary field. See The equation
-    /// with in page 39 in this [paper](https://eprint.iacr.org/2022/712.pdf).
+    /// The security of the lpn parameters under SD 2.0 attack for binary field.
+    /// See The equation with in page 39 in this [paper](https://eprint.iacr.org/2022/712.pdf).
     ///
     /// # Arguments.
     ///

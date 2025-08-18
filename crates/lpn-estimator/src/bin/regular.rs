@@ -1,7 +1,9 @@
 use lpn_estimator::LpnEstimator;
 
 fn main() {
-    eprintln!("\nThis program estimates the bit security for regular, primal LPN over F2 considering well-known attacks.");
+    eprintln!(
+        "\nThis program estimates the bit security for regular, primal LPN over F2 considering well-known attacks."
+    );
     eprintln!("Parameters N, k, t");
     eprintln!("\tN - number of samples");
     eprintln!("\tk - length of secret");
