@@ -88,7 +88,7 @@ impl LpnParams {
             let lpn = Self::new(typ, n, k, t);
 
             if lpn.security() >= s {
-                exp += 3;
+                exp += 4;
                 lpns.push(lpn);
             } else {
                 k += k / 20;

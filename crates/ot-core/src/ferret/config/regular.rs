@@ -7,28 +7,13 @@ use mpz_core::lpn::LpnParameters;
 /// LPN parameters.
 pub static LPN_PARAMS: &[LpnParameters] = &[
     LpnParameters {
-        n: 405000usize,
-        k: 24750usize,
+        n: 614400usize,
+        k: 34814usize,
         t: 1200usize,
     },
     LpnParameters {
-        n: 870598usize,
-        k: 49500usize,
-        t: 1200usize,
-    },
-    LpnParameters {
-        n: 1871463usize,
-        k: 99000usize,
-        t: 1200usize,
-    },
-    LpnParameters {
-        n: 4022958usize,
-        k: 198000usize,
-        t: 1200usize,
-    },
-    LpnParameters {
-        n: 8647891usize,
-        k: 408000usize,
+        n: 9830400usize,
+        k: 462040usize,
         t: 1200usize,
     },
 ];
