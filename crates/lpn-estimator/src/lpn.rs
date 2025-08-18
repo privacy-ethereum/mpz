@@ -163,7 +163,7 @@ impl LpnEstimator {
         assert!(p1 >= e1);
         let p = 2 * (p1 - e1);
 
-        let log_s3 = Self::cal_comb_log2((k + 1) / 2 + 1, p2 / 2);
+        let log_s3 = Self::cal_comb_log2(k.div_ceil(2) + 1, p2 / 2);
         let s3 = 2.0_f64.powf(log_s3);
 
         let log_c3 = log_s3 * 2.0 - r2 as f64;
@@ -230,7 +230,7 @@ impl LpnEstimator {
         for e2 in 0..p2 {
             let p1 = 2 * (p2 - e2);
 
-            let e1_start = if p1 <= (t / 2) { 0 } else { p1 - t / 2 };
+            let e1_start = p1.saturating_sub(t / 2);
 
             // Try all possible values of e1.
             for e1 in e1_start..p1 {
@@ -557,8 +557,8 @@ impl LpnEstimator {
             }
         });
 
-        let min = security.iter().fold(f64::INFINITY, |a, &b| a.min(b));
-        min
+        
+        security.iter().fold(f64::INFINITY, |a, &b| a.min(b))
     }
 
     /// The security of the regular lpn parameters for binary field.
