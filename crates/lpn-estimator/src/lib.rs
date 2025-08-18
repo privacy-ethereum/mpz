@@ -66,44 +66,32 @@ impl LpnParams {
     /// # Arguments
     ///
     /// * `typ` - The LPN type.
-    /// * `t` - The hamming weight of the error vector.
     /// * `s` - The minimum bit security.
+    /// * `t` - The hamming weight of the error vector.
     /// * `max_n` - The maximum number of samples to consider.
     pub fn scan(typ: LpnType, s: f64, t: u64, max_n: Option<u64>) -> Vec<LpnParams> {
         const MIN_T: u64 = 1000;
         assert!(t >= MIN_T, "t must be greter than {MIN_T}");
 
-        const MAX_STEP: u32 = 4;
-
-        const MAX_N: u64 = 10_000_000;
+        const MAX_N: u64 = 100_000_000;
         let max_n = max_n.unwrap_or(MAX_N);
 
+        const START_EXP: u64 = 9;
+        let mut exp = START_EXP;
+
+        let calc_n = |t: u64, exp: u64| (1 << exp) * t;
+        let mut k: u64 = START_EXP * t;
+
         let mut lpns = vec![];
-        let mut n = 200 * t;
-        let mut k = 20 * t;
-
-        let mut step_n = 0;
-        let mut step_k = 0;
-
         loop {
-            let cur_n = n + n / 2_u64.pow(step_n);
-            let cur_k = k + k / 2_u64.pow(MAX_STEP - step_k + 1);
+            let n = calc_n(t, exp);
+            let lpn = Self::new(typ, n, k, t);
 
-            let lpn = Self::new(typ, cur_n, cur_k, t);
-
-            if lpn.s > s {
+            if lpn.security() >= s {
+                exp += 3;
                 lpns.push(lpn);
-                n = cur_n;
-                step_n = 0;
-                step_k = 0;
-            } else if step_n < MAX_STEP {
-                step_n += 1;
-            } else if step_k < MAX_STEP {
-                step_k += 1;
             } else {
-                step_n = 0;
-                step_k = 0;
-                k *= 2;
+                k += k / 20;
             }
 
             if n > max_n {
