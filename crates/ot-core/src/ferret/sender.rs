@@ -35,7 +35,6 @@ struct Queued {
 pub struct Sender<COT> {
     cot: Arc<Mutex<COT>>,
     alloc: usize,
-    missing: usize,
     queue: VecDeque<Queued>,
     transfer_id: TransferId,
     prg: Prg,
@@ -56,7 +55,6 @@ where
         Self {
             cot: Arc::new(Mutex::new(cot)),
             alloc: 0,
-            missing: 0,
             queue: VecDeque::new(),
             transfer_id: TransferId::default(),
             prg: Prg::from_seed(seed),
@@ -133,15 +131,14 @@ where
 
             self.keys.extend_from_slice(&keys);
         }
-
-        let params = self.config.select_params(self.keys.len(), self.missing);
+        let missing = self.alloc.saturating_sub(self.available());
+        let params = self.config.select_params(self.keys.len(), missing);
 
         let (mpcot, spcot_lengths) = MPCOTSender::new(public_prg.random(), self.config.lpn_type())
             .start_extend(params.t, params.n)?;
 
         self.state = State::Extending(Extending {
             public_prg,
-            start: self.keys.len(),
             params,
             mpcot,
             spcot_lengths,
@@ -160,7 +157,6 @@ where
 
         let State::Extending(Extending {
             public_prg,
-            start,
             params,
             mpcot,
             spcot_lengths,
@@ -183,7 +179,6 @@ where
 
         self.state = State::Check(Check {
             public_prg,
-            start,
             params,
             s,
         });
@@ -201,7 +196,6 @@ where
 
         let State::Check(Check {
             public_prg,
-            start,
             params,
             s,
         }) = self.state.take()
@@ -217,7 +211,6 @@ where
 
         self.state = State::Finish(Finish {
             public_prg,
-            start,
             params,
             s,
         });
@@ -229,7 +222,6 @@ where
     pub fn finish_extend(&mut self) -> Result<()> {
         let State::Finish(Finish {
             mut public_prg,
-            start,
             params,
             s,
         }) = self.state.take()
@@ -248,9 +240,10 @@ where
         self.keys.truncate(self.keys.len() - params.k);
         self.keys.extend_from_slice(&y);
 
-        self.missing = self.missing.saturating_sub(self.keys.len() - start);
-        if self.missing == 0 {
+        let missing = self.alloc.saturating_sub(self.available());
+        if missing == 0 {
             // We've finished extending.
+            self.alloc = 0;
             self.process_queue();
         }
 
@@ -268,7 +261,6 @@ where
 
             let id = self.transfer_id.next();
             let keys = self.keys.split_off(self.keys.len() - next.count);
-            self.alloc -= next.count;
 
             next.sender.send(RCOTSenderOutput { id, keys });
         }
@@ -284,7 +276,6 @@ where
 
     fn alloc(&mut self, count: usize) -> Result<()> {
         self.alloc += count;
-        self.missing += count;
         Ok(())
     }
 
@@ -357,7 +348,6 @@ struct Extend {
 
 struct Extending {
     public_prg: Prg,
-    start: usize,
     params: LpnParameters,
     mpcot: MPCOTSender<mpcot_state::Extension>,
     spcot_lengths: Vec<usize>,
@@ -365,14 +355,12 @@ struct Extending {
 
 struct Check {
     public_prg: Prg,
-    start: usize,
     params: LpnParameters,
     s: Vec<Block>,
 }
 
 struct Finish {
     public_prg: Prg,
-    start: usize,
     params: LpnParameters,
     s: Vec<Block>,
 }
