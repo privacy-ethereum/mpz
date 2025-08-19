@@ -21,7 +21,7 @@ This project is currently under active development and should not be used in pro
   - [`core`](./crates/core/) - Core cryptographic primitives.
   - [`common`](./crates/common) - Common functionalities needed for modeling protocol execution, I/O, and multi-threading.
   - [`fields`](./crates/fields/) - Finite-fields.
-  - [`circuits`](./crates/circuits/) ([`macros`](./crates/circuits-macros/)) - Boolean circuit DSL.
+  - [`circuits`](./crates/circuits/) - Boolean circuit DSL.
   - [`ot`](./crates/ot) ([`core`](./crates/ot-core/)) - Oblivious transfer protocols.
   - [`garble`](./crates/garble/) ([`core`](./crates/garble-core/)) - Boolean garbled circuit protocols.
   - [`share-conversion`](./crates/share-conversion/) ([`core`](./crates/share-conversion-core/)) - Multiplicative-to-Additive and Additive-to-Multiplicative share conversion protocols for a variety of fields.
