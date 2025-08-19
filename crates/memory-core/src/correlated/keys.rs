@@ -3,7 +3,6 @@ use std::ops::Add;
 use blake3::{Hash, Hasher};
 use mpz_core::{
     Block,
-    aes::FixedKeyAes,
     bitvec::{BitSlice, BitVec},
 };
 use rand::{distr::StandardUniform, prelude::Distribution};
@@ -11,7 +10,7 @@ use rangeset::Disjoint;
 
 use crate::{
     RangeSet, Slice,
-    correlated::{COMMIT_CIPHER, Delta, MAC_ONE, MAC_ZERO, MacCommitment, macs::Mac},
+    correlated::{Delta, MAC_ONE, MAC_ZERO, MacCommitment, macs::Mac},
     store::{Store, StoreError},
 };
 
@@ -44,11 +43,23 @@ impl Key {
 
     /// Commits to the MACs of a value.
     #[inline]
-    pub fn commit(&self, id: u64, delta: &Delta, hasher: &FixedKeyAes) -> MacCommitment {
-        let mut macs = [self.0, self.0 ^ delta.as_block()];
-        let tweak = Block::from((id as u128).to_be_bytes());
-        hasher.tccr_many(&[tweak, tweak], &mut macs);
-        MacCommitment(macs)
+    pub fn commit(&self, id: u64, delta: &Delta, hasher: &mut Hasher) -> MacCommitment {
+        let macs = [self.0, self.0 ^ delta.as_block()];
+
+        let commitments = macs
+            .into_iter()
+            .map(|mac| {
+                hasher.reset();
+                hasher.update(&id.to_be_bytes());
+                hasher.update(mac.as_bytes());
+                let out: [u8; 16] = hasher.finalize().as_bytes()[0..16]
+                    .try_into()
+                    .expect("16 bytes");
+                Block::from(out)
+            })
+            .collect::<Vec<_>>();
+
+        MacCommitment(commitments.try_into().expect("only 2 MACs"))
     }
 
     /// Returns a MAC for the given bit.
@@ -249,12 +260,15 @@ impl KeyStore {
     pub fn commit(&self, slice: Slice) -> Result<Vec<MacCommitment>> {
         let start_id = slice.ptr.0;
         let keys = self.keys.try_get(slice)?;
-        let hasher = &(*COMMIT_CIPHER);
+        let mut hasher = Hasher::new();
 
         let commitments = keys
             .iter()
             .enumerate()
-            .map(|(i, key)| key.commit((start_id + i) as u64, &self.delta, hasher))
+            .map(|(i, key)| {
+                hasher.reset();
+                key.commit((start_id + i) as u64, &self.delta, &mut hasher)
+            })
             .collect();
 
         Ok(commitments)

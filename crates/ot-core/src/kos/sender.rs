@@ -6,18 +6,18 @@ use crate::{
     rcot::{RCOTSender, RCOTSenderOutput},
 };
 
+use itybity::ToBits;
 use mpz_common::future::{MaybeDone, Sender as OutputSender, new_output};
 use mpz_core::{Block, prg::Prg};
 
-use rand::{Rng as _, SeedableRng};
+use rand::{Rng as _, SeedableRng, rng};
+
 use rand_core::RngCore;
 
 cfg_if::cfg_if! {
     if #[cfg(feature = "rayon")] {
         use itybity::ToParallelBits;
         use rayon::prelude::*;
-    } else {
-        use itybity::ToBits;
     }
 }
 
@@ -58,10 +58,10 @@ impl Sender<state::Initialized> {
     pub fn new(config: SenderConfig, delta: Block) -> Self {
         Sender {
             config,
-            // We need to extend CSP + SSP OTs for the consistency check.
+            // We need to extend SSP OTs for the consistency check.
             // Right now we only support one extension, so we just alloc
             // them here.
-            alloc: CSP + SSP,
+            alloc: SSP,
             transfer_id: TransferId::default(),
             queue: VecDeque::default(),
             delta,
@@ -85,7 +85,9 @@ impl Sender<state::Initialized> {
                 rngs: seeds.into_iter().map(Prg::from_seed).collect(),
                 keys: Vec::default(),
                 extended: false,
-                unchecked_qs: Vec::default(),
+                unchecked_qs_trans: Vec::default(),
+                unchecked_qs: vec![Vec::default(); CSP],
+                chi: None,
             },
         }
     }
@@ -117,8 +119,9 @@ impl Sender<state::Extension> {
         let Extend { count, us } = extend;
 
         let expected_count = self.config.batch_size().min(self.alloc);
-        // round up count to a multiple of 64
-        let expected_count = (expected_count + 63) & !63;
+        // Round up to a multiple of SSP, as per Figure 10:
+        // "assume that s|l".
+        let expected_count = (expected_count + (SSP - 1)) & !(SSP - 1);
         if count != expected_count {
             return Err(SenderError::CountMismatch {
                 expected: expected_count,
@@ -157,92 +160,104 @@ impl Sender<state::Extension> {
             q.iter_mut().zip(u).for_each(|(q, u)| *q ^= u);
         });
 
-        // Figure 3, step 5.
+        // Extend existing rows.
+        for (existing_row, new_row) in self
+            .state
+            .unchecked_qs
+            .iter_mut()
+            .zip(qs.chunks_exact(qs.len() / NROWS))
+        {
+            let new_blocks: &[Block] =
+                bytemuck::try_cast_slice(new_row).expect("row length is a multiple of Block size");
+            existing_row.extend_from_slice(new_blocks);
+        }
+
         matrix_transpose::transpose_bits(&mut qs, NROWS).expect("matrix is rectangular");
 
-        self.state
-            .unchecked_qs
-            .extend(qs.chunks_exact(NROWS / 8).map(|q| {
-                let q: Block = q.try_into().unwrap();
-                q
-            }));
+        let q_blocks: &[Block] =
+            bytemuck::try_cast_slice(&qs).expect("qs length is a multiple of Block size");
+
+        self.state.unchecked_qs_trans.extend(q_blocks.iter());
+
         self.alloc = self.alloc.saturating_sub(count);
 
         Ok(())
     }
 
-    /// Performs the correlation check for all outstanding OTS.
+    /// Starts the consistency check by sampling a random seed.
+    pub fn check_start(&mut self) -> Block {
+        let chi = rng().random::<Block>();
+        self.state.chi = Some(chi);
+        chi
+    }
+
+    /// Performs the consistency check for all outstanding OTS.
     ///
-    /// See section 3.1 of the paper for more details.
-    ///
-    /// # ⚠️ Warning ⚠️
-    ///
-    /// The provided seed must be unbiased! It should be generated using a
-    /// secure coin-toss protocol **after** the receiver has sent their
-    /// extension message, ie after they have already committed to their
-    /// choice vectors.
+    /// See section 4 of the paper for more details.
     ///
     /// # Arguments
     ///
-    /// * `chi_seed` - The seed used to generate the consistency check weights.
     /// * `receiver_check` - The receiver's consistency check message.
-    pub fn check(&mut self, chi_seed: Block, receiver_check: Check) -> Result<(), SenderError> {
+    pub fn check(&mut self, receiver_check: Check) -> Result<(), SenderError> {
         if !self.wants_check() {
             return Err(SenderError::InvalidState("not ready to check".to_string()));
         }
+        let chi_seed = std::mem::take(&mut self.state.chi).ok_or(SenderError::ChiNotSet)?;
 
         // Make sure we have enough sacrificial OTs to perform the consistency check.
-        if self.state.unchecked_qs.len() < CSP + SSP {
+        if self.state.unchecked_qs.len() < SSP {
             return Err(SenderError::InsufficientSetup {
-                expected: CSP + SSP,
+                expected: SSP,
                 actual: self.state.unchecked_qs.len(),
             });
         }
 
         let mut rng = Prg::from_seed(chi_seed);
 
-        let mut unchecked_qs = std::mem::take(&mut self.state.unchecked_qs);
+        let unchecked_qs = std::mem::take(&mut self.state.unchecked_qs);
 
-        // Figure 7, "Check correlation", point 1.
-        // Sample random weights for the consistency check.
-        let chis = (0..unchecked_qs.len())
-            .map(|_| rng.random())
-            .collect::<Vec<_>>();
+        // Figure 10, "Consistency check".
+        let m = unchecked_qs[0].len() - 1;
 
-        // Figure 7, "Check correlation", point 3.
+        // Figure 10, "Consistency check", point 1.
+        // Sample random weights.
+        let chis: Vec<Block> = (0..m).map(|_| rng.random()).collect::<Vec<_>>();
+
+        // Figure 10, "Consistency check", point 3.
         // Compute the random linear combinations.
         cfg_if::cfg_if! {
             if #[cfg(feature = "rayon")] {
-                let check = unchecked_qs.par_iter()
-                    .zip(chis)
-                    .map(|(q, chi)| q.clmul(chi))
-                    .reduce(
-                        || (Block::ZERO, Block::ZERO),
-                        |(_a, _b), (a, b)| (a ^ _a, b ^ _b),
-                    );
+                let iter = unchecked_qs.into_par_iter();
             } else {
-                let check = unchecked_qs.iter()
-                    .zip(chis)
-                    .map(|(q, chi)| q.clmul(chi))
-                    .reduce(
-                        |(_a, _b), (a, b)| (a ^ _a, b ^ _b),
-                    ).unwrap();
+                let iter = unchecked_qs.into_iter();
             }
         }
 
-        let Check { x, t0, t1 } = receiver_check;
-        let tmp = x.clmul(self.delta);
-        let check = (check.0 ^ tmp.0, check.1 ^ tmp.1);
+        // qᶦ for all i = 1, ..., k.
+        let check_q = iter
+            .map(|mut row| {
+                let last = row.pop().expect("row is not empty");
+                Block::inn_prdt_red(&row, &chis) ^ last
+            })
+            .collect::<Vec<_>>();
 
-        // The Receiver is malicious.
-        //
-        // Call the police!
-        if check != (t0, t1) {
-            return Err(SenderError::ConsistencyCheckFailed);
+        let Check { x, t } = receiver_check;
+
+        for ((bit, t), q) in self.delta.iter_lsb0().zip(t).zip(check_q) {
+            let x = if bit { x } else { Block::ZERO };
+            if q != t ^ x {
+                return Err(SenderError::ConsistencyCheckFailed);
+            }
         }
 
+        // Figure 10, "Transpose and randomize".
+        // The matrix was already transposed earlier.
+        // We do not randomize to remove the leakage because this is an
+        // implementation of COT **with leakage**.
+        let mut unchecked_qs = std::mem::take(&mut self.state.unchecked_qs_trans);
+
         // Strip off the rows sacrificed for the consistency check.
-        let nrows = unchecked_qs.len() - (CSP + SSP);
+        let nrows = unchecked_qs.len() - SSP;
         unchecked_qs.truncate(nrows);
 
         self.state.keys.extend_from_slice(&unchecked_qs);
@@ -389,16 +404,22 @@ pub mod state {
     /// In this state the sender performs OT extension (potentially multiple
     /// times). Also in this state the sender responds to OT requests.
     pub struct Extension {
-        /// Receiver's rngs seeded from seeds obliviously received from base OT
+        /// Receiver's rngs seeded from seeds obliviously received from base OT.
         pub(super) rngs: Vec<Prg>,
-        /// Whether extension has occurred yet
+        /// Whether extension has occurred yet.
         ///
-        /// This is to prevent the receiver from extending twice
+        /// This is to prevent the receiver from extending twice.
         pub(super) extended: bool,
-        /// Sender's unchecked qs
-        pub(super) unchecked_qs: Vec<Block>,
-        /// Sender's keys
+        /// Sender's unchecked qs after transposing.
+        pub(super) unchecked_qs_trans: Vec<Block>,
+        /// Sender's unchecked qs before transposing.
+        ///
+        /// This is a row-major matrix which has [CSP] rows.
+        pub(super) unchecked_qs: Vec<Vec<Block>>,
+        /// Sender's keys.
         pub(super) keys: Vec<Block>,
+        /// A seed for the random weights χ for the consistency check.
+        pub(super) chi: Option<Block>,
     }
 
     impl State for Extension {}

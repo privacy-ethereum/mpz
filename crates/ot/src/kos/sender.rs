@@ -1,6 +1,5 @@
 use async_trait::async_trait;
 use itybity::IntoBits;
-use mpz_cointoss::{self as cointoss, cointoss_receiver};
 use mpz_common::{Context, ContextError, Flush, future::MaybeDone};
 use mpz_core::Block;
 use mpz_ot_core::{
@@ -8,8 +7,7 @@ use mpz_ot_core::{
     ot::{OTReceiver, OTReceiverOutput},
     rcot::{RCOTSender, RCOTSenderOutput},
 };
-use rand::Rng;
-use serio::stream::IoStreamExt as _;
+use serio::{SinkExt, stream::IoStreamExt as _};
 
 type Error = SenderError;
 
@@ -143,14 +141,12 @@ where
             sender.extend(extend)?;
         }
 
-        let seed = rand::rng().random();
-
-        // See issue #176.
-        let chi_seed = cointoss_receiver(ctx, vec![seed]).await?[0];
+        let seed = sender.check_start();
+        ctx.io_mut().send(seed).await?;
 
         let receiver_check = ctx.io_mut().expect_next().await?;
 
-        sender.check(chi_seed, receiver_check)?;
+        sender.check(receiver_check)?;
 
         self.state = State::Extension(sender);
 
@@ -182,8 +178,6 @@ enum ErrorRepr {
     Core(#[from] CoreError),
     #[error("base OT error: {0}")]
     BaseOT(Box<dyn std::error::Error + Send + Sync + 'static>),
-    #[error("cointoss error: {0}")]
-    Cointoss(#[from] cointoss::CointossError),
     #[error("state error: {0}")]
     State(String),
     #[error("context error: {0}")]
@@ -195,12 +189,6 @@ enum ErrorRepr {
 impl From<CoreError> for SenderError {
     fn from(err: CoreError) -> Self {
         Self(ErrorRepr::Core(err))
-    }
-}
-
-impl From<cointoss::CointossError> for SenderError {
-    fn from(err: cointoss::CointossError) -> Self {
-        Self(ErrorRepr::Cointoss(err))
     }
 }
 

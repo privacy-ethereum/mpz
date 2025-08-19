@@ -6,7 +6,7 @@ use crate::{
     rcot::{RCOTReceiver, RCOTReceiverOutput},
 };
 
-use itybity::{FromBitIterator, IntoBits};
+use itybity::{BitLength, FromBitIterator, IntoBitIterator, IntoBits};
 use mpz_common::future::{MaybeDone, Sender, new_output};
 use mpz_core::{Block, prg::Prg};
 
@@ -51,10 +51,10 @@ impl Receiver {
     pub fn new(config: ReceiverConfig) -> Self {
         Receiver {
             config,
-            // We need to extend CSP + SSP OTs for the consistency check.
+            // We need to extend SSP OTs for the consistency check.
             // Right now we only support one extension, so we just alloc
             // them here.
-            alloc: CSP + SSP,
+            alloc: SSP,
             transfer_id: TransferId::default(),
             queue: VecDeque::default(),
             state: state::Initialized {},
@@ -80,7 +80,8 @@ impl Receiver {
                 msgs: Vec::default(),
                 choices: Vec::default(),
                 extended: false,
-                unchecked_ts: Vec::default(),
+                unchecked_ts: vec![Vec::default(); CSP],
+                unchecked_ts_trans: Vec::default(),
                 unchecked_choices: Vec::default(),
             },
         }
@@ -107,8 +108,9 @@ impl Receiver<state::Extension> {
         }
 
         let count = self.config.batch_size().min(self.alloc);
-        // round up count to a multiple of 64
-        let count = (count + 63) & !63;
+        // Round up to a multiple of SSP, as per Figure 10:
+        // "assume that s|l".
+        let count = (count + (SSP - 1)) & !(SSP - 1);
 
         const NROWS: usize = CSP;
         let row_width = count / 8;
@@ -155,28 +157,35 @@ impl Receiver<state::Extension> {
                 });
         });
 
+        // Extend existing rows.
+        for (existing_row, new_row) in self
+            .state
+            .unchecked_ts
+            .iter_mut()
+            .zip(ts.chunks_exact(ts.len() / NROWS))
+        {
+            let new_blocks: &[Block] =
+                bytemuck::try_cast_slice(new_row).expect("row length is a multiple of Block size");
+            existing_row.extend_from_slice(new_blocks);
+        }
+
         matrix_transpose::transpose_bits(&mut ts, NROWS).expect("matrix is rectangular");
 
-        self.state.unchecked_ts.extend(
-            ts.chunks_exact(NROWS / 8)
-                .map(|t| Block::try_from(t).unwrap()),
-        );
+        let t_blocks: &[Block] =
+            bytemuck::try_cast_slice(&ts).expect("ts length is a multiple of Block size");
+
+        self.state.unchecked_ts_trans.extend(t_blocks.iter());
+
         self.state.unchecked_choices.extend(choices);
+
         self.alloc = self.alloc.saturating_sub(count);
 
         Ok(Extend { count, us })
     }
 
-    /// Performs the correlation check for all outstanding OTs.
+    /// Performs the consistency check for all outstanding OTS.
     ///
-    /// See section 3.1 of the paper for more details.
-    ///
-    /// # ⚠️ Warning ⚠️
-    ///
-    /// The provided seed must be unbiased! It should be generated using a
-    /// secure coin-toss protocol **after** the receiver has sent their
-    /// setup message, ie after they have already committed to their choice
-    /// vectors.
+    /// See section 4 of the paper for more details.
     ///
     /// # Arguments
     ///
@@ -190,50 +199,52 @@ impl Receiver<state::Extension> {
 
         let mut rng = Prg::from_seed(chi_seed);
 
-        let mut unchecked_ts = std::mem::take(&mut self.state.unchecked_ts);
+        let unchecked_ts = std::mem::take(&mut self.state.unchecked_ts);
         let mut unchecked_choices = std::mem::take(&mut self.state.unchecked_choices);
 
-        // Figure 7, "Check correlation", point 1.
-        // Sample random weights for the consistency check.
-        let chis = (0..unchecked_ts.len())
-            .map(|_| Block::random(&mut rng))
-            .collect::<Vec<_>>();
+        // Figure 10, "Consistency check".
+        let m = unchecked_ts[0].len() - 1;
 
-        // Figure 7, "Check correlation", point 2.
+        // Figure 10, "Consistency check", point 1.
+        // Sample random weights.
+        let chis: Vec<Block> = (0..m).map(|_| rng.random()).collect::<Vec<_>>();
+
+        // Figure 10, "Consistency check", point 2.
         // Compute the random linear combinations.
         cfg_if::cfg_if! {
             if #[cfg(feature = "rayon")] {
-                let (x, t0, t1) = unchecked_choices.par_iter()
-                    .zip(&unchecked_ts)
-                    .zip(chis)
-                    .map(|((c, t), chi)| {
-                        let x = if *c { chi } else { Block::ZERO };
-                        let (t0, t1) = t.clmul(chi);
-                        (x, t0, t1)
-                    })
-                    .reduce(
-                        || (Block::ZERO, Block::ZERO, Block::ZERO),
-                        |(_x, _t0, _t1), (x, t0, t1)| {
-                            (_x ^ x, _t0 ^ t0, _t1 ^ t1)
-                        },
-                    );
+                let iter = unchecked_ts.into_par_iter();
             } else {
-                let (x, t0, t1) = unchecked_choices.iter()
-                    .zip(&unchecked_ts)
-                    .zip(chis)
-                    .map(|((c, t), chi)| {
-                        let x = if *c { chi } else { Block::ZERO };
-                        let (t0, t1) = t.clmul(chi);
-                        (x, t0, t1)
-                    })
-                    .reduce(|(_x, _t0, _t1), (x, t0, t1)| {
-                        (_x ^ x, _t0 ^ t0, _t1 ^ t1)
-                    }).unwrap();
+                let iter = unchecked_ts.into_iter();
+
             }
         }
 
+        // tᶦ for all i = 1, ..., k.
+        let check_t = iter
+            .map(|mut row| {
+                let last = row.pop().expect("row is not empty");
+                Block::inn_prdt_red(&row, &chis) ^ last
+            })
+            .collect::<Vec<_>>();
+
+        // Compute x.
+        let mut bit_iter = unchecked_choices.clone().into_iter_lsb0();
+        let mut xs = (0..m + 1)
+            .map(|_| Block::from_lsb0_iter((&mut bit_iter).take(Block::BITS)))
+            .collect::<Vec<_>>();
+        let last = xs.pop().expect("xs is not empty");
+
+        let check_x = Block::inn_prdt_red(&xs, &chis) ^ last;
+
+        // Figure 10, "Transpose and randomize".
+        // The matrix was already transposed earlier.
+        // We do not randomize to remove the leakage because this is an
+        // implementation of COT **with leakage**.
+        let mut unchecked_ts = std::mem::take(&mut self.state.unchecked_ts_trans);
+
         // Strip off the rows sacrificed for the consistency check.
-        let nrows = unchecked_ts.len() - (CSP + SSP);
+        let nrows = unchecked_ts.len() - SSP;
         unchecked_ts.truncate(nrows);
         unchecked_choices.truncate(nrows);
 
@@ -260,7 +271,10 @@ impl Receiver<state::Extension> {
             self.state.msgs.drain(..i);
         }
 
-        Ok(Check { x, t0, t1 })
+        Ok(Check {
+            x: check_x,
+            t: check_t,
+        })
     }
 }
 
@@ -386,17 +400,23 @@ pub mod state {
     /// In this state the receiver performs OT extension (potentially multiple
     /// times). Also in this state the receiver sends OT requests.
     pub struct Extension {
-        /// Receiver's rngs
+        /// Receiver's rngs.
         pub(super) rngs: Vec<[Prg; 2]>,
 
-        /// Whether extension has occurred yet
+        /// Whether extension has occurred yet.
         ///
-        /// This is to prevent the receiver from extending twice
+        /// This is to prevent the receiver from extending twice.
         pub(super) extended: bool,
 
-        /// Receiver's unchecked ts
-        pub(super) unchecked_ts: Vec<Block>,
-        /// Receiver's unchecked choices
+        /// Receiver's unchecked ts before transposing.
+        ///
+        /// This is a row-major matrix which has [CSP] rows.
+        pub(super) unchecked_ts: Vec<Vec<Block>>,
+
+        /// Receiver's unchecked ts after transposing.
+        pub(super) unchecked_ts_trans: Vec<Block>,
+
+        /// Receiver's unchecked choices.
         pub(super) unchecked_choices: Vec<bool>,
 
         /// Receiver's chosen messages.

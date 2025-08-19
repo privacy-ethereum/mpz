@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use blake3::Hasher;
 use rangeset::{Difference, Intersection};
 use tokio::sync::{Mutex, OwnedMutexGuard};
 
@@ -8,7 +9,7 @@ use mpz_core::{Block, bitvec::BitVec};
 use mpz_memory_core::{
     DecodeError, DecodeFuture, DecodeOp, Memory, Slice, View as ViewTrait,
     binary::Binary,
-    correlated::{COMMIT_CIPHER, Mac, MacCommitment, MacCommitmentError, MacStore, MacStoreError},
+    correlated::{Mac, MacCommitment, MacCommitmentError, MacStore, MacStoreError},
     store::{BitStore, Store, StoreError},
 };
 use mpz_ot_core::cot::{COTReceiver, COTReceiverOutput};
@@ -156,7 +157,7 @@ impl<COT> EvaluatorStore<COT> {
                     *bit ^= mac_bit;
                 });
 
-            let hasher = &(*COMMIT_CIPHER);
+            let mut hasher = Hasher::new();
             let start_id = slice.ptr().as_usize();
             for (i, ((mac, bit), commitment)) in self
                 .mac_store
@@ -166,7 +167,8 @@ impl<COT> EvaluatorStore<COT> {
                 .zip(self.commit_store.try_get(slice)?)
                 .enumerate()
             {
-                commitment.check((start_id + i) as u64, *bit, mac, hasher)?;
+                hasher.reset();
+                commitment.check((start_id + i) as u64, *bit, mac, &mut hasher)?;
             }
 
             self.data_store.try_set(slice, &data)?;

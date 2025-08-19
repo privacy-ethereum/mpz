@@ -1,13 +1,10 @@
 //! Correlated random oblivious transfer extension protocol with leakage based
-//! on [`KOS15`](https://eprint.iacr.org/archive/2015/546/1433798896.pdf).
+//! on [`KOS15`](https://eprint.iacr.org/2015/546).
 //!
 //! # Warning
 //!
 //! The user of this protocol must carefully consider if the leakage introduced
 //! in this protocol is acceptable for their specific application.
-//!
-//! Note that (temporarily) we reference an older version of the KOS15 paper
-//! from 2015 which **DOES NOT** include important security fixes.
 
 mod config;
 mod error;
@@ -45,10 +42,10 @@ pub struct Extend {
 
 /// Check message sent from Receiver to Sender.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "validation::CheckUnchecked")]
 pub struct Check {
     x: Block,
-    t0: Block,
-    t1: Block,
+    t: Vec<Block>,
 }
 
 mod validation {
@@ -71,6 +68,26 @@ mod validation {
             }
 
             Ok(Extend { count, us })
+        }
+    }
+
+    #[derive(Deserialize)]
+    pub(super) struct CheckUnchecked {
+        x: Block,
+        t: Vec<Block>,
+    }
+
+    impl TryFrom<CheckUnchecked> for Check {
+        type Error = String;
+
+        fn try_from(value: CheckUnchecked) -> Result<Self, Self::Error> {
+            let CheckUnchecked { x, t } = value;
+
+            if t.len() != CSP {
+                return Err("t length is invalid".to_string());
+            }
+
+            Ok(Check { x, t })
         }
     }
 }
@@ -153,7 +170,6 @@ mod tests {
         delta: Block,
         sender_seeds: [Block; CSP],
         receiver_seeds: [[Block; 2]; CSP],
-        chi_seed: Block,
     ) {
         let count = 128;
 
@@ -178,8 +194,9 @@ mod tests {
         assert!(sender.wants_check());
         assert!(receiver.wants_check());
 
+        let chi_seed = sender.check_start();
         let receiver_check = receiver.check(chi_seed).unwrap();
-        sender.check(chi_seed, receiver_check).unwrap();
+        sender.check(receiver_check).unwrap();
 
         assert_eq!(sender.available(), count);
         assert_eq!(receiver.available(), count);
@@ -203,7 +220,6 @@ mod tests {
         delta: Block,
         sender_seeds: [Block; CSP],
         receiver_seeds: [[Block; 2]; CSP],
-        chi_seed: Block,
     ) {
         let sender_config = SenderConfig::default();
         let receiver_config = ReceiverConfig::default();
@@ -231,8 +247,9 @@ mod tests {
         assert!(sender.wants_check());
         assert!(receiver.wants_check());
 
+        let chi_seed = sender.check_start();
         let receiver_check = receiver.check(chi_seed).unwrap();
-        sender.check(chi_seed, receiver_check).unwrap();
+        sender.check(receiver_check).unwrap();
 
         assert_eq!(sender.available(), count);
         assert_eq!(receiver.available(), count);
@@ -256,7 +273,6 @@ mod tests {
         delta: Block,
         sender_seeds: [Block; CSP],
         receiver_seeds: [[Block; 2]; CSP],
-        chi_seed: Block,
     ) {
         let count = 128;
 
@@ -273,8 +289,9 @@ mod tests {
             sender.extend(receiver.extend().unwrap()).unwrap();
         }
 
+        let chi_seed = sender.check_start();
         let receiver_check = receiver.check(chi_seed).unwrap();
-        sender.check(chi_seed, receiver_check).unwrap();
+        sender.check(receiver_check).unwrap();
 
         assert!(sender.alloc(1).is_err());
         assert!(receiver.alloc(1).is_err());
@@ -288,7 +305,6 @@ mod tests {
         delta: Block,
         sender_seeds: [Block; CSP],
         receiver_seeds: [[Block; 2]; CSP],
-        chi_seed: Block,
     ) {
         let count = 128;
 
@@ -305,8 +321,9 @@ mod tests {
             sender.extend(receiver.extend().unwrap()).unwrap();
         }
 
+        let chi_seed = sender.check_start();
         let receiver_check = receiver.check(chi_seed).unwrap();
-        sender.check(chi_seed, receiver_check).unwrap();
+        sender.check(receiver_check).unwrap();
 
         let err = sender.try_send_rcot(count + 1).unwrap_err();
         assert!(matches!(err, SenderError::InsufficientSetup { .. }));
@@ -320,7 +337,6 @@ mod tests {
         delta: Block,
         sender_seeds: [Block; CSP],
         receiver_seeds: [[Block; 2]; CSP],
-        chi_seed: Block,
     ) {
         let count = 128;
 
@@ -343,8 +359,9 @@ mod tests {
             sender.extend(extend).unwrap();
         }
 
+        let chi_seed = sender.check_start();
         let receiver_check = receiver.check(chi_seed).unwrap();
-        let err = sender.check(chi_seed, receiver_check).unwrap_err();
+        let err = sender.check(receiver_check).unwrap_err();
 
         assert!(matches!(err, SenderError::ConsistencyCheckFailed));
     }
