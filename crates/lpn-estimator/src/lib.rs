@@ -73,28 +73,34 @@ impl LpnParams {
         const MIN_T: u64 = 1000;
         assert!(t >= MIN_T, "t must be greter than {MIN_T}");
 
-        const MAX_N: u64 = 100_000_000;
-        let max_n = max_n.unwrap_or(MAX_N);
+        const START_EXP: u64 = 18;
+        const MAX_EXP: u64 = 25;
 
-        const START_EXP: u64 = 9;
-        let mut exp = START_EXP;
+        let mut exp = START_EXP - t.next_power_of_two().trailing_zeros() as u64;
+        let max_exp = MAX_EXP - t.next_power_of_two().trailing_zeros() as u64;
 
         let calc_n = |t: u64, exp: u64| (1 << exp) * t;
-        let mut k: u64 = START_EXP * t;
+        let mut k: u64 = exp * t;
 
         let mut lpns = vec![];
         loop {
             let n = calc_n(t, exp);
+
             let lpn = Self::new(typ, n, k, t);
 
             if lpn.security() >= s {
-                exp += 4;
+                exp += 1;
                 lpns.push(lpn);
             } else {
                 k += k / 20;
             }
 
-            if n > max_n {
+            if let Some(max_n) = max_n
+                && n > max_n
+            {
+                break;
+            }
+            if exp > max_exp {
                 break;
             }
         }
