@@ -557,7 +557,6 @@ impl LpnEstimator {
             }
         });
 
-        
         security.iter().fold(f64::INFINITY, |a, &b| a.min(b))
     }
 

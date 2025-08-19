@@ -1,5 +1,6 @@
 use lpn_estimator::{LpnParams, LpnType};
 use quote::quote;
+use std::io::Write;
 use syn::File;
 
 fn main() {
@@ -60,5 +61,6 @@ fn main() {
     let lpn_params_code: File = syn::parse2(lpn_params_module).unwrap();
     let pretty_code = prettyplease::unparse(&lpn_params_code);
 
-    println!("{}", pretty_code);
+    print!("{}", pretty_code);
+    std::io::stdout().flush().unwrap();
 }

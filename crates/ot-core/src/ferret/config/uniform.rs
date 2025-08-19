@@ -47,4 +47,3 @@ pub static LPN_PARAMS: &[LpnParameters] = &[
         t: 1200usize,
     },
 ];
-
