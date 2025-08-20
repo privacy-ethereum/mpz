@@ -61,11 +61,11 @@ impl Flush for IdealRCOTSender {
     type Error = IdealRCOTError;
 
     fn wants_flush(&self) -> bool {
-        self.core.wants_flush()
+        self.core.sender_wants_flush()
     }
 
     async fn flush(&mut self, _ctx: &mut Context) -> Result<(), Self::Error> {
-        if self.core.wants_flush() {
+        if self.core.sender_wants_flush() {
             self.sync
                 .call(|| self.core.flush().map_err(IdealRCOTError::from))
                 .await
@@ -111,11 +111,11 @@ impl Flush for IdealRCOTReceiver {
     type Error = IdealRCOTError;
 
     fn wants_flush(&self) -> bool {
-        self.core.wants_flush()
+        self.core.receiver_wants_flush()
     }
 
     async fn flush(&mut self, _ctx: &mut Context) -> Result<(), Self::Error> {
-        if self.core.wants_flush() {
+        if self.core.receiver_wants_flush() {
             self.sync
                 .call(|| self.core.flush().map_err(IdealRCOTError::from))
                 .await

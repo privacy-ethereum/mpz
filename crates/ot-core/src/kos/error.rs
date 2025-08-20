@@ -18,6 +18,8 @@ pub enum SenderError {
     ConsistencyCheckFailed,
     #[error("not enough OTs are set up: expected {expected}, actual {actual}")]
     InsufficientSetup { expected: usize, actual: usize },
+    #[error("chi seed is not set")]
+    ChiNotSet,
 }
 
 /// Errors that can occur when using the KOS15 receiver.

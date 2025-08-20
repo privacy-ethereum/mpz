@@ -47,7 +47,6 @@ fn kos(c: &mut Criterion) {
         group.bench_with_input(BenchmarkId::from_parameter(n), &n, |b, &n| {
             let mut rng = ChaCha12Rng::seed_from_u64(0);
             let delta = Block::random(&mut rng);
-            let chi_seed = Block::random(&mut rng);
 
             let receiver_seeds: [[Block; 2]; 128] =
                 std::array::from_fn(|_| [rng.random(), rng.random()]);
@@ -74,8 +73,9 @@ fn kos(c: &mut Criterion) {
                     sender.extend(extend).unwrap();
                 }
 
+                let chi_seed = sender.check_start();
                 let check = receiver.check(chi_seed).unwrap();
-                sender.check(chi_seed, check).unwrap();
+                sender.check(check).unwrap();
 
                 black_box((sender, receiver));
             })
