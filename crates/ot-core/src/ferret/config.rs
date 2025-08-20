@@ -107,14 +107,14 @@ fn default_parameter_selector(ty: LpnType, available: usize, additional: usize) 
         let cost = iteration_cost(ty, *param);
         let net = param.n - cost;
 
-        // Only select params for which we have enough OTs available
+        // Only selects params for which we have enough OTs available.
         if available < cost {
             return last_valid_param;
         } else {
             last_valid_param = *param;
         }
 
-        // Return smallest params that satisfy the additionaly requested amount
+        // Returns the smallest params that satisfy the additionaly requested amount.
         if net >= additional {
             return *param;
         }
