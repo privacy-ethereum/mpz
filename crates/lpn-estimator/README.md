@@ -4,7 +4,7 @@ This crate estimates the security of LPN instances, by computing the bit
 security from different attacks based on <https://eprint.iacr.org/2022/712>.
 So far exact and regular LPN over F_2 are supported.
 
-- There exists [reference
+- There exists a [reference
   implementation](https://github.com/tlsnotary/LPN-Estimator/blob/main/home/estimator.py)
   from the paper, which we forked from <https://github.com/RabbitCabbage/LPN-Estimator>
 - `src/lpn.rs` is our own implementation
