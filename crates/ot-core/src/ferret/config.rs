@@ -102,12 +102,20 @@ fn default_parameter_selector(ty: LpnType, available: usize, additional: usize) 
     };
 
     // *Assumes the parameters are in ascending order.*
+    let mut last_valid_param = params[0];
     for param in params {
         let cost = iteration_cost(ty, *param);
         let net = param.n - cost;
-        // If we don't have enough available we select the smallest parameters
-        // immediately.
-        if available <= cost || net >= additional {
+
+        // Only selects params for which we have enough OTs available.
+        if available < cost {
+            return last_valid_param;
+        } else {
+            last_valid_param = *param;
+        }
+
+        // Returns the smallest params that satisfy the additionally requested amount.
+        if net >= additional {
             return *param;
         }
     }
