@@ -77,12 +77,12 @@ where
 
     /// Returns `true` if the receiver wants to bootstrap.
     pub fn wants_bootstrap(&self) -> bool {
-        self.macs.is_empty()
+        self.macs.len() < self.config.bootstrap_cost()
     }
 
     /// Returns `true` if the receiver wants to extend.
     pub fn wants_extend(&self) -> bool {
-        self.alloc > 0
+        self.available() < self.alloc
     }
 
     /// Initializes the receiver.
@@ -102,11 +102,11 @@ where
 
     /// Allocates COTs for bootstrapping.
     pub fn alloc_bootstrap(&self) -> Result<()> {
-        let cost = self.config.bootstrap_cost();
+        let missing = self.config.bootstrap_cost().saturating_sub(self.macs.len());
         self.cot
             .try_lock()
             .map_err(|_| ErrorRepr::MutexLocked)?
-            .alloc(cost)
+            .alloc(missing)
             .map_err(Error::bootstrap)?;
 
         Ok(())
@@ -118,8 +118,9 @@ where
             return Err(ErrorRepr::State("not in extend state".to_string()).into());
         };
 
-        // If COTs are empty, we haven't bootstrapped from inner COT yet.
-        if self.macs.is_empty() {
+        // If available COTs are insufficient, we bootstrap from the inner COT instance.
+        if self.wants_bootstrap() {
+            let missing = self.config.bootstrap_cost() - self.macs.len();
             let RCOTReceiverOutput {
                 msgs: macs,
                 choices,
@@ -128,16 +129,17 @@ where
                 .cot
                 .try_lock()
                 .map_err(|_| ErrorRepr::MutexLocked)?
-                .try_recv_rcot(self.config.bootstrap_cost())
+                .try_recv_rcot(missing)
                 .map_err(|e| ErrorRepr::Bootstrap(Box::new(e)))?;
 
             self.macs.extend_from_slice(&macs);
             self.choices.extend_from_slice(&choices);
         }
 
-        let lpn_type = self.config.lpn_type();
-        let params = self.config.select_params(self.macs.len(), self.alloc);
+        let missing = self.alloc.saturating_sub(self.available());
+        let params = self.config.select_params(self.macs.len(), missing);
 
+        let lpn_type = self.config.lpn_type();
         let err = sample_error_indices(&mut self.prg, lpn_type, params.n, params.t);
 
         let (mpcot, spcot_lengths, spcot_idxs) =
@@ -152,7 +154,6 @@ where
 
         self.state = State::Extending(Extending {
             public_prg,
-            start: self.macs.len(),
             params,
             err,
             mpcot,
@@ -174,7 +175,6 @@ where
 
         let State::Extending(Extending {
             public_prg,
-            start,
             params,
             err: e,
             mpcot,
@@ -206,7 +206,6 @@ where
 
         self.state = State::Finish(Finish {
             public_prg,
-            start,
             params,
             err: e,
             r,
@@ -225,7 +224,6 @@ where
 
         let State::Finish(Finish {
             mut public_prg,
-            start,
             params,
             err,
             r,
@@ -265,9 +263,10 @@ where
         self.macs.extend_from_slice(&z);
         self.choices.extend_from_slice(&x);
 
-        self.alloc = self.alloc.saturating_sub(self.macs.len() - start);
-        if self.alloc == 0 {
+        let missing = self.alloc.saturating_sub(self.available());
+        if missing == 0 {
             // We've finished extending.
+            self.alloc = 0;
             self.process_queue();
         }
 
@@ -374,7 +373,6 @@ struct Extend {
 
 struct Extending {
     public_prg: Prg,
-    start: usize,
     params: LpnParameters,
     err: Vec<usize>,
     mpcot: MPCOTReceiver<mpcot_state::Extension>,
@@ -385,7 +383,6 @@ struct Extending {
 
 struct Finish {
     public_prg: Prg,
-    start: usize,
     params: LpnParameters,
     err: Vec<usize>,
     r: Vec<Block>,

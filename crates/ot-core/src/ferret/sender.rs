@@ -78,12 +78,12 @@ where
 
     /// Returns `true` if the sender wants to bootstrap.
     pub fn wants_bootstrap(&self) -> bool {
-        self.keys.is_empty()
+        self.keys.len() < self.config.bootstrap_cost()
     }
 
     /// Returns `true` if the sender wants to extend.
     pub fn wants_extend(&self) -> bool {
-        self.alloc > 0
+        self.available() < self.alloc
     }
 
     /// Initializes the sender, receiving message from the receiver.
@@ -103,11 +103,11 @@ where
 
     /// Allocates COTs for bootstrapping.
     pub fn alloc_bootstrap(&self) -> Result<()> {
-        let cost = self.config.bootstrap_cost();
+        let missing = self.config.bootstrap_cost().saturating_sub(self.keys.len());
         self.cot
             .try_lock()
             .map_err(|_| ErrorRepr::MutexLocked)?
-            .alloc(cost)
+            .alloc(missing)
             .map_err(Error::bootstrap)?;
 
         Ok(())
@@ -119,26 +119,26 @@ where
             return Err(ErrorRepr::State("not in extend state".to_string()).into());
         };
 
-        // If COTs are empty, we haven't bootstrapped from inner COT yet.
-        if self.keys.is_empty() {
+        // If available COTs are insufficient, we bootstrap from the inner COT instance.
+        if self.wants_bootstrap() {
+            let missing = self.config.bootstrap_cost() - self.keys.len();
             let RCOTSenderOutput { keys, .. } = self
                 .cot
                 .try_lock()
                 .map_err(|_| ErrorRepr::MutexLocked)?
-                .try_send_rcot(self.config.bootstrap_cost())
+                .try_send_rcot(missing)
                 .map_err(|e| ErrorRepr::Bootstrap(Box::new(e)))?;
 
             self.keys.extend_from_slice(&keys);
         }
-
-        let params = self.config.select_params(self.keys.len(), self.alloc);
+        let missing = self.alloc.saturating_sub(self.available());
+        let params = self.config.select_params(self.keys.len(), missing);
 
         let (mpcot, spcot_lengths) = MPCOTSender::new(public_prg.random(), self.config.lpn_type())
             .start_extend(params.t, params.n)?;
 
         self.state = State::Extending(Extending {
             public_prg,
-            start: self.keys.len(),
             params,
             mpcot,
             spcot_lengths,
@@ -157,7 +157,6 @@ where
 
         let State::Extending(Extending {
             public_prg,
-            start,
             params,
             mpcot,
             spcot_lengths,
@@ -180,7 +179,6 @@ where
 
         self.state = State::Check(Check {
             public_prg,
-            start,
             params,
             s,
         });
@@ -198,7 +196,6 @@ where
 
         let State::Check(Check {
             public_prg,
-            start,
             params,
             s,
         }) = self.state.take()
@@ -214,7 +211,6 @@ where
 
         self.state = State::Finish(Finish {
             public_prg,
-            start,
             params,
             s,
         });
@@ -226,7 +222,6 @@ where
     pub fn finish_extend(&mut self) -> Result<()> {
         let State::Finish(Finish {
             mut public_prg,
-            start,
             params,
             s,
         }) = self.state.take()
@@ -245,9 +240,10 @@ where
         self.keys.truncate(self.keys.len() - params.k);
         self.keys.extend_from_slice(&y);
 
-        self.alloc = self.alloc.saturating_sub(self.keys.len() - start);
-        if self.alloc == 0 {
+        let missing = self.alloc.saturating_sub(self.available());
+        if missing == 0 {
             // We've finished extending.
+            self.alloc = 0;
             self.process_queue();
         }
 
@@ -352,7 +348,6 @@ struct Extend {
 
 struct Extending {
     public_prg: Prg,
-    start: usize,
     params: LpnParameters,
     mpcot: MPCOTSender<mpcot_state::Extension>,
     spcot_lengths: Vec<usize>,
@@ -360,14 +355,12 @@ struct Extending {
 
 struct Check {
     public_prg: Prg,
-    start: usize,
     params: LpnParameters,
     s: Vec<Block>,
 }
 
 struct Finish {
     public_prg: Prg,
-    start: usize,
     params: LpnParameters,
     s: Vec<Block>,
 }
