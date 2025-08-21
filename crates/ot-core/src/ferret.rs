@@ -7,7 +7,9 @@ mod receiver;
 mod sender;
 pub(crate) mod spcot;
 
-pub use config::{FerretConfig, FerretConfigBuilder, FerretConfigBuilderError};
+pub use config::{
+    FerretConfig, FerretConfigBuilder, FerretConfigBuilderError, REGULAR_PARAMS, UNIFORM_PARAMS,
+};
 pub use receiver::{Receiver, ReceiverError};
 pub use sender::{Sender, SenderError};
 
