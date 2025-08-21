@@ -102,7 +102,7 @@ where
 
     /// Allocates COTs for bootstrapping.
     pub fn alloc_bootstrap(&self) -> Result<()> {
-        let missing = self.config.bootstrap_cost() - self.macs.len();
+        let missing = self.config.bootstrap_cost().saturating_sub(self.macs.len());
         self.cot
             .try_lock()
             .map_err(|_| ErrorRepr::MutexLocked)?
