@@ -114,7 +114,7 @@ fn default_parameter_selector(ty: LpnType, available: usize, additional: usize) 
             last_valid_param = *param;
         }
 
-        // Returns the smallest params that satisfy the additionaly requested amount.
+        // Returns the smallest params that satisfy the additionally requested amount.
         if net >= additional {
             return *param;
         }
