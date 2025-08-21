@@ -80,7 +80,7 @@ impl LpnParams {
         let max_exp = MAX_EXP - t.next_power_of_two().trailing_zeros() as u64;
 
         let calc_n = |t: u64, exp: u64| (1 << exp) * t;
-        let mut k: u64 = exp * t;
+        let mut k: u64 = 5_000;
 
         let mut lpns = vec![];
         loop {

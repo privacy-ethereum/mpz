@@ -16,5 +16,5 @@ In `src/bin` there are executable binaries:
 - `estimator.rs` does code generation by creating a static array of LPN
   instances satisfying a minium bit security. This is used in
   `crates/ot-core/ferret/config/`. For example `cargo run --release --bin
-  estimator -- exact 128 1200 | sponge ../ot-core/src/ferret/config/exact.rs`
-  will do code generation for exact LPN instances.
+  estimator -- regular 128 1200 > ../ot-core/src/ferret/config/regular.rs`
+  will do code generation for regular LPN instances.
