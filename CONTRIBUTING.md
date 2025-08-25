@@ -18,6 +18,8 @@ keywords.
 
 Try to do one pull request per change.
 
+**Disclaimer**: While we appreciate all contributions, we do not prioritize minor grammatical fixes (e.g., correcting typos, rewording sentences) unless they significantly improve clarity in technical documentation. These contributions can be a distraction for the team. If you notice a grammatical error, please let us know on our Discord.
+
 ### Updating the changelog
 
 Update the changes you have made in
