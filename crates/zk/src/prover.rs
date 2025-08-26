@@ -111,25 +111,17 @@ where
     async fn execute(&mut self, ctx: &mut Context) -> VmResult<()> {
         let mut prover = Core::default();
 
-        // How many gates are to be checked.
-        let mut to_be_checked = 0;
-
         while !self.callstack.is_empty() {
             let ready_calls: Vec<_> = self
                 .callstack
-                .extract_if(.., |(call, _)| {
-                    if to_be_checked >= self.config.batch_size() {
-                        return false;
-                    }
-                    let is_ready = call
-                        .inputs()
-                        .iter()
-                        .all(|input| self.store.is_committed_raw(*input));
-                    if is_ready {
-                        to_be_checked += call.circ().and_count();
-                    }
-                    is_ready
-                })
+                .extract_if(
+                    self.config.batch_size().saturating_sub(prover.pending()),
+                    |call| {
+                        call.inputs()
+                            .iter()
+                            .all(|input| self.store.is_committed_raw(*input))
+                    },
+                )
                 .map(|(call, output)| {
                     let input_macs = call
                         .inputs()
@@ -140,6 +132,7 @@ where
                         .copied()
                         .collect::<Vec<_>>();
                     let (circ, _) = call.into_parts();
+
                     (circ, input_macs, output)
                 })
                 .collect();
@@ -199,9 +192,7 @@ where
                     .map_err(VmError::memory)?;
             }
 
-            if to_be_checked >= self.config.batch_size() {
-                debug_assert!(prover.wants_check());
-
+            if prover.pending() >= self.config.batch_size() {
                 let RCOTReceiverOutput {
                     choices: svole_choices,
                     msgs: svole_ev,
@@ -212,15 +203,11 @@ where
                     .check(&mut self.transcript, &svole_choices, &svole_ev)
                     .map_err(VmError::execute)?;
                 ctx.io_mut().send(uv).await?;
-
-                to_be_checked = 0;
             }
         }
 
         // Check the last partial batch.
         if prover.wants_check() {
-            debug_assert!(to_be_checked > 0);
-
             let RCOTReceiverOutput {
                 choices: svole_choices,
                 msgs: svole_ev,

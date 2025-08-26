@@ -75,6 +75,11 @@ impl Verifier {
             .check_verifier(transcript, self.delta.as_block(), svole_keys, uv)
             .map_err(From::from)
     }
+
+    /// Returns the number of pending gates that need to be checked.
+    pub fn pending(&self) -> usize {
+        self.check.lock().unwrap().total()
+    }
 }
 
 /// Verifier circuit execution.

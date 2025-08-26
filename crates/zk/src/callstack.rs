@@ -1,5 +1,5 @@
 use mpz_vm_core::{Call, memory::Slice};
-use std::{ops::RangeBounds, slice::Iter, vec::IntoIter};
+use std::slice::Iter;
 
 #[derive(Debug, Default)]
 pub(crate) struct CallStack {
@@ -17,17 +17,38 @@ impl CallStack {
         self.inner.is_empty()
     }
 
-    pub(crate) fn extract_if<F, R>(&mut self, range: R, filter: F) -> IntoIter<(Call, Slice)>
+    /// Returns the ready calls based on the provided predicate.
+    ///
+    /// # Arguments
+    ///
+    /// * `soft_limit` - Calls will stop being yielded after this limit of AND
+    ///   gates is met or exceeded.
+    /// * `f` - Predicate determining whether a call is ready.
+    pub(crate) fn extract_if<F>(
+        &mut self,
+        soft_limit: usize,
+        mut f: F,
+    ) -> impl Iterator<Item = (Call, Slice)>
     where
-        F: FnMut(&mut (Call, Slice)) -> bool,
-        R: RangeBounds<usize>,
+        F: FnMut(&Call) -> bool,
     {
-        let extracted = self.inner.extract_if(range, filter).collect::<Vec<_>>();
+        let mut total = 0;
+        let mut limit = false;
 
-        let and_gates: usize = extracted.iter().map(|(c, _)| c.circ().and_count()).sum();
-        self.and_count -= and_gates;
+        let (inner, and_count) = (&mut self.inner, &mut self.and_count);
 
-        extracted.into_iter()
+        inner.extract_if(.., move |(call, _)| {
+            if !limit && f(call) {
+                let andc = call.circ().and_count();
+                *and_count -= andc;
+                total += andc;
+                limit = total >= soft_limit;
+
+                true
+            } else {
+                false
+            }
+        })
     }
 
     pub(crate) fn push(&mut self, value: (Call, Slice)) {

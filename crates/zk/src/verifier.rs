@@ -107,26 +107,17 @@ where
     async fn execute(&mut self, ctx: &mut Context) -> VmResult<()> {
         let mut verifier = Core::new(*self.store.delta());
 
-        // How many gates are to be checked.
-        let mut to_be_checked = 0;
-
         while !self.callstack.is_empty() {
             let ready_calls: Vec<_> = self
                 .callstack
-                .extract_if(.., |(call, _)| {
-                    if to_be_checked >= self.config.batch_size() {
-                        false
-                    } else {
-                        let is_ready = call
-                            .inputs()
+                .extract_if(
+                    self.config.batch_size().saturating_sub(verifier.pending()),
+                    |call| {
+                        call.inputs()
                             .iter()
-                            .all(|input| self.store.is_committed_raw(*input));
-                        if is_ready {
-                            to_be_checked += call.circ().and_count();
-                        }
-                        is_ready
-                    }
-                })
+                            .all(|input| self.store.is_committed_raw(*input))
+                    },
+                )
                 .map(|(call, output)| {
                     let input_keys = call
                         .inputs()
@@ -190,9 +181,7 @@ where
                     .map_err(VmError::memory)?;
             }
 
-            if to_be_checked >= self.config.batch_size() {
-                debug_assert!(verifier.wants_check());
-
+            if verifier.pending() >= self.config.batch_size() {
                 let RCOTSenderOutput {
                     keys: svole_keys, ..
                 } = self.ot.try_send_rcot(128).map_err(VmError::execute)?;
@@ -201,15 +190,11 @@ where
                 verifier
                     .check(&mut self.transcript, &svole_keys, uv)
                     .map_err(VmError::execute)?;
-
-                to_be_checked = 0;
             }
         }
 
         // Check the last partial batch.
         if verifier.wants_check() {
-            debug_assert!(to_be_checked > 0);
-
             let RCOTSenderOutput {
                 keys: svole_keys, ..
             } = self.ot.try_send_rcot(128).map_err(VmError::execute)?;

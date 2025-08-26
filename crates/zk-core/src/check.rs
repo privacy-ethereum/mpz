@@ -202,6 +202,11 @@ impl Check {
 
         Ok(())
     }
+
+    /// Returns the total number of triples that need to be checked.
+    pub(crate) fn total(&self) -> usize {
+        self.triples.len()
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
