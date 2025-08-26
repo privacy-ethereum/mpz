@@ -16,11 +16,13 @@ mpz-zk-core = { workspace = true }
 mpz-ot = { workspace = true }
 mpz-core = { workspace = true }
 mpz-common = { workspace = true }
+
+async-trait = { workspace = true }
+blake3 = { workspace = true, features = ["serde"] }
+derive_builder = { workspace = true }
 futures = { workspace = true }
 thiserror = { workspace = true }
-async-trait = { workspace = true }
 serio = { workspace = true }
-blake3 = { workspace = true, features = ["serde"] }
 
 [dev-dependencies]
 tokio = { workspace = true, features = [

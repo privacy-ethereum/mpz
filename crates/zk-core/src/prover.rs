@@ -79,6 +79,11 @@ impl Prover {
             .check_prover(transcript, svole_choices, svole_ev)
             .map_err(From::from)
     }
+
+    /// Returns the number of pending gates that need to be checked.
+    pub fn pending(&self) -> usize {
+        self.check.lock().unwrap().total()
+    }
 }
 
 /// Prover circuit execution.

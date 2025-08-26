@@ -191,8 +191,7 @@ impl RCOTSender<Block> for IdealRCOT {
 
         if count > keys_len {
             return Err(Error::new(format!(
-                "not enough sender RCOTs available: {} < {}",
-                keys_len, count
+                "not enough sender RCOTs available: {keys_len} < {count}"
             )));
         }
 
@@ -254,8 +253,7 @@ impl RCOTReceiver<bool, Block> for IdealRCOT {
 
         if count > choices_len {
             return Err(Error::new(format!(
-                "not enough receiver RCOTs available: {} < {}",
-                choices_len, count
+                "not enough receiver RCOTs available: {choices_len} < {count}"
             )));
         }
 

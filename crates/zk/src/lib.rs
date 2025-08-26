@@ -1,6 +1,9 @@
+mod callstack;
+mod config;
 mod prover;
 mod verifier;
 
+pub use config::{ProverConfig, VerifierConfig};
 pub use prover::Prover;
 pub use verifier::Verifier;
 
@@ -37,8 +40,8 @@ mod tests {
 
         let (ot_send, ot_recv) = ideal_rcot(rng.random(), delta.into_inner());
 
-        let mut prover = Prover::new(ot_recv);
-        let mut verifier = Verifier::new(delta, ot_send);
+        let mut prover = Prover::new(ProverConfig::default(), ot_recv);
+        let mut verifier = Verifier::new(VerifierConfig::default(), delta, ot_send);
 
         let (ciphertext_p, ciphertext_v) = futures::join!(
             {

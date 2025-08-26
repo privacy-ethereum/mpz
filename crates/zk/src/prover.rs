@@ -10,21 +10,25 @@ use mpz_vm_core::{
 use mpz_zk_core::{Prover as Core, ProverError, store::ProverStore};
 use serio::SinkExt;
 
+use crate::{callstack::CallStack, config::ProverConfig};
+
 #[derive(Debug)]
 pub struct Prover<OT> {
+    config: ProverConfig,
     store: ProverStore,
     ot: OT,
-    callstack: Vec<(Call, Slice)>,
+    callstack: CallStack,
     transcript: Hasher,
 }
 
 impl<OT> Prover<OT> {
     /// Creates a new prover.
-    pub fn new(ot: OT) -> Self {
+    pub fn new(config: ProverConfig, ot: OT) -> Self {
         Self {
+            config,
             store: ProverStore::new(),
             ot,
-            callstack: Vec::default(),
+            callstack: CallStack::default(),
             transcript: Hasher::default(),
         }
     }
@@ -106,14 +110,18 @@ where
 
     async fn execute(&mut self, ctx: &mut Context) -> VmResult<()> {
         let mut prover = Core::default();
+
         while !self.callstack.is_empty() {
             let ready_calls: Vec<_> = self
                 .callstack
-                .extract_if(.., |(call, _)| {
-                    call.inputs()
-                        .iter()
-                        .all(|input| self.store.is_committed_raw(*input))
-                })
+                .extract_if(
+                    self.config.batch_size().saturating_sub(prover.pending()),
+                    |call| {
+                        call.inputs()
+                            .iter()
+                            .all(|input| self.store.is_committed_raw(*input))
+                    },
+                )
                 .map(|(call, output)| {
                     let input_macs = call
                         .inputs()
@@ -124,6 +132,7 @@ where
                         .copied()
                         .collect::<Vec<_>>();
                     let (circ, _) = call.into_parts();
+
                     (circ, input_macs, output)
                 })
                 .collect();
@@ -182,8 +191,22 @@ where
                     .set_output_macs(output, &output_macs)
                     .map_err(VmError::memory)?;
             }
+
+            if prover.pending() >= self.config.batch_size() {
+                let RCOTReceiverOutput {
+                    choices: svole_choices,
+                    msgs: svole_ev,
+                    ..
+                } = self.ot.try_recv_rcot(128).map_err(VmError::execute)?;
+
+                let uv = prover
+                    .check(&mut self.transcript, &svole_choices, &svole_ev)
+                    .map_err(VmError::execute)?;
+                ctx.io_mut().send(uv).await?;
+            }
         }
 
+        // Check the last partial batch.
         if prover.wants_check() {
             let RCOTReceiverOutput {
                 choices: svole_choices,
@@ -208,15 +231,31 @@ where
     fn call_raw(&mut self, call: Call) -> VmResult<Slice> {
         let output = self.store.alloc_output(call.circ().outputs().len());
 
-        let mut count = call.circ().and_count();
-        if count > 0 {
-            // If the callstack is empty, we allocate more for the consistency check.
-            if self.callstack.is_empty() {
-                count += 128
-            }
+        let count = call.circ().and_count();
 
-            self.ot.alloc(count).map_err(VmError::execute)?;
+        if count == 0 {
+            self.callstack.push((call, output));
+            return Ok(output);
         }
+
+        // The number of additional consistency checks to allocate for.
+        let mut check_count = 0;
+
+        let partial_len = self.callstack.and_count() % self.config.batch_size();
+
+        if partial_len == 0 {
+            // Allocate for the first batch or when the previous batch
+            // landed exactly on the batch boundary.
+            check_count += 1;
+        }
+
+        // Using -1 because we allocate whenever a batch boundary is
+        // **crossed**, not when we land exactly on the boundary.
+        check_count += (partial_len + count - 1) / self.config.batch_size();
+
+        self.ot
+            .alloc(count + check_count * 128)
+            .map_err(VmError::execute)?;
 
         self.callstack.push((call, output));
 
