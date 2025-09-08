@@ -213,24 +213,50 @@ pub fn inv<const N: usize>(builder: &mut CircuitBuilder, a: [Node<Feed>; N]) -> 
     std::array::from_fn(|n| builder.add_inv_gate(a[n]))
 }
 
-/// Bitwise right rotation of an nbit value.
-pub fn rotate_right_lsb<const N: usize>(a: [Node<Feed>; N], amount: usize) -> [Node<Feed>; N] {
-    // Reverse the direction because bits are processed in lowest significant bit fashion.
-    rotate(a, amount, Direction::Left)
-}
-
-/// Bitwise left rotation of an nbit value.
-pub fn rotate_left_lsb<const N: usize>(a: [Node<Feed>; N], amount: usize) -> [Node<Feed>; N] {
-    // Reverse the direction because bits are processed in lowest significant bit fashion.
-    rotate(a, amount, Direction::Right)
-}
-
-enum Direction {
+// Direction of bitwise rotation.
+enum ShiftDirection {
     Left,
     Right,
 }
 
-fn rotate<const N: usize>(a: [Node<Feed>; N], amount: usize, direction: Direction) -> [Node<Feed>; N] {
+/// Bitwise right rotation of an n-bit value in LSB (least-significant bit
+/// first) representation.
+///
+/// Since bitwise rotation assumes MSB representation, rotating
+/// *right* in LSB will cause a *left* shift instead.
+///
+/// # Example
+/// ```
+/// // For an 8-bit value in LSB: [b0, b1, b2, b3, b4, b5, b6, b7]
+/// // where b0 is the least significant bit
+/// // Rotating right by 2 gives: [b6, b7, b0, b1, b2, b3, b4, b5]
+/// ```
+pub fn rotate_right_lsb<const N: usize>(a: [Node<Feed>; N], amount: usize) -> [Node<Feed>; N] {
+    rotate(a, amount, ShiftDirection::Left)
+}
+
+/// Bitwise left rotation of an n-bit value in LSB (least-significant bit first)
+/// representation.
+///
+/// Since bitwise rotation assumes MSB representation, rotating
+/// *left* in LSB will cause a *right* shift instead.
+///
+/// # Example
+/// ```
+/// // For an 8-bit value in LSB: [b0, b1, b2, b3, b4, b5, b6, b7]
+/// // where b0 is the least significant bit
+/// // Rotating left by 2 gives: [b2, b3, b4, b5, b6, b7, b0, b1]
+/// ```
+pub fn rotate_left_lsb<const N: usize>(a: [Node<Feed>; N], amount: usize) -> [Node<Feed>; N] {
+    rotate(a, amount, ShiftDirection::Right)
+}
+
+// Bitwise rotation of an n-bit value.
+fn rotate<const N: usize>(
+    a: [Node<Feed>; N],
+    amount: usize,
+    direction: ShiftDirection,
+) -> [Node<Feed>; N] {
     if N == 0 || amount == 0 || amount % N == 0 {
         return a;
     }
@@ -238,49 +264,9 @@ fn rotate<const N: usize>(a: [Node<Feed>; N], amount: usize, direction: Directio
     let amount = amount % N;
 
     match direction {
-        Direction::Left => {
-            std::array::from_fn(|i| a[(i + amount) % N])
-        },
-        Direction::Right => {
-            std::array::from_fn(|i| a[(i + N - amount) % N])
-        },
+        ShiftDirection::Left => std::array::from_fn(|i| a[(i + amount) % N]),
+        ShiftDirection::Right => std::array::from_fn(|i| a[(i + N - amount) % N]),
     }
-}
-
-/// Mixer used in Blake3 hashing.
-/// Ref: https://github.com/BLAKE3-team/BLAKE3/blob/3a90f0f06a429e6ce1d337b28156a75d2a372d7b/reference_impl/reference_impl.rs#L41-L51.
-pub fn blake3_mix(
-    builder: &mut CircuitBuilder,
-    a: [Node<Feed>; 32],
-    b: [Node<Feed>; 32],
-    c: [Node<Feed>; 32],
-    d: [Node<Feed>; 32],
-    mx: [Node<Feed>; 32],
-    my: [Node<Feed>; 32],
-) -> [[Node<Feed>; 32]; 4] {
-
-    let a_1 = wrapping_add(builder, &a, &b);
-    let a_2= wrapping_add(builder, &a_1, &mx);
-    let d_1 = xor(builder, d, node_slice_to_array(&a_2));
-    let d_2 = rotate_right_lsb(d_1, 16);
-    let c_1 = wrapping_add(builder, &c, &d_2);
-    let b_1 = xor(builder, b, node_slice_to_array(&c_1));
-    let b_2 = rotate_right_lsb(b_1, 12);
-    let a_3 = wrapping_add(builder, &a_2, &b_2);
-    let a_4 = wrapping_add(builder, &a_3, &my);
-    let d_3 = xor(builder, d_2, node_slice_to_array(&a_4));
-    let d_4 = rotate_right_lsb(d_3, 8);
-    let c_2 = wrapping_add(builder, &c_1, &d_4);
-    let b_3 = xor(builder, b_2, node_slice_to_array(&c_2));
-    let b_4 = rotate_right_lsb(b_3, 7);
-
-    [node_slice_to_array(&a_4), b_4, node_slice_to_array(&c_2), d_4]
-}
-
-fn node_slice_to_array<const N: usize>(slice: &[Node<Feed>]) -> [Node<Feed>; N] 
-{
-    assert_eq!(slice.len(), N);
-    slice.try_into().unwrap()
 }
 
 #[cfg(test)]
@@ -402,30 +388,63 @@ mod tests {
     fn test_rotate_right_lsb() {
         // Test 8-bit rotation
         let input: [Node<Feed>; 8] = std::array::from_fn(|i| Node::new(i));
-        
+
         // Test rotation by 0 (should be identity)
         let result = rotate_right_lsb(input, 0);
         assert_eq!(result, input);
-        
+
         // Test rotation by 1
         let result = rotate_right_lsb(input, 1);
-        assert_eq!(result, [Node::new(1), Node::new(2), Node::new(3), Node::new(4), 
-                           Node::new(5), Node::new(6), Node::new(7), Node::new(0)]);
-        
+        assert_eq!(
+            result,
+            [
+                Node::new(1),
+                Node::new(2),
+                Node::new(3),
+                Node::new(4),
+                Node::new(5),
+                Node::new(6),
+                Node::new(7),
+                Node::new(0)
+            ]
+        );
+
         // Test rotation by 3
         let result = rotate_right_lsb(input, 3);
-        assert_eq!(result, [Node::new(3), Node::new(4), Node::new(5), Node::new(6), 
-                           Node::new(7), Node::new(0), Node::new(1), Node::new(2)]);
-        
+        assert_eq!(
+            result,
+            [
+                Node::new(3),
+                Node::new(4),
+                Node::new(5),
+                Node::new(6),
+                Node::new(7),
+                Node::new(0),
+                Node::new(1),
+                Node::new(2)
+            ]
+        );
+
         // Test rotation by 8 (full rotation, should be identity)
         let result = rotate_right_lsb(input, 8);
         assert_eq!(result, input);
-        
+
         // Test rotation by 9 (should be same as rotation by 1)
         let result = rotate_right_lsb(input, 9);
-        assert_eq!(result, [Node::new(1), Node::new(2), Node::new(3), Node::new(4), 
-                           Node::new(5), Node::new(6), Node::new(7), Node::new(0)]);
-        
+        assert_eq!(
+            result,
+            [
+                Node::new(1),
+                Node::new(2),
+                Node::new(3),
+                Node::new(4),
+                Node::new(5),
+                Node::new(6),
+                Node::new(7),
+                Node::new(0)
+            ]
+        );
+
         // Test rotation by 16 (double full rotation, should be identity)
         let result = rotate_right_lsb(input, 16);
         assert_eq!(result, input);
@@ -435,30 +454,63 @@ mod tests {
     fn test_rotate_left_lsb() {
         // Test 8-bit rotation
         let input: [Node<Feed>; 8] = std::array::from_fn(|i| Node::new(i));
-        
+
         // Test rotation by 0 (should be identity)
         let result = rotate_left_lsb(input, 0);
         assert_eq!(result, input);
-        
+
         // Test rotation by 1
         let result = rotate_left_lsb(input, 1);
-        assert_eq!(result, [Node::new(7), Node::new(0), Node::new(1), Node::new(2), 
-                           Node::new(3), Node::new(4), Node::new(5), Node::new(6)]);
-        
+        assert_eq!(
+            result,
+            [
+                Node::new(7),
+                Node::new(0),
+                Node::new(1),
+                Node::new(2),
+                Node::new(3),
+                Node::new(4),
+                Node::new(5),
+                Node::new(6)
+            ]
+        );
+
         // Test rotation by 3
         let result = rotate_left_lsb(input, 3);
-        assert_eq!(result, [Node::new(5), Node::new(6), Node::new(7), Node::new(0), 
-                           Node::new(1), Node::new(2), Node::new(3), Node::new(4)]);
-        
+        assert_eq!(
+            result,
+            [
+                Node::new(5),
+                Node::new(6),
+                Node::new(7),
+                Node::new(0),
+                Node::new(1),
+                Node::new(2),
+                Node::new(3),
+                Node::new(4)
+            ]
+        );
+
         // Test rotation by 8 (full rotation, should be identity)
         let result = rotate_left_lsb(input, 8);
         assert_eq!(result, input);
-        
+
         // Test rotation by 9 (should be same as rotation by 1)
         let result = rotate_left_lsb(input, 9);
-        assert_eq!(result, [Node::new(7), Node::new(0), Node::new(1), Node::new(2), 
-                           Node::new(3), Node::new(4), Node::new(5), Node::new(6)]);
-        
+        assert_eq!(
+            result,
+            [
+                Node::new(7),
+                Node::new(0),
+                Node::new(1),
+                Node::new(2),
+                Node::new(3),
+                Node::new(4),
+                Node::new(5),
+                Node::new(6)
+            ]
+        );
+
         // Test rotation by 16 (double full rotation, should be identity)
         let result = rotate_left_lsb(input, 16);
         assert_eq!(result, input);
@@ -472,7 +524,7 @@ mod tests {
         assert_eq!(result, empty);
         let result = rotate_right_lsb(empty, 5);
         assert_eq!(result, empty);
-        
+
         // Test single element array
         let single: [Node<Feed>; 1] = [Node::new(42)];
         let result = rotate_left_lsb(single, 0);
@@ -487,7 +539,7 @@ mod tests {
         assert_eq!(result, single);
         let result = rotate_right_lsb(single, 100);
         assert_eq!(result, single);
-        
+
         // Test two element array
         let two: [Node<Feed>; 2] = [Node::new(1), Node::new(2)];
         let result = rotate_left_lsb(two, 1);
@@ -498,157 +550,5 @@ mod tests {
         assert_eq!(result, [Node::new(2), Node::new(1)]);
         let result = rotate_right_lsb(two, 2);
         assert_eq!(result, two);
-    }
-
-
-    #[test]
-    fn test_blake3_mix() {
-        // Ref: https://github.com/BLAKE3-team/BLAKE3/blob/3a90f0f06a429e6ce1d337b28156a75d2a372d7b/reference_impl/reference_impl.rs#L41-L51.
-        fn expected_mix(state: &mut [u32; 4], a: usize, b: usize, c: usize, d: usize, mx: u32, my: u32) {
-            state[a] = state[a].wrapping_add(state[b]).wrapping_add(mx);
-            state[d] = (state[d] ^ state[a]).rotate_right(16);
-            state[c] = state[c].wrapping_add(state[d]);
-            state[b] = (state[b] ^ state[c]).rotate_right(12);
-            state[a] = state[a].wrapping_add(state[b]).wrapping_add(my);
-            state[d] = (state[d] ^ state[a]).rotate_right(8);
-            state[c] = state[c].wrapping_add(state[d]);
-            state[b] = (state[b] ^ state[c]).rotate_right(7);
-        }
-
-        let mut builder = CircuitBuilder::new();
-
-        // Create inputs for the 4 state values and 2 mix values
-        let a: [_; 32] = from_fn(|_| builder.add_input());
-        let b: [_; 32] = from_fn(|_| builder.add_input());
-        let c: [_; 32] = from_fn(|_| builder.add_input());
-        let d: [_; 32] = from_fn(|_| builder.add_input());
-        let mx: [_; 32] = from_fn(|_| builder.add_input());
-        let my: [_; 32] = from_fn(|_| builder.add_input());
-
-        let [out_a, out_b, out_c, out_d] = blake3_mix(&mut builder, a, b, c, d, mx, my);
-
-        // Add outputs
-        for node in out_a {
-            builder.add_output(node);
-        }
-        for node in out_b {
-            builder.add_output(node);
-        }
-        for node in out_c {
-            builder.add_output(node);
-        }
-        for node in out_d {
-            builder.add_output(node);
-        }
-
-        let circ = builder.build().unwrap();
-
-        // Test case 1: All ones
-        let mut state = [1u32; 4];
-        expected_mix(&mut state, 0, 1, 2, 3, 1u32, 1u32);
-        
-        let (out_a, out_b, out_c, out_d): (u32, u32, u32, u32) = 
-            evaluate!(&circ, 1u32, 1u32, 1u32, 1u32, 1u32, 1u32).unwrap();
-        
-        assert_eq!(out_a, state[0]);
-        assert_eq!(out_b, state[1]);
-        assert_eq!(out_c, state[2]);
-        assert_eq!(out_d, state[3]);
-
-        // Test case 2: All zeros (edge case)
-        let mut state = [0u32; 4];
-        expected_mix(&mut state, 0, 1, 2, 3, 0u32, 0u32);
-        
-        let (out_a, out_b, out_c, out_d): (u32, u32, u32, u32) = 
-            evaluate!(&circ, 0u32, 0u32, 0u32, 0u32, 0u32, 0u32).unwrap();
-        
-        assert_eq!(out_a, state[0]);
-        assert_eq!(out_b, state[1]);
-        assert_eq!(out_c, state[2]);
-        assert_eq!(out_d, state[3]);
-
-        // Test case 3: Max values (overflow testing)
-        let mut state = [u32::MAX; 4];
-        expected_mix(&mut state, 0, 1, 2, 3, u32::MAX, u32::MAX);
-        
-        let (out_a, out_b, out_c, out_d): (u32, u32, u32, u32) = 
-            evaluate!(&circ, u32::MAX, u32::MAX, u32::MAX, u32::MAX, u32::MAX, u32::MAX).unwrap();
-        
-        assert_eq!(out_a, state[0]);
-        assert_eq!(out_b, state[1]);
-        assert_eq!(out_c, state[2]);
-        assert_eq!(out_d, state[3]);
-
-        // Test case 4: Sequential values
-        let mut state = [1u32, 2u32, 3u32, 4u32];
-        expected_mix(&mut state, 0, 1, 2, 3, 5u32, 6u32);
-        
-        let (out_a, out_b, out_c, out_d): (u32, u32, u32, u32) = 
-            evaluate!(&circ, 1u32, 2u32, 3u32, 4u32, 5u32, 6u32).unwrap();
-        
-        assert_eq!(out_a, state[0]);
-        assert_eq!(out_b, state[1]);
-        assert_eq!(out_c, state[2]);
-        assert_eq!(out_d, state[3]);
-
-        // Test case 5: Powers of two
-        let mut state = [1u32, 2u32, 4u32, 8u32];
-        expected_mix(&mut state, 0, 1, 2, 3, 16u32, 32u32);
-        
-        let (out_a, out_b, out_c, out_d): (u32, u32, u32, u32) = 
-            evaluate!(&circ, 1u32, 2u32, 4u32, 8u32, 16u32, 32u32).unwrap();
-        
-        assert_eq!(out_a, state[0]);
-        assert_eq!(out_b, state[1]);
-        assert_eq!(out_c, state[2]);
-        assert_eq!(out_d, state[3]);
-
-        // Test case 6: Mix of zero and non-zero values
-        let mut state = [0u32, u32::MAX, 0u32, u32::MAX];
-        expected_mix(&mut state, 0, 1, 2, 3, 0x12345678u32, 0x9abcdef0u32);
-        
-        let (out_a, out_b, out_c, out_d): (u32, u32, u32, u32) = 
-            evaluate!(&circ, 0u32, u32::MAX, 0u32, u32::MAX, 0x12345678u32, 0x9abcdef0u32).unwrap();
-        
-        assert_eq!(out_a, state[0]);
-        assert_eq!(out_b, state[1]);
-        assert_eq!(out_c, state[2]);
-        assert_eq!(out_d, state[3]);
-
-        // Test case 7: Large random-like values
-        let mut state = [0xdeadbeefu32, 0xcafebabeu32, 0xfeedfaceu32, 0xbadc0dedu32];
-        expected_mix(&mut state, 0, 1, 2, 3, 0x11111111u32, 0x22222222u32);
-        
-        let (out_a, out_b, out_c, out_d): (u32, u32, u32, u32) = 
-            evaluate!(&circ, 0xdeadbeefu32, 0xcafebabeu32, 0xfeedfaceu32, 0xbadc0dedu32, 0x11111111u32, 0x22222222u32).unwrap();
-        
-        assert_eq!(out_a, state[0]);
-        assert_eq!(out_b, state[1]);
-        assert_eq!(out_c, state[2]);
-        assert_eq!(out_d, state[3]);
-
-        // Test case 8: Values with alternating bit patterns
-        let mut state = [0xAAAAAAAAu32, 0x55555555u32, 0xFFFF0000u32, 0x0000FFFFu32];
-        expected_mix(&mut state, 0, 1, 2, 3, 0xF0F0F0F0u32, 0x0F0F0F0Fu32);
-        
-        let (out_a, out_b, out_c, out_d): (u32, u32, u32, u32) = 
-            evaluate!(&circ, 0xAAAAAAAAu32, 0x55555555u32, 0xFFFF0000u32, 0x0000FFFFu32, 0xF0F0F0F0u32, 0x0F0F0F0Fu32).unwrap();
-        
-        assert_eq!(out_a, state[0]);
-        assert_eq!(out_b, state[1]);
-        assert_eq!(out_c, state[2]);
-        assert_eq!(out_d, state[3]);
-
-        // Test case 9: Single bit set values
-        let mut state = [1u32 << 31, 1u32 << 15, 1u32 << 7, 1u32 << 0];
-        expected_mix(&mut state, 0, 1, 2, 3, 1u32 << 16, 1u32 << 8);
-        
-        let (out_a, out_b, out_c, out_d): (u32, u32, u32, u32) = 
-            evaluate!(&circ, 1u32 << 31, 1u32 << 15, 1u32 << 7, 1u32 << 0, 1u32 << 16, 1u32 << 8).unwrap();
-        
-        assert_eq!(out_a, state[0]);
-        assert_eq!(out_b, state[1]);
-        assert_eq!(out_c, state[2]);
-        assert_eq!(out_d, state[3]);
     }
 }

@@ -10,11 +10,12 @@ workspace = true
 name = "mpz_circuits"
 
 [features]
-default = ["parse", "serde", "aes", "sha2"]
+default = ["parse", "serde", "aes", "sha2", "blake3"]
 parse = ["dep:regex"]
 serde = ["dep:serde", "dep:serde_arrays", "dep:bincode"]
 aes = []
 sha2 = ["dep:sha2"]
+blake3 = []
 
 [dependencies]
 sha2 = { workspace = true, features = ["compress"], optional = true }
