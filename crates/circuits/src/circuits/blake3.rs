@@ -4,7 +4,7 @@ use std::array::from_fn;
 
 use crate::{
     Circuit, CircuitBuilder, Feed, Node,
-    ops::{rotate_right_lsb, wrapping_add, xor},
+    ops::{wrapping_add, xor},
 };
 
 // Permutation schedule used in Blake3 hashing.
@@ -44,6 +44,9 @@ fn mix(
     state_indices: (usize, usize, usize, usize),
     msg_indices: (usize, usize),
 ) {
+    // Note that bits are stored in LSB0 order, so the word-wise rightward rotation
+    // translates to a leftward rotation of the bitslice.
+
     let (a, b, c, d) = state_indices;
     let (mx, my) = msg_indices;
     state[a] = wrapping_add(builder, &state[a], &state[b])
@@ -56,7 +59,7 @@ fn mix(
         .unwrap();
 
     state[d] = xor(builder, state[d], state[a]);
-    state[d] = rotate_right_lsb(state[d], 16);
+    state[d].rotate_left(16);
 
     state[c] = wrapping_add(builder, &state[c], &state[d])
         .as_slice()
@@ -64,7 +67,7 @@ fn mix(
         .unwrap();
 
     state[b] = xor(builder, state[b], state[c]);
-    state[b] = rotate_right_lsb(state[b], 12);
+    state[b].rotate_left(12);
 
     state[a] = wrapping_add(builder, &state[a], &state[b])
         .as_slice()
@@ -76,7 +79,7 @@ fn mix(
         .unwrap();
 
     state[d] = xor(builder, state[d], state[a]);
-    state[d] = rotate_right_lsb(state[d], 8);
+    state[d].rotate_left(8);
 
     state[c] = wrapping_add(builder, &state[c], &state[d])
         .as_slice()
@@ -84,7 +87,7 @@ fn mix(
         .unwrap();
 
     state[b] = xor(builder, state[b], state[c]);
-    state[b] = rotate_right_lsb(state[b], 7);
+    state[b].rotate_left(7);
 }
 
 // Round function used in Blake3 hashing.
