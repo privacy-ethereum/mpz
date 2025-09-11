@@ -1,5 +1,8 @@
 //! Pre-built circuits for MPC.
 
+#[cfg(feature = "blake3")]
+pub mod blake3;
+
 use once_cell::sync::Lazy;
 use std::sync::Arc;
 
@@ -59,6 +62,17 @@ pub static AES128: Lazy<Arc<Circuit>> = Lazy::new(|| {
 #[cfg(feature = "sha2")]
 pub static SHA256_COMPRESS: Lazy<Arc<Circuit>> = Lazy::new(|| {
     let bytes = include_bytes!("../circuits/bin/sha256.bin");
+    Arc::new(bincode::deserialize(bytes).unwrap())
+});
+
+/// Blake3 compression circuit.
+///
+/// The circuit has the following signature:
+///
+/// `fn(msg: [u32; 16], state: [u32; 16]) -> [u32; 16]`
+#[cfg(feature = "blake3")]
+pub static BLAKE3_COMPRESS: Lazy<Arc<Circuit>> = Lazy::new(|| {
+    let bytes = include_bytes!("../circuits/bin/blake3.bin");
     Arc::new(bincode::deserialize(bytes).unwrap())
 });
 
