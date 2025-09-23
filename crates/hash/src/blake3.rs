@@ -32,8 +32,8 @@ static SERIALIZE_OUTPUT: LazyLock<Arc<Circuit>> = LazyLock::new(|| {
     Arc::new(builder.build().unwrap())
 });
 
-/// The default initialization vector.
-/// Ref: https://github.com/BLAKE3-team/BLAKE3/blob/3a90f0f06a429e6ce1d337b28156a75d2a372d7b/reference_impl/reference_impl.rs#L35-L37.
+// The default initialization vector.
+// Ref: https://github.com/BLAKE3-team/BLAKE3/blob/3a90f0f06a429e6ce1d337b28156a75d2a372d7b/reference_impl/reference_impl.rs#L35-L37.
 const IV: [u32; 8] = [
     0x6A09E667, 0xBB67AE85, 0x3C6EF372, 0xA54FF53A, 0x510E527F, 0x9B05688C, 0x1F83D9AB, 0x5BE0CD19,
 ];
@@ -43,12 +43,12 @@ const CHUNK_START: u32 = 1 << 0;
 const CHUNK_END: u32 = 1 << 1;
 const PARENT: u32 = 1 << 2;
 const ROOT: u32 = 1 << 3;
-/// Block size in bits.
+// Block size in bits.
 const BLOCK_SIZE: usize = blake3::BLOCK_LEN * 8; // 512
-/// Chunk size in bits.
+// Chunk size in bits.
 const CHUNK_SIZE: usize = blake3::CHUNK_LEN * 8; // 8192
-/// Maximum tree depth supported in blake3.
-/// Ref: https://github.com/BLAKE3-team/BLAKE3/blob/3a90f0f06a429e6ce1d337b28156a75d2a372d7b/reference_impl/reference_impl.rs#L270.
+// Maximum tree depth supported in blake3.
+// Ref: https://github.com/BLAKE3-team/BLAKE3/blob/3a90f0f06a429e6ce1d337b28156a75d2a372d7b/reference_impl/reference_impl.rs#L270.
 const MAX_SUBTREE_DEPTH: usize = 54;
 
 #[derive(Debug)]
@@ -58,9 +58,11 @@ struct Block {
 }
 
 impl Block {
-    // Returns the length in bytes.
-    fn len_bytes(&self) -> usize {
-        self.len.div_ceil(8)
+    // Returns the length in bytes, rounding up for partial bytes.
+    #[inline]
+    fn len_bytes(&self) -> u32 {
+        debug_assert!(self.len <= BLOCK_SIZE);
+        self.len.div_ceil(8) as u32
     }
 }
 
@@ -230,7 +232,7 @@ impl Chunk {
         let (last_block_len, last_block_len_bytes) = self
             .blocks
             .last()
-            .map_or((0, 0), |block| (block.len, block.len_bytes() as u32));
+            .map_or((0, 0), |block| (block.len, block.len_bytes()));
 
         // Pad the last block if it is not full.
         if last_block_len != BLOCK_SIZE {
@@ -449,7 +451,7 @@ impl Blake3 {
             if self.chunk.len() == CHUNK_SIZE {
                 let chunk_cv = self.chunk.compress(vm, false)?;
                 let total_chunks = self.chunk.counter + 1;
-                let _ = self.add_chunk_chaining_value(vm, chunk_cv, total_chunks);
+                self.add_chunk_chaining_value(vm, chunk_cv, total_chunks)?;
                 self.chunk = Chunk::new(
                     vm,
                     self.initial_cv,
@@ -664,7 +666,7 @@ mod test {
                     vm.assign(data_ref, data.clone()).unwrap();
                     vm.commit(data_ref).unwrap();
 
-                    let _ = hasher.update(&mut vm, &data_ref);
+                    hasher.update(&mut vm, &data_ref).unwrap();
                 }
 
                 let out = hasher.finalize(&mut vm).unwrap();
@@ -683,7 +685,7 @@ mod test {
                     vm.assign(data_ref, data.clone()).unwrap();
                     vm.commit(data_ref).unwrap();
 
-                    let _ = hasher.update(&mut vm, &data_ref);
+                    hasher.update(&mut vm, &data_ref).unwrap();
                 }
 
                 let out = hasher.finalize(&mut vm).unwrap();
