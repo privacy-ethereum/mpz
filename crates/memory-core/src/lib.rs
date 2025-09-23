@@ -412,8 +412,8 @@ impl<T, const N: usize> Array<T, N> {
         let range = self.slice.to_range();
 
         let t_size = range.len() / N;
-        let new_range = range.start + (start * t_size)..range.start + (start * t_size) + M;
-
+        let new_range =
+            range.start + (start * t_size)..range.start + (start * t_size) + (M * t_size);
         if new_range.is_empty() || new_range.end > range.end {
             return None;
         }
