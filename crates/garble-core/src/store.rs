@@ -73,7 +73,12 @@ mod validation {
 
 #[cfg(test)]
 mod tests {
-    use mpz_memory_core::{Array, MemoryExt, ViewExt, binary::U8, correlated::Delta};
+    use mpz_core::Block;
+    use mpz_memory_core::{
+        Array, Memory, MemoryExt, ViewExt,
+        binary::U8,
+        correlated::{Delta, Key},
+    };
     use mpz_ot_core::ideal::cot::IdealCOT;
     use rand::{Rng, SeedableRng, rngs::StdRng};
 
@@ -166,5 +171,42 @@ mod tests {
         assert_eq!(val_a_gb, val_a);
         assert_eq!(val_b_gb, val_b);
         assert_eq!(val_c_gb, val_c);
+    }
+
+    // Tests that calling decode on a preprocessed output twice behaves
+    // correctly.
+    #[test]
+    fn test_store_decode_preprocessed() {
+        let mut rng = StdRng::seed_from_u64(0);
+        let delta = Delta::random(&mut rng);
+        let cot = IdealCOT::new(delta.into_inner());
+
+        let mut gb = GarblerStore::new(rng.random(), delta, cot.clone());
+        let mut ev = EvaluatorStore::new(cot);
+
+        let ref_out_gb = gb.alloc_output(16);
+        gb.set_output(ref_out_gb, &Key::from_blocks(vec![Block::ZERO; 16]))
+            .unwrap();
+        std::mem::drop(gb.decode_raw(ref_out_gb).unwrap());
+
+        let ref_out_ev = ev.alloc_output(16);
+        ev.mark_output_preprocessed(ref_out_ev).unwrap();
+        std::mem::drop(ev.decode_raw(ref_out_ev).unwrap());
+
+        assert!(gb.wants_flush());
+        assert!(ev.wants_flush());
+
+        let gen_flush = gb.send_flush().unwrap();
+        let ev_flush = ev.send_flush().unwrap();
+
+        gb.receive_flush(ev_flush).unwrap();
+        ev.receive_flush(gen_flush).unwrap();
+
+        std::mem::drop(gb.decode_raw(ref_out_gb).unwrap());
+        std::mem::drop(ev.decode_raw(ref_out_ev).unwrap());
+
+        // There should be nothing to flush, since the decoding info
+        // has already been sent in the first flush.
+        assert!(!gb.wants_flush() && !ev.wants_flush());
     }
 }

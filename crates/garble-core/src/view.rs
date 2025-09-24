@@ -312,7 +312,10 @@ impl View {
             Role::Evaluator => input.intersection(self.vis.blind()),
         };
 
-        self.flush.decode_info |= decodable_input | output.intersection(&self.output.preprocessed);
+        let decodable = decodable_input | output.intersection(&self.output.preprocessed);
+
+        // Only send decode info if it hasn't been sent already.
+        self.flush.decode_info |= decodable.difference(&self.decode.decode_info);
 
         // Prove MACs.
         //
