@@ -51,7 +51,7 @@ const CHUNK_SIZE: usize = blake3::CHUNK_LEN * 8; // 8192
 // Ref: https://github.com/BLAKE3-team/BLAKE3/blob/3a90f0f06a429e6ce1d337b28156a75d2a372d7b/reference_impl/reference_impl.rs#L270.
 const MAX_SUBTREE_DEPTH: usize = 54;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct Block {
     data: Vec<Slice>,
     len: usize,
@@ -155,7 +155,7 @@ impl Flags {
 }
 
 // Ref: https://github.com/BLAKE3-team/BLAKE3/blob/3a90f0f06a429e6ce1d337b28156a75d2a372d7b/reference_impl/reference_impl.rs#L165-L237.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct Chunk {
     blocks: Vec<Block>,
     chaining_value: ChainingValue,
@@ -319,7 +319,7 @@ impl Chunk {
 
 /// Blake3 hasher.
 /// Ref: https://github.com/BLAKE3-team/BLAKE3/blob/3a90f0f06a429e6ce1d337b28156a75d2a372d7b/reference_impl/reference_impl.rs#L267-L374.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Blake3 {
     chunk: Chunk,
     initial_cv: ChainingValue,
