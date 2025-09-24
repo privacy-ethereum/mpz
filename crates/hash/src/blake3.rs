@@ -100,6 +100,10 @@ impl ChainingValue {
         Ok(Self(state))
     }
 
+    fn new_from_state(state: Array<U32, 8>) -> Self {
+        Self(state)
+    }
+
     fn set(&mut self, state: Array<U32, 8>) {
         self.0 = state
     }
@@ -163,12 +167,10 @@ struct Chunk {
 impl Chunk {
     fn new(
         vm: &mut dyn Vm<Binary>,
-        cv: [u32; 8],
-        cv_vis: Visibility,
+        chaining_value: ChainingValue,
         flags: u32,
         counter: u64,
     ) -> Result<Self, Blake3Error> {
-        let chaining_value = ChainingValue::new(vm, cv_vis, cv)?;
         Ok(Self {
             blocks: Vec::new(),
             chaining_value,
@@ -320,10 +322,10 @@ impl Chunk {
 #[derive(Debug)]
 pub struct Blake3 {
     chunk: Chunk,
-    initial_cv: [u32; 8],
-    initial_cv_vis: Visibility,
+    initial_cv: ChainingValue,
     cv_stack: Vec<ChainingValue>,
     flags: u32,
+    parent_state: State,
 }
 
 impl Blake3 {
@@ -333,12 +335,16 @@ impl Blake3 {
         initial_cv_vis: Visibility,
         flags: u32,
     ) -> Result<Self, Blake3Error> {
+        let initial_cv = ChainingValue::new(vm, initial_cv_vis, initial_cv)?;
+        // Precomputes the state value required for parent chaining value calculation in
+        // `parent_cv`. Ref: https://github.com/BLAKE3-team/BLAKE3/blob/3a90f0f06a429e6ce1d337b28156a75d2a372d7b/reference_impl/reference_impl.rs#L249-L252.
+        let parent_state = State::new(vm, 0, blake3::BLOCK_LEN as u32)?;
         Ok(Self {
-            chunk: Chunk::new(vm, initial_cv, initial_cv_vis, flags, 0)?,
+            chunk: Chunk::new(vm, initial_cv, flags, 0)?,
             initial_cv,
-            initial_cv_vis,
             cv_stack: Vec::with_capacity(MAX_SUBTREE_DEPTH),
             flags,
+            parent_state,
         })
     }
 
@@ -374,8 +380,6 @@ impl Blake3 {
         right_child_cv: ChainingValue,
         is_root: bool,
     ) -> Result<ChainingValue, Blake3Error> {
-        let mut chaining_value = ChainingValue::new(vm, self.initial_cv_vis, self.initial_cv)?;
-        let state = State::new(vm, 0, blake3::BLOCK_LEN as u32)?;
         let mut flags = self.flags | PARENT;
         // When the parent is the root.
         // Ref: https://github.com/BLAKE3-team/BLAKE3/blob/3a90f0f06a429e6ce1d337b28156a75d2a372d7b/reference_impl/reference_impl.rs#L154.
@@ -388,8 +392,8 @@ impl Blake3 {
 
         builder = builder.arg(left_child_cv.0);
         builder = builder.arg(right_child_cv.0);
-        builder = builder.arg(chaining_value.0);
-        builder = builder.arg(state.0);
+        builder = builder.arg(self.initial_cv.0);
+        builder = builder.arg(self.parent_state.0);
         builder = builder.arg(flags_state.0);
 
         let call = builder
@@ -405,9 +409,9 @@ impl Blake3 {
 
         // Set this as the new chaining value.
         // P/S: this value is private to the prover.
-        chaining_value.set(truncated);
+        let cv = ChainingValue::new_from_state(truncated);
 
-        Ok(chaining_value)
+        Ok(cv)
     }
 
     // Ref: https://github.com/BLAKE3-team/BLAKE3/blob/3a90f0f06a429e6ce1d337b28156a75d2a372d7b/reference_impl/reference_impl.rs#L320-L334.
@@ -452,13 +456,7 @@ impl Blake3 {
                 let chunk_cv = self.chunk.compress(vm, false)?;
                 let total_chunks = self.chunk.counter + 1;
                 self.add_chunk_chaining_value(vm, chunk_cv, total_chunks)?;
-                self.chunk = Chunk::new(
-                    vm,
-                    self.initial_cv,
-                    self.initial_cv_vis,
-                    self.flags,
-                    total_chunks,
-                )?;
+                self.chunk = Chunk::new(vm, self.initial_cv, self.flags, total_chunks)?;
             }
 
             // Compresses data bytes into the current chunk.
@@ -602,8 +600,8 @@ mod test {
                 let mut vm = gb;
                 let chunk_counter = 0;
                 let flags = 0u32;
-                let mut chunk_state =
-                    Chunk::new(&mut vm, IV, Visibility::Public, flags, chunk_counter).unwrap();
+                let cv = ChainingValue::new(&mut vm, Visibility::Public, IV).unwrap();
+                let mut chunk_state = Chunk::new(&mut vm, cv, flags, chunk_counter).unwrap();
 
                 let data_ref = vm.alloc_vec::<U8>(data.len()).unwrap();
                 vm.mark_public(data_ref).unwrap();
@@ -621,8 +619,8 @@ mod test {
                 let mut vm = ev;
                 let chunk_counter = 0;
                 let flags = 0u32;
-                let mut chunk_state =
-                    Chunk::new(&mut vm, IV, Visibility::Public, flags, chunk_counter).unwrap();
+                let cv = ChainingValue::new(&mut vm, Visibility::Public, IV).unwrap();
+                let mut chunk_state = Chunk::new(&mut vm, cv, flags, chunk_counter).unwrap();
 
                 let data_ref = vm.alloc_vec::<U8>(data.len()).unwrap();
                 vm.mark_public(data_ref).unwrap();
