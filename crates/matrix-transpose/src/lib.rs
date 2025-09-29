@@ -1,8 +1,7 @@
 #![cfg_attr(
     feature = "simd-transpose",
     feature(portable_simd),
-    feature(stmt_expr_attributes),
-    feature(slice_as_chunks)
+    feature(stmt_expr_attributes)
 )]
 
 #[cfg(feature = "simd-transpose")]
