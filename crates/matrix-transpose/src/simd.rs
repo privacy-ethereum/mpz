@@ -61,12 +61,13 @@ where
         std::mem::swap(&mut write_reference, &mut read_reference);
     }
     for _ in 0..rounds {
-        for (k, (v1, v2)) in read_reference
-            .as_chunks_unchecked::<N>()
-            .iter()
-            .zip(read_reference[half..].as_chunks_unchecked())
-            .enumerate()
-        {
+        for (k, (v1, v2)) in unsafe {
+            read_reference
+                .as_chunks_unchecked::<N>()
+                .iter()
+                .zip(read_reference[half..].as_chunks_unchecked())
+                .enumerate()
+        } {
             (s1, s2) = Simd::from_array(*v1).interleave(Simd::from_array(*v2));
             write_reference[N * 2 * k..N * (2 * k + 1)].copy_from_slice(&s1.to_array());
             write_reference[N * (2 * k + 1)..N * (2 * k + 2)].copy_from_slice(&s2.to_array());
@@ -95,10 +96,10 @@ pub unsafe fn bitmask_shift_unchecked(matrix: &mut [u8], columns: usize) {
     for row in matrix.chunks_mut(columns) {
         let mut shifted_row = Vec::with_capacity(columns);
         for _ in 0..8 {
-            for chunk in row.as_chunks_unchecked_mut::<LANE_COUNT>() {
+            for chunk in unsafe { row.as_chunks_unchecked_mut::<LANE_COUNT>() } {
                 s = Simd::from_array(*chunk);
                 #[cfg(target_arch = "x86_64")]
-                let high_bits = _mm256_movemask_epi8(s.reverse().into());
+                let high_bits = unsafe { _mm256_movemask_epi8(s.reverse().into()) };
                 #[cfg(target_arch = "wasm32")]
                 let high_bits = u8x16_bitmask(s.reverse().into());
                 let high_bits: Vec<u8> = high_bits

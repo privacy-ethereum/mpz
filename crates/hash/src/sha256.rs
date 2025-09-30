@@ -249,7 +249,7 @@ mod tests {
     #[test]
     fn test_sha256_serialize_state() {
         let output: [u8; 32] = evaluate!(SERIALIZE_STATE, IV).unwrap();
-        let expected: Vec<_> = IV.iter().map(|word| word.to_be_bytes()).flatten().collect();
+        let expected: Vec<_> = IV.iter().flat_map(|word| word.to_be_bytes()).collect();
         assert_eq!(&output, expected.as_slice());
     }
 
