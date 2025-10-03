@@ -2,6 +2,8 @@
 
 mod evaluator;
 mod garbler;
+/// Docs
+pub mod mock;
 
 pub use evaluator::{EvaluatorStore, EvaluatorStoreError};
 pub use garbler::{GarblerStore, GarblerStoreError};
@@ -76,13 +78,14 @@ mod tests {
     use mpz_core::Block;
     use mpz_memory_core::{
         Array, Memory, MemoryExt, ViewExt,
-        binary::U8,
+        binary::{Binary, U8},
         correlated::{Delta, Key},
     };
     use mpz_ot_core::ideal::cot::IdealCOT;
+    use mpz_vm_core::Vm;
     use rand::{Rng, SeedableRng, rngs::StdRng};
 
-    use super::*;
+    use crate::store::mock::{EvaluatorStore, GarblerStore};
 
     #[test]
     fn test_store_decode() {

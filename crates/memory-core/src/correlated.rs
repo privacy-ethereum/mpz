@@ -228,6 +228,11 @@ impl MacCommitment {
 
         Ok(())
     }
+
+    // TODO: put behind mock flag
+    pub fn from_blocks(blocks: [Block; 2]) -> Self {
+        MacCommitment(blocks)
+    }
 }
 
 #[derive(Debug, thiserror::Error)]

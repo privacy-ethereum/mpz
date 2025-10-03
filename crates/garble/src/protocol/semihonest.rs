@@ -2,6 +2,8 @@
 
 mod evaluator;
 mod garbler;
+/// Docs
+pub mod mock;
 
 pub use evaluator::Evaluator;
 pub use garbler::Garbler;
@@ -47,7 +49,7 @@ mod tests {
     use mpz_vm_core::{Call, CallableExt, Execute, Vm};
     use rand::{SeedableRng, rngs::StdRng};
 
-    use super::*;
+    use crate::protocol::semihonest::mock::{Evaluator, Garbler};
 
     #[test]
     fn test_semihonest_is_vm() {
@@ -148,8 +150,8 @@ mod tests {
         let (mut ctx_a, mut ctx_b) = test_st_context(8);
         let (cot_send, cot_recv) = ideal_cot(delta.into_inner());
 
-        let mut gb = Garbler::new(cot_send, [0u8; 16], delta);
-        let mut ev = Evaluator::new(cot_recv);
+        let mut gb = crate::protocol::semihonest::Garbler::new(cot_send, [0u8; 16], delta);
+        let mut ev = crate::protocol::semihonest::Evaluator::new(cot_recv);
 
         let (gen_out, ev_out) = futures::join!(
             async {
