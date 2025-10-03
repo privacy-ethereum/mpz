@@ -412,8 +412,8 @@ impl<T, const N: usize> Array<T, N> {
         let range = self.slice.to_range();
 
         let t_size = range.len() / N;
-        let new_range =
-            range.start + (start * t_size)..range.start + (start * t_size) + (M * t_size);
+        let new_range = range.start + (start * t_size)..range.start + ((start + M) * t_size);
+
         if new_range.is_empty() || new_range.end > range.end {
             return None;
         }
@@ -734,5 +734,14 @@ mod tests {
 
         assert_eq!(vec.ptr.as_usize(), 32);
         assert_eq!(new_vec.ptr.as_usize(), 32 + 2 * U8::SIZE);
+    }
+
+    #[test]
+    fn test_array_get() {
+        let slice = Slice::from_range_unchecked(0..256);
+        let arr = Array::<U8, 32>::new(slice);
+
+        // Shouldn't be able to get a [30..34] slice.
+        assert!(arr.get::<4>(30).is_none());
     }
 }

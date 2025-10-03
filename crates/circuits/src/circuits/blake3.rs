@@ -139,6 +139,9 @@ mod tests {
     use crate::evaluate;
 
     #[test]
+    #[allow(clippy::same_item_push)]
+    #[allow(clippy::needless_range_loop)]
+    #[allow(clippy::vec_init_then_push)]
     fn test_blake3_mix() {
         let mut builder = CircuitBuilder::new();
 
@@ -178,7 +181,7 @@ mod tests {
             let output: Vec<u32> = evaluate!(&circ, input_values).unwrap();
 
             for i in 0..4 {
-                assert_eq!(output[i], state[i], "Test 1: State[{}] mismatch", i);
+                assert_eq!(output[i], state[i], "Test 1: State[{i}] mismatch");
             }
         }
 
@@ -200,7 +203,7 @@ mod tests {
             let output: Vec<u32> = evaluate!(&circ, input_values).unwrap();
 
             for i in 0..4 {
-                assert_eq!(output[i], state[i], "Test 2: State[{}] mismatch", i);
+                assert_eq!(output[i], state[i], "Test 2: State[{i}] mismatch");
             }
         }
 
@@ -222,7 +225,7 @@ mod tests {
             let output: Vec<u32> = evaluate!(&circ, input_values).unwrap();
 
             for i in 0..4 {
-                assert_eq!(output[i], state[i], "Test 3: State[{}] mismatch", i);
+                assert_eq!(output[i], state[i], "Test 3: State[{i}] mismatch");
             }
         }
 
@@ -247,7 +250,7 @@ mod tests {
             let output: Vec<u32> = evaluate!(&circ, input_values).unwrap();
 
             for i in 0..4 {
-                assert_eq!(output[i], state[i], "Test 4: State[{}] mismatch", i);
+                assert_eq!(output[i], state[i], "Test 4: State[{i}] mismatch");
             }
         }
 
@@ -275,7 +278,7 @@ mod tests {
             let output: Vec<u32> = evaluate!(&circ, input_values).unwrap();
 
             for i in 0..4 {
-                assert_eq!(output[i], state[i], "Test 5: State[{}] mismatch", i);
+                assert_eq!(output[i], state[i], "Test 5: State[{i}] mismatch");
             }
         }
 
@@ -307,7 +310,7 @@ mod tests {
             let output: Vec<u32> = evaluate!(&circ, input_values).unwrap();
 
             for i in 0..4 {
-                assert_eq!(output[i], state[i], "Test 6: State[{}] mismatch", i);
+                assert_eq!(output[i], state[i], "Test 6: State[{i}] mismatch");
             }
         }
 
@@ -339,7 +342,7 @@ mod tests {
             let output: Vec<u32> = evaluate!(&circ, input_values).unwrap();
 
             for i in 0..4 {
-                assert_eq!(output[i], state[i], "Test 7: State[{}] mismatch", i);
+                assert_eq!(output[i], state[i], "Test 7: State[{i}] mismatch");
             }
         }
 
@@ -371,7 +374,7 @@ mod tests {
             let output: Vec<u32> = evaluate!(&circ, input_values).unwrap();
 
             for i in 0..4 {
-                assert_eq!(output[i], state[i], "Test 8: State[{}] mismatch", i);
+                assert_eq!(output[i], state[i], "Test 8: State[{i}] mismatch");
             }
         }
 
@@ -403,12 +406,15 @@ mod tests {
             let output: Vec<u32> = evaluate!(&circ, input_values).unwrap();
 
             for i in 0..4 {
-                assert_eq!(output[i], state[i], "Test 9: State[{}] mismatch", i);
+                assert_eq!(output[i], state[i], "Test 9: State[{i}] mismatch");
             }
         }
     }
 
     #[test]
+    #[allow(clippy::same_item_push)]
+    #[allow(clippy::needless_range_loop)]
+    #[allow(clippy::vec_init_then_push)]
     fn test_blake3_round() {
         use std::array::from_fn;
 
@@ -456,11 +462,14 @@ mod tests {
 
         // Check results
         for i in 0..16 {
-            assert_eq!(output[i], expected_state[i], "State[{}] mismatch", i);
+            assert_eq!(output[i], expected_state[i], "State[{i}] mismatch");
         }
     }
 
     #[test]
+    #[allow(clippy::same_item_push)]
+    #[allow(clippy::needless_range_loop)]
+    #[allow(clippy::vec_init_then_push)]
     fn test_blake3_compress() {
         use crate::circuits::blake3::compress;
 
@@ -485,7 +494,7 @@ mod tests {
             let output: Vec<u32> = evaluate!(&circ, input_values).unwrap();
 
             for i in 0..16 {
-                assert_eq!(output[i], test_state[i], "Test 1: State[{}] mismatch", i);
+                assert_eq!(output[i], test_state[i], "Test 1: State[{i}] mismatch");
             }
         }
 
@@ -511,7 +520,7 @@ mod tests {
             let output: Vec<u32> = evaluate!(&circ, input_values).unwrap();
 
             for i in 0..16 {
-                assert_eq!(output[i], test_state[i], "Test 2: State[{}] mismatch", i);
+                assert_eq!(output[i], test_state[i], "Test 2: State[{i}] mismatch");
             }
         }
 
@@ -534,7 +543,7 @@ mod tests {
             let output: Vec<u32> = evaluate!(&circ, input_values).unwrap();
 
             for i in 0..16 {
-                assert_eq!(output[i], test_state[i], "Test 3: State[{}] mismatch", i);
+                assert_eq!(output[i], test_state[i], "Test 3: State[{i}] mismatch");
             }
         }
 
@@ -561,7 +570,7 @@ mod tests {
             let output: Vec<u32> = evaluate!(&circ, input_values).unwrap();
 
             for i in 0..16 {
-                assert_eq!(output[i], test_state[i], "Test 4: State[{}] mismatch", i);
+                assert_eq!(output[i], test_state[i], "Test 4: State[{i}] mismatch");
             }
         }
 
@@ -596,7 +605,7 @@ mod tests {
             let output: Vec<u32> = evaluate!(&circ, input_values).unwrap();
 
             for i in 0..16 {
-                assert_eq!(output[i], test_state[i], "Test 5: State[{}] mismatch", i);
+                assert_eq!(output[i], test_state[i], "Test 5: State[{i}] mismatch");
             }
         }
 
@@ -619,7 +628,7 @@ mod tests {
             let output: Vec<u32> = evaluate!(&circ, input_values).unwrap();
 
             for i in 0..16 {
-                assert_eq!(output[i], test_state[i], "Test 6: State[{}] mismatch", i);
+                assert_eq!(output[i], test_state[i], "Test 6: State[{i}] mismatch");
             }
         }
     }
@@ -672,7 +681,7 @@ mod tests {
 
         // Ref: https://github.com/BLAKE3-team/BLAKE3/blob/3a90f0f06a429e6ce1d337b28156a75d2a372d7b/reference_impl/reference_impl.rs#L74-L111.
         pub(crate) fn compress(block: &mut [u32; 16], state: &mut [u32; 16]) {
-            let initial_state = state.clone();
+            let initial_state = *state;
 
             round(state, block); // round 1
             permute(block);

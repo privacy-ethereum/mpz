@@ -10,4 +10,4 @@ set -e
 cargo +nightly fmt --check --all
 
 # Check clippy
-cargo +nightly clippy --all-targets --all-features
+cargo +nightly clippy --all-targets --all-features --locked -- -D warnings
