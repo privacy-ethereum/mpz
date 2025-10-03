@@ -150,6 +150,8 @@ mod tests {
         let (mut ctx_a, mut ctx_b) = test_st_context(8);
         let (cot_send, cot_recv) = ideal_cot(delta.into_inner());
 
+        // There is a bug in IdealOT which makes this test hang when using a mock.
+        // Using a real impl for now.
         let mut gb = crate::protocol::semihonest::Garbler::new(cot_send, [0u8; 16], delta);
         let mut ev = crate::protocol::semihonest::Evaluator::new(cot_recv);
 
