@@ -78,9 +78,10 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    #[allow(dead_code)]
-    fn test_otp() {
+    // Compile-time API conformance check for OneTimePad::mask_private over U8 and
+    // Vector<U8>. Intentionally not a runtime test; ensures the generic bounds
+    // and signatures remain valid.
+    fn compile_check_otp() {
         fn single<Vm: OneTimePad<Binary>>(vm: &mut Vm, value: U8) {
             vm.mask_private(value, 0u8).unwrap();
         }
