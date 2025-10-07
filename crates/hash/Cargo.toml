@@ -8,13 +8,14 @@ mpz-core = { workspace = true }
 mpz-circuits = { workspace = true }
 mpz-vm-core = { workspace = true }
 
+blake3 = { workspace = true }
 itybity = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
 mpz-common = { workspace = true }
 mpz-garble = { workspace = true }
-mpz-ot = { workspace = true }
+mpz-ot = { workspace = true, features = ["ideal"] }
 rand = { workspace = true }
 rstest = { workspace = true }
 sha2 = { workspace = true }
