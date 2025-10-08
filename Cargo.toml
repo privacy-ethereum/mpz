@@ -7,6 +7,7 @@ members = [
     "crates/cointoss",
     "crates/cointoss-core",
     "crates/hash",
+    "crates/ideal-vm",
     "crates/ot",
     "crates/ot-core",
     "crates/garble",
@@ -52,6 +53,7 @@ mpz-ot-core = { path = "crates/ot-core" }
 mpz-garble = { path = "crates/garble" }
 mpz-garble-core = { path = "crates/garble-core" }
 mpz-hash = { path = "crates/hash" }
+mpz-ideal-vm = { path = "crates/ideal-vm" }
 mpz-share-conversion-core = { path = "crates/share-conversion-core" }
 mpz-ole = { path = "crates/ole" }
 mpz-ole-core = { path = "crates/ole-core" }
