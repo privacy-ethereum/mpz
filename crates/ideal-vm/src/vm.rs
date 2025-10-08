@@ -248,9 +248,11 @@ mod tests {
             async {
                 let key: Array<U8, 16> = party_a.alloc().unwrap();
                 let msg: Array<U8, 16> = party_a.alloc().unwrap();
+                let key2: Array<U8, 16> = party_a.alloc().unwrap();
 
                 party_a.mark_private(key).unwrap();
                 party_a.mark_blind(msg).unwrap();
+                party_a.mark_public(key2).unwrap();
 
                 let output: Array<U8, 16> = party_a
                     .call(
@@ -266,7 +268,7 @@ mod tests {
                 let ciphertext: Array<U8, 16> = party_a
                     .call(
                         Call::builder(AES128.clone())
-                            .arg(key)
+                            .arg(key2)
                             .arg(output)
                             .build()
                             .unwrap(),
@@ -278,6 +280,8 @@ mod tests {
                 party_a.assign(key, [0u8; 16]).unwrap();
                 party_a.commit(key).unwrap();
                 party_a.commit(msg).unwrap();
+                party_a.assign(key2, [1u8; 16]).unwrap();
+                party_a.commit(key2).unwrap();
 
                 party_a.execute_all(&mut ctx_a).await.unwrap();
                 ciphertext.try_recv().unwrap().unwrap()
@@ -285,9 +289,11 @@ mod tests {
             async {
                 let key: Array<U8, 16> = party_b.alloc().unwrap();
                 let msg: Array<U8, 16> = party_b.alloc().unwrap();
+                let key2: Array<U8, 16> = party_b.alloc().unwrap();
 
                 party_b.mark_blind(key).unwrap();
                 party_b.mark_private(msg).unwrap();
+                party_b.mark_public(key2).unwrap();
 
                 let output: Array<U8, 16> = party_b
                     .call(
@@ -303,7 +309,7 @@ mod tests {
                 let ciphertext: Array<U8, 16> = party_b
                     .call(
                         Call::builder(AES128.clone())
-                            .arg(key)
+                            .arg(key2)
                             .arg(output)
                             .build()
                             .unwrap(),
@@ -315,6 +321,8 @@ mod tests {
                 party_b.assign(msg, [42u8; 16]).unwrap();
                 party_b.commit(key).unwrap();
                 party_b.commit(msg).unwrap();
+                party_b.assign(key2, [1u8; 16]).unwrap();
+                party_b.commit(key2).unwrap();
 
                 party_b.execute_all(&mut ctx_b).await.unwrap();
                 ciphertext.try_recv().unwrap().unwrap()
