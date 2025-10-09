@@ -59,7 +59,7 @@ pub(crate) async fn evaluate(
     let gid = if circ.and_count() > 0 {
         io.expect_next().await?
     } else {
-        GateId(1)
+        GateId::default()
     };
 
     let mut ev_consumer = ev.evaluate_batched(&circ, inputs, gid)?;

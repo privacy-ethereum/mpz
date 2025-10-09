@@ -101,11 +101,11 @@ impl Garbler {
 
         // Randomize the tweak for better multi-instance security.
         // see https://eprint.iacr.org/2019/1168
-        let gid: u128 = if circ.and_count() > 0 {
+        let gid = if circ.and_count() > 0 {
             rng().random()
         } else {
             // No need to randomize if there are no AND gates.
-            1
+            GateId::default()
         };
 
         Ok((
@@ -113,11 +113,11 @@ impl Garbler {
                 delta,
                 circ.gates().iter(),
                 &mut self.buffer,
-                gid,
+                gid.0,
                 circ.and_count(),
                 circ.outputs(),
             ),
-            GateId(gid),
+            gid,
         ))
     }
 

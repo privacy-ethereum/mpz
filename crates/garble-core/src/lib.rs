@@ -20,8 +20,13 @@ pub use garbler::{
     EncryptedGateBatchIter, EncryptedGateIter, Garbler, GarblerError, GarblerOutput,
 };
 pub use mpz_memory_core::correlated::{Delta, Key, Mac};
-use serde::{Deserialize, Serialize};
 pub use view::FlushView;
+
+use rand::{
+    Rng,
+    distr::{Distribution, StandardUniform},
+};
+use serde::{Deserialize, Serialize};
 
 const KB: usize = 1024;
 const BYTES_PER_GATE: usize = 32;
@@ -45,6 +50,12 @@ pub struct GateId(pub u128);
 impl Default for GateId {
     fn default() -> Self {
         GateId(1)
+    }
+}
+
+impl Distribution<GateId> for StandardUniform {
+    fn sample<R: Rng + ?Sized>(&self, rng: &mut R) -> GateId {
+        GateId(rng.random())
     }
 }
 
