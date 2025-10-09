@@ -4,7 +4,9 @@ use std::{ops::Range, sync::Arc};
 use cfg_if::cfg_if;
 use mpz_memory_core::correlated::Mac;
 
-use crate::{DEFAULT_BATCH_SIZE, EncryptedGateBatch, GarbledCircuit, circuit::EncryptedGate};
+use crate::{
+    DEFAULT_BATCH_SIZE, EncryptedGateBatch, GarbledCircuit, GateId, circuit::EncryptedGate,
+};
 use mpz_circuits::{Circuit, Gate};
 use mpz_core::{
     Block,
@@ -28,13 +30,13 @@ pub(crate) fn and_gate(
     x: &Block,
     y: &Block,
     encrypted_gate: &EncryptedGate,
-    gid: usize,
+    gid: u128,
 ) -> Block {
     let s_a = x.lsb();
     let s_b = y.lsb();
 
-    let j = Block::new((gid as u128).to_be_bytes());
-    let k = Block::new(((gid + 1) as u128).to_be_bytes());
+    let j = Block::new(gid.to_be_bytes());
+    let k = Block::new((gid + 1).to_be_bytes());
 
     let mut h = [*x, *y];
     cipher.tccr_many(&[j, k], &mut h);
@@ -75,10 +77,12 @@ impl Evaluator {
     ///
     /// * `circ` - The circuit to evaluate.
     /// * `inputs` - The input labels to the circuit.
+    /// * `gid` - The initial gate id.
     pub fn evaluate<'a>(
         &'a mut self,
         circ: &'a Circuit,
         inputs: &[Mac],
+        gid: GateId,
     ) -> Result<EncryptedGateConsumer<'a, std::slice::Iter<'a, Gate>>, EvaluatorError> {
         if inputs.len() != circ.inputs().len() {
             return Err(EvaluatorError::InputLength {
@@ -99,6 +103,7 @@ impl Evaluator {
             &mut self.buffer,
             circ.and_count(),
             circ.outputs(),
+            gid.0,
         ))
     }
 
@@ -108,12 +113,15 @@ impl Evaluator {
     ///
     /// * `circ` - The circuit to evaluate.
     /// * `inputs` - The input labels to the circuit.
+    /// * `gid` - The initial gate id.
     pub fn evaluate_batched<'a>(
         &'a mut self,
         circ: &'a Circuit,
         inputs: &[Mac],
+        gid: GateId,
     ) -> Result<EncryptedGateBatchConsumer<'a, std::slice::Iter<'a, Gate>>, EvaluatorError> {
-        self.evaluate(circ, inputs).map(EncryptedGateBatchConsumer)
+        self.evaluate(circ, inputs, gid)
+            .map(EncryptedGateBatchConsumer)
     }
 }
 
@@ -126,7 +134,7 @@ pub struct EncryptedGateConsumer<'a, I: Iterator> {
     /// Iterator over the gates.
     gates: I,
     /// Current gate id.
-    gid: usize,
+    gid: u128,
     /// Number of AND gates evaluated.
     counter: usize,
     /// Total number of AND gates in the circuit.
@@ -147,12 +155,18 @@ impl<'a, I> EncryptedGateConsumer<'a, I>
 where
     I: Iterator<Item = &'a Gate>,
 {
-    fn new(gates: I, labels: &'a mut [Block], and_count: usize, outputs: Range<usize>) -> Self {
+    fn new(
+        gates: I,
+        labels: &'a mut [Block],
+        and_count: usize,
+        outputs: Range<usize>,
+        gid: u128,
+    ) -> Self {
         Self {
             cipher: &(*FIXED_KEY_AES),
             gates,
             labels,
-            gid: 1,
+            gid,
             counter: 0,
             and_count,
             outputs,
@@ -280,7 +294,7 @@ pub fn evaluate_garbled_circuits(
 
             circs.into_par_iter().map(|(circ, inputs, garbled_circuit)| {
                 let mut ev = Evaluator::with_capacity(circ.feed_count());
-                let mut consumer = ev.evaluate(&circ, &inputs)?;
+                let mut consumer = ev.evaluate(&circ, &inputs, garbled_circuit.gid)?;
                 for gate in garbled_circuit.gates {
                     consumer.next(gate);
                 }
@@ -290,7 +304,7 @@ pub fn evaluate_garbled_circuits(
             let mut ev = Evaluator::default();
             let mut outputs = Vec::with_capacity(circs.len());
             for (circ, inputs, garbled_circuit) in circs {
-                let mut consumer = ev.evaluate(&circ, &inputs)?;
+                let mut consumer = ev.evaluate(&circ, &inputs, garbled_circuit.gid)?;
                 for gate in garbled_circuit.gates {
                     consumer.next(gate);
                 }

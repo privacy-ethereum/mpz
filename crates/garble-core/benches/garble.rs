@@ -14,7 +14,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     gb_group.bench_function("aes128", |b| {
         let mut gb = Garbler::default();
         b.iter(|| {
-            let mut gb_iter = gb.generate(&AES128, delta, &inputs).unwrap();
+            let (mut gb_iter, _) = gb.generate(&AES128, delta, &inputs).unwrap();
 
             let _: Vec<_> = gb_iter.by_ref().collect();
 
@@ -25,7 +25,7 @@ fn criterion_benchmark(c: &mut Criterion) {
     gb_group.bench_function("aes128_batched", |b| {
         let mut gb = Garbler::default();
         b.iter(|| {
-            let mut gb_iter = gb.generate_batched(&AES128, delta, &inputs).unwrap();
+            let (mut gb_iter, _) = gb.generate_batched(&AES128, delta, &inputs).unwrap();
 
             let _: Vec<_> = gb_iter.by_ref().collect();
 
@@ -39,7 +39,7 @@ fn criterion_benchmark(c: &mut Criterion) {
 
     ev_group.bench_function("aes128", |b| {
         let mut gb = Garbler::default();
-        let mut gb_iter = gb.generate(&AES128, delta, &inputs).unwrap();
+        let (mut gb_iter, gid) = gb.generate(&AES128, delta, &inputs).unwrap();
         let gates: Vec<_> = gb_iter.by_ref().collect();
 
         let choices: Vec<bool> = (0..256).map(|_| rng.random()).collect();
@@ -51,7 +51,7 @@ fn criterion_benchmark(c: &mut Criterion) {
 
         let mut ev = Evaluator::default();
         b.iter(|| {
-            let mut ev_consumer = ev.evaluate(&AES128, &inputs).unwrap();
+            let mut ev_consumer = ev.evaluate(&AES128, &inputs, gid.clone()).unwrap();
 
             for gate in &gates {
                 ev_consumer.next(*gate);

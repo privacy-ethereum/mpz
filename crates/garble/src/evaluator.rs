@@ -3,7 +3,7 @@ use std::sync::Arc;
 use mpz_circuits::Circuit;
 use mpz_common::Context;
 use mpz_garble_core::{
-    EncryptedGateBatch, Evaluator as EvaluatorCore, EvaluatorOutput, GarbledCircuit,
+    EncryptedGateBatch, Evaluator as EvaluatorCore, EvaluatorOutput, GarbledCircuit, GateId,
 };
 use mpz_memory_core::correlated::Mac;
 use serio::stream::IoStreamExt;
@@ -16,6 +16,12 @@ pub(crate) async fn receive_garbled_circuit(
     let gate_count = circ.and_count();
     let mut gates = Vec::with_capacity(gate_count);
 
+    let gid = if gate_count > 0 {
+        ctx.io_mut().expect_next().await?
+    } else {
+        GateId::default()
+    };
+
     while gates.len() < gate_count {
         let batch: EncryptedGateBatch = ctx.io_mut().expect_next().await?;
         gates.extend_from_slice(&batch.into_array());
@@ -24,7 +30,7 @@ pub(crate) async fn receive_garbled_circuit(
     // Trim off any batch padding.
     gates.truncate(gate_count);
 
-    Ok(GarbledCircuit { gates })
+    Ok(GarbledCircuit { gates, gid })
 }
 
 /// Evaluate a garbled circuit, streaming the encrypted gates from the evaluator
@@ -47,7 +53,16 @@ pub(crate) async fn evaluate(
     inputs: &[Mac],
 ) -> Result<EvaluatorOutput, EvaluatorError> {
     let mut ev = EvaluatorCore::default();
-    let mut ev_consumer = ev.evaluate_batched(&circ, inputs)?;
+    let io = ctx.io_mut();
+
+    // If there are AND gates in the circuit, receive the initial gate id.
+    let gid = if circ.and_count() > 0 {
+        io.expect_next().await?
+    } else {
+        GateId(1)
+    };
+
+    let mut ev_consumer = ev.evaluate_batched(&circ, inputs, gid)?;
     let io = ctx.io_mut();
 
     while ev_consumer.wants_gates() {

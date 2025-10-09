@@ -29,8 +29,12 @@ pub(crate) async fn generate(
     inputs: &[Key],
 ) -> Result<GarblerOutput, GarblerError> {
     let mut gb = GarblerCore::default();
-    let mut gb_iter = gb.generate_batched(&circ, delta, inputs)?;
+    let (mut gb_iter, gate_id) = gb.generate_batched(&circ, delta, inputs)?;
     let io = ctx.io_mut();
+
+    if gb_iter.has_gates() {
+        io.send(gate_id).await?;
+    }
 
     while let Some(batch) = gb_iter.by_ref().next() {
         io.feed(batch).await?;

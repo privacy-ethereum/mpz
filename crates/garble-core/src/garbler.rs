@@ -1,7 +1,8 @@
 use core::fmt;
+use rand::{Rng, rng};
 use std::ops::Range;
 
-use crate::{DEFAULT_BATCH_SIZE, EncryptedGateBatch, circuit::EncryptedGate};
+use crate::{DEFAULT_BATCH_SIZE, EncryptedGateBatch, GateId, circuit::EncryptedGate};
 use mpz_circuits::{Circuit, Gate};
 use mpz_core::{
     Block,
@@ -26,7 +27,7 @@ pub(crate) fn and_gate(
     x_0: &Block,
     y_0: &Block,
     delta: &Delta,
-    gid: usize,
+    gid: u128,
 ) -> (Block, EncryptedGate) {
     let delta = delta.as_block();
     let x_1 = x_0 ^ delta;
@@ -34,8 +35,8 @@ pub(crate) fn and_gate(
 
     let p_a = x_0.lsb();
     let p_b = y_0.lsb();
-    let j = Block::new((gid as u128).to_be_bytes());
-    let k = Block::new(((gid + 1) as u128).to_be_bytes());
+    let j = Block::new(gid.to_be_bytes());
+    let k = Block::new((gid + 1).to_be_bytes());
 
     let mut h = [*x_0, *y_0, x_1, y_1];
     cipher.tccr_many(&[j, k, j, k], &mut h);
@@ -70,7 +71,8 @@ pub struct Garbler {
 }
 
 impl Garbler {
-    /// Returns an iterator over the encrypted gates of a circuit.
+    /// Returns an iterator over the encrypted gates of a circuit and the
+    /// initial gate id.
     ///
     /// # Arguments
     ///
@@ -82,7 +84,7 @@ impl Garbler {
         circ: &'a Circuit,
         delta: Delta,
         inputs: &[Key],
-    ) -> Result<EncryptedGateIter<'a, std::slice::Iter<'a, Gate>>, GarblerError> {
+    ) -> Result<(EncryptedGateIter<'a, std::slice::Iter<'a, Gate>>, GateId), GarblerError> {
         if inputs.len() != circ.inputs().len() {
             return Err(GarblerError::InputLength {
                 expected: circ.inputs().len(),
@@ -97,12 +99,25 @@ impl Garbler {
 
         self.buffer[..inputs.len()].copy_from_slice(Key::as_blocks(inputs));
 
-        Ok(EncryptedGateIter::new(
-            delta,
-            circ.gates().iter(),
-            &mut self.buffer,
-            circ.and_count(),
-            circ.outputs(),
+        // Randomize the tweak for better multi-instance security.
+        // see https://eprint.iacr.org/2019/1168
+        let gid: u128 = if circ.and_count() > 0 {
+            rng().random()
+        } else {
+            // No need to randomize if there are no AND gates.
+            1
+        };
+
+        Ok((
+            EncryptedGateIter::new(
+                delta,
+                circ.gates().iter(),
+                &mut self.buffer,
+                gid,
+                circ.and_count(),
+                circ.outputs(),
+            ),
+            GateId(gid),
         ))
     }
 
@@ -118,9 +133,15 @@ impl Garbler {
         circ: &'a Circuit,
         delta: Delta,
         inputs: &[Key],
-    ) -> Result<EncryptedGateBatchIter<'a, std::slice::Iter<'a, Gate>>, GarblerError> {
+    ) -> Result<
+        (
+            EncryptedGateBatchIter<'a, std::slice::Iter<'a, Gate>>,
+            GateId,
+        ),
+        GarblerError,
+    > {
         self.generate(circ, delta, inputs)
-            .map(EncryptedGateBatchIter)
+            .map(|(iter, gate_id)| (EncryptedGateBatchIter(iter), gate_id))
     }
 }
 
@@ -135,7 +156,7 @@ pub struct EncryptedGateIter<'a, I> {
     /// Iterator over the gates.
     gates: I,
     /// Current gate id.
-    gid: usize,
+    gid: u128,
     /// Number of AND gates generated.
     counter: usize,
     /// Number of AND gates in the circuit.
@@ -160,6 +181,7 @@ where
         delta: Delta,
         gates: I,
         labels: &'a mut [Block],
+        gid: u128,
         and_count: usize,
         outputs: Range<usize>,
     ) -> Self {
@@ -168,7 +190,7 @@ where
             delta,
             gates,
             labels,
-            gid: 1,
+            gid,
             counter: 0,
             and_count,
             outputs,

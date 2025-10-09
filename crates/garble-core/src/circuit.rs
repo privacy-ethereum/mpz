@@ -3,13 +3,15 @@ use std::ops::Index;
 use mpz_core::Block;
 use serde::{Deserialize, Serialize};
 
-use crate::DEFAULT_BATCH_SIZE;
+use crate::{DEFAULT_BATCH_SIZE, GateId};
 
 /// A garbled circuit.
 #[derive(Debug, Clone)]
 pub struct GarbledCircuit {
     /// Encrypted gates.
     pub gates: Vec<EncryptedGate>,
+    /// Initial gate id.
+    pub gid: GateId,
 }
 
 /// Encrypted gate truth table

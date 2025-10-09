@@ -20,6 +20,7 @@ pub use garbler::{
     EncryptedGateBatchIter, EncryptedGateIter, Garbler, GarblerError, GarblerOutput,
 };
 pub use mpz_memory_core::correlated::{Delta, Key, Mac};
+use serde::{Deserialize, Serialize};
 pub use view::FlushView;
 
 const KB: usize = 1024;
@@ -36,6 +37,16 @@ const MAX_BATCH_SIZE: usize = 4 * KB;
 /// smaller than a batch we will be wasting some bandwidth sending empty bytes.
 /// This puts an upper limit on that waste.
 pub(crate) const DEFAULT_BATCH_SIZE: usize = MAX_BATCH_SIZE / BYTES_PER_GATE;
+
+/// The initial gate id.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GateId(pub u128);
+
+impl Default for GateId {
+    fn default() -> Self {
+        GateId(1)
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -65,7 +76,7 @@ mod tests {
         let x_1 = x_0 ^ delta.as_block();
         let y_0 = Block::random(&mut rng);
         let y_1 = y_0 ^ delta.as_block();
-        let gid: usize = 1;
+        let gid: u128 = 1;
 
         let (z_0, encrypted_gate) = gb::and_gate(cipher, &x_0, &y_0, &delta, gid);
         let z_1 = z_0 ^ delta.as_block();
@@ -104,8 +115,8 @@ mod tests {
         let mut gb = Garbler::default();
         let mut ev = Evaluator::default();
 
-        let mut gb_iter = gb.generate_batched(&AES128, delta, &input_keys).unwrap();
-        let mut ev_consumer = ev.evaluate_batched(&AES128, &input_macs).unwrap();
+        let (mut gb_iter, gid) = gb.generate_batched(&AES128, delta, &input_keys).unwrap();
+        let mut ev_consumer = ev.evaluate_batched(&AES128, &input_macs, gid).unwrap();
 
         for batch in gb_iter.by_ref() {
             ev_consumer.next(batch);
@@ -162,14 +173,14 @@ mod tests {
             .collect::<Vec<_>>();
 
         let mut gb = Garbler::default();
-        let mut gb_iter = gb.generate_batched(&AES128, delta, &input_keys).unwrap();
+        let (mut gb_iter, gid) = gb.generate_batched(&AES128, delta, &input_keys).unwrap();
 
         let mut gates = Vec::new();
         for batch in gb_iter.by_ref() {
             gates.extend(batch.into_array());
         }
 
-        let garbled_circuit = GarbledCircuit { gates };
+        let garbled_circuit = GarbledCircuit { gates, gid };
 
         let GarblerOutput {
             outputs: output_keys,
@@ -231,8 +242,8 @@ mod tests {
         let mut gb = Garbler::default();
         let mut ev = Evaluator::default();
 
-        let mut gb_iter = gb.generate_batched(&circ, delta, &input_keys).unwrap();
-        let mut ev_consumer = ev.evaluate_batched(&circ, &input_macs).unwrap();
+        let (mut gb_iter, gid) = gb.generate_batched(&circ, delta, &input_keys).unwrap();
+        let mut ev_consumer = ev.evaluate_batched(&circ, &input_macs, gid).unwrap();
 
         for batch in gb_iter.by_ref() {
             ev_consumer.next(batch);
