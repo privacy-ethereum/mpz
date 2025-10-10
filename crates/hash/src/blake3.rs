@@ -531,7 +531,7 @@ impl fmt::Display for Blake3Error {
         }
 
         if let Some(source) = &self.source {
-            write!(f, " caused by: {}", source)?;
+            write!(f, " caused by: {source}")?;
         }
 
         Ok(())
@@ -567,7 +567,7 @@ mod test {
     #[test]
     fn test_serialize_output() {
         let output: [u8; 32] = evaluate!(SERIALIZE_OUTPUT, IV).unwrap();
-        let expected: Vec<_> = IV.iter().map(|word| word.to_le_bytes()).flatten().collect();
+        let expected: Vec<_> = IV.iter().flat_map(|word| word.to_le_bytes()).collect();
         assert_eq!(&output, expected.as_slice());
     }
 

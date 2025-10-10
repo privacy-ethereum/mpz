@@ -26,7 +26,7 @@ pub struct Verifier<OT> {
 }
 
 impl<OT> Verifier<OT> {
-    /// Creates a new prover.
+    /// Creates a new verifier.
     pub fn new(config: VerifierConfig, delta: Delta, ot: OT) -> Self {
         Self {
             config,
@@ -35,6 +35,11 @@ impl<OT> Verifier<OT> {
             callstack: CallStack::default(),
             transcript: Hasher::default(),
         }
+    }
+
+    /// Returns the global MAC correlation, `delta`.
+    pub fn delta(&self) -> &Delta {
+        self.store.delta()
     }
 
     /// Returns the keys.
