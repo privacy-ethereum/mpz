@@ -23,9 +23,7 @@ members = [
     "crates/zk-core",
     "crates/zk",
 ]
-exclude = [
-    "crates/lpn-estimator",
-]
+exclude = ["crates/lpn-estimator"]
 resolver = "2"
 
 [profile.release]
@@ -73,17 +71,17 @@ rand_core_06 = { package = "rand_core", version = "0.6" }
 rand_08 = { package = "rand", version = "0.8" }
 
 # crypto
-cipher = "0.5.0-pre.8"
+cipher = "0.5.0-rc.1"
 sha2 = "0.10"
 blake3 = "1.8.2"
-aes = "0.9.0-pre.3"
+aes = "0.9.0-rc.1"
 ctr = "0.9"
 digest = "0.10"
 curve25519-dalek = "4.1"
-elliptic-curve = "0.14.0-rc.1"
+elliptic-curve = "0.14.0-rc.15"
 merlin = "3"
 p256 = "0.10"
-ghash_rc = { package = "ghash", version = "0.6.0-rc.0" }
+ghash_rc = { package = "ghash", version = "0.6.0-rc.2" }
 ark-ff = "0.4"
 ark-secp256r1 = "0.4"
 num-bigint = "0.4"
