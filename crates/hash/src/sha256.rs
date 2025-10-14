@@ -237,9 +237,8 @@ pub struct Sha256Error(#[from] VmError);
 mod tests {
     use mpz_circuits::evaluate;
     use mpz_common::context::test_st_context;
-    use mpz_garble::protocol::semihonest::{Evaluator, Garbler};
-    use mpz_ot::ideal::cot::ideal_cot;
-    use mpz_vm_core::{memory::correlated::Delta, prelude::*};
+    use mpz_ideal_vm::IdealVm;
+    use mpz_vm_core::prelude::*;
     use rand::{Rng, SeedableRng, rngs::StdRng};
     use sha2::Digest;
 
@@ -268,18 +267,14 @@ mod tests {
             .map(|len| (0..len).map(|_| rng.random::<u8>()).collect::<Vec<_>>())
             .collect();
 
-        let delta: Delta = rng.random();
-        let (cot_send, cot_recv) = ideal_cot(delta.into_inner());
-
-        let gb = Garbler::new(cot_send, rng.random(), delta);
-        let ev = Evaluator::new(cot_recv);
+        let (vm_0, vm_1) = (IdealVm::default(), IdealVm::default());
 
         let (mut ctx_a, mut ctx_b) = test_st_context(8);
 
         let (a, b) = tokio::join!(
             async {
                 let mut hasher = Sha256::new();
-                let mut vm = gb;
+                let mut vm = vm_0;
 
                 for data in &data {
                     let data_ref = vm.alloc_vec::<U8>(data.len()).unwrap();
@@ -299,7 +294,7 @@ mod tests {
             },
             async {
                 let mut hasher = Sha256::new();
-                let mut vm = ev;
+                let mut vm = vm_1;
 
                 for data in &data {
                     let data_ref = vm.alloc_vec::<U8>(data.len()).unwrap();
