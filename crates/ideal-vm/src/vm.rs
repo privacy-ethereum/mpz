@@ -165,7 +165,7 @@ impl Execute for IdealVm {
 
 #[cfg(test)]
 mod tests {
-    use mpz_circuits::circuits::AES128;
+    use mpz_circuits_data::AES128;
     use mpz_common::context::test_st_context;
     use mpz_memory_core::{Array, MemoryExt, ViewExt, binary::U8};
     use mpz_vm_core::{Call, CallableExt, Execute};

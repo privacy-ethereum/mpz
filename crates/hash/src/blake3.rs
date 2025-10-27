@@ -5,7 +5,8 @@ use std::{
     sync::{Arc, LazyLock},
 };
 
-use mpz_circuits::{Circuit, CircuitBuilder, circuits::BLAKE3_COMPRESS};
+use mpz_circuits::{Circuit, CircuitBuilder};
+use mpz_circuits_data::BLAKE3_COMPRESS;
 use mpz_core::bitvec::BitVec;
 use mpz_vm_core::{
     Call, CallableExt, Vm, VmError,

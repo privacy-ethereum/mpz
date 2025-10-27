@@ -44,7 +44,8 @@ mod tests {
         cipher::{BlockCipherEncrypt, KeyInit},
     };
     use itybity::{FromBitIterator, IntoBitIterator, ToBits};
-    use mpz_circuits::circuits::{AES128, xor};
+    use mpz_circuits::circuits::xor;
+    use mpz_circuits_data::AES128;
     use mpz_core::{Block, aes::FIXED_KEY_AES};
     use rand::{Rng, SeedableRng, rngs::StdRng};
     use rand_chacha::ChaCha12Rng;

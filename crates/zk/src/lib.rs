@@ -9,7 +9,7 @@ pub use verifier::Verifier;
 
 #[cfg(test)]
 mod tests {
-    use mpz_circuits::circuits::AES128;
+    use mpz_circuits_data::AES128;
     use mpz_common::context::test_st_context;
     use mpz_ot::ideal::rcot::{IdealRCOTReceiver, IdealRCOTSender, ideal_rcot};
     use mpz_vm_core::{

@@ -203,7 +203,7 @@ mod tests {
 
         let circ = Circuit::parse("circuits/bristol/aes_128_reverse.txt").unwrap();
 
-        let key = [0u8; 16];
+        let key = [42u8; 16];
         let msg = [69u8; 16];
 
         let ciphertext = <[u8; 16]>::from_lsb0_iter(
@@ -217,6 +217,33 @@ mod tests {
         let expected: [u8; 16] = expected.into();
 
         assert_eq!(ciphertext, expected);
+    }
+
+    #[test]
+    #[cfg(feature = "aes")]
+    #[ignore = "expensive"]
+    fn test_parse_aes_key_schedule() {
+        let circ = Circuit::parse("circuits/bristol/aes_128_key_schedule.txt").unwrap();
+        let (key, expected_ks, _, _) = aes_vectors();
+
+        let ks = <[u8; 176]>::from_lsb0_iter(circ.evaluate(key.iter_lsb0()).unwrap());
+
+        assert_eq!(expected_ks, ks);
+    }
+
+    #[test]
+    #[cfg(feature = "aes")]
+    #[ignore = "expensive"]
+    fn test_parse_aes_post_key_schedule() {
+        let circ = Circuit::parse("circuits/bristol/aes_128_post_key_schedule.txt").unwrap();
+        let (_, ks, msg, expected_out) = aes_vectors();
+
+        let out = <[u8; 16]>::from_lsb0_iter(
+            circ.evaluate(ks.iter_lsb0().chain(msg.iter_lsb0()))
+                .unwrap(),
+        );
+
+        assert_eq!(expected_out, out);
     }
 
     #[test]
@@ -243,5 +270,44 @@ mod tests {
         compress256(&mut expected, &[msg.into()]);
 
         assert_eq!(output, expected);
+    }
+
+    // Test vectors from https://csrc.nist.gov/files/pubs/fips/197/final/docs/fips-197.pdf
+    // Returns a tuple (key, key schedule, input, output).
+    fn aes_vectors() -> ([u8; 16], [u8; 176], [u8; 16], [u8; 16]) {
+        use zerocopy::IntoBytes;
+
+        #[rustfmt::skip]
+        const AES128_KEY_U32: [u32; 4] = [
+            0x2b7e1516, 0x28aed2a6, 0xabf71588, 0x09cf4f3c,
+        ];
+        #[rustfmt::skip]
+        const AES128_ROUND_KEYS_U32: [u32; 44] = [
+            0x2b7e1516, 0x28aed2a6, 0xabf71588, 0x09cf4f3c,
+            0xa0fafe17, 0x88542cb1, 0x23a33939, 0x2a6c7605,
+            0xf2c295f2, 0x7a96b943, 0x5935807a, 0x7359f67f,
+            0x3d80477d, 0x4716fe3e, 0x1e237e44, 0x6d7a883b,
+            0xef44a541, 0xa8525b7f, 0xb671253b, 0xdb0bad00,
+            0xd4d1c6f8, 0x7c839d87, 0xcaf2b8bc, 0x11f915bc,
+            0x6d88a37a, 0x110b3efd, 0xdbf98641, 0xca0093fd,
+            0x4e54f70e, 0x5f5fc9f3, 0x84a64fb2, 0x4ea6dc4f,
+            0xead27321, 0xb58dbad2, 0x312bf560, 0x7f8d292f,
+            0xac7766f3, 0x19fadc21, 0x28d12941, 0x575c006e,
+            0xd014f9a8, 0xc9ee2589, 0xe13f0cc8, 0xb6630ca6,
+        ];
+        const INPUT: u128 = 0x32_43_f6_a8_88_5a_30_8d_31_31_98_a2_e0_37_07_34;
+        const OUTPUT: u128 = 0x39_25_84_1d_02_dc_09_fb_dc_11_85_97_19_6a_0b_32;
+
+        let key: [u32; 4] = AES128_KEY_U32.map(u32::to_be);
+        let ks: [u32; 44] = AES128_ROUND_KEYS_U32.map(u32::to_be);
+        let inp = INPUT.to_be();
+        let out = OUTPUT.to_be();
+
+        (
+            key.as_bytes().try_into().unwrap(),
+            ks.as_bytes().try_into().unwrap(),
+            inp.as_bytes().try_into().unwrap(),
+            out.as_bytes().try_into().unwrap(),
+        )
     }
 }

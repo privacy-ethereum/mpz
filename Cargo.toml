@@ -4,6 +4,7 @@ members = [
     "crates/common",
     "crates/fields",
     "crates/circuits",
+    "crates/circuits/data",
     "crates/cointoss",
     "crates/cointoss-core",
     "crates/hash",
@@ -44,6 +45,7 @@ mpz-core = { path = "crates/core" }
 mpz-common = { path = "crates/common" }
 mpz-fields = { path = "crates/fields" }
 mpz-circuits = { path = "crates/circuits" }
+mpz-circuits-data = { path = "crates/circuits/data" }
 mpz-cointoss = { path = "crates/cointoss" }
 mpz-cointoss-core = { path = "crates/cointoss-core" }
 mpz-ot = { path = "crates/ot" }

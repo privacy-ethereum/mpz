@@ -20,8 +20,8 @@ rayon = [
 ]
 
 [dependencies]
-mpz-core.workspace = true
-mpz-circuits.workspace = true
+mpz-core = { workspace = true }
+mpz-circuits = { workspace = true }
 mpz-ot-core = { workspace = true }
 mpz-common = { workspace = true, features = ["future"] }
 mpz-memory-core = { workspace = true }
@@ -48,6 +48,7 @@ cfg-if = { workspace = true }
 tokio = { workspace = true, features = ["sync"] }
 
 [dev-dependencies]
+mpz-circuits-data = { workspace = true }
 mpz-ot-core = { workspace = true, features = ["test-utils"] }
 
 rstest.workspace = true

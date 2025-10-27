@@ -37,6 +37,7 @@ futures = { workspace = true }
 tokio = { workspace = true, features = ["sync"] }
 
 [dev-dependencies]
+mpz-circuits-data = { workspace = true }
 mpz-common = { workspace = true, features = ["test-utils", "ideal"] }
 mpz-ot = { workspace = true, features = ["ideal"] }
 rstest = { workspace = true }

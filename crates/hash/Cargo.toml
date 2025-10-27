@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 mpz-core = { workspace = true }
 mpz-circuits = { workspace = true }
+mpz-circuits-data = { workspace = true }
 mpz-vm-core = { workspace = true }
 
 blake3 = { workspace = true }

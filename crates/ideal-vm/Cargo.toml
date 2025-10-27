@@ -23,7 +23,7 @@ serio = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
-mpz-circuits = { workspace = true }
+mpz-circuits-data = { workspace = true }
 mpz-common = { workspace = true, features = ["test-utils"] }
 rstest = { workspace = true }
 tokio = { workspace = true, features = [

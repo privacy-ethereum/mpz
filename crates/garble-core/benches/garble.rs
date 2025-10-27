@@ -1,5 +1,5 @@
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
-use mpz_circuits::circuits::AES128;
+use mpz_circuits_data::AES128;
 use mpz_garble_core::{Evaluator, Garbler};
 use mpz_memory_core::correlated::Delta;
 use rand::{Rng, SeedableRng, rngs::StdRng};
