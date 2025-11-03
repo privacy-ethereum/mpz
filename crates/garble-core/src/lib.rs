@@ -14,12 +14,13 @@ pub(crate) mod view;
 pub use circuit::{EncryptedGate, EncryptedGateBatch, GarbledCircuit};
 pub use evaluator::{
     EncryptedGateBatchConsumer, EncryptedGateConsumer, Evaluator, EvaluatorError, EvaluatorOutput,
-    evaluate_garbled_circuits,
+    EvaluatorWorker, evaluate_garbled_circuits,
 };
 pub use garbler::{
-    EncryptedGateBatchIter, EncryptedGateIter, Garbler, GarblerError, GarblerOutput,
+    EncryptedGateBatchIter, EncryptedGateIter, Garbler, GarblerError, GarblerOutput, GarblerWorker,
 };
 pub use mpz_memory_core::correlated::{Delta, Key, Mac};
+use serde::{Deserialize, Serialize};
 pub use view::FlushView;
 
 const KB: usize = 1024;
@@ -36,6 +37,15 @@ const MAX_BATCH_SIZE: usize = 4 * KB;
 /// smaller than a batch we will be wasting some bandwidth sending empty bytes.
 /// This puts an upper limit on that waste.
 pub(crate) const DEFAULT_BATCH_SIZE: usize = MAX_BATCH_SIZE / BYTES_PER_GATE;
+
+/// Setup message passed from the garbler to the evaluator.
+#[derive(Serialize, Deserialize)]
+pub struct SetupMsg {
+    /// Initial AND gate id.
+    initial_gid: u128,
+    /// Key for the cipher used to encrypt the gates.
+    key: [u8; 16],
+}
 
 #[cfg(test)]
 mod tests {
@@ -65,7 +75,7 @@ mod tests {
         let x_1 = x_0 ^ delta.as_block();
         let y_0 = Block::random(&mut rng);
         let y_1 = y_0 ^ delta.as_block();
-        let gid: usize = 1;
+        let gid: u128 = 1;
 
         let (z_0, encrypted_gate) = gb::and_gate(cipher, &x_0, &y_0, &delta, gid);
         let z_1 = z_0 ^ delta.as_block();
@@ -101,10 +111,12 @@ mod tests {
             .map(|(key, bit)| key.auth(bit, &delta))
             .collect::<Vec<_>>();
 
-        let mut gb = Garbler::default();
+        let mut gb = Garbler::new(delta);
+        let setup = gb.setup().unwrap();
         let mut ev = Evaluator::default();
+        ev.setup(setup).unwrap();
 
-        let mut gb_iter = gb.generate_batched(&AES128, delta, &input_keys).unwrap();
+        let mut gb_iter = gb.generate_batched(&AES128, &input_keys).unwrap();
         let mut ev_consumer = ev.evaluate_batched(&AES128, &input_macs).unwrap();
 
         for batch in gb_iter.by_ref() {
@@ -161,8 +173,11 @@ mod tests {
             .map(|(key, bit)| key.auth(bit, &delta))
             .collect::<Vec<_>>();
 
-        let mut gb = Garbler::default();
-        let mut gb_iter = gb.generate_batched(&AES128, delta, &input_keys).unwrap();
+        let mut gb = Garbler::new(delta);
+        let setup = gb.setup().unwrap();
+        let mut ev = Evaluator::default();
+        ev.setup(setup).unwrap();
+        let mut gb_iter = gb.generate_batched(&AES128, &input_keys).unwrap();
 
         let mut gates = Vec::new();
         for batch in gb_iter.by_ref() {
@@ -175,10 +190,16 @@ mod tests {
             outputs: output_keys,
         } = gb_iter.finish().unwrap();
 
-        let outputs = evaluate_garbled_circuits(vec![
-            (AES128.clone(), input_macs.clone(), garbled_circuit.clone()),
-            (AES128.clone(), input_macs.clone(), garbled_circuit.clone()),
-        ])
+        let outputs = evaluate_garbled_circuits(
+            vec![
+                (AES128.clone(), input_macs.clone(), garbled_circuit.clone()),
+                (AES128.clone(), input_macs.clone(), garbled_circuit.clone()),
+            ],
+            vec![
+                ev.alloc_worker(AES128.and_count()).unwrap(),
+                ev.alloc_worker(AES128.and_count()).unwrap(),
+            ],
+        )
         .unwrap();
 
         for output in outputs {
@@ -228,10 +249,12 @@ mod tests {
             .map(|(key, bit)| key.auth(bit, &delta))
             .collect::<Vec<_>>();
 
-        let mut gb = Garbler::default();
+        let mut gb = Garbler::new(delta);
+        let setup = gb.setup().unwrap();
         let mut ev = Evaluator::default();
+        ev.setup(setup).unwrap();
 
-        let mut gb_iter = gb.generate_batched(&circ, delta, &input_keys).unwrap();
+        let mut gb_iter = gb.generate_batched(&circ, &input_keys).unwrap();
         let mut ev_consumer = ev.evaluate_batched(&circ, &input_macs).unwrap();
 
         for batch in gb_iter.by_ref() {

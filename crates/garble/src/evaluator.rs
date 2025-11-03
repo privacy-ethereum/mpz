@@ -2,9 +2,7 @@ use std::sync::Arc;
 
 use mpz_circuits::Circuit;
 use mpz_common::Context;
-use mpz_garble_core::{
-    EncryptedGateBatch, Evaluator as EvaluatorCore, EvaluatorOutput, GarbledCircuit,
-};
+use mpz_garble_core::{EncryptedGateBatch, EvaluatorOutput, EvaluatorWorker, GarbledCircuit};
 use mpz_memory_core::correlated::Mac;
 use serio::stream::IoStreamExt;
 
@@ -40,14 +38,15 @@ pub(crate) async fn receive_garbled_circuit(
 /// * `ctx` - The context to use.
 /// * `circ` - The circuit to evaluate.
 /// * `inputs` - The inputs of the circuit.
+/// * `worker` - The worker to use.
 #[tracing::instrument(fields(thread = %ctx.id()), skip_all)]
 pub(crate) async fn evaluate(
     ctx: &mut Context,
     circ: Arc<Circuit>,
     inputs: &[Mac],
+    worker: EvaluatorWorker,
 ) -> Result<EvaluatorOutput, EvaluatorError> {
-    let mut ev = EvaluatorCore::default();
-    let mut ev_consumer = ev.evaluate_batched(&circ, inputs)?;
+    let mut ev_consumer = worker.evaluate_batched(&circ, inputs)?;
     let io = ctx.io_mut();
 
     while ev_consumer.wants_gates() {
