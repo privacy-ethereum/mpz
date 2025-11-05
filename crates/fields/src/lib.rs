@@ -26,15 +26,11 @@ pub trait Field:
     + Mul<Output = Self>
     + Neg<Output = Self>
     + Copy
-    + Clone
     + Debug
     + 'static
     + Send
     + Sync
     + UniformRand
-    + PartialOrd
-    + Ord
-    + PartialEq
     + Eq
     + FromBitIterator
     + GetBit<Lsb0>
