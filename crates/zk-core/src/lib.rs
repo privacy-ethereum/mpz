@@ -15,7 +15,7 @@ pub use verifier::{Verifier, VerifierError};
 mod tests {
     use aes::cipher::{BlockCipherEncrypt, KeyInit};
     use blake3::Hasher;
-    use mpz_circuits::circuits::AES128;
+    use mpz_circuits_data::AES128;
     use mpz_core::bitvec::BitVec;
     use mpz_memory_core::{
         Array, FromRaw, MemoryExt, ToRaw, ViewExt,

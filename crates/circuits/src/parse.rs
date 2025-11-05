@@ -200,11 +200,13 @@ mod tests {
             Aes128,
             cipher::{BlockCipherEncrypt, KeyInit},
         };
+        use rand::{Rng, SeedableRng, rngs::StdRng};
+        let mut rng = StdRng::seed_from_u64(0);
+
+        let key: [u8; 16] = rng.random();
+        let msg: [u8; 16] = rng.random();
 
         let circ = Circuit::parse("circuits/bristol/aes_128_reverse.txt").unwrap();
-
-        let key = [42u8; 16];
-        let msg = [69u8; 16];
 
         let ciphertext = <[u8; 16]>::from_lsb0_iter(
             circ.evaluate(key.iter_lsb0().chain(msg.iter_lsb0()))

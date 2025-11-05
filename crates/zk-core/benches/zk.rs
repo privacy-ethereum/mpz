@@ -1,6 +1,6 @@
 use blake3::Hasher;
 use criterion::{Criterion, Throughput, black_box, criterion_group, criterion_main};
-use mpz_circuits::circuits::AES128;
+use mpz_circuits_data::AES128;
 use mpz_memory_core::correlated::{Delta, Key, Mac};
 use mpz_ot_core::{
     ideal::rcot::IdealRCOT,
