@@ -1,47 +1,8 @@
 //! Pre-built circuits for MPC.
-
-#[cfg(feature = "blake3")]
-pub mod blake3;
-
+#![allow(unused_imports)]
+use mpz_circuits_core::Circuit;
 use once_cell::sync::Lazy;
 use std::sync::Arc;
-
-use crate::{Circuit, CircuitBuilder};
-
-/// Returns a wrapping adder circuit for `u8`.
-///
-/// `fn(u8, u8) -> u8`
-pub fn adder_u8() -> Circuit {
-    let mut builder = CircuitBuilder::new();
-
-    let a: [_; 8] = std::array::from_fn(|_| builder.add_input());
-    let b: [_; 8] = std::array::from_fn(|_| builder.add_input());
-
-    let sum = crate::ops::wrapping_add(&mut builder, &a, &b);
-
-    for node in sum {
-        builder.add_output(node);
-    }
-
-    builder.build().unwrap()
-}
-
-/// Returns a circuit for XORing two arguments of the same size.
-///
-/// `fn(T, T) -> T`
-pub fn xor(size: usize) -> Circuit {
-    let mut builder = CircuitBuilder::new();
-
-    let a = (0..size).map(|_| builder.add_input()).collect::<Vec<_>>();
-    let b = (0..size).map(|_| builder.add_input()).collect::<Vec<_>>();
-
-    for (a, b) in a.into_iter().zip(b) {
-        let out = builder.add_xor_gate(a, b);
-        builder.add_output(out);
-    }
-
-    builder.build().unwrap()
-}
 
 /// AES-128 circuit.
 ///
@@ -50,7 +11,7 @@ pub fn xor(size: usize) -> Circuit {
 /// `fn(key: [u8; 16], msg: [u8; 16]) -> [u8; 16]`
 #[cfg(feature = "aes")]
 pub static AES128: Lazy<Arc<Circuit>> = Lazy::new(|| {
-    let bytes = include_bytes!("../circuits/bin/aes_128.bin");
+    let bytes = include_bytes!("../data/aes_128.bin");
     Arc::new(bincode::deserialize(bytes).unwrap())
 });
 
@@ -61,7 +22,7 @@ pub static AES128: Lazy<Arc<Circuit>> = Lazy::new(|| {
 /// `fn(msg: [u8; 64], state: [u32; 8]) -> [u32; 8]`
 #[cfg(feature = "sha2")]
 pub static SHA256_COMPRESS: Lazy<Arc<Circuit>> = Lazy::new(|| {
-    let bytes = include_bytes!("../circuits/bin/sha256.bin");
+    let bytes = include_bytes!("../data/sha256.bin");
     Arc::new(bincode::deserialize(bytes).unwrap())
 });
 
@@ -72,29 +33,14 @@ pub static SHA256_COMPRESS: Lazy<Arc<Circuit>> = Lazy::new(|| {
 /// `fn(msg: [u32; 16], state: [u32; 16]) -> [u32; 16]`
 #[cfg(feature = "blake3")]
 pub static BLAKE3_COMPRESS: Lazy<Arc<Circuit>> = Lazy::new(|| {
-    let bytes = include_bytes!("../circuits/bin/blake3.bin");
+    let bytes = include_bytes!("../data/blake3.bin");
     Arc::new(bincode::deserialize(bytes).unwrap())
 });
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::evaluate;
-
-    static SHA2_INITIAL_STATE: [u32; 8] = [
-        0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab,
-        0x5be0cd19,
-    ];
-
-    #[test]
-    fn test_xor() {
-        let a = [42u8; 16];
-        let b = [69u8; 16];
-        let xor = xor(128);
-        let output: [u8; 16] = evaluate!(xor, a, b).unwrap();
-        let expected = std::array::from_fn(|i| a[i] ^ b[i]);
-        assert_eq!(output, expected);
-    }
+    use mpz_circuits_core::evaluate;
 
     #[test]
     #[cfg(feature = "aes")]
@@ -123,6 +69,11 @@ mod tests {
     #[test]
     #[cfg(feature = "sha2")]
     fn test_sha256_compress() {
+        static SHA2_INITIAL_STATE: [u32; 8] = [
+            0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab,
+            0x5be0cd19,
+        ];
+
         fn sha256_compress(msg: [u8; 64], state: [u32; 8]) -> [u32; 8] {
             let mut state = state;
             sha2::compress256(&mut state, &[msg.into()]);
@@ -133,5 +84,23 @@ mod tests {
         let output: [u32; 8] = evaluate!(SHA256_COMPRESS, msg, SHA2_INITIAL_STATE).unwrap();
         let expected = sha256_compress(msg, SHA2_INITIAL_STATE);
         assert_eq!(output, expected);
+    }
+
+    #[test]
+    #[cfg(feature = "blake3")]
+    fn test_blake3() {
+        let iv = [1u32; 16];
+        let msg = [1u32; 16];
+        // Output obtained from `test_blake3_compress`
+        // in crates/circuits-core/src/circuits/blake3.rs
+        let expected_output: [u32; 16] = [
+            3007729955, 3007729955, 3007729955, 3007729955, 34758502, 34758502, 34758502, 34758502,
+            4028310545, 4028310545, 4028310545, 4028310545, 2799904522, 2799904522, 2799904522,
+            2799904522,
+        ];
+
+        let output: [u32; 16] = evaluate!(BLAKE3_COMPRESS, msg, iv).unwrap();
+
+        assert_eq!(output, expected_output);
     }
 }

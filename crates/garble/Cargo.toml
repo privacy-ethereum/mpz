@@ -15,32 +15,33 @@ rayon = ["mpz-garble-core/rayon", "mpz-ot/rayon", "mpz-core/rayon"]
 mock = ["mpz-ot/ideal"]
 
 [dependencies]
-mpz-circuits.workspace = true
+mpz-circuits = { workspace = true }
 mpz-common = { workspace = true, features = ["test-utils", "executor"] }
+mpz-core = { workspace = true }
+mpz-garble-core = { workspace = true }
 mpz-memory-core = { workspace = true }
-mpz-ot.workspace = true
-mpz-garble-core.workspace = true
-mpz-core.workspace = true
+mpz-ot = { workspace = true }
 mpz-vm-core = { workspace = true }
-serio.workspace = true
+serio = { workspace = true }
 
-async-trait.workspace = true
-rangeset = { workspace = true, features = ["serde"] }
-rand.workspace = true
-thiserror.workspace = true
-derive_builder.workspace = true
-tracing.workspace = true
-opaque-debug.workspace = true
-serde = { workspace = true, features = ["derive"] }
-hashbrown = { workspace = true }
+async-trait = { workspace = true }
+derive_builder = { workspace = true }
 futures = { workspace = true }
+hashbrown = { workspace = true }
+opaque-debug = { workspace = true }
+rand = { workspace = true }
+rangeset = { workspace = true, features = ["serde"] }
+serde = { workspace = true, features = ["derive"] }
+thiserror = { workspace = true }
 tokio = { workspace = true, features = ["sync"] }
+tracing = { workspace = true }
 
 [dev-dependencies]
+criterion = { workspace = true, features = ["async_tokio"] }
+mpz-circuits = { workspace = true, features = ["aes"] }
 mpz-common = { workspace = true, features = ["test-utils", "ideal"] }
 mpz-ot = { workspace = true, features = ["ideal"] }
 rstest = { workspace = true }
-criterion = { workspace = true, features = ["async_tokio"] }
 tokio = { workspace = true, features = [
     "net",
     "macros",
