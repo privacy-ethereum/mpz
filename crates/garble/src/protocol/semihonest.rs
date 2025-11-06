@@ -32,7 +32,7 @@ fn take_preprocess_calls(call_stack: &mut Vec<(Call, Slice)>) -> Vec<(Call, Slic
 
 #[cfg(test)]
 mod tests {
-    use mpz_circuits::circuits::AES128;
+    use mpz_circuits::AES128;
     use mpz_common::{Flush, context::test_st_context};
     use mpz_core::Block;
     use mpz_memory_core::{

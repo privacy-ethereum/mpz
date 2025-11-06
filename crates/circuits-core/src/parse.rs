@@ -185,7 +185,7 @@ mod tests {
 
     #[test]
     fn test_parse_adder_64() {
-        let circ = Circuit::parse("circuits/bristol/adder64_reverse.txt").unwrap();
+        let circ = Circuit::parse("bristol/adder64_reverse.txt").unwrap();
         let (a, b) = (59u64, 101312320u64);
         let output =
             u64::from_lsb0_iter(circ.evaluate(a.iter_lsb0().chain(b.iter_lsb0())).unwrap());
@@ -193,7 +193,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "aes")]
     #[ignore = "expensive"]
     fn test_parse_aes() {
         use aes::{
@@ -201,10 +200,13 @@ mod tests {
             cipher::{BlockCipherEncrypt, KeyInit},
         };
 
-        let circ = Circuit::parse("circuits/bristol/aes_128_reverse.txt").unwrap();
+        use rand::{Rng, SeedableRng, rngs::StdRng};
+        let mut rng = StdRng::seed_from_u64(0);
 
-        let key = [0u8; 16];
-        let msg = [69u8; 16];
+        let key: [u8; 16] = rng.random();
+        let msg: [u8; 16] = rng.random();
+
+        let circ = Circuit::parse("bristol/aes_128_reverse.txt").unwrap();
 
         let ciphertext = <[u8; 16]>::from_lsb0_iter(
             circ.evaluate(key.iter_lsb0().chain(msg.iter_lsb0()))
@@ -220,12 +222,11 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "sha2")]
     #[ignore = "expensive"]
     fn test_parse_sha() {
         use sha2::compress256;
 
-        let circ = Circuit::parse("circuits/bristol/sha256_reverse.txt").unwrap();
+        let circ = Circuit::parse("bristol/sha256_reverse.txt").unwrap();
 
         static SHA2_INITIAL_STATE: [u32; 8] = [
             0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab,

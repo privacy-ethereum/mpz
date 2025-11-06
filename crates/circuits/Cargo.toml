@@ -10,26 +10,11 @@ workspace = true
 name = "mpz_circuits"
 
 [features]
-default = ["parse", "serde", "aes", "sha2", "blake3"]
-parse = ["dep:regex"]
-serde = ["dep:serde", "dep:serde_arrays", "dep:bincode"]
-aes = []
-sha2 = ["dep:sha2"]
-blake3 = []
+default = []
+aes = ["mpz-circuits-data/aes"]
+sha2 = ["mpz-circuits-data/sha2"]
+blake3 = ["mpz-circuits-data/blake3"]
 
 [dependencies]
-sha2 = { workspace = true, features = ["compress"], optional = true }
-
-serde = { workspace = true, optional = true, features = ["derive"] }
-serde_arrays = { workspace = true, optional = true }
-bincode = { version = "1.3", optional = true }
-rand.workspace = true
-
-regex = { workspace = true, optional = true }
-once_cell.workspace = true
-thiserror.workspace = true
-itybity.workspace = true
-
-[dev-dependencies]
-aes.workspace = true
-criterion.workspace = true
+mpz-circuits-core = { workspace = true }
+mpz-circuits-data = { workspace = true }

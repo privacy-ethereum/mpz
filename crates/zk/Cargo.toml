@@ -32,7 +32,7 @@ tokio = { workspace = true, features = [
     "rt-multi-thread",
 ] }
 rand = { workspace = true }
-mpz-circuits = { workspace = true }
+mpz-circuits = { workspace = true, features = ["aes"] }
 mpz-common = { workspace = true, features = [
     "test-utils",
     "ideal",

@@ -1,64 +1,12 @@
-//! This crate provides types for representing computation as binary circuits.
-#![deny(missing_docs, unreachable_pub, unused_must_use)]
+//! Circuits and circuit builder types.
 
-extern crate self as mpz_circuits;
+#[cfg(feature = "aes")]
+pub use mpz_circuits_data::AES128;
 
-mod builder;
-mod circuit;
-pub mod circuits;
-pub(crate) mod components;
-pub mod ops;
-#[cfg(feature = "parse")]
-mod parse;
+#[cfg(feature = "blake3")]
+pub use mpz_circuits_data::BLAKE3_COMPRESS;
 
-pub use builder::{BuilderError, CircuitBuilder};
-pub use circuit::{Circuit, CircuitError};
-#[doc(hidden)]
-pub use components::{Feed, Node, Sink};
-pub use components::{Gate, GateType};
+#[cfg(feature = "sha2")]
+pub use mpz_circuits_data::SHA256_COMPRESS;
 
-#[doc(hidden)]
-pub use itybity;
-pub use once_cell;
-
-/// Evaluate a circuit with the given arguments.
-///
-/// # Example
-///
-/// ```rust
-/// use mpz_circuits::*;
-///
-/// let circ = circuits::adder_u8();
-/// let a = 42u8;
-/// let b = 69u8;
-///
-/// let sum: u8 = evaluate!(circ, a, b).unwrap();
-///
-/// assert_eq!(sum, a + b);
-/// ```
-#[macro_export]
-macro_rules! evaluate {
-    ($circuit:expr, $($arg:expr),+ $(,)?) => {{
-        use $crate::itybity::{ToBits, FromBitIterator};
-        let input = std::iter::empty()
-            $(.chain($arg.iter_lsb0()))*;
-        $circuit.evaluate(input).map(|output| FromBitIterator::from_lsb0_iter(output))
-    }};
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_evaluate_macro() {
-        let circ = circuits::adder_u8();
-
-        let a = 42u8;
-        let b = 69u8;
-
-        let sum: u8 = evaluate!(circ, a, b).unwrap();
-
-        assert_eq!(sum, a + b);
-    }
-}
+pub use mpz_circuits_core::*;

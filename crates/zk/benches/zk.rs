@@ -1,6 +1,6 @@
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use futures::executor::block_on;
-use mpz_circuits::circuits::AES128;
+use mpz_circuits::AES128;
 use mpz_common::context::test_mt_context;
 use mpz_ot::ideal::rcot::ideal_rcot;
 use mpz_vm_core::{

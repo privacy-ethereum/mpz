@@ -1,6 +1,6 @@
 use criterion::{Criterion, Throughput, black_box, criterion_group, criterion_main};
 
-use mpz_circuits::circuits::AES128;
+use mpz_circuits::AES128;
 use mpz_common::context::{test_mt_context, test_st_context};
 use mpz_garble::protocol::semihonest::{Evaluator, Garbler};
 use mpz_memory_core::{Array, binary::*, correlated::Delta};

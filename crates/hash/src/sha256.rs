@@ -6,7 +6,7 @@ use std::{
 };
 
 use itybity::ToBits;
-use mpz_circuits::{Circuit, CircuitBuilder, circuits::SHA256_COMPRESS};
+use mpz_circuits::{Circuit, CircuitBuilder, SHA256_COMPRESS};
 use mpz_core::bitvec::BitVec;
 use mpz_vm_core::{
     Call, CallableExt, Vm, VmError,
