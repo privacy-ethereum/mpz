@@ -14,6 +14,7 @@ default = []
 aes = ["mpz-circuits-data/aes"]
 sha2 = ["mpz-circuits-data/sha2"]
 blake3 = ["mpz-circuits-data/blake3"]
+keccak = ["mpz-circuits-data/keccak"]
 
 [dependencies]
 mpz-circuits-core = { workspace = true }

@@ -12,6 +12,7 @@ fn main() {
     build_aes(&circuits_dir);
     build_sha2(&circuits_dir);
     build_blake3();
+    build_keccak(&circuits_dir);
 }
 
 fn build_aes(circuits_dir: &Path) {
@@ -47,4 +48,12 @@ fn build_blake3() {
 
     let bytes = bincode::serialize(&circ).unwrap();
     write(Path::new("data/blake3.bin"), bytes).unwrap();
+}
+
+fn build_keccak(circuits_dir: &Path) {
+    let path = circuits_dir.join("keccak_f.txt");
+    let circ = Circuit::parse(path.as_path().to_str().unwrap()).unwrap();
+
+    let bytes = bincode::serialize(&circ).unwrap();
+    write(Path::new("data/keccak_f.bin"), bytes).unwrap();
 }
