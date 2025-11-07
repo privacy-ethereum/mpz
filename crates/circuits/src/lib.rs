@@ -3,6 +3,12 @@
 #[cfg(feature = "aes")]
 pub use mpz_circuits_data::AES128;
 
+#[cfg(feature = "aes")]
+pub use mpz_circuits_data::AES128_KS;
+
+#[cfg(feature = "aes")]
+pub use mpz_circuits_data::AES128_POST_KS;
+
 #[cfg(feature = "blake3")]
 pub use mpz_circuits_data::BLAKE3_COMPRESS;
 
