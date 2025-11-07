@@ -14,6 +14,7 @@ default = []
 aes = []
 sha2 = []
 blake3 = []
+keccak = []
 
 [dependencies]
 bincode = { version = "1.3" }
@@ -22,6 +23,7 @@ once_cell = { workspace = true }
 
 [dev-dependencies]
 aes = { workspace = true }
+keccak = { workspace = true }
 rand = { workspace = true }
 sha2 = { workspace = true, features = ["compress"] }
 zerocopy = { workspace = true }

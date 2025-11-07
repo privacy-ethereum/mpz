@@ -63,6 +63,17 @@ pub static BLAKE3_COMPRESS: Lazy<Arc<Circuit>> = Lazy::new(|| {
     Arc::new(bincode::deserialize(bytes).unwrap())
 });
 
+/// Keccak-f[1600] permutation circuit.
+///
+/// The circuit has the following signature:
+///
+/// `fn(state: [u64; 25]) -> [u64; 25]`
+#[cfg(feature = "keccak")]
+pub static KECCAK_PERMUTE: Lazy<Arc<Circuit>> = Lazy::new(|| {
+    let bytes = include_bytes!("../data/keccak_f.bin");
+    Arc::new(bincode::deserialize(bytes).unwrap())
+});
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -146,6 +157,21 @@ mod tests {
         let output: [u32; 16] = evaluate!(BLAKE3_COMPRESS, msg, iv).unwrap();
 
         assert_eq!(output, expected_output);
+    }
+
+    #[test]
+    #[cfg(feature = "keccak")]
+    fn test_keccak_permute() {
+        use keccak::f1600 as keccak_f;
+
+        let mut init_state: [u64; 25] = [1u64; 25].map(u64::to_le);
+
+        let output: [u64; 25] = evaluate!(KECCAK_PERMUTE, init_state).unwrap();
+
+        // Puts expected output into `init_state`.
+        keccak_f(&mut init_state);
+
+        assert_eq!(output, init_state);
     }
 
     // Test vectors from https://csrc.nist.gov/files/pubs/fips/197/final/docs/fips-197.pdf
