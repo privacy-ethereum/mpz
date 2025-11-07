@@ -24,6 +24,7 @@ once_cell = { workspace = true }
 aes = { workspace = true }
 rand = { workspace = true }
 sha2 = { workspace = true, features = ["compress"] }
+zerocopy = { workspace = true }
 
 [build-dependencies]
 bincode = { version = "1.3" }

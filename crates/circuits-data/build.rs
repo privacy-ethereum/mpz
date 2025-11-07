@@ -20,6 +20,18 @@ fn build_aes(circuits_dir: &Path) {
 
     let bytes = bincode::serialize(&circ).unwrap();
     write(Path::new("data/aes_128.bin"), bytes).unwrap();
+
+    let path = circuits_dir.join("aes_128_key_schedule.txt");
+    let circ = Circuit::parse(path.as_path().to_str().unwrap()).unwrap();
+
+    let bytes = bincode::serialize(&circ).unwrap();
+    write(Path::new("data/aes_128_ks.bin"), bytes).unwrap();
+
+    let path = circuits_dir.join("aes_128_post_key_schedule.txt");
+    let circ = Circuit::parse(path.as_path().to_str().unwrap()).unwrap();
+
+    let bytes = bincode::serialize(&circ).unwrap();
+    write(Path::new("data/aes_128_post_ks.bin"), bytes).unwrap();
 }
 
 fn build_sha2(circuits_dir: &Path) {
