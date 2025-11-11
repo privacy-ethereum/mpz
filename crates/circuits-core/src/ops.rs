@@ -213,6 +213,41 @@ pub fn inv<const N: usize>(builder: &mut CircuitBuilder, a: [Node<Feed>; N]) -> 
     std::array::from_fn(|n| builder.add_inv_gate(a[n]))
 }
 
+/// Returns true if two nbit values are equal.
+pub fn eq<const N: usize>(
+    builder: &mut CircuitBuilder,
+    a: [Node<Feed>; N],
+    b: [Node<Feed>; N],
+) -> Node<Feed> {
+    let a_xor_b = xor(builder, a, b);
+    eq_zero(builder, a_xor_b)
+}
+
+/// Returns true if an nbit value equals zero.
+pub fn eq_zero<const N: usize>(builder: &mut CircuitBuilder, a: [Node<Feed>; N]) -> Node<Feed> {
+    assert!(!a.is_empty());
+
+    let inv = inv(builder, a);
+
+    let mut product = inv[0];
+    for i in 1..N - 1 {
+        product = builder.add_and_gate(product, inv[i]);
+    }
+
+    product
+}
+
+/// Returns true if all input nodes evaluate to true.
+pub fn all(builder: &mut CircuitBuilder, inputs: &[Node<Feed>]) -> Node<Feed> {
+    assert!(!inputs.is_empty());
+
+    let mut acc = inputs[0];
+    for &bit in &inputs[1..] {
+        acc = builder.add_and_gate(acc, bit);
+    }
+    acc
+}
+
 #[cfg(test)]
 mod tests {
     use std::array::from_fn;
@@ -326,5 +361,62 @@ mod tests {
 
         let out: u8 = evaluate!(circ, a, b, true).unwrap();
         assert_eq!(out, b);
+    }
+
+    #[test]
+    fn test_eq() {
+        let mut builder = CircuitBuilder::new();
+
+        let a: [_; 8] = from_fn(|_| builder.add_input());
+        let b: [_; 8] = from_fn(|_| builder.add_input());
+
+        let is_eq = eq(&mut builder, a, b);
+        builder.add_output(is_eq);
+
+        let circ = builder.build().unwrap();
+
+        for a in 0u8..127 {
+            for b in 0u8..127 {
+                let expected = a == b;
+                let is_eq: bool = evaluate!(&circ, a, b).unwrap();
+                assert_eq!(is_eq, expected);
+            }
+        }
+    }
+
+    #[test]
+    fn test_eq_zero() {
+        let mut builder = CircuitBuilder::new();
+
+        let a: [_; 8] = from_fn(|_| builder.add_input());
+
+        let is_eq = eq_zero(&mut builder, a);
+        builder.add_output(is_eq);
+
+        let circ = builder.build().unwrap();
+
+        for a in 0u8..127 {
+            let expected = a == 0;
+            let is_eq: bool = evaluate!(&circ, a).unwrap();
+            assert_eq!(is_eq, expected);
+        }
+    }
+
+    #[test]
+    fn test_all() {
+        let mut builder = CircuitBuilder::new();
+
+        let a: [_; 8] = from_fn(|_| builder.add_input());
+
+        let is_all = all(&mut builder, &a);
+        builder.add_output(is_all);
+
+        let circ = builder.build().unwrap();
+
+        for a in 0u8..=255 {
+            let expected = if a != 255 { false } else { true };
+            let is_eq: bool = evaluate!(&circ, a).unwrap();
+            assert_eq!(is_eq, expected);
+        }
     }
 }

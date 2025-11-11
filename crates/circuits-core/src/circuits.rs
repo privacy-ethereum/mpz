@@ -2,7 +2,10 @@
 
 pub mod blake3;
 
-use crate::{Circuit, CircuitBuilder};
+use crate::{
+    Circuit, CircuitBuilder, Feed, Node,
+    ops::{all, eq, inv},
+};
 
 /// Returns a wrapping adder circuit for `u8`.
 ///
@@ -39,6 +42,41 @@ pub fn xor(size: usize) -> Circuit {
     builder.build().unwrap()
 }
 
+/// Returns a circuit for asserting that a u8 is not present in the source
+/// of the given byte `size`.
+pub fn not_included_u8(size: usize) -> Circuit {
+    assert!(size > 0);
+
+    let mut builder = CircuitBuilder::new();
+
+    let source = (0..size * 8)
+        .map(|_| builder.add_input())
+        .collect::<Vec<_>>();
+    let needle: [Node<Feed>; 8] = (0..8)
+        .map(|_| builder.add_input())
+        .collect::<Vec<_>>()
+        .try_into()
+        .unwrap();
+
+    let not_eq = source
+        .chunks(8)
+        .flat_map(|chunk| {
+            let eq = eq(
+                &mut builder,
+                chunk.try_into().expect("chunk length is 8"),
+                needle,
+            );
+            inv(&mut builder, [eq])
+        })
+        .collect::<Vec<_>>();
+
+    // All bytes are not equal to the needle.
+    let out = all(&mut builder, &not_eq);
+    builder.add_output(out);
+
+    builder.build().unwrap()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -52,5 +90,17 @@ mod tests {
         let output: [u8; 16] = evaluate!(xor, a, b).unwrap();
         let expected = std::array::from_fn(|i| a[i] ^ b[i]);
         assert_eq!(output, expected);
+    }
+    #[test]
+    fn test_not_included_u8() {
+        let needle = 5u8;
+        let haystack = [1u8, 2, 3, 4, 5, 6, 7, 8, 9];
+        let circ = not_included_u8(haystack.len());
+
+        let output: bool = evaluate!(circ, haystack, needle).unwrap();
+        assert_eq!(output, false);
+
+        let output: bool = evaluate!(circ, haystack, 10u8).unwrap();
+        assert_eq!(output, true);
     }
 }
