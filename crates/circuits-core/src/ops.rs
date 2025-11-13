@@ -223,6 +223,17 @@ pub fn eq<const N: usize>(
     eq_zero(builder, a_xor_b)
 }
 
+/// Returns true if two nbit values are not equal.
+pub fn neq<const N: usize>(
+    builder: &mut CircuitBuilder,
+    a: [Node<Feed>; N],
+    b: [Node<Feed>; N],
+) -> Node<Feed> {
+    let a_xor_b = xor(builder, a, b);
+    let eq = eq_zero(builder, a_xor_b);
+    builder.add_inv_gate(eq)
+}
+
 /// Returns true if an nbit value equals zero.
 pub fn eq_zero<const N: usize>(builder: &mut CircuitBuilder, a: [Node<Feed>; N]) -> Node<Feed> {
     assert!(!a.is_empty());
@@ -230,11 +241,106 @@ pub fn eq_zero<const N: usize>(builder: &mut CircuitBuilder, a: [Node<Feed>; N])
     let inv = inv(builder, a);
 
     let mut product = inv[0];
-    for i in 1..N - 1 {
+    for i in 1..N {
         product = builder.add_and_gate(product, inv[i]);
     }
 
     product
+}
+
+/// Returns true if lhs < rhs.
+///
+/// Both arguments are a lsb0 bit representations of an integer.
+pub fn lt<const N: usize>(
+    builder: &mut CircuitBuilder,
+    lhs: [Node<Feed>; N],
+    rhs: [Node<Feed>; N],
+) -> Node<Feed> {
+    assert!(!lhs.is_empty());
+
+    let (lt, _) = lt_eq_core(builder, lhs, rhs);
+    lt
+}
+
+/// Returns true if lhs <= rhs.
+///
+/// Both arguments are a lsb0 bit representations of an integer.
+pub fn lte<const N: usize>(
+    builder: &mut CircuitBuilder,
+    lhs: [Node<Feed>; N],
+    rhs: [Node<Feed>; N],
+) -> Node<Feed> {
+    assert!(!lhs.is_empty());
+
+    let (lt, eq) = lt_eq_core(builder, lhs, rhs);
+
+    any(builder, &[lt, eq])
+}
+
+/// Returns true if lhs > rhs.
+///
+/// Both arguments are a lsb0 bit representations of an integer.
+pub fn gt<const N: usize>(
+    builder: &mut CircuitBuilder,
+    lhs: [Node<Feed>; N],
+    rhs: [Node<Feed>; N],
+) -> Node<Feed> {
+    assert!(!lhs.is_empty());
+
+    let (gt, _) = lt_eq_core(builder, rhs, lhs);
+    gt
+}
+
+/// Returns true if lhs >= rhs.
+///
+/// Both arguments are a lsb0 bit representations of an integer.
+pub fn gte<const N: usize>(
+    builder: &mut CircuitBuilder,
+    lhs: [Node<Feed>; N],
+    rhs: [Node<Feed>; N],
+) -> Node<Feed> {
+    assert!(!lhs.is_empty());
+
+    let (gt, eq) = lt_eq_core(builder, rhs, lhs);
+
+    any(builder, &[gt, eq])
+}
+
+/// Internal: scan MSB→LSB once and return:
+/// - lt: true iff lhs < rhs
+/// - eq: true iff lhs == rhs
+fn lt_eq_core<const N: usize>(
+    builder: &mut CircuitBuilder,
+    lhs: [Node<Feed>; N],
+    rhs: [Node<Feed>; N],
+) -> (Node<Feed>, Node<Feed>) {
+    assert!(!lhs.is_empty());
+
+    // Tracks whether all higher bits seen so far are equal.
+    let mut eq = builder.get_const_one();
+
+    // For each bit position, contains a signal whether the lhs < rhs
+    // difference starts at that bit.
+    let mut starts_here = Vec::new();
+
+    // Scan for bit difference starting from MSB.
+    for (bit_l, bit_r) in lhs.into_iter().rev().zip(rhs.into_iter().rev()) {
+        // Check condition bit_l == 0 and bit_r == 1.
+        let not_l = builder.add_inv_gate(bit_l);
+        let condition = builder.add_and_gate(not_l, bit_r);
+
+        // lhs < rhs starts at this bit position iff higher bits are equal and
+        // the above condition holds.
+        starts_here.push(builder.add_and_gate(eq, condition));
+
+        // Update the eq value.
+        let diff = builder.add_xor_gate(bit_l, bit_r);
+        let not_diff = builder.add_inv_gate(diff);
+        eq = builder.add_and_gate(eq, not_diff);
+    }
+
+    let is_less = any(builder, &starts_here);
+    (is_less, eq)
 }
 
 /// Returns true if all input nodes evaluate to true.
@@ -243,14 +349,48 @@ pub fn all(builder: &mut CircuitBuilder, inputs: &[Node<Feed>]) -> Node<Feed> {
 
     let mut acc = inputs[0];
     for &bit in &inputs[1..] {
-        acc = builder.add_and_gate(acc, bit);
+        let res = and(builder, [acc], [bit]);
+        acc = res[0];
     }
     acc
+}
+
+/// Returns true if any input node evaluates to true.
+pub fn any(builder: &mut CircuitBuilder, inputs: &[Node<Feed>]) -> Node<Feed> {
+    assert!(!inputs.is_empty());
+
+    let mut acc = inputs[0];
+    for &x in &inputs[1..] {
+        let res = or(builder, [acc], [x]);
+        acc = res[0];
+    }
+    acc
+}
+
+/// Given a value's lsb0 bit representation, multiply the value by 10.
+// x >> 3 + x >> 1 == 8x + 2x
+pub fn mul_by_10(builder: &mut CircuitBuilder, x: &[Node<Feed>]) -> Vec<Node<Feed>> {
+    assert!(x.len() > 0);
+
+    // Workaround: we can't have a const wire in the circuit output.
+    let zero = builder.add_xor_gate(x[0], x[0]);
+
+    // Shift right and pad to avoid overflow when adding.
+    let shift_by_3 = [vec![zero; 3], x.to_vec(), vec![zero; 1]].concat();
+
+    // Shift right and pad to the length of the above summand.
+    let shift_by_1 = [vec![zero; 1], x.to_vec(), vec![zero; 3]].concat();
+
+    wrapping_add(builder, &shift_by_3, &shift_by_1)
+        .try_into()
+        .expect("no overflow")
 }
 
 #[cfg(test)]
 mod tests {
     use std::array::from_fn;
+
+    use itybity::{FromBitIterator, IntoBitIterator, IntoBits};
 
     use crate::evaluate;
 
@@ -328,8 +468,8 @@ mod tests {
         let circ = builder.build().unwrap();
 
         let modulus = 251u8;
-        for a in 0u8..127 {
-            for b in 0u8..127 {
+        for a in 0u8..modulus - 10 {
+            for b in 0u8..modulus - 10 {
                 let expected_sum = (a + b) % modulus;
                 let sum: u8 = evaluate!(&circ, a, b, modulus).unwrap();
                 assert_eq!(sum, expected_sum);
@@ -375,8 +515,8 @@ mod tests {
 
         let circ = builder.build().unwrap();
 
-        for a in 0u8..127 {
-            for b in 0u8..127 {
+        for a in 0u8..=255 {
+            for b in 0u8..=255 {
                 let expected = a == b;
                 let is_eq: bool = evaluate!(&circ, a, b).unwrap();
                 assert_eq!(is_eq, expected);
@@ -395,7 +535,7 @@ mod tests {
 
         let circ = builder.build().unwrap();
 
-        for a in 0u8..127 {
+        for a in 0u8..=255 {
             let expected = a == 0;
             let is_eq: bool = evaluate!(&circ, a).unwrap();
             assert_eq!(is_eq, expected);
@@ -404,7 +544,7 @@ mod tests {
 
     #[test]
     fn test_all() {
-        let mut builder = CircuitBuilder::new();
+        let mut builder: CircuitBuilder = CircuitBuilder::new();
 
         let a: [_; 8] = from_fn(|_| builder.add_input());
 
@@ -417,6 +557,111 @@ mod tests {
             let expected = if a != 255 { false } else { true };
             let is_eq: bool = evaluate!(&circ, a).unwrap();
             assert_eq!(is_eq, expected);
+        }
+    }
+
+    #[test]
+    fn test_lt() {
+        let mut builder: CircuitBuilder = CircuitBuilder::new();
+
+        let a: [_; 8] = from_fn(|_| builder.add_input());
+        let b: [_; 8] = from_fn(|_| builder.add_input());
+
+        let is_lt = lt(&mut builder, a, b);
+        builder.add_output(is_lt);
+
+        let circ = builder.build().unwrap();
+
+        for a in 0u8..=255 {
+            for b in 0u8..=255 {
+                let expected = a < b;
+                let is_lt: bool = evaluate!(&circ, a, b).unwrap();
+                assert_eq!(is_lt, expected);
+            }
+        }
+    }
+
+    #[test]
+    fn test_lte() {
+        let mut builder: CircuitBuilder = CircuitBuilder::new();
+
+        let a: [_; 8] = from_fn(|_| builder.add_input());
+        let b: [_; 8] = from_fn(|_| builder.add_input());
+
+        let is_lt = lte(&mut builder, a, b);
+        builder.add_output(is_lt);
+
+        let circ = builder.build().unwrap();
+
+        for a in 0u8..=255 {
+            for b in 0u8..=255 {
+                let expected = a <= b;
+                let is_lt: bool = evaluate!(&circ, a, b).unwrap();
+                assert_eq!(is_lt, expected);
+            }
+        }
+    }
+
+    #[test]
+    fn test_gt() {
+        let mut builder: CircuitBuilder = CircuitBuilder::new();
+
+        let a: [_; 8] = from_fn(|_| builder.add_input());
+        let b: [_; 8] = from_fn(|_| builder.add_input());
+
+        let is_lt = gt(&mut builder, a, b);
+        builder.add_output(is_lt);
+
+        let circ = builder.build().unwrap();
+
+        for a in 0u8..=255 {
+            for b in 0u8..=255 {
+                let expected = a > b;
+                let is_lt: bool = evaluate!(&circ, a, b).unwrap();
+                assert_eq!(is_lt, expected);
+            }
+        }
+    }
+
+    #[test]
+    fn test_gte() {
+        let mut builder: CircuitBuilder = CircuitBuilder::new();
+
+        let a: [_; 8] = from_fn(|_| builder.add_input());
+        let b: [_; 8] = from_fn(|_| builder.add_input());
+
+        let is_lt = gte(&mut builder, a, b);
+        builder.add_output(is_lt);
+
+        let circ = builder.build().unwrap();
+
+        for a in 0u8..=255 {
+            for b in 0u8..=255 {
+                let expected = a >= b;
+                let is_lt: bool = evaluate!(&circ, a, b).unwrap();
+                assert_eq!(is_lt, expected);
+            }
+        }
+    }
+
+    #[test]
+    fn test_mul_by_10() {
+        for i in 1u32..255021 {
+            let mut builder = CircuitBuilder::new();
+
+            let count = 32 - i.leading_zeros() as usize;
+            let bits: Vec<_> = (0..count).map(|_| builder.add_input()).collect();
+            let out = mul_by_10(&mut builder, &bits);
+            for f in out {
+                builder.add_output(f);
+            }
+            let circ = builder.build().unwrap();
+
+            let bits = i.into_iter_lsb0().collect::<Vec<_>>();
+            let output: Vec<bool> = evaluate!(circ, bits[0..count as usize]).unwrap();
+            let out: u32 = <u32>::from_lsb0_iter(output.into_iter_lsb0());
+
+            assert_eq!(out, i * 10);
         }
     }
 }
