@@ -23,7 +23,7 @@ members = [
     "crates/memory-core",
     "crates/vm-core",
     "crates/zk-core",
-    "crates/zk",
+    "crates/zk", "crates/json-test",
 ]
 exclude = ["crates/lpn-estimator"]
 resolver = "2"

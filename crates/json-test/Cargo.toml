@@ -1,0 +1,11 @@
+[package]
+name = "json-test"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+mpz-circuits = { workspace = true }
+itybity = { workspace = true }
+
+[lints]
+workspace = true
