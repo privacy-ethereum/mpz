@@ -1,5 +1,5 @@
 use mpz_memory_core::{Slice, View as ViewTrait, binary::Binary, view::VisibilityView};
-use rangeset::{Difference, Disjoint, Intersection, Subset, Union};
+use rangeset::{Difference, Disjoint, Intersection, Subset};
 use serde::{Deserialize, Serialize};
 
 type Range = std::ops::Range<usize>;
@@ -196,7 +196,7 @@ impl View {
     }
 
     pub(crate) fn is_committed(&self, range: Range) -> bool {
-        range.is_subset(&self.input.complete.union(&self.output.complete))
+        range.is_subset(&self.input.complete) || range.is_subset(&self.output.complete)
     }
 
     pub(crate) fn commit(&mut self, range: Range) -> Result<()> {
