@@ -87,7 +87,7 @@ impl Store {
 
         let mut input = BitVec::new();
 
-        for inp in self.flush_view().input.iter_ranges() {
+        for inp in self.flush_view().input.iter() {
             let slice = Slice::from_range_unchecked(inp);
             let data = self.data_store.try_get(slice).expect("slice set");
             input.append(&mut data.to_bitvec());
@@ -110,7 +110,7 @@ impl Store {
         assert_eq!(peer_ranges.len(), peer_input.len());
 
         let mut i = 0;
-        for inp in peer_ranges.iter_ranges() {
+        for inp in peer_ranges.iter() {
             let slice = Slice::from_range_unchecked(inp);
             self.data_store
                 .try_set(slice, &peer_input[i..i + slice.len()])

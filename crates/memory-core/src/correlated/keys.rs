@@ -6,7 +6,7 @@ use mpz_core::{
     bitvec::{BitSlice, BitVec},
 };
 use rand::{distr::StandardUniform, prelude::Distribution};
-use rangeset::Disjoint;
+use rangeset::ops::Set;
 
 use crate::{
     RangeSet, Slice,
@@ -372,7 +372,7 @@ impl KeyStore {
         let mut data = BitVec::with_capacity(bits.len());
         let mut hasher = Hasher::new();
         let mut idx = 0;
-        for range in ranges.iter_ranges() {
+        for range in ranges.iter() {
             let slice = Slice::from_range_unchecked(range);
             self.keys
                 .try_get(slice)?

@@ -77,7 +77,7 @@ impl VerifierStore {
         }
 
         let mut i = 0;
-        for range in self.view.flush().commit.iter_ranges() {
+        for range in self.view.flush().commit.iter() {
             let slice = Slice::from_range_unchecked(range);
 
             self.key_store.try_set(slice, &keys[i..i + slice.len()])?;
@@ -127,7 +127,7 @@ impl VerifierStore {
 
         // Adjust keys.
         let mut i = 0;
-        for range in view.commit.iter_ranges() {
+        for range in view.commit.iter() {
             let slice = Slice::from_range_unchecked(range);
             self.key_store.adjust(slice, &adjust[i..i + slice.len()])?;
             i += slice.len();
@@ -140,7 +140,7 @@ impl VerifierStore {
         i = 0;
         if let Some((mut bits, proof)) = mac_proof {
             self.key_store.verify(&view.prove, &mut bits, proof)?;
-            for range in view.prove.iter_ranges() {
+            for range in view.prove.iter() {
                 let slice = Slice::from_range_unchecked(range);
                 self.data_store.try_set(slice, &bits[i..i + slice.len()])?;
                 i += slice.len();
@@ -192,7 +192,7 @@ impl Memory<Binary> for VerifierStore {
 
         // For public data, set keys.
         let public = slice.to_range() & self.view.visibility().public();
-        for range in public.iter_ranges() {
+        for range in public {
             let slice = Slice::from_range_unchecked(range);
 
             let data = self.data_store.try_get(slice)?;

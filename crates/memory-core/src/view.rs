@@ -1,4 +1,4 @@
-use rangeset::{Difference, Disjoint, Subset};
+use rangeset::ops::Set;
 use serde::{Deserialize, Serialize};
 
 use crate::{Range, RangeSet};
@@ -55,7 +55,7 @@ impl VisibilityView {
 
     /// Returns `true` if any data in the range is set.
     pub fn is_set_any(&self, range: Range) -> bool {
-        !range.difference(&self.uninit).is_empty()
+        !range.difference(&self.uninit).next().is_none()
     }
 
     /// Returns `true` if all data in the range is visible.
@@ -127,17 +127,17 @@ impl VisibilityView {
 
     /// Returns an iterator over the public ranges.
     pub fn iter_public(&self) -> impl Iterator<Item = Range> + '_ {
-        self.public.iter_ranges()
+        self.public.iter()
     }
 
     /// Returns an iterator over the private ranges.
     pub fn iter_private(&self) -> impl Iterator<Item = Range> + '_ {
-        self.private.iter_ranges()
+        self.private.iter()
     }
 
     /// Returns an iterator over the blind ranges.
     pub fn iter_blind(&self) -> impl Iterator<Item = Range> + '_ {
-        self.blind.iter_ranges()
+        self.blind.iter()
     }
 }
 

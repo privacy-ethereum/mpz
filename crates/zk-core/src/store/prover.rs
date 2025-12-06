@@ -79,7 +79,7 @@ impl ProverStore {
         }
 
         let mut i = 0;
-        for range in self.view.flush().commit.iter_ranges() {
+        for range in self.view.flush().commit.iter() {
             let slice = Slice::from_range_unchecked(range);
 
             self.mask_store.try_set(slice, &masks[i..i + slice.len()])?;
@@ -116,7 +116,7 @@ impl ProverStore {
         // Commit MACs.
         let mut adjust: BitVec = BitVec::with_capacity(self.view.flush().commit.len());
         let mut i = 0;
-        for range in self.view.flush().commit.iter_ranges() {
+        for range in self.view.flush().commit.iter() {
             let slice = Slice::from_range_unchecked(range);
 
             let data = self.data_store.try_get(slice)?;
@@ -213,7 +213,7 @@ impl Memory<Binary> for ProverStore {
 
         // For public data, set MACs.
         let public = slice.to_range() & self.view.visibility().public();
-        for range in public.iter_ranges() {
+        for range in public {
             let slice = Slice::from_range_unchecked(range);
 
             let data = self.data_store.try_get(slice)?;
