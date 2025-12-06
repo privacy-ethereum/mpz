@@ -55,7 +55,7 @@ impl VisibilityView {
 
     /// Returns `true` if any data in the range is set.
     pub fn is_set_any(&self, range: Range) -> bool {
-        !range.difference(&self.uninit).next().is_none()
+        range.difference(&self.uninit).next().is_some()
     }
 
     /// Returns `true` if all data in the range is visible.
