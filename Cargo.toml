@@ -65,7 +65,7 @@ mpz-zk-core = { path = "crates/zk-core" }
 mpz-zk = { path = "crates/zk" }
 clmul = { path = "crates/clmul" }
 matrix-transpose = { path = "crates/matrix-transpose" }
-rangeset = { git = "https://github.com/tlsnotary/tlsn-utils", rev = "4feb8ef" }
+rangeset = "0.4"
 
 # rand
 rand_chacha = "0.9"
