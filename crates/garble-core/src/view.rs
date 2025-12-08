@@ -1,11 +1,11 @@
 use mpz_memory_core::{
     Slice, View as ViewTrait, binary::Binary, correlated::Mac, view::VisibilityView,
 };
-use rangeset::{Difference, Disjoint, Intersection, Subset};
+use rangeset::{iter::RangeIterator, ops::Set};
 use serde::{Deserialize, Serialize};
 
 type Range = std::ops::Range<usize>;
-type RangeSet = rangeset::RangeSet<usize>;
+type RangeSet = rangeset::set::RangeSet<usize>;
 type Result<T, E = ViewError> = core::result::Result<T, E>;
 
 #[derive(Debug, Default)]
@@ -223,7 +223,9 @@ impl View {
 
         self.output.preprocessed |= &range;
         // If marked for decoding, transfer decode info.
-        self.flush.decode_info |= range.intersection(&self.decode.all) - &self.decode.complete;
+        self.flush.decode_info |= range
+            .intersection(&self.decode.all)
+            .difference(&self.decode.complete);
 
         Ok(())
     }
@@ -238,9 +240,13 @@ impl View {
         self.output.preprocessed |= &range;
         self.output.complete |= &range;
         // If marked for decoding, transfer decode info.
-        self.flush.decode_info |= range.intersection(&self.decode.all) - &self.decode.decode_info;
+        self.flush.decode_info |= range
+            .intersection(&self.decode.all)
+            .difference(&self.decode.decode_info);
         // If decoding info transferred, prove MACs.
-        self.flush.decode |= range.intersection(&self.decode.decode_info) - &self.decode.complete;
+        self.flush.decode |= range
+            .intersection(&self.decode.decode_info)
+            .difference(&self.decode.complete);
 
         Ok(())
     }
@@ -265,9 +271,9 @@ impl View {
             return Err(ErrorRepr::AlreadyCommitted { range }.into());
         }
 
-        let blind = range.intersection(self.vis.blind());
-        let private = range.intersection(self.vis.private());
-        let public = range.intersection(self.vis.public());
+        let blind = range.intersection(self.vis.blind()).into_set();
+        let private = range.intersection(self.vis.private()).into_set();
+        let public = range.intersection(self.vis.public()).into_set();
 
         // Assert visible data is assigned.
         if !public.is_subset(&self.input.assigned) || !private.is_subset(&self.input.assigned) {
@@ -294,15 +300,15 @@ impl View {
 
     pub(crate) fn decode(&mut self, range: Range) -> Result<()> {
         // Ignore already decoded data.
-        let undecoded = range.difference(&self.decode.complete);
+        let undecoded = range.difference(&self.decode.complete).into_set();
         if undecoded.is_empty() {
             return Ok(());
         }
 
         self.decode.all |= &undecoded;
 
-        let input = range.intersection(&self.input.all);
-        let output = range.intersection(&self.output.all);
+        let input = range.intersection(&self.input.all).into_set();
+        let output = range.intersection(&self.output.all).into_set();
 
         // Transfer decode info.
         //
@@ -312,7 +318,7 @@ impl View {
             Role::Evaluator => input.intersection(self.vis.blind()),
         };
 
-        let decodable = decodable_input | output.intersection(&self.output.preprocessed);
+        let decodable = decodable_input.union(output.intersection(&self.output.preprocessed));
 
         // Only send decode info if it hasn't been sent already.
         self.flush.decode_info |= decodable.difference(&self.decode.decode_info);
@@ -320,13 +326,20 @@ impl View {
         // Prove MACs.
         //
         // Only prove MACs for output data and evaluator's inputs.
-        let provable_input = match self.role {
-            Role::Garbler => input - self.vis.visible(),
-            Role::Evaluator => input.intersection(self.vis.private()),
+        match self.role {
+            Role::Garbler => {
+                self.flush.decode |= input
+                    .difference(self.vis.visible())
+                    .intersection(&self.input.complete)
+                    .union(output.intersection(&self.output.complete));
+            }
+            Role::Evaluator => {
+                self.flush.decode |= input
+                    .intersection(self.vis.private())
+                    .intersection(&self.input.complete)
+                    .union(output.intersection(&self.output.complete));
+            }
         };
-
-        self.flush.decode |= provable_input.intersection(&self.input.complete)
-            | output.intersection(&self.output.complete);
 
         Ok(())
     }
@@ -337,12 +350,13 @@ impl View {
         self.decode.decode_info |= &self.flush.decode_info;
         self.decode.complete |= &self.flush.decode;
 
-        let ready_inputs = self.flush.ot.intersection(&self.decode.all);
+        let ready_inputs = self.flush.ot.intersection(&self.decode.all).into_set();
         let ready_outputs = self
             .flush
             .decode_info
             .intersection(&self.output.complete)
-            .difference(&self.decode.complete);
+            .difference(&self.decode.complete)
+            .into_set();
 
         self.flush.clear();
 

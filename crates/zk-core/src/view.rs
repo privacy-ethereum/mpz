@@ -1,9 +1,9 @@
 use mpz_memory_core::{Slice, View as ViewTrait, binary::Binary, view::VisibilityView};
-use rangeset::{Difference, Disjoint, Intersection, Subset};
+use rangeset::{iter::RangeIterator, ops::Set};
 use serde::{Deserialize, Serialize};
 
 type Range = std::ops::Range<usize>;
-type RangeSet = rangeset::RangeSet<usize>;
+type RangeSet = rangeset::set::RangeSet<usize>;
 type Result<T, E = ViewError> = core::result::Result<T, E>;
 
 #[derive(Debug, Default)]
@@ -215,9 +215,9 @@ impl View {
             return Err(ErrorRepr::AlreadyCommitted { range }.into());
         }
 
-        let blind = range.intersection(self.vis.blind());
-        let private = range.intersection(self.vis.private());
-        let public = range.intersection(self.vis.public());
+        let blind = range.intersection(self.vis.blind()).into_set();
+        let private = range.intersection(self.vis.private()).into_set();
+        let public = range.intersection(self.vis.public()).into_set();
 
         // Assert data is assigned.
         if !public.is_subset(&self.input.assigned) || !private.is_subset(&self.input.assigned) {
@@ -242,7 +242,7 @@ impl View {
     // Stages a to-be-decoded `range` for proving.
     pub(crate) fn decode(&mut self, range: Range) -> Result<()> {
         // Ignore already decoded data.
-        let undecoded = range.difference(&self.decode.complete);
+        let undecoded = range.difference(&self.decode.complete).into_set();
         if undecoded.is_empty() {
             return Ok(());
         }
@@ -252,13 +252,20 @@ impl View {
         let input = undecoded.intersection(&self.input.all);
         let output = undecoded.intersection(&self.output.all);
 
-        let provable_input = match self.role {
-            Role::Prover => input.intersection(self.vis.private()),
-            Role::Verifier => input - self.vis.visible(),
+        match self.role {
+            Role::Prover => {
+                self.flush.prove |= input
+                    .intersection(self.vis.private())
+                    .intersection(&self.input.complete)
+                    .union(output.intersection(&self.output.complete));
+            }
+            Role::Verifier => {
+                self.flush.prove |= input
+                    .difference(self.vis.visible())
+                    .intersection(&self.input.complete)
+                    .union(output.intersection(&self.output.complete));
+            }
         };
-
-        self.flush.prove |= provable_input.intersection(&self.input.complete)
-            | output.intersection(&self.output.complete);
 
         Ok(())
     }
