@@ -1,0 +1,21 @@
+[package]
+name = "mpz-predicate"
+version = "0.1.0-alpha.14-pre"
+edition = "2021"
+
+[lints]
+workspace = true
+
+[dependencies]
+bytes = { workspace = true }
+serde = { version = "1", features = ["derive"] }
+rand = { workspace = true }
+rand_core = { workspace = true }
+rand_chacha = { workspace = true }
+thiserror = { workspace = true }
+rangeset = { workspace = true, features = ["serde"] }
+mpz-circuits = { workspace = true }
+serde_json = { version = "*", features = ["raw_value"] }
+
+[dev-dependencies]
+rstest = { workspace = true }

@@ -213,6 +213,108 @@ pub fn inv<const N: usize>(builder: &mut CircuitBuilder, a: [Node<Feed>; N]) -> 
     std::array::from_fn(|n| builder.add_inv_gate(a[n]))
 }
 
+/// Returns 1 if all input bits are 1, otherwise 0.
+pub fn all(builder: &mut CircuitBuilder, inputs: &[Node<Feed>]) -> Node<Feed> {
+    assert!(!inputs.is_empty(), "all requires at least one input");
+    inputs
+        .iter()
+        .copied()
+        .reduce(|acc, x| builder.add_and_gate(acc, x))
+        .unwrap()
+}
+
+/// Returns 1 if any input bit is 1, otherwise 0.
+pub fn any(builder: &mut CircuitBuilder, inputs: &[Node<Feed>]) -> Node<Feed> {
+    assert!(!inputs.is_empty(), "any requires at least one input");
+    inputs
+        .iter()
+        .copied()
+        .reduce(|acc, x| {
+            // OR = (A ⊕ B) ⊕ (A ^ B)
+            let a_xor_b = builder.add_xor_gate(acc, x);
+            let a_and_b = builder.add_and_gate(acc, x);
+            builder.add_xor_gate(a_xor_b, a_and_b)
+        })
+        .unwrap()
+}
+
+/// Returns 1 if two nbit values are equal, otherwise 0.
+pub fn eq<const N: usize>(
+    builder: &mut CircuitBuilder,
+    a: [Node<Feed>; N],
+    b: [Node<Feed>; N],
+) -> Node<Feed> {
+    // Two values are equal if all XOR bits are 0, i.e., NOR of all XORs
+    let xors: Vec<_> = a
+        .iter()
+        .zip(b.iter())
+        .map(|(a, b)| builder.add_xor_gate(*a, *b))
+        .collect();
+
+    // All XORs must be 0 for equality
+    let any_diff = any(builder, &xors);
+    builder.add_inv_gate(any_diff)
+}
+
+/// Returns 1 if two nbit values are not equal, otherwise 0.
+pub fn neq<const N: usize>(
+    builder: &mut CircuitBuilder,
+    a: [Node<Feed>; N],
+    b: [Node<Feed>; N],
+) -> Node<Feed> {
+    // Two values are not equal if any XOR bit is 1
+    let xors: Vec<_> = a
+        .iter()
+        .zip(b.iter())
+        .map(|(a, b)| builder.add_xor_gate(*a, *b))
+        .collect();
+
+    any(builder, &xors)
+}
+
+/// Returns 1 if a < b (unsigned), otherwise 0.
+pub fn lt<const N: usize>(
+    builder: &mut CircuitBuilder,
+    a: [Node<Feed>; N],
+    b: [Node<Feed>; N],
+) -> Node<Feed> {
+    // a < b iff (a - b) underflows
+    let (_diff, underflow) = wrapping_sub(builder, &a, &b);
+    underflow
+}
+
+/// Returns 1 if a <= b (unsigned), otherwise 0.
+pub fn lte<const N: usize>(
+    builder: &mut CircuitBuilder,
+    a: [Node<Feed>; N],
+    b: [Node<Feed>; N],
+) -> Node<Feed> {
+    // a <= b iff NOT (a > b) iff NOT (b < a)
+    let b_lt_a = lt(builder, b, a);
+    builder.add_inv_gate(b_lt_a)
+}
+
+/// Returns 1 if a > b (unsigned), otherwise 0.
+pub fn gt<const N: usize>(
+    builder: &mut CircuitBuilder,
+    a: [Node<Feed>; N],
+    b: [Node<Feed>; N],
+) -> Node<Feed> {
+    // a > b iff b < a
+    lt(builder, b, a)
+}
+
+/// Returns 1 if a >= b (unsigned), otherwise 0.
+pub fn gte<const N: usize>(
+    builder: &mut CircuitBuilder,
+    a: [Node<Feed>; N],
+    b: [Node<Feed>; N],
+) -> Node<Feed> {
+    // a >= b iff NOT (a < b)
+    let a_lt_b = lt(builder, a, b);
+    builder.add_inv_gate(a_lt_b)
+}
+
 #[cfg(test)]
 mod tests {
     use std::array::from_fn;
