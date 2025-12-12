@@ -86,6 +86,74 @@ impl_uint!(u32, U32, 32);
 impl_uint!(u64, U64, 64);
 impl_uint!(u128, U128, 128);
 
+/// A single bit (boolean) type.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Bool(Ptr);
+
+impl Repr<Binary> for Bool {
+    type Clear = bool;
+}
+
+impl StaticSize<Binary> for bool {
+    const SIZE: usize = 1;
+}
+
+impl<const N: usize> StaticSize<Binary> for [bool; N] {
+    const SIZE: usize = N;
+}
+
+impl StaticSize<Binary> for Bool {
+    const SIZE: usize = 1;
+}
+
+impl<const N: usize> StaticSize<Binary> for [Bool; N] {
+    const SIZE: usize = N;
+}
+
+impl FromRaw<Binary> for Bool {
+    fn from_raw(slice: Slice) -> Self {
+        Self(slice.ptr)
+    }
+}
+
+impl ToRaw for Bool {
+    fn to_raw(&self) -> Slice {
+        Slice::new_unchecked(self.0, Self::SIZE)
+    }
+}
+
+impl ClearValue<Binary> for bool {
+    fn into_clear(self) -> BitVec {
+        BitVec::from_iter(std::iter::once(self))
+    }
+
+    fn from_clear(value: BitVec) -> Self {
+        debug_assert_eq!(value.len(), 1);
+        value[0]
+    }
+}
+
+impl<const N: usize> ClearValue<Binary> for [bool; N] {
+    fn into_clear(self) -> BitVec {
+        BitVec::from_iter(self)
+    }
+
+    fn from_clear(value: BitVec) -> Self {
+        debug_assert_eq!(value.len(), N);
+        std::array::from_fn(|i| value[i])
+    }
+}
+
+impl ClearValue<Binary> for Vec<bool> {
+    fn into_clear(self) -> BitVec {
+        BitVec::from_iter(self)
+    }
+
+    fn from_clear(value: BitVec) -> Self {
+        value.iter().by_vals().collect()
+    }
+}
+
 macro_rules! impl_clear_value_for_tuples {
     // Macro for generating implementations for tuples with element identifiers and indices.
     ($($name:ident : $index:tt),+) => {

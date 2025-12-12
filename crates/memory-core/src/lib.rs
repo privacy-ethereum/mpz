@@ -700,7 +700,7 @@ impl_repr_for_tuples!(T0, T1, T2, T3, T4, T5, T6, T7);
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::binary::U8;
+    use crate::binary::{Bool, U8};
 
     #[test]
     fn test_slice_split_at() {
@@ -743,5 +743,57 @@ mod tests {
 
         // Shouldn't be able to get a [30..34] slice.
         assert!(arr.get::<4>(30).is_none());
+    }
+
+    #[test]
+    fn test_bool_type() {
+        use crate::binary::Binary;
+
+        // Test Bool size
+        assert_eq!(Bool::SIZE, 1);
+        assert_eq!(<bool as StaticSize<Binary>>::SIZE, 1);
+
+        // Test ClearValue for bool
+        let value = true;
+        let bits = value.into_clear();
+        assert_eq!(bits.len(), 1);
+        assert!(bits[0]);
+
+        let recovered = bool::from_clear(bits);
+        assert!(recovered);
+
+        let value = false;
+        let bits = value.into_clear();
+        assert_eq!(bits.len(), 1);
+        assert!(!bits[0]);
+
+        let recovered = bool::from_clear(bits);
+        assert!(!recovered);
+
+        // Test ClearValue for [bool; N]
+        let arr = [true, false, true, false];
+        let bits = arr.into_clear();
+        assert_eq!(bits.len(), 4);
+        let recovered: [bool; 4] = <[bool; 4] as ClearValue<Binary>>::from_clear(bits);
+        assert_eq!(recovered, [true, false, true, false]);
+
+        // Test ClearValue for Vec<bool>
+        let vec = vec![false, true, true, false, true];
+        let bits = vec.clone().into_clear();
+        assert_eq!(bits.len(), 5);
+        let recovered: Vec<bool> = <Vec<bool> as ClearValue<Binary>>::from_clear(bits);
+        assert_eq!(recovered, vec);
+
+        // Test Bool FromRaw/ToRaw roundtrip
+        let slice = Slice::from_range_unchecked(42..43);
+        let b = Bool::from_raw(slice);
+        let recovered_slice = b.to_raw();
+        assert_eq!(recovered_slice.ptr().as_usize(), 42);
+        assert_eq!(recovered_slice.len(), 1);
+
+        // Test Vector<Bool>
+        let slice = Slice::from_range_unchecked(0..8);
+        let vec: Vector<Bool> = Vector::from_raw(slice);
+        assert_eq!(vec.len(), 8);
     }
 }
