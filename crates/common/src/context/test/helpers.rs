@@ -1,5 +1,6 @@
 //! Basic test context helpers.
 
+use futures::{AsyncRead, AsyncWrite};
 use serio::channel::duplex;
 use uid_mux::test_utils::test_framed_mux;
 
@@ -8,6 +9,19 @@ use crate::{
     io::Io,
     mux::Mux,
 };
+
+/// Creates a single-threaded context with a custom frame limit.
+///
+/// # Arguments
+///
+/// * `io` - The I/O channel used by the context.
+/// * `max_frame_length` - Maximum frame size in bytes.
+pub(super) fn new_st_context_with_limit<I>(io: I, max_frame_length: usize) -> Context
+where
+    I: AsyncRead + AsyncWrite + Send + Sync + Unpin + 'static,
+{
+    Context::from_io(Io::from_io_with_limit(io, max_frame_length))
+}
 
 /// Creates a pair of single-threaded contexts using memory I/O channels.
 pub fn test_st_context(io_buffer: usize) -> (Context, Context) {

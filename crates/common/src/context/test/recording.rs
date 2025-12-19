@@ -17,6 +17,8 @@ use crate::{
     mux::Mux,
 };
 
+use super::helpers::new_st_context_with_limit;
+
 /// A duplex stream that records all bytes written.
 ///
 /// Used for recording protocol messages for replay in isolated benchmarks.
@@ -110,8 +112,8 @@ pub fn recording_st_context_with_limit(
     let recording_io_1 = RecordingDuplex::new(io_1, recorded.clone());
 
     (
-        Context::new_single_threaded_with_limit(io_0.compat(), max_frame_length),
-        Context::new_single_threaded_with_limit(recording_io_1, max_frame_length),
+        new_st_context_with_limit(io_0.compat(), max_frame_length),
+        new_st_context_with_limit(recording_io_1, max_frame_length),
         recorded,
     )
 }

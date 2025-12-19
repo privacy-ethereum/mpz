@@ -122,8 +122,7 @@ impl Io {
         }
     }
 
-    #[doc(hidden)]
-    pub fn from_io_with_limit<Io: AsyncRead + AsyncWrite + Send + Sync + Unpin + 'static>(
+    pub(crate) fn from_io_with_limit<Io: AsyncRead + AsyncWrite + Send + Sync + Unpin + 'static>(
         io: Io,
         max_frame_length: usize,
     ) -> Self {

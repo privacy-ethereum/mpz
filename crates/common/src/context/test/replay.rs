@@ -15,6 +15,7 @@ use crate::{
     mux::Mux,
 };
 
+use super::helpers::new_st_context_with_limit;
 use super::recording::RecordedMtData;
 
 /// A duplex stream that replays recorded bytes on read and discards writes.
@@ -76,7 +77,7 @@ impl AsyncWrite for ReplayDuplex {
 /// * `max_frame_length` - Maximum frame size in bytes.
 pub fn replay_st_context(recorded: Vec<u8>, max_frame_length: usize) -> Context {
     let replay = ReplayDuplex::new(recorded);
-    Context::new_single_threaded_with_limit(replay, max_frame_length)
+    new_st_context_with_limit(replay, max_frame_length)
 }
 
 // ============================================================================
