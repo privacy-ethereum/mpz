@@ -51,6 +51,7 @@ jobs:
         with:
           toolchain: nightly
           components: rustfmt, clippy
+          targets: wasm32-unknown-unknown
 
       - uses: Swatinem/rust-cache@v2.7.7
 
@@ -59,9 +60,6 @@ jobs:
 
       - name: Run Clippy
         run: cargo +nightly clippy --workspace --exclude mpz-wasm-bench --all-targets --all-features -- -D warnings
-
-      - name: Install wasm32 target
-        run: rustup +nightly target add wasm32-unknown-unknown
 
       - name: Run Clippy on wasm-bench
         working-directory: crates/wasm-bench
