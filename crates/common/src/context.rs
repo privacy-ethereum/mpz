@@ -10,7 +10,14 @@ pub use mt::{
     StdSpawn,
 };
 #[cfg(any(test, feature = "test-utils"))]
-pub use test::{test_mt_context, test_st_context};
+pub use test::{
+    RecordedMtData, RecordingDuplex, ReplayDuplex, recording_mt_context,
+    recording_mt_context_with_limit, recording_mt_context_with_spawn,
+    recording_mt_context_with_spawn_and_limit, recording_st_context,
+    recording_st_context_with_limit, replay_mt_context, replay_mt_context_with_limit,
+    replay_mt_context_with_spawn, replay_mt_context_with_spawn_and_limit, replay_st_context,
+    test_mt_context, test_mt_context_with_concurrency, test_mt_context_with_spawn, test_st_context,
+};
 
 use core::fmt;
 use std::sync::{Arc, Mutex};
@@ -48,6 +55,25 @@ impl Context {
         }
     }
 
+    /// Creates a new single-threaded context with a custom frame limit.
+    ///
+    /// # Arguments
+    ///
+    /// * `io` - The I/O channel used by the context.
+    /// * `max_frame_length` - Maximum frame size in bytes.
+    #[cfg(any(test, feature = "test-utils"))]
+    pub fn new_single_threaded_with_limit<Io>(io: Io, max_frame_length: usize) -> Self
+    where
+        Io: AsyncRead + AsyncWrite + Send + Sync + Unpin + 'static,
+    {
+        Self {
+            id: ThreadId::default(),
+            io: crate::io::Io::from_io_with_limit(io, max_frame_length),
+            mode: Mode::St,
+        }
+    }
+
+    #[allow(dead_code)]
     pub(crate) fn from_io(io: Io) -> Self {
         Self {
             id: ThreadId::default(),

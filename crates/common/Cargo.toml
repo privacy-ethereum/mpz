@@ -8,7 +8,7 @@ default = []
 executor = []
 sync = ["tokio/sync"]
 future = []
-test-utils = ["uid-mux/test-utils"]
+test-utils = ["uid-mux/test-utils", "tokio/io-util", "tokio-util/compat"]
 ideal = ["tokio/sync"]
 
 [dependencies]
