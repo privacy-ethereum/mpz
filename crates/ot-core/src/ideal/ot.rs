@@ -1,4 +1,12 @@
 //! Ideal Chosen-Message Oblivious Transfer functionality.
+//!
+//! Two implementations are provided:
+//!
+//! 1. **`IdealOTSender`/`IdealOTReceiver`** (message-based): Separate sender
+//!    and receiver types communicating via `FlushMsg`.
+//!
+//! 2. **`IdealOT`** wrapper: Holds both sender and receiver, provides unified
+//!    interface for tests.
 
 use std::{
     mem,
@@ -7,37 +15,205 @@ use std::{
 
 use mpz_common::future::{MaybeDone, Output, Sender, new_output};
 use mpz_core::Block;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     TransferId,
     ot::{OTReceiver, OTReceiverOutput, OTSender, OTSenderOutput},
 };
 
-#[derive(Debug, Default)]
-struct SenderState {
-    transfer_id: TransferId,
-    queue: Vec<(usize, Sender<OTSenderOutput>)>,
+// =============================================================================
+// Message-based ideal OT (separate sender/receiver)
+// =============================================================================
+
+/// Message sent from sender to receiver during flush.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FlushMsg {
+    /// Queued message batches with their counts.
+    pub batches: Vec<FlushBatch>,
 }
 
-#[derive(Debug, Default)]
-struct ReceiverState {
-    transfer_id: TransferId,
-    queue: Vec<(usize, Sender<OTReceiverOutput<Block>>)>,
+/// A batch of messages from one queue_send_ot call.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FlushBatch {
+    /// Number of messages in this batch.
+    pub count: usize,
+    /// The messages (pairs of blocks).
+    pub msgs: Vec<[Block; 2]>,
 }
 
-/// The ideal OT functionality.
-#[derive(Debug, Default, Clone)]
+/// Returns a new ideal OT sender and receiver.
+pub fn ideal_ot() -> (IdealOTSender, IdealOTReceiver) {
+    (IdealOTSender::new(), IdealOTReceiver::new())
+}
+
+/// Ideal OT sender (message-based).
+#[derive(Debug, Default)]
+pub struct IdealOTSender {
+    /// Transfer ID counter.
+    transfer_id: TransferId,
+    /// Queued message batches.
+    batches: Vec<(usize, Vec<[Block; 2]>, Sender<OTSenderOutput>)>,
+}
+
+impl IdealOTSender {
+    /// Creates a new sender.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Returns `true` if the sender wants to be flushed.
+    pub fn wants_flush(&self) -> bool {
+        !self.batches.is_empty()
+    }
+
+    /// Flushes pending operations, returning the message to send to receiver.
+    ///
+    /// Returns `None` if there's nothing to flush.
+    pub fn flush(&mut self) -> Option<FlushMsg> {
+        if self.batches.is_empty() {
+            return None;
+        }
+
+        // Take ownership of batches (no clone)
+        let taken = mem::take(&mut self.batches);
+
+        let mut flush_batches = Vec::with_capacity(taken.len());
+        for (count, msgs, sender) in taken {
+            flush_batches.push(FlushBatch { count, msgs });
+            sender.send(OTSenderOutput {
+                id: self.transfer_id.next(),
+            });
+        }
+
+        Some(FlushMsg {
+            batches: flush_batches,
+        })
+    }
+}
+
+impl OTSender<Block> for IdealOTSender {
+    type Error = IdealOTError;
+    type Future = MaybeDone<OTSenderOutput>;
+
+    fn alloc(&mut self, _count: usize) -> Result<(), Self::Error> {
+        // OT doesn't need pre-allocation
+        Ok(())
+    }
+
+    fn queue_send_ot(&mut self, msgs: &[[Block; 2]]) -> Result<Self::Future, Self::Error> {
+        let (sender, recv) = new_output();
+        self.batches.push((msgs.len(), msgs.to_vec(), sender));
+        Ok(recv)
+    }
+}
+
+/// Ideal OT receiver (message-based).
+#[derive(Debug, Default)]
+pub struct IdealOTReceiver {
+    /// Transfer ID counter.
+    transfer_id: TransferId,
+    /// Queued choice batches.
+    batches: Vec<(Vec<bool>, Sender<OTReceiverOutput<Block>>)>,
+}
+
+impl IdealOTReceiver {
+    /// Creates a new receiver.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Returns `true` if the receiver wants to be flushed.
+    pub fn wants_flush(&self) -> bool {
+        !self.batches.is_empty()
+    }
+
+    /// Flushes pending operations using the message from the sender.
+    pub fn flush(&mut self, flush_msg: FlushMsg) -> Result<(), IdealOTError> {
+        if flush_msg.batches.len() != self.batches.len() {
+            return Err(IdealOTError::new(format!(
+                "batch count mismatch: sender={}, receiver={}",
+                flush_msg.batches.len(),
+                self.batches.len()
+            )));
+        }
+
+        for (sender_batch, (choices, output_sender)) in flush_msg
+            .batches
+            .into_iter()
+            .zip(mem::take(&mut self.batches))
+        {
+            if sender_batch.count != choices.len() {
+                return Err(IdealOTError::new(format!(
+                    "count mismatch: sender={}, receiver={}",
+                    sender_batch.count,
+                    choices.len()
+                )));
+            }
+
+            // Compute chosen messages: chosen[i] = msgs[i][choices[i]]
+            let chosen: Vec<Block> = sender_batch
+                .msgs
+                .into_iter()
+                .zip(&choices)
+                .map(|([zero, one], &choice)| if choice { one } else { zero })
+                .collect();
+
+            output_sender.send(OTReceiverOutput {
+                id: self.transfer_id.next(),
+                msgs: chosen,
+            });
+        }
+
+        Ok(())
+    }
+}
+
+impl OTReceiver<bool, Block> for IdealOTReceiver {
+    type Error = IdealOTError;
+    type Future = MaybeDone<OTReceiverOutput<Block>>;
+
+    fn alloc(&mut self, _count: usize) -> Result<(), Self::Error> {
+        // OT doesn't need pre-allocation
+        Ok(())
+    }
+
+    fn queue_recv_ot(&mut self, choices: &[bool]) -> Result<Self::Future, Self::Error> {
+        let (sender, recv) = new_output();
+        self.batches.push((choices.to_vec(), sender));
+        Ok(recv)
+    }
+}
+
+/// Ideal OT error.
+#[derive(Debug, thiserror::Error)]
+#[error("ideal OT error: {0}")]
+pub struct IdealOTError(String);
+
+impl IdealOTError {
+    fn new(msg: impl Into<String>) -> Self {
+        Self(msg.into())
+    }
+}
+
+// =============================================================================
+// IdealOT wrapper for test convenience
+// =============================================================================
+
+/// Ideal OT wrapper that holds both sender and receiver.
+///
+/// This provides a unified interface for tests where both sender and receiver
+/// share state. Internally uses the message-based `IdealOTSender` and
+/// `IdealOTReceiver`.
+#[derive(Debug, Clone, Default)]
 pub struct IdealOT {
-    inner: Arc<Mutex<Inner>>,
+    inner: Arc<Mutex<IdealOTInner>>,
 }
 
 #[derive(Debug, Default)]
-struct Inner {
-    sender_state: SenderState,
-    receiver_state: ReceiverState,
-
-    msgs: Vec<[Block; 2]>,
-    choices: Vec<bool>,
+struct IdealOTInner {
+    sender: IdealOTSender,
+    receiver: IdealOTReceiver,
 }
 
 impl IdealOT {
@@ -48,61 +224,22 @@ impl IdealOT {
 
     /// Returns `true` if the functionality wants to be flushed.
     pub fn wants_flush(&self) -> bool {
-        let this = self.inner.lock().unwrap();
-        let sender_queue = this.sender_state.queue.len();
-        let receiver_queue = this.receiver_state.queue.len();
-
-        sender_queue > 0 || receiver_queue > 0
+        let inner = self.inner.lock().unwrap();
+        inner.sender.wants_flush() || inner.receiver.wants_flush()
     }
 
     /// Flushes the functionality.
+    ///
+    /// Internally passes the flush message from sender to receiver.
     pub fn flush(&mut self) -> Result<(), IdealOTError> {
-        let mut this = self.inner.lock().unwrap();
-
-        if this.msgs.len() != this.choices.len() {
-            return Err(IdealOTError::new(
-                "number of messages and choices do not match",
-            ));
+        let mut inner = self.inner.lock().unwrap();
+        if let Some(msg) = inner.sender.flush() {
+            inner.receiver.flush(msg)?;
         }
-
-        let sender_queue = mem::take(&mut this.sender_state.queue);
-        let receiver_queue = mem::take(&mut this.receiver_state.queue);
-        let msgs = mem::take(&mut this.msgs);
-        let choices = mem::take(&mut this.choices);
-
-        let mut msgs = msgs
-            .into_iter()
-            .zip(choices)
-            .map(|([zero, one], choice)| if choice { one } else { zero });
-
-        for ((sender_count, sender_output), (receiver_count, receiver_output)) in
-            sender_queue.into_iter().zip(receiver_queue)
-        {
-            let sender_id = this.sender_state.transfer_id.next();
-            let receiver_id = this.receiver_state.transfer_id.next();
-
-            if sender_count != receiver_count {
-                return Err(IdealOTError::new(format!(
-                    "number of messages and choices do not match ({sender_id}): {sender_count} != {receiver_count}"
-                )));
-            }
-
-            sender_output.send(OTSenderOutput { id: sender_id });
-            receiver_output.send(OTReceiverOutput {
-                id: receiver_id,
-                msgs: msgs.by_ref().take(sender_count).collect(),
-            });
-        }
-
         Ok(())
     }
 
     /// Executes chosen-message oblivious transfers.
-    ///
-    /// # Arguments
-    ///
-    /// * `choices` - The choices made by the receiver.
-    /// * `msgs` - The sender's messages.
     pub fn transfer(
         &mut self,
         choices: &[bool],
@@ -129,14 +266,7 @@ impl OTSender<Block> for IdealOT {
     }
 
     fn queue_send_ot(&mut self, msgs: &[[Block; 2]]) -> Result<Self::Future, Self::Error> {
-        let mut this = self.inner.lock().unwrap();
-        this.msgs.extend_from_slice(msgs);
-
-        let (sender, recv) = new_output();
-
-        this.sender_state.queue.push((msgs.len(), sender));
-
-        Ok(recv)
+        self.inner.lock().unwrap().sender.queue_send_ot(msgs)
     }
 }
 
@@ -149,25 +279,7 @@ impl OTReceiver<bool, Block> for IdealOT {
     }
 
     fn queue_recv_ot(&mut self, choices: &[bool]) -> Result<Self::Future, Self::Error> {
-        let mut this = self.inner.lock().unwrap();
-        this.choices.extend_from_slice(choices);
-
-        let (sender, recv) = new_output();
-
-        this.receiver_state.queue.push((choices.len(), sender));
-
-        Ok(recv)
-    }
-}
-
-/// Error for [`IdealOT`].
-#[derive(Debug, thiserror::Error)]
-#[error("Ideal OT error: {0}")]
-pub struct IdealOTError(String);
-
-impl IdealOTError {
-    fn new(msg: impl Into<String>) -> Self {
-        Self(msg.into())
+        self.inner.lock().unwrap().receiver.queue_recv_ot(choices)
     }
 }
 
@@ -180,8 +292,35 @@ mod tests {
 
     use super::*;
 
+    /// Test using separate sender/receiver with explicit message passing.
     #[test]
-    fn test_ideal_ot() {
+    fn test_ideal_ot_separate() {
+        let mut rng = StdRng::seed_from_u64(0);
+        let mut choices = vec![false; 100];
+        rng.fill(&mut choices[..]);
+
+        let msgs: Vec<[Block; 2]> = (0..100).map(|_| [rng.random(), rng.random()]).collect();
+
+        let (mut sender, mut receiver) = ideal_ot();
+
+        // Queue operations
+        let mut sender_output = sender.queue_send_ot(&msgs).unwrap();
+        let mut receiver_output = receiver.queue_recv_ot(&choices).unwrap();
+
+        // Flush (sender produces message, receiver consumes it)
+        let flush_msg = sender.flush().expect("should have message");
+        receiver.flush(flush_msg).unwrap();
+
+        // Get outputs
+        let OTSenderOutput { .. } = sender_output.try_recv().unwrap().unwrap();
+        let OTReceiverOutput { msgs: chosen, .. } = receiver_output.try_recv().unwrap().unwrap();
+
+        assert_ot(&choices, &msgs, &chosen);
+    }
+
+    /// Test using IdealOT wrapper with unified interface.
+    #[test]
+    fn test_ideal_ot_wrapper() {
         let mut rng = StdRng::seed_from_u64(0);
         let mut choices = vec![false; 100];
         rng.fill(&mut choices[..]);

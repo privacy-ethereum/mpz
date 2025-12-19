@@ -24,12 +24,19 @@ members = [
     "crates/vm-core",
     "crates/zk-core",
     "crates/zk",
+    "crates/wasm-bench",
 ]
 exclude = ["crates/lpn-estimator"]
 resolver = "2"
 
 [profile.release]
 lto = true
+
+[profile.wasm]
+inherits = "release"
+lto = true
+panic = "abort"
+codegen-units = 1
 
 [workspace.lints.rust]
 # unsafe_code = "forbid"
