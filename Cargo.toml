@@ -32,6 +32,12 @@ resolver = "2"
 [profile.release]
 lto = true
 
+[profile.wasm]
+inherits = "release"
+lto = true
+panic = "abort"
+codegen-units = 1
+
 [workspace.lints.rust]
 # unsafe_code = "forbid"
 unexpected_cfgs = { level = "warn", check-cfg = [

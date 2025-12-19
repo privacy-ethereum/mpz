@@ -1,39 +1,41 @@
-//! Ideal functionality for chosen-message oblivious transfer.
+//! Message-based ideal Chosen-Message Oblivious Transfer functionality.
+//!
+//! This implementation wraps `ot-core`'s `IdealOTSender`/`IdealOTReceiver`
+//! and adds async I/O for network communication.
 
 use async_trait::async_trait;
-
-use mpz_common::{
-    Context, Flush,
-    ideal::{CallSync, call_sync},
-};
+use mpz_common::{Context, Flush};
+use mpz_common::future::MaybeDone;
 use mpz_core::Block;
-use mpz_ot_core::{
-    ideal::ot::{IdealOT as Core, IdealOTError as CoreError},
-    ot::{OTReceiver, OTSender},
+use mpz_ot_core::ideal::ot::{
+    FlushMsg, IdealOTError as CoreError, IdealOTReceiver as CoreReceiver,
+    IdealOTSender as CoreSender,
 };
+use mpz_ot_core::ot::{OTReceiver, OTReceiverOutput, OTSender, OTSenderOutput};
+use serio::{SinkExt, stream::IoStreamExt};
 
 /// Returns a new ideal OT sender and receiver.
 pub fn ideal_ot() -> (IdealOTSender, IdealOTReceiver) {
-    let core = Core::new();
-    let (sync_0, sync_1) = call_sync();
     (
         IdealOTSender {
-            core: core.clone(),
-            sync: sync_0,
+            core: CoreSender::new(),
         },
-        IdealOTReceiver { core, sync: sync_1 },
+        IdealOTReceiver {
+            core: CoreReceiver::new(),
+        },
     )
 }
 
-/// Ideal OT sender.
+/// Message-based ideal OT sender.
+///
+/// Wraps `ot-core`'s `IdealOTSender` and sends `FlushMsg` over the network.
 pub struct IdealOTSender {
-    core: Core,
-    sync: CallSync,
+    core: CoreSender,
 }
 
 impl OTSender<Block> for IdealOTSender {
     type Error = IdealOTError;
-    type Future = <Core as OTSender<Block>>::Future;
+    type Future = MaybeDone<OTSenderOutput>;
 
     fn alloc(&mut self, count: usize) -> Result<(), Self::Error> {
         OTSender::alloc(&mut self.core, count).map_err(From::from)
@@ -52,27 +54,24 @@ impl Flush for IdealOTSender {
         self.core.wants_flush()
     }
 
-    async fn flush(&mut self, _ctx: &mut Context) -> Result<(), Self::Error> {
-        if self.core.wants_flush() {
-            self.sync
-                .call(|| self.core.flush().map_err(IdealOTError::from))
-                .await
-                .transpose()?;
+    async fn flush(&mut self, ctx: &mut Context) -> Result<(), Self::Error> {
+        if let Some(msg) = self.core.flush() {
+            ctx.io_mut().send(msg).await?;
         }
-
         Ok(())
     }
 }
 
-/// Ideal OT receiver.
+/// Message-based ideal OT receiver.
+///
+/// Wraps `ot-core`'s `IdealOTReceiver` and receives `FlushMsg` from the network.
 pub struct IdealOTReceiver {
-    core: Core,
-    sync: CallSync,
+    core: CoreReceiver,
 }
 
 impl OTReceiver<bool, Block> for IdealOTReceiver {
     type Error = IdealOTError;
-    type Future = <Core as OTReceiver<bool, Block>>::Future;
+    type Future = MaybeDone<OTReceiverOutput<Block>>;
 
     fn alloc(&mut self, count: usize) -> Result<(), Self::Error> {
         OTReceiver::alloc(&mut self.core, count).map_err(From::from)
@@ -91,19 +90,63 @@ impl Flush for IdealOTReceiver {
         self.core.wants_flush()
     }
 
-    async fn flush(&mut self, _ctx: &mut Context) -> Result<(), Self::Error> {
+    async fn flush(&mut self, ctx: &mut Context) -> Result<(), Self::Error> {
         if self.core.wants_flush() {
-            self.sync
-                .call(|| self.core.flush().map_err(IdealOTError::from))
-                .await
-                .transpose()?;
+            let msg: FlushMsg = ctx.io_mut().expect_next().await?;
+            self.core.flush(msg)?;
         }
-
         Ok(())
     }
 }
 
 /// Ideal OT error.
 #[derive(Debug, thiserror::Error)]
-#[error(transparent)]
-pub struct IdealOTError(#[from] CoreError);
+pub enum IdealOTError {
+    /// Core error.
+    #[error(transparent)]
+    Core(#[from] CoreError),
+    /// I/O error during message exchange.
+    #[error("io error: {0}")]
+    Io(#[from] std::io::Error),
+}
+
+#[cfg(test)]
+mod tests {
+    use mpz_common::context::test_st_context;
+    use mpz_common::future::Output;
+    use mpz_ot_core::test::assert_ot;
+    use rand::{Rng, SeedableRng, rngs::StdRng};
+
+    use super::*;
+
+    #[tokio::test]
+    async fn test_ideal_ot() {
+        let mut rng = StdRng::seed_from_u64(0);
+
+        let (mut sender, mut receiver) = ideal_ot();
+        let (mut ctx_s, mut ctx_r) = test_st_context(1024 * 1024);
+
+        // Generate messages and choices
+        let msgs: Vec<[Block; 2]> = (0..128).map(|_| [rng.random(), rng.random()]).collect();
+        let choices: Vec<bool> = (0..128).map(|_| rng.random()).collect();
+
+        // Queue operations
+        let mut sender_out = sender.queue_send_ot(&msgs).unwrap();
+        let mut receiver_out = receiver.queue_recv_ot(&choices).unwrap();
+
+        // Flush
+        let (r1, r2) = futures::join!(
+            sender.flush(&mut ctx_s),
+            receiver.flush(&mut ctx_r)
+        );
+        r1.unwrap();
+        r2.unwrap();
+
+        // Get outputs
+        let _ = sender_out.try_recv().unwrap().unwrap();
+        let receiver_output = receiver_out.try_recv().unwrap().unwrap();
+
+        // Verify correctness
+        assert_ot(&choices, &msgs, &receiver_output.msgs);
+    }
+}
