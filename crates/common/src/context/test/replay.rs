@@ -15,8 +15,7 @@ use crate::{
     mux::Mux,
 };
 
-use super::helpers::new_st_context_with_limit;
-use super::recording::RecordedMtData;
+use super::{helpers::new_st_context_with_limit, recording::RecordedMtData};
 
 /// A duplex stream that replays recorded bytes on read and discards writes.
 ///

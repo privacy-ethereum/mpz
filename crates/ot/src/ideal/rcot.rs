@@ -4,14 +4,15 @@
 //! and adds async I/O for network communication.
 
 use async_trait::async_trait;
-use mpz_common::{Context, Flush};
-use mpz_common::future::MaybeDone;
+use mpz_common::{Context, Flush, future::MaybeDone};
 use mpz_core::Block;
-use mpz_ot_core::ideal::rcot::{
-    FlushMsg, IdealRCOTError as CoreError, IdealRCOTReceiver as CoreReceiver,
-    IdealRCOTSender as CoreSender,
+use mpz_ot_core::{
+    ideal::rcot::{
+        FlushMsg, IdealRCOTError as CoreError, IdealRCOTReceiver as CoreReceiver,
+        IdealRCOTSender as CoreSender,
+    },
+    rcot::{RCOTReceiver, RCOTReceiverOutput, RCOTSender, RCOTSenderOutput},
 };
-use mpz_ot_core::rcot::{RCOTReceiver, RCOTReceiverOutput, RCOTSender, RCOTSenderOutput};
 use serio::{SinkExt, stream::IoStreamExt};
 
 /// Returns a new message-based ideal RCOT sender and receiver.
@@ -76,7 +77,8 @@ impl Flush for IdealRCOTSender {
 
 /// Message-based ideal RCOT receiver.
 ///
-/// Wraps `ot-core`'s `IdealRCOTReceiver` and receives `FlushMsg` from the network.
+/// Wraps `ot-core`'s `IdealRCOTReceiver` and receives `FlushMsg` from the
+/// network.
 pub struct IdealRCOTReceiver {
     core: CoreReceiver,
 }
@@ -156,10 +158,7 @@ mod tests {
         RCOTReceiver::alloc(&mut receiver, COUNT).unwrap();
 
         // Flush (exchange seed only)
-        let (r1, r2) = futures::join!(
-            sender.flush(&mut ctx_s),
-            receiver.flush(&mut ctx_r)
-        );
+        let (r1, r2) = futures::join!(sender.flush(&mut ctx_s), receiver.flush(&mut ctx_r));
         r1.unwrap();
         r2.unwrap();
 
@@ -168,6 +167,11 @@ mod tests {
         let receiver_out = receiver.try_recv_rcot(COUNT).unwrap();
 
         // Verify correctness
-        assert_cot(delta, &receiver_out.choices, &sender_out.keys, &receiver_out.msgs);
+        assert_cot(
+            delta,
+            &receiver_out.choices,
+            &sender_out.keys,
+            &receiver_out.msgs,
+        );
     }
 }

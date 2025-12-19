@@ -1,21 +1,26 @@
 //! Isolated Ferret receiver benchmark.
 //!
-//! Records protocol messages for replay-based isolated benchmarking of Ferret receiver.
+//! Records protocol messages for replay-based isolated benchmarking of Ferret
+//! receiver.
 //!
 //! Run with: cargo bench -p mpz-ot --bench ferret_receiver
 
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use futures::executor::block_on;
-use mpz_common::context::{
-    Multithread, RecordedMtData, recording_mt_context_with_limit, recording_st_context_with_limit,
-    replay_mt_context_with_limit, replay_st_context,
+use mpz_common::{
+    Flush,
+    context::{
+        Multithread, RecordedMtData, recording_mt_context_with_limit,
+        recording_st_context_with_limit, replay_mt_context_with_limit, replay_st_context,
+    },
 };
-use mpz_common::Flush;
 use mpz_core::Block;
-use mpz_ot::ferret::{FerretConfig, Receiver, Sender};
-use mpz_ot::ideal::rcot::{ideal_rcot, IdealRCOTReceiver};
+use mpz_ot::{
+    ferret::{FerretConfig, Receiver, Sender},
+    ideal::rcot::{IdealRCOTReceiver, ideal_rcot},
+};
 use mpz_ot_core::rcot::{RCOTReceiver, RCOTSender};
-use rand::{rngs::StdRng, Rng, SeedableRng};
+use rand::{Rng, SeedableRng, rngs::StdRng};
 
 const OT_COUNT: usize = 10_000_000;
 
@@ -269,8 +274,16 @@ fn criterion_benchmark(c: &mut Criterion) {
     // Verify determinism
     let recorded_mt_2 = record_for_receiver_mt(0);
     assert_eq!(
-        recorded_mt.data.channels.keys().collect::<std::collections::HashSet<_>>(),
-        recorded_mt_2.data.channels.keys().collect::<std::collections::HashSet<_>>(),
+        recorded_mt
+            .data
+            .channels
+            .keys()
+            .collect::<std::collections::HashSet<_>>(),
+        recorded_mt_2
+            .data
+            .channels
+            .keys()
+            .collect::<std::collections::HashSet<_>>(),
         "MT Ferret receiver recordings have different channels"
     );
     for (id, data) in &recorded_mt.data.channels {

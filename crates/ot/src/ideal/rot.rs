@@ -4,14 +4,15 @@
 //! and adds async I/O for network communication.
 
 use async_trait::async_trait;
-use mpz_common::{Context, Flush};
-use mpz_common::future::MaybeDone;
+use mpz_common::{Context, Flush, future::MaybeDone};
 use mpz_core::Block;
-use mpz_ot_core::ideal::rot::{
-    FlushMsg, IdealROTError as CoreError, IdealROTReceiver as CoreReceiver,
-    IdealROTSender as CoreSender,
+use mpz_ot_core::{
+    ideal::rot::{
+        FlushMsg, IdealROTError as CoreError, IdealROTReceiver as CoreReceiver,
+        IdealROTSender as CoreSender,
+    },
+    rot::{ROTReceiver, ROTReceiverOutput, ROTSender, ROTSenderOutput},
 };
-use mpz_ot_core::rot::{ROTReceiver, ROTReceiverOutput, ROTSender, ROTSenderOutput};
 use serio::{SinkExt, stream::IoStreamExt};
 
 /// Returns a new ideal ROT sender and receiver.
@@ -72,7 +73,8 @@ impl Flush for IdealROTSender {
 
 /// Message-based ideal ROT receiver.
 ///
-/// Wraps `ot-core`'s `IdealROTReceiver` and receives `FlushMsg` from the network.
+/// Wraps `ot-core`'s `IdealROTReceiver` and receives `FlushMsg` from the
+/// network.
 pub struct IdealROTReceiver {
     core: CoreReceiver,
 }
@@ -151,10 +153,7 @@ mod tests {
         ROTReceiver::alloc(&mut receiver, COUNT).unwrap();
 
         // Flush (exchange seed only)
-        let (r1, r2) = futures::join!(
-            sender.flush(&mut ctx_s),
-            receiver.flush(&mut ctx_r)
-        );
+        let (r1, r2) = futures::join!(sender.flush(&mut ctx_s), receiver.flush(&mut ctx_r));
         r1.unwrap();
         r2.unwrap();
 

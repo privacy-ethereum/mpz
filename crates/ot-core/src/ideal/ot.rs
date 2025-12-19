@@ -2,8 +2,8 @@
 //!
 //! Two implementations are provided:
 //!
-//! 1. **`IdealOTSender`/`IdealOTReceiver`** (message-based): Separate sender and
-//!    receiver types communicating via `FlushMsg`.
+//! 1. **`IdealOTSender`/`IdealOTReceiver`** (message-based): Separate sender
+//!    and receiver types communicating via `FlushMsg`.
 //!
 //! 2. **`IdealOT`** wrapper: Holds both sender and receiver, provides unified
 //!    interface for tests.
@@ -86,7 +86,9 @@ impl IdealOTSender {
             });
         }
 
-        Some(FlushMsg { batches: flush_batches })
+        Some(FlushMsg {
+            batches: flush_batches,
+        })
     }
 }
 
@@ -136,8 +138,10 @@ impl IdealOTReceiver {
             )));
         }
 
-        for (sender_batch, (choices, output_sender)) in
-            flush_msg.batches.into_iter().zip(mem::take(&mut self.batches))
+        for (sender_batch, (choices, output_sender)) in flush_msg
+            .batches
+            .into_iter()
+            .zip(mem::take(&mut self.batches))
         {
             if sender_batch.count != choices.len() {
                 return Err(IdealOTError::new(format!(

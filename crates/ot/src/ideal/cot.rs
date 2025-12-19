@@ -4,13 +4,14 @@
 //! and adds async I/O for network communication.
 
 use async_trait::async_trait;
-use mpz_common::{Context, Flush};
-use mpz_common::future::MaybeDone;
+use mpz_common::{Context, Flush, future::MaybeDone};
 use mpz_core::Block;
-use mpz_ot_core::cot::{COTReceiver, COTReceiverOutput, COTSender, COTSenderOutput};
-use mpz_ot_core::ideal::cot::{
-    FlushMsg, IdealCOTError as CoreError, IdealCOTReceiver as CoreReceiver,
-    IdealCOTSender as CoreSender,
+use mpz_ot_core::{
+    cot::{COTReceiver, COTReceiverOutput, COTSender, COTSenderOutput},
+    ideal::cot::{
+        FlushMsg, IdealCOTError as CoreError, IdealCOTReceiver as CoreReceiver,
+        IdealCOTSender as CoreSender,
+    },
 };
 use serio::{SinkExt, stream::IoStreamExt};
 
@@ -72,7 +73,8 @@ impl Flush for IdealCOTSender {
 
 /// Message-based ideal COT receiver.
 ///
-/// Wraps `ot-core`'s `IdealCOTReceiver` and receives `FlushMsg` from the network.
+/// Wraps `ot-core`'s `IdealCOTReceiver` and receives `FlushMsg` from the
+/// network.
 pub struct IdealCOTReceiver {
     core: CoreReceiver,
 }
@@ -124,8 +126,7 @@ pub enum IdealCOTError {
 
 #[cfg(test)]
 mod tests {
-    use mpz_common::context::test_st_context;
-    use mpz_common::future::Output;
+    use mpz_common::{context::test_st_context, future::Output};
     use mpz_ot_core::test::assert_cot;
     use rand::{Rng, SeedableRng, rngs::StdRng};
 
@@ -148,10 +149,7 @@ mod tests {
         let mut receiver_out = receiver.queue_recv_cot(&choices).unwrap();
 
         // Flush
-        let (r1, r2) = futures::join!(
-            sender.flush(&mut ctx_s),
-            receiver.flush(&mut ctx_r)
-        );
+        let (r1, r2) = futures::join!(sender.flush(&mut ctx_s), receiver.flush(&mut ctx_r));
         r1.unwrap();
         r2.unwrap();
 

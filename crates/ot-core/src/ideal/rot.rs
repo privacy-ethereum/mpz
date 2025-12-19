@@ -2,9 +2,10 @@
 //!
 //! Two implementations are provided:
 //!
-//! 1. **`IdealROTSender`/`IdealROTReceiver`** (message-based): Separate sender and
-//!    receiver types communicating via `FlushMsg`. Uses seed-based generation
-//!    for efficiency - only seed/offset/count are sent, not actual data.
+//! 1. **`IdealROTSender`/`IdealROTReceiver`** (message-based): Separate sender
+//!    and receiver types communicating via `FlushMsg`. Uses seed-based
+//!    generation for efficiency - only seed/offset/count are sent, not actual
+//!    data.
 //!
 //! 2. **`IdealROT`** wrapper: Holds both sender and receiver, provides unified
 //!    interface for tests.
@@ -41,7 +42,8 @@ pub struct FlushMsg {
     pub count: usize,
 }
 
-/// Generate key pairs deterministically from seed + offset via counter addition.
+/// Generate key pairs deterministically from seed + offset via counter
+/// addition.
 ///
 /// For each index i:
 /// - keys[i][0] = seed + (offset + i) * 3
@@ -54,14 +56,10 @@ fn generate_keys(seed: Block, offset: u64, count: usize) -> Vec<[Block; 2]> {
             let idx = (offset as u128).wrapping_add(i as u128).wrapping_mul(3);
             let k0 = base.wrapping_add(idx);
             let k1 = base.wrapping_add(idx).wrapping_add(1);
-            [
-                Block::from(k0.to_le_bytes()),
-                Block::from(k1.to_le_bytes()),
-            ]
+            [Block::from(k0.to_le_bytes()), Block::from(k1.to_le_bytes())]
         })
         .collect()
 }
-
 
 /// Returns a new ideal ROT sender and receiver.
 pub fn ideal_rot(seed: Block) -> (IdealROTSender, IdealROTReceiver) {
@@ -229,8 +227,7 @@ impl IdealROTReceiver {
         if flush_msg.count != self.pending {
             return Err(IdealROTError::new(format!(
                 "count mismatch: sender={}, receiver={}",
-                flush_msg.count,
-                self.pending
+                flush_msg.count, self.pending
             )));
         }
 
@@ -287,7 +284,10 @@ impl ROTReceiver<bool, Block> for IdealROTReceiver {
         self.choices.len()
     }
 
-    fn try_recv_rot(&mut self, count: usize) -> Result<ROTReceiverOutput<bool, Block>, Self::Error> {
+    fn try_recv_rot(
+        &mut self,
+        count: usize,
+    ) -> Result<ROTReceiverOutput<bool, Block>, Self::Error> {
         if count > self.choices.len() {
             return Err(IdealROTError::new(format!(
                 "not enough ROTs available: {} < {}",
@@ -448,7 +448,10 @@ impl ROTReceiver<bool, Block> for IdealROT {
         self.inner.lock().unwrap().receiver.available()
     }
 
-    fn try_recv_rot(&mut self, count: usize) -> Result<ROTReceiverOutput<bool, Block>, Self::Error> {
+    fn try_recv_rot(
+        &mut self,
+        count: usize,
+    ) -> Result<ROTReceiverOutput<bool, Block>, Self::Error> {
         self.inner.lock().unwrap().receiver.try_recv_rot(count)
     }
 

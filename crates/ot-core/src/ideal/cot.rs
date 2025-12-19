@@ -2,8 +2,8 @@
 //!
 //! Two implementations are provided:
 //!
-//! 1. **`IdealCOTSender`/`IdealCOTReceiver`** (message-based): Separate sender and
-//!    receiver types communicating via `FlushMsg`.
+//! 1. **`IdealCOTSender`/`IdealCOTReceiver`** (message-based): Separate sender
+//!    and receiver types communicating via `FlushMsg`.
 //!
 //! 2. **`IdealCOT`** wrapper: Holds both sender and receiver, provides unified
 //!    interface for tests.
@@ -157,8 +157,10 @@ impl IdealCOTReceiver {
 
         let delta = flush_msg.delta;
 
-        for (sender_batch, (choices, output_sender)) in
-            flush_msg.batches.into_iter().zip(mem::take(&mut self.batches))
+        for (sender_batch, (choices, output_sender)) in flush_msg
+            .batches
+            .into_iter()
+            .zip(mem::take(&mut self.batches))
         {
             if sender_batch.count != choices.len() {
                 return Err(IdealCOTError::new(format!(

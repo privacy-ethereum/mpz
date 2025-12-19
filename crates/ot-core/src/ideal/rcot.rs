@@ -48,10 +48,7 @@ fn generate_keys(seed: Block, offset: u64, count: usize) -> Vec<Block> {
 /// This implementation sends only a seed during flush, and the receiver
 /// regenerates keys locally via counter addition.
 pub fn ideal_rcot(seed: Block, delta: Block) -> (IdealRCOTSender, IdealRCOTReceiver) {
-    (
-        IdealRCOTSender::new(seed, delta),
-        IdealRCOTReceiver::new(),
-    )
+    (IdealRCOTSender::new(seed, delta), IdealRCOTReceiver::new())
 }
 
 /// Ideal RCOT sender.
@@ -268,13 +265,11 @@ impl IdealRCOTReceiver {
         let msgs: Vec<Block> = keys
             .iter()
             .zip(&choices)
-            .map(|(key, &choice)| {
-                if choice {
-                    *key ^ flush_msg.delta
-                } else {
-                    *key
-                }
-            })
+            .map(
+                |(key, &choice)| {
+                    if choice { *key ^ flush_msg.delta } else { *key }
+                },
+            )
             .collect();
 
         // Store received data
@@ -318,7 +313,10 @@ impl RCOTReceiver<bool, Block> for IdealRCOTReceiver {
         self.choices.len()
     }
 
-    fn try_recv_rcot(&mut self, count: usize) -> Result<RCOTReceiverOutput<bool, Block>, Self::Error> {
+    fn try_recv_rcot(
+        &mut self,
+        count: usize,
+    ) -> Result<RCOTReceiverOutput<bool, Block>, Self::Error> {
         if count > self.choices.len() {
             return Err(IdealRCOTError::new(format!(
                 "not enough OTs: available={}, requested={}",
@@ -480,7 +478,10 @@ impl RCOTReceiver<bool, Block> for IdealRCOT {
         self.inner.lock().unwrap().receiver.available()
     }
 
-    fn try_recv_rcot(&mut self, count: usize) -> Result<RCOTReceiverOutput<bool, Block>, Self::Error> {
+    fn try_recv_rcot(
+        &mut self,
+        count: usize,
+    ) -> Result<RCOTReceiverOutput<bool, Block>, Self::Error> {
         self.inner.lock().unwrap().receiver.try_recv_rcot(count)
     }
 
@@ -526,7 +527,12 @@ mod tests {
         let receiver_out = receiver.try_recv_rcot(COUNT).unwrap();
 
         // Verify correctness
-        assert_cot(delta, &receiver_out.choices, &sender_out.keys, &receiver_out.msgs);
+        assert_cot(
+            delta,
+            &receiver_out.choices,
+            &sender_out.keys,
+            &receiver_out.msgs,
+        );
     }
 
     /// Test using IdealRCOT wrapper with unified interface.
@@ -537,14 +543,8 @@ mod tests {
         ideal.alloc(100);
         ideal.flush().unwrap();
 
-        let (
-            RCOTSenderOutput { keys, .. },
-            RCOTReceiverOutput {
-                choices,
-                msgs,
-                ..
-            },
-        ) = ideal.transfer(100).unwrap();
+        let (RCOTSenderOutput { keys, .. }, RCOTReceiverOutput { choices, msgs, .. }) =
+            ideal.transfer(100).unwrap();
 
         assert_cot(ideal.delta(), &choices, &keys, &msgs);
     }
