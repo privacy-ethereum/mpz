@@ -34,6 +34,15 @@ pub struct IdealRCOTSender {
     core: CoreSender,
 }
 
+impl IdealRCOTSender {
+    /// Creates a new sender with the given seed and delta.
+    pub fn new(seed: Block, delta: Block) -> Self {
+        Self {
+            core: CoreSender::new(seed, delta),
+        }
+    }
+}
+
 impl RCOTSender<Block> for IdealRCOTSender {
     type Error = IdealRCOTError;
     type Future = MaybeDone<RCOTSenderOutput<Block>>;
@@ -81,6 +90,15 @@ impl Flush for IdealRCOTSender {
 /// network.
 pub struct IdealRCOTReceiver {
     core: CoreReceiver,
+}
+
+impl IdealRCOTReceiver {
+    /// Creates a new receiver with the given seed for deterministic behavior.
+    pub fn from_seed(seed: u64) -> Self {
+        Self {
+            core: CoreReceiver::from_seed(seed),
+        }
+    }
 }
 
 impl RCOTReceiver<bool, Block> for IdealRCOTReceiver {
