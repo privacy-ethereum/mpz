@@ -163,8 +163,6 @@ async fn run_benchmarks_with_concurrency(
     let timeout = Duration::from_secs(300);
     let start = std::time::Instant::now();
     let mut last_status = String::new();
-    let mut last_log_count = 0usize;
-
     let result: BenchOutput = loop {
         if start.elapsed() > timeout {
             return Err("Benchmark timed out after 5 minutes".into());
@@ -176,7 +174,7 @@ async fn run_benchmarks_with_concurrency(
             .await?;
         if let Ok(logs_json) = logs_check.into_value::<String>() {
             if let Ok(logs) = serde_json::from_str::<Vec<String>>(&logs_json) {
-                last_log_count = logs.len();
+                let _ = logs.len();
             }
         }
 

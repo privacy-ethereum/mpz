@@ -1,66 +1,60 @@
-use criterion::{Criterion, black_box, criterion_group, criterion_main};
+//! Benchmarks for half-gates garbling.
+//!
+//! Run with: `cargo bench -p mpz-garble-core --bench garble`
+
+use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
 use mpz_circuits::AES128;
-use mpz_garble_core::{Evaluator, Garbler};
+use mpz_garble_core::{Garbler, Key};
 use mpz_memory_core::correlated::Delta;
 use rand::{Rng, SeedableRng, rngs::StdRng};
 
-fn criterion_benchmark(c: &mut Criterion) {
-    let mut gb_group = c.benchmark_group("garble");
+// Gate count thresholds
+const THRESHOLDS: &[(u64, &str)] = &[(100_000, "100K"), (1_000_000, "1M"), (10_000_000, "10M")];
+
+fn bench_garble(c: &mut Criterion) {
+    let mut group = c.benchmark_group("garble");
+    group.sample_size(10);
+    let circuit = &*AES128;
 
     let mut rng = StdRng::seed_from_u64(0);
     let delta = Delta::random(&mut rng);
-    let inputs: Vec<_> = (0..256).map(|_| rng.random()).collect();
+    let inputs: Vec<Key> = (0..256).map(|_| rng.random()).collect();
 
-    gb_group.bench_function("aes128", |b| {
-        let mut gb = Garbler::default();
-        b.iter(|| {
-            let mut gb_iter = gb.generate(&AES128, delta, &inputs).unwrap();
+    let gates_per_circuit = circuit.and_count() as u64;
 
-            let _: Vec<_> = gb_iter.by_ref().collect();
+    for &(threshold, name) in THRESHOLDS {
+        let iterations = threshold.div_ceil(gates_per_circuit) as usize;
+        let actual_gates = iterations as u64 * gates_per_circuit;
 
-            black_box(gb_iter.finish().unwrap())
-        })
-    });
+        group.throughput(Throughput::Elements(actual_gates));
 
-    gb_group.bench_function("aes128_batched", |b| {
-        let mut gb = Garbler::default();
-        b.iter(|| {
-            let mut gb_iter = gb.generate_batched(&AES128, delta, &inputs).unwrap();
+        // Iterator-based (one gate at a time)
+        group.bench_function(BenchmarkId::new("iter", name), |b| {
+            let mut gb = Garbler::default();
+            b.iter(|| {
+                for _ in 0..iterations {
+                    let mut iter = gb.generate(circuit, delta, &inputs).unwrap();
+                    let _: Vec<_> = iter.by_ref().collect();
+                    black_box(iter.finish().unwrap());
+                }
+            })
+        });
 
-            let _: Vec<_> = gb_iter.by_ref().collect();
+        // Batched (multiple gates at a time)
+        group.bench_function(BenchmarkId::new("batched", name), |b| {
+            let mut gb = Garbler::default();
+            b.iter(|| {
+                for _ in 0..iterations {
+                    let mut iter = gb.generate_batched(circuit, delta, &inputs).unwrap();
+                    let _: Vec<_> = iter.by_ref().collect();
+                    black_box(iter.finish().unwrap());
+                }
+            })
+        });
+    }
 
-            black_box(gb_iter.finish().unwrap())
-        })
-    });
-
-    drop(gb_group);
-
-    let mut ev_group = c.benchmark_group("evaluate");
-
-    ev_group.bench_function("aes128", |b| {
-        let mut gb = Garbler::default();
-        let mut gb_iter = gb.generate(&AES128, delta, &inputs).unwrap();
-        let gates: Vec<_> = gb_iter.by_ref().collect();
-
-        let choices: Vec<bool> = (0..256).map(|_| rng.random()).collect();
-        let inputs: Vec<_> = inputs
-            .iter()
-            .zip(choices)
-            .map(|(input, choice)| input.auth(choice, &delta))
-            .collect();
-
-        let mut ev = Evaluator::default();
-        b.iter(|| {
-            let mut ev_consumer = ev.evaluate(&AES128, &inputs).unwrap();
-
-            for gate in &gates {
-                ev_consumer.next(*gate);
-            }
-
-            black_box(ev_consumer.finish().unwrap());
-        })
-    });
+    group.finish();
 }
 
-criterion_group!(benches, criterion_benchmark);
+criterion_group!(benches, bench_garble);
 criterion_main!(benches);

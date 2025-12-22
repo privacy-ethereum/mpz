@@ -58,3 +58,7 @@ pretty_assertions = { workspace = true }
 [[bench]]
 name = "garble"
 harness = false
+
+[[bench]]
+name = "evaluate"
+harness = false
