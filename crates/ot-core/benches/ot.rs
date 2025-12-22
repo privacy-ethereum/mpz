@@ -3,13 +3,11 @@ use itybity::ToBits;
 use mpz_core::{Block, lpn::LpnType};
 use mpz_ot_core::{
     chou_orlandi,
-    cot::{COTReceiver, COTSender},
     ferret::{self, FerretConfig},
     ideal::rcot::IdealRCOT,
     kos,
     ot::{OTReceiver, OTSender},
     rcot::{RCOTReceiver, RCOTSender},
-    rot::{ROTReceiver, ROTSender},
 };
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha12Rng;
