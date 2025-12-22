@@ -36,10 +36,4 @@ tokio = { workspace = true, features = [
 tokio-util = { workspace = true, features = ["compat"] }
 uid-mux = { workspace = true, features = ["test-utils"] }
 tracing-subscriber = { workspace = true, features = ["fmt"] }
-criterion = { workspace = true, features = ["async_tokio"] }
 rstest = { workspace = true }
-
-[[bench]]
-name = "io"
-path = "benches/io.rs"
-harness = false
