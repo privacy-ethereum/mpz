@@ -56,17 +56,32 @@ impl Check {
         !self.triples.is_empty()
     }
 
-    fn compute_chis(&self, mut chi: Block) -> Vec<Block> {
-        // TODO: Consider using a PRG instead so computing the coefficients
-        // can be done in parallel.
-        let mut chis = Vec::with_capacity(self.triples.len());
-        chis.push(chi);
-        for _ in 1..self.triples.len() {
-            chi = chi.gfmul(chi);
-            chis.push(chi);
+    /// Computes independent starting points for parallel chi computation.
+    /// Bootstrap 16 values via squaring, hash each to get independent starts.
+    fn compute_chi_starts(chi: Block, segment_size: usize) -> [Block; 16] {
+        use blake3::Hasher;
+
+        // Bootstrap 16 values via squaring
+        let mut bootstrapped = [Block::ZERO; 16];
+        let mut current = chi;
+        for b in &mut bootstrapped {
+            *b = current;
+            current = current.gfmul(current);
         }
 
-        chis
+        // Hash each to get independent starting points
+        let mut starts = [Block::ZERO; 16];
+        for (i, boot) in bootstrapped.iter().enumerate() {
+            let mut hasher = Hasher::new();
+            hasher.update(&boot.to_bytes());
+            hasher.update(&(i as u64).to_le_bytes());
+            hasher.update(&(segment_size as u64).to_le_bytes());
+            let hash = hasher.finalize();
+            starts[i] =
+                Block::try_from(&hash.as_bytes()[..16]).expect("hash should be at least 16 bytes");
+        }
+
+        starts
     }
 
     /// Executes the prover check, returning `U` and `V` defined in Figure 5,
@@ -96,28 +111,49 @@ impl Check {
 
         let chi = Block::try_from(&transcript.finalize().as_bytes()[..16])
             .expect("block should be 16 bytes");
-        let chis = self.compute_chis(chi);
         let macs = mem::take(&mut self.triples);
+
+        // Computation with pre-split lanes.
+        const PARALLELISM: usize = 16;
+        let n = macs.len();
+        let segment_size = n.div_ceil(PARALLELISM);
+        let starts = Self::compute_chi_starts(chi, segment_size);
+
+        let process_segment = |segment: &[Triple], chi_start: Block| {
+            let mut current_chi = chi_start;
+            let mut u_acc = Block::ZERO;
+            let mut v_acc = Block::ZERO;
+
+            for &triple in segment {
+                let (u, v) = compute_terms(triple, current_chi);
+                u_acc ^= u;
+                v_acc ^= v;
+                current_chi = current_chi.gfmul(current_chi);
+            }
+
+            (u_acc, v_acc)
+        };
+
         cfg_if! {
             if #[cfg(feature = "rayon")] {
                 use rayon::prelude::*;
 
                 let (mut u, mut v) = macs
-                    .into_par_iter()
-                    .zip(chis)
-                    .map(|(macs, chi)| compute_terms(macs, chi))
+                    .par_chunks(segment_size)
+                    .zip(starts.into_par_iter())
+                    .map(|(segment, chi_start)| process_segment(segment, chi_start))
                     .reduce(
                         || (Block::ZERO, Block::ZERO),
-                        |(u_acc, v_acc), (u, v)| (u_acc ^ u, v_acc ^ v),
+                        |(u1, v1), (u2, v2)| (u1 ^ u2, v1 ^ v2),
                     );
             } else {
                 let (mut u, mut v) = macs
-                    .into_iter()
-                    .zip(chis)
-                    .map(|(macs, chi)| compute_terms(macs, chi))
+                    .chunks(segment_size)
+                    .zip(starts.into_iter())
+                    .map(|(segment, chi_start)| process_segment(segment, chi_start))
                     .fold(
                         (Block::ZERO, Block::ZERO),
-                        |(u_acc, v_acc), (u, v)| (u_acc ^ u, v_acc ^ v),
+                        |(u1, v1), (u2, v2)| (u1 ^ u2, v1 ^ v2),
                     );
             }
         }
@@ -159,28 +195,47 @@ impl Check {
 
         let chi = Block::try_from(&transcript.finalize().as_bytes()[..16])
             .expect("block should be 16 bytes");
-        let chis = self.compute_chis(chi);
         let keys = mem::take(&mut self.triples);
+
+        // Computation with pre-split lanes.
+        const PARALLELISM: usize = 16;
+        let n = keys.len();
+        let segment_size = n.div_ceil(PARALLELISM);
+        let starts = Self::compute_chi_starts(chi, segment_size);
+
+        let process_segment = |segment: &[Triple], chi_start: Block| {
+            let mut current_chi = chi_start;
+            let mut w_acc = Block::ZERO;
+
+            for &triple in segment {
+                let w = compute_term(triple, current_chi, delta);
+                w_acc ^= w;
+                current_chi = current_chi.gfmul(current_chi);
+            }
+
+            w_acc
+        };
+
         cfg_if! {
             if #[cfg(feature = "rayon")] {
                 use rayon::prelude::*;
 
                 let mut w = keys
-                    .into_par_iter()
-                    .zip(chis)
-                    .map(|(keys, chi)| compute_term(keys, chi, delta))
+                    .par_chunks(segment_size)
+                    .zip(starts.into_par_iter())
+                    .map(|(segment, chi_start)| process_segment(segment, chi_start))
                     .reduce(
                         || Block::ZERO,
-                        |w_acc, w| w_acc ^ w,
+                        |w1, w2| w1 ^ w2,
                     );
             } else {
                 let mut w = keys
-                    .into_iter()
-                    .zip(chis)
-                    .map(|(keys, chi)| compute_term(keys, chi, delta))
+                    .chunks(segment_size)
+                    .zip(starts.into_iter())
+                    .map(|(segment, chi_start)| process_segment(segment, chi_start))
                     .fold(
                         Block::ZERO,
-                        |w_acc, w| w_acc ^ w,
+                        |w1, w2| w1 ^ w2,
                     );
             }
         }
