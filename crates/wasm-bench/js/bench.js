@@ -168,10 +168,14 @@ function getAllBenchmarkDefs(concurrency = 8) {
     return [
         // garbler_core benchmarks (raw garbling primitives)
         { category: "garbler_core", name: "garbler_core/half_gates", fn: (n) => wasm.garble_core_half_gates_garble(n), async: false },
+        { category: "garbler_core", name: "garbler_core/three_halves", fn: (n) => wasm.garble_core_three_halves_garble(n), async: false },
         // evaluator_core benchmarks (raw evaluation primitives)
         { category: "evaluator_core", name: "evaluator_core/half_gates", fn: (n) => wasm.garble_core_half_gates_evaluate(n), async: false, returnsBenchResult: true },
         { category: "evaluator_core", name: "evaluator_core/half_gates_batched", fn: (n) => wasm.garble_core_half_gates_evaluate_batched(n), async: false, returnsBenchResult: true },
         { category: "evaluator_core", name: "evaluator_core/half_gates_parallel", fn: (n) => wasm.garble_core_half_gates_evaluate_parallel(n, concurrency), async: true, returnsBenchResult: true, mt: true },
+        { category: "evaluator_core", name: "evaluator_core/three_halves", fn: (n) => wasm.garble_core_three_halves_evaluate(n), async: false, returnsBenchResult: true },
+        { category: "evaluator_core", name: "evaluator_core/three_halves_batched", fn: (n) => wasm.garble_core_three_halves_evaluate_batched(n), async: false, returnsBenchResult: true },
+        { category: "evaluator_core", name: "evaluator_core/three_halves_parallel", fn: (n) => wasm.garble_core_three_halves_evaluate_parallel(n, concurrency), async: true, returnsBenchResult: true, mt: true },
         // zk_prover_core benchmarks (QuickSilver ZK prover primitives)
         { category: "zk_prover_core", name: "zk_prover_core/execute", fn: (n) => wasm.zk_core_prover_execute(n), async: false, returnsBenchResult: true },
         { category: "zk_prover_core", name: "zk_prover_core/check_200k", fn: (n) => wasm.zk_core_prover_check_200k(n, concurrency), async: true, returnsBenchResult: true, mt: true },
@@ -190,13 +194,20 @@ function getAllBenchmarkDefs(concurrency = 8) {
         { category: "zk_verifier", name: "zk_verifier/100k", fn: (n) => wasm.zk_verifier(n, 100000, concurrency), async: true, returnsBenchResult: true, warmup: 1, mt: true },
         { category: "zk_verifier", name: "zk_verifier/1m", fn: (n) => wasm.zk_verifier(n, 1000000, concurrency), async: true, returnsBenchResult: true, warmup: 1, mt: true },
         { category: "zk_verifier", name: "zk_verifier/10m", fn: (n) => wasm.zk_verifier(n, 10000000, concurrency), async: true, returnsBenchResult: true, warmup: 1, mt: true },
-        // garble benchmarks
-        { category: "garble", name: "garble/garbler_100k", fn: (n) => wasm.garble_garbler(n, 100000, concurrency), async: true, returnsBenchResult: true, warmup: 1, mt: true },
-        { category: "garble", name: "garble/garbler_1m", fn: (n) => wasm.garble_garbler(n, 1000000, concurrency), async: true, returnsBenchResult: true, warmup: 1, mt: true },
-        { category: "garble", name: "garble/garbler_10m", fn: (n) => wasm.garble_garbler(n, 10000000, concurrency), async: true, returnsBenchResult: true, warmup: 1, mt: true },
-        { category: "garble", name: "garble/evaluator_100k", fn: (n) => wasm.garble_evaluator(n, 100000, concurrency), async: true, returnsBenchResult: true, warmup: 1, mt: true },
-        { category: "garble", name: "garble/evaluator_1m", fn: (n) => wasm.garble_evaluator(n, 1000000, concurrency), async: true, returnsBenchResult: true, warmup: 1, mt: true },
-        { category: "garble", name: "garble/evaluator_10m", fn: (n) => wasm.garble_evaluator(n, 10000000, concurrency), async: true, returnsBenchResult: true, warmup: 1, mt: true },
+        // garble benchmarks (half-gates)
+        { category: "garble", name: "garble/half_gates_garbler_100k", fn: (n) => wasm.garble_half_gates_garbler(n, 100000, concurrency), async: true, returnsBenchResult: true, warmup: 1, mt: true },
+        { category: "garble", name: "garble/half_gates_garbler_1m", fn: (n) => wasm.garble_half_gates_garbler(n, 1000000, concurrency), async: true, returnsBenchResult: true, warmup: 1, mt: true },
+        { category: "garble", name: "garble/half_gates_garbler_10m", fn: (n) => wasm.garble_half_gates_garbler(n, 10000000, concurrency), async: true, returnsBenchResult: true, warmup: 1, mt: true },
+        { category: "garble", name: "garble/half_gates_evaluator_100k", fn: (n) => wasm.garble_half_gates_evaluator(n, 100000, concurrency), async: true, returnsBenchResult: true, warmup: 1, mt: true },
+        { category: "garble", name: "garble/half_gates_evaluator_1m", fn: (n) => wasm.garble_half_gates_evaluator(n, 1000000, concurrency), async: true, returnsBenchResult: true, warmup: 1, mt: true },
+        { category: "garble", name: "garble/half_gates_evaluator_10m", fn: (n) => wasm.garble_half_gates_evaluator(n, 10000000, concurrency), async: true, returnsBenchResult: true, warmup: 1, mt: true },
+        // garble benchmarks (three-halves)
+        { category: "garble", name: "garble/three_halves_garbler_100k", fn: (n) => wasm.garble_three_halves_garbler(n, 100000, concurrency), async: true, returnsBenchResult: true, warmup: 1, mt: true },
+        { category: "garble", name: "garble/three_halves_garbler_1m", fn: (n) => wasm.garble_three_halves_garbler(n, 1000000, concurrency), async: true, returnsBenchResult: true, warmup: 1, mt: true },
+        { category: "garble", name: "garble/three_halves_garbler_10m", fn: (n) => wasm.garble_three_halves_garbler(n, 10000000, concurrency), async: true, returnsBenchResult: true, warmup: 1, mt: true },
+        { category: "garble", name: "garble/three_halves_evaluator_100k", fn: (n) => wasm.garble_three_halves_evaluator(n, 100000, concurrency), async: true, returnsBenchResult: true, warmup: 1, mt: true },
+        { category: "garble", name: "garble/three_halves_evaluator_1m", fn: (n) => wasm.garble_three_halves_evaluator(n, 1000000, concurrency), async: true, returnsBenchResult: true, warmup: 1, mt: true },
+        { category: "garble", name: "garble/three_halves_evaluator_10m", fn: (n) => wasm.garble_three_halves_evaluator(n, 10000000, concurrency), async: true, returnsBenchResult: true, warmup: 1, mt: true },
         // ferret_sender benchmarks
         { category: "ferret_sender", name: "ferret_sender/100k", fn: (n) => wasm.ferret_sender(n, 100000, concurrency), async: true, returnsBenchResult: true, warmup: 1, mt: true },
         { category: "ferret_sender", name: "ferret_sender/1m", fn: (n) => wasm.ferret_sender(n, 1000000, concurrency), async: true, returnsBenchResult: true, warmup: 1, mt: true },

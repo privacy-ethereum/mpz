@@ -1,8 +1,8 @@
-//! Isolated garbler benchmarks.
+//! Isolated half-gates garbler benchmarks.
 //!
-//! Records protocol messages for replay-based isolated benchmarking of garbler.
+//! Records protocol messages for replay-based isolated benchmarking of half-gates garbler.
 //!
-//! Run with: cargo bench -p mpz-garble --bench garbler
+//! Run with: `cargo bench -p mpz-garble --features mock --bench garbler_hg`
 
 use std::sync::Arc;
 
@@ -13,7 +13,7 @@ use mpz_common::context::{
     Multithread, RecordedMtData, recording_mt_context_with_limit, recording_st_context_with_limit,
     replay_mt_context_with_limit, replay_st_context,
 };
-use mpz_garble::protocol::semihonest::{Evaluator, Garbler};
+use mpz_garble::protocol::semihonest::half_gates::{Evaluator, Garbler};
 use mpz_memory_core::{Array, binary::U8, correlated::Delta};
 use mpz_ot::ideal::cot::ideal_cot;
 use mpz_vm_core::{Call, prelude::*};

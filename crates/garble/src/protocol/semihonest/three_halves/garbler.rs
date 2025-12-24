@@ -1,17 +1,16 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use serio::SinkExt;
 use tokio::sync::Mutex;
 
 use mpz_common::{Context, Flush};
 use mpz_core::{Block, bitvec::BitVec};
-use mpz_garble_core::{Garbler as Core, GarblerOutput, GarblerWorker};
+use mpz_garble_core::three_halves::GarblerOutput;
 use mpz_memory_core::{DecodeFuture, Memory, Slice, View, binary::Binary, correlated::Delta};
 use mpz_ot::cot::COTSender;
 use mpz_vm_core::{Call, Callable, Execute, Result, VmError};
 
-use crate::{protocol::semihonest::take_preprocess_calls, store::GarblerStore};
+use crate::{three_halves::garbler, protocol::semihonest::take_preprocess_calls, store::GarblerStore};
 
 /// Semi-honest garbler.
 #[derive(Debug)]
@@ -19,25 +18,17 @@ pub struct Garbler<COT> {
     store: Arc<Mutex<GarblerStore<COT>>>,
     call_stack: Vec<(Call, Slice)>,
     preprocessed: Vec<(Vec<Slice>, Slice)>,
-    core: Arc<Mutex<Core>>,
+    delta: Delta,
 }
 
 impl<COT> Garbler<COT> {
     /// Creates a new garbler.
     pub fn new(cot: COT, seed: [u8; 16], delta: Delta) -> Self {
-        // Derive separate seeds for store and core to avoid PRG reuse
-        let store_seed: [u8; 16] = *blake3::derive_key("mpz-garble store", &seed)
-            .first_chunk()
-            .unwrap();
-        let core_seed: [u8; 16] = *blake3::derive_key("mpz-garble core", &seed)
-            .first_chunk()
-            .unwrap();
-
         Self {
-            store: Arc::new(Mutex::new(GarblerStore::new(store_seed, delta, cot))),
+            store: Arc::new(Mutex::new(GarblerStore::new(seed, delta, cot))),
             call_stack: Vec::new(),
             preprocessed: Vec::new(),
-            core: Arc::new(Mutex::new(Core::new(core_seed, delta))),
+            delta,
         }
     }
 
@@ -210,12 +201,7 @@ where
 
     async fn preprocess(&mut self, ctx: &mut Context) -> Result<()> {
         let mut cot = self.store.try_lock().unwrap().acquire_cot();
-
-        let mut core = Mutex::try_lock_owned(self.core.clone()).unwrap();
-        if !core.is_setup() {
-            let msg = core.setup().expect("core was not set up");
-            ctx.io_mut().send(msg).await?;
-        }
+        let delta = self.delta;
 
         let mut call_stack = std::mem::take(&mut self.call_stack);
         let store = self.store.clone();
@@ -240,43 +226,30 @@ where
                     // in a non-empty call stack.
                     debug_assert!(!calls.is_empty());
 
-                    let workers = calls
-                        .iter()
-                        .map(|call| {
-                            core.alloc_worker(call.0.circ().and_count())
-                                .expect("core was set up")
-                        })
-                        .collect::<Vec<_>>();
-
-                    let iter = calls
-                        .into_iter()
-                        .zip(workers.into_iter())
-                        .collect::<Vec<_>>();
+                    // Pre-generate seeds for all calls before parallel execution
+                    let calls_with_seeds: Vec<(Call, Slice, [u8; 32])> = {
+                        let mut lock = store.lock().await;
+                        calls
+                            .into_iter()
+                            .map(|(call, output)| {
+                                let seed = lock.random_seed();
+                                (call, output, seed)
+                            })
+                            .collect()
+                    };
 
                     let store = store.clone();
-                    let outputs =
-                        ctx
-                            .map(
-                                iter,
-                                async move |ctx: &mut Context,
-                                            ((call, output), wrk): (
-                                    (Call, Slice),
-                                    GarblerWorker,
-                                )| {
-                                    generate(
-                                        ctx,
-                                        store.clone(),
-                                        call,
-                                        output,
-                                        Mode::Preprocess,
-                                        wrk,
-                                    )
+                    let outputs = ctx
+                        .map(
+                            calls_with_seeds,
+                            async move |ctx: &mut Context, (call, output, seed): (Call, Slice, [u8; 32])| {
+                                generate(ctx, store.clone(), delta, call, output, seed, Mode::Preprocess)
                                     .await
-                                },
-                                |((call, _), _)| call.circ().and_count(),
-                            )
-                            .await
-                            .map_err(VmError::execute)?;
+                            },
+                            |(call, _, _)| call.circ().and_count(),
+                        )
+                        .await
+                        .map_err(VmError::execute)?;
 
                     outputs.into_iter().collect::<Result<()>>()?;
                 }
@@ -307,11 +280,7 @@ where
     async fn execute(&mut self, ctx: &mut Context) -> Result<()> {
         self.mark_executed()?;
 
-        let mut core = Mutex::try_lock_owned(self.core.clone()).unwrap();
-        if !core.is_setup() {
-            let msg = core.setup().expect("core was not set up");
-            ctx.io_mut().send(msg).await?;
-        }
+        let delta = self.delta;
 
         while !self.call_stack.is_empty() {
             let calls = self.take_execute_calls();
@@ -320,27 +289,26 @@ where
                 break;
             }
 
-            let workers = calls
-                .iter()
-                .map(|call| {
-                    core.alloc_worker(call.0.circ().and_count())
-                        .expect("core was set up")
-                })
-                .collect::<Vec<_>>();
-
-            let iter = calls
-                .into_iter()
-                .zip(workers.into_iter())
-                .collect::<Vec<_>>();
+            // Pre-generate seeds for all calls before parallel execution
+            let calls_with_seeds: Vec<(Call, Slice, [u8; 32])> = {
+                let mut lock = self.store.lock().await;
+                calls
+                    .into_iter()
+                    .map(|(call, output)| {
+                        let seed = lock.random_seed();
+                        (call, output, seed)
+                    })
+                    .collect()
+            };
 
             let store = self.store.clone();
             let outputs = ctx
                 .map(
-                    iter,
-                    async move |ctx: &mut Context, ((call, output), wrk): ((Call, Slice), GarblerWorker)| {
-                        generate(ctx, store.clone(), call, output, Mode::Execute, wrk).await
+                    calls_with_seeds,
+                    async move |ctx: &mut Context, (call, output, seed): (Call, Slice, [u8; 32])| {
+                        generate(ctx, store.clone(), delta, call, output, seed, Mode::Execute).await
                     },
-                    |((call, _), _)| call.circ().and_count(),
+                    |(call, _, _)| call.circ().and_count(),
                 )
                 .await
                 .map_err(VmError::execute)?;
@@ -362,24 +330,26 @@ enum Mode {
 async fn generate<COT>(
     ctx: &mut Context,
     store: Arc<Mutex<GarblerStore<COT>>>,
+    delta: Delta,
     call: Call,
     output: Slice,
+    seed: [u8; 32],
     mode: Mode,
-    worker: GarblerWorker,
 ) -> Result<()> {
     let (circ, inputs) = call.into_parts();
 
-    let mut input_keys = Vec::with_capacity(circ.inputs().len());
-    {
+    let input_keys = {
         let lock = store.lock().await;
+        let mut keys = Vec::with_capacity(circ.inputs().len());
         for input in inputs {
-            input_keys.extend_from_slice(lock.try_get_keys(input).map_err(VmError::memory)?);
+            keys.extend_from_slice(lock.try_get_keys(input).map_err(VmError::memory)?);
         }
-    }
+        keys
+    };
 
     let GarblerOutput {
         outputs: output_keys,
-    } = crate::garbler::generate(ctx, circ, &input_keys, worker)
+    } = garbler::generate(ctx, circ, delta, &input_keys, seed)
         .await
         .map_err(VmError::execute)?;
 

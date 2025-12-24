@@ -16,7 +16,7 @@ use mpz_ot::cot::COTReceiver;
 use mpz_vm_core::{Call, Callable, Execute, Result, VmError};
 
 use crate::{
-    evaluator::receive_garbled_circuit, protocol::semihonest::take_preprocess_calls,
+    half_gates::evaluator, protocol::semihonest::take_preprocess_calls,
     store::EvaluatorStore,
 };
 
@@ -276,7 +276,7 @@ where
                             .map(
                                 calls,
                                 async move |ctx, (call, output): (Call, Slice)| {
-                                    let garbled_circuit = receive_garbled_circuit(ctx, call.circ())
+                                    let garbled_circuit = evaluator::receive_garbled_circuit(ctx, call.circ())
                                         .await
                                         .map_err(VmError::execute)?;
                                     Ok::<_, VmError>((call, output, garbled_circuit))
@@ -399,7 +399,7 @@ async fn evaluate<COT>(
 
     let EvaluatorOutput {
         outputs: output_macs,
-    } = crate::evaluator::evaluate(ctx, circ, &input_macs, worker)
+    } = evaluator::evaluate(ctx, circ, &input_macs, worker)
         .await
         .map_err(VmError::execute)?;
 

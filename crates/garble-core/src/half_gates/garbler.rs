@@ -1,7 +1,9 @@
 use core::fmt;
 use std::{marker::PhantomData, ops::Range};
 
-use crate::{DEFAULT_BATCH_SIZE, EncryptedGateBatch, SetupMsg, circuit::EncryptedGate};
+use crate::{DEFAULT_BATCH_SIZE, SetupMsg};
+
+use super::circuit::{EncryptedGate, EncryptedGateBatch};
 use mpz_circuits::{Circuit, Gate};
 use mpz_core::{Block, aes::FixedKeyAes};
 use mpz_memory_core::correlated::{Delta, Key};

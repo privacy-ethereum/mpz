@@ -47,9 +47,13 @@ const ALL_GROUPS: &[&str] = &[
 /// All available benchmarks
 const ALL_BENCHMARKS: &[&str] = &[
     "garbler_core/half_gates",
+    "garbler_core/three_halves",
     "evaluator_core/half_gates",
     "evaluator_core/half_gates_batched",
     "evaluator_core/half_gates_parallel",
+    "evaluator_core/three_halves",
+    "evaluator_core/three_halves_batched",
+    "evaluator_core/three_halves_parallel",
     "zk_prover_core/execute",
     "zk_prover_core/check_200k",
     "zk_prover_core/check_400k",
@@ -64,12 +68,18 @@ const ALL_BENCHMARKS: &[&str] = &[
     "zk_verifier/100k",
     "zk_verifier/1m",
     "zk_verifier/10m",
-    "garble/garbler_100k",
-    "garble/garbler_1m",
-    "garble/garbler_10m",
-    "garble/evaluator_100k",
-    "garble/evaluator_1m",
-    "garble/evaluator_10m",
+    "garble/half_gates_garbler_100k",
+    "garble/half_gates_garbler_1m",
+    "garble/half_gates_garbler_10m",
+    "garble/half_gates_evaluator_100k",
+    "garble/half_gates_evaluator_1m",
+    "garble/half_gates_evaluator_10m",
+    "garble/three_halves_garbler_100k",
+    "garble/three_halves_garbler_1m",
+    "garble/three_halves_garbler_10m",
+    "garble/three_halves_evaluator_100k",
+    "garble/three_halves_evaluator_1m",
+    "garble/three_halves_evaluator_10m",
     "ferret_sender/100k",
     "ferret_sender/1m",
     "ferret_sender/10m",
@@ -481,10 +491,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 println!("Note: Run ./build-wasm.sh first to build the WASM module.");
                 return Ok(());
             }
-            other => {
-                eprintln!("Unknown argument: {}", other);
+            arg => {
+                eprintln!("Error: Unknown argument: {}", arg);
+                eprintln!();
                 eprintln!("Use --help to see available options.");
-                std::process::exit(1);
+                return Err(format!("Unknown argument: {}", arg).into());
             }
         }
         i += 1;

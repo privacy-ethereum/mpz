@@ -4,7 +4,7 @@
 #![deny(clippy::all)]
 #![forbid(unsafe_code)]
 
-pub(crate) mod evaluator;
-pub(crate) mod garbler;
+pub(crate) mod half_gates;
+pub(crate) mod three_halves;
 pub mod protocol;
 pub(crate) mod store;

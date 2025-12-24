@@ -14,7 +14,7 @@ use mpz_common::context::{
     replay_mt_context_with_spawn_and_limit,
 };
 #[cfg(target_arch = "wasm32")]
-use mpz_garble::protocol::semihonest::{Evaluator, Garbler};
+use mpz_garble::protocol::semihonest::half_gates::{Evaluator, Garbler};
 #[cfg(target_arch = "wasm32")]
 use mpz_memory_core::{Array, binary::*, correlated::Delta};
 #[cfg(target_arch = "wasm32")]
@@ -179,7 +179,7 @@ async fn run_garbler_with_replay(exec: &mut Multithread, circuit_count: usize, d
 /// * `concurrency` - Maximum parallelism level
 #[cfg(target_arch = "wasm32")]
 #[wasm_bindgen]
-pub async fn garble_garbler(n: u32, batch_size: u32, concurrency: u32) -> BenchResult {
+pub async fn garble_half_gates_garbler(n: u32, batch_size: u32, concurrency: u32) -> BenchResult {
     let and_gates_per_circuit = AES128.and_count() as u64;
     let circuit_count = (batch_size as u64).div_ceil(and_gates_per_circuit) as usize;
     let actual_gates = circuit_count as u64 * and_gates_per_circuit;

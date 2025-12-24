@@ -1,10 +1,8 @@
-//! [Two Halves Make a Whole \[ZRE15\]](https://eprint.iacr.org/2014/756) protocol with semi-honest security.
+//! Protocols with semi-honest security.
 
-mod evaluator;
-mod garbler;
+pub mod half_gates;
+pub mod three_halves;
 
-pub use evaluator::Evaluator;
-pub use garbler::Garbler;
 use mpz_memory_core::Slice;
 use mpz_vm_core::Call;
 use rangeset::{ops::Set, set::RangeSet};
@@ -47,7 +45,7 @@ mod tests {
     use mpz_vm_core::{Call, CallableExt, Execute, Vm};
     use rand::{SeedableRng, rngs::StdRng};
 
-    use super::*;
+    use super::half_gates::{Evaluator, Garbler};
 
     #[test]
     fn test_semihonest_is_vm() {

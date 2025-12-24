@@ -49,6 +49,10 @@ impl<COT> GarblerStore<COT> {
     pub(crate) fn set_output(&mut self, slice: Slice, keys: &[Key]) -> Result<(), Error> {
         self.core.set_output(slice, keys).map_err(Error::from)
     }
+
+    pub(crate) fn random_seed(&mut self) -> [u8; 32] {
+        self.core.random_seed()
+    }
 }
 
 impl<COT> Memory<Binary> for GarblerStore<COT> {
