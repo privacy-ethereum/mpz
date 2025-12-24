@@ -8,6 +8,7 @@ use mpz_core::{
     Block,
     bitvec::{BitSlice, BitVec},
 };
+use rand_chacha::{ChaCha12Rng, rand_core::SeedableRng};
 use serde::{Deserialize, Serialize};
 use zerocopy::IntoBytes;
 
@@ -56,32 +57,20 @@ impl Check {
         !self.triples.is_empty()
     }
 
-    /// Computes independent starting points for parallel chi computation.
-    /// Bootstrap 16 values via squaring, hash each to get independent starts.
-    fn compute_chi_starts(chi: Block, segment_size: usize) -> [Block; 16] {
-        use blake3::Hasher;
+    /// Computes independent PRGs for parallel chi computation.
+    /// Returns 16 ChaCha12 PRGs, each seeded from a parent PRG.
+    fn compute_chi_starts(chi: Block) -> [ChaCha12Rng; 16] {
+        use rand_chacha::rand_core::RngCore;
 
-        // Bootstrap 16 values via squaring
-        let mut bootstrapped = [Block::ZERO; 16];
-        let mut current = chi;
-        for b in &mut bootstrapped {
-            *b = current;
-            current = current.gfmul(current);
-        }
+        let mut seed = [0u8; 32];
+        seed[..16].copy_from_slice(&chi.to_bytes());
+        let mut rng = ChaCha12Rng::from_seed(seed);
 
-        // Hash each to get independent starting points
-        let mut starts = [Block::ZERO; 16];
-        for (i, boot) in bootstrapped.iter().enumerate() {
-            let mut hasher = Hasher::new();
-            hasher.update(&boot.to_bytes());
-            hasher.update(&(i as u64).to_le_bytes());
-            hasher.update(&(segment_size as u64).to_le_bytes());
-            let hash = hasher.finalize();
-            starts[i] =
-                Block::try_from(&hash.as_bytes()[..16]).expect("hash should be at least 16 bytes");
-        }
-
-        starts
+        std::array::from_fn(|_| {
+            let mut child_seed = [0u8; 32];
+            rng.fill_bytes(&mut child_seed);
+            ChaCha12Rng::from_seed(child_seed)
+        })
     }
 
     /// Executes the prover check, returning `U` and `V` defined in Figure 5,
@@ -117,18 +106,22 @@ impl Check {
         const PARALLELISM: usize = 16;
         let n = macs.len();
         let segment_size = n.div_ceil(PARALLELISM);
-        let starts = Self::compute_chi_starts(chi, segment_size);
+        let starts = Self::compute_chi_starts(chi);
 
-        let process_segment = |segment: &[Triple], chi_start: Block| {
-            let mut current_chi = chi_start;
+        let process_segment = |segment: &[Triple], mut rng: ChaCha12Rng| {
+            use rand_chacha::rand_core::RngCore;
+
             let mut u_acc = Block::ZERO;
             let mut v_acc = Block::ZERO;
 
             for &triple in segment {
-                let (u, v) = compute_terms(triple, current_chi);
+                let mut chi_bytes = [0u8; 16];
+                rng.fill_bytes(&mut chi_bytes);
+                let chi = Block::from(chi_bytes);
+
+                let (u, v) = compute_terms(triple, chi);
                 u_acc ^= u;
                 v_acc ^= v;
-                current_chi = current_chi.gfmul(current_chi);
             }
 
             (u_acc, v_acc)
@@ -201,16 +194,20 @@ impl Check {
         const PARALLELISM: usize = 16;
         let n = keys.len();
         let segment_size = n.div_ceil(PARALLELISM);
-        let starts = Self::compute_chi_starts(chi, segment_size);
+        let starts = Self::compute_chi_starts(chi);
 
-        let process_segment = |segment: &[Triple], chi_start: Block| {
-            let mut current_chi = chi_start;
+        let process_segment = |segment: &[Triple], mut rng: ChaCha12Rng| {
+            use rand_chacha::rand_core::RngCore;
+
             let mut w_acc = Block::ZERO;
 
             for &triple in segment {
-                let w = compute_term(triple, current_chi, delta);
+                let mut chi_bytes = [0u8; 16];
+                rng.fill_bytes(&mut chi_bytes);
+                let chi = Block::from(chi_bytes);
+
+                let w = compute_term(triple, chi, delta);
                 w_acc ^= w;
-                current_chi = current_chi.gfmul(current_chi);
             }
 
             w_acc
