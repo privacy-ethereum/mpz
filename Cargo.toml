@@ -24,12 +24,19 @@ members = [
     "crates/vm-core",
     "crates/zk-core",
     "crates/zk",
+    "crates/wasm-bench",
 ]
 exclude = ["crates/lpn-estimator"]
 resolver = "2"
 
 [profile.release]
 lto = true
+
+[profile.wasm]
+inherits = "release"
+lto = true
+panic = "abort"
+codegen-units = 1
 
 [workspace.lints.rust]
 # unsafe_code = "forbid"
@@ -65,7 +72,7 @@ mpz-zk-core = { path = "crates/zk-core" }
 mpz-zk = { path = "crates/zk" }
 clmul = { path = "crates/clmul" }
 matrix-transpose = { path = "crates/matrix-transpose" }
-rangeset = "0.2"
+rangeset = "0.4"
 
 # rand
 rand_chacha = "0.9"
@@ -89,6 +96,7 @@ ghash_rc = { package = "ghash", version = "0.6.0-rc.2" }
 ark-ff = "0.4"
 ark-secp256r1 = "0.4"
 num-bigint = "0.4"
+keccak = "0.1"
 
 # async
 async-trait = "0.1"

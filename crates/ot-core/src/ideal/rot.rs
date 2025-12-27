@@ -1,4 +1,14 @@
 //! Ideal Random Oblivious Transfer functionality.
+//!
+//! Two implementations are provided:
+//!
+//! 1. **`IdealROTSender`/`IdealROTReceiver`** (message-based): Separate sender
+//!    and receiver types communicating via `FlushMsg`. Uses seed-based
+//!    generation for efficiency - only seed/offset/count are sent, not actual
+//!    data.
+//!
+//! 2. **`IdealROT`** wrapper: Holds both sender and receiver, provides unified
+//!    interface for tests.
 
 use std::{
     mem,
@@ -6,46 +16,343 @@ use std::{
 };
 
 use mpz_common::future::{MaybeDone, Sender, new_output};
-use mpz_core::{Block, prg::Prg};
+use mpz_core::Block;
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     TransferId,
     rot::{ROTReceiver, ROTReceiverOutput, ROTSender, ROTSenderOutput},
 };
 
-type Error = IdealROTError;
-type Result<T, E = Error> = core::result::Result<T, E>;
+// =============================================================================
+// Message-based ideal ROT (separate sender/receiver)
+// =============================================================================
 
-#[derive(Debug, Default)]
-struct SenderState {
-    alloc: usize,
-    transfer_id: TransferId,
+/// Message sent from sender to receiver during flush.
+/// Only contains seed + offset + count, not the actual data.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FlushMsg {
+    /// Base seed for key/choice generation.
+    pub seed: Block,
+    /// Offset into the sequence.
+    pub offset: u64,
+    /// Number of ROTs to generate.
+    pub count: usize,
+}
+
+/// Generate key pairs deterministically from seed + offset via counter
+/// addition.
+///
+/// For each index i:
+/// - keys[i][0] = seed + (offset + i) * 3
+/// - keys[i][1] = seed + (offset + i) * 3 + 1
+#[inline]
+fn generate_keys(seed: Block, offset: u64, count: usize) -> Vec<[Block; 2]> {
+    let base = u128::from_le_bytes(seed.to_bytes());
+    (0..count)
+        .map(|i| {
+            let idx = (offset as u128).wrapping_add(i as u128).wrapping_mul(3);
+            let k0 = base.wrapping_add(idx);
+            let k1 = base.wrapping_add(idx).wrapping_add(1);
+            [Block::from(k0.to_le_bytes()), Block::from(k1.to_le_bytes())]
+        })
+        .collect()
+}
+
+/// Returns a new ideal ROT sender and receiver.
+pub fn ideal_rot(seed: Block) -> (IdealROTSender, IdealROTReceiver) {
+    (IdealROTSender::new(seed), IdealROTReceiver::new())
+}
+
+/// Ideal ROT sender (message-based).
+///
+/// Sends only seed + offset + count, not the actual keys.
+#[derive(Debug)]
+pub struct IdealROTSender {
+    /// Base seed for generation.
+    seed: Block,
+    /// Current offset into sequence.
+    offset: u64,
+    /// Pending allocation count.
+    pending: usize,
+    /// Generated keys (sender's ROT outputs).
+    keys: Vec<[Block; 2]>,
+    /// Queue of (count, sender) for deferred output.
     queue: Vec<(usize, Sender<ROTSenderOutput<[Block; 2]>>)>,
-}
-
-#[derive(Debug, Default)]
-struct ReceiverState {
-    alloc: usize,
+    /// Transfer ID counter.
     transfer_id: TransferId,
-    queue: Vec<(usize, Sender<ROTReceiverOutput<bool, Block>>)>,
 }
 
-/// The ideal ROT functionality.
-#[derive(Debug, Clone)]
+impl IdealROTSender {
+    /// Creates a new sender with the given seed.
+    pub fn new(seed: Block) -> Self {
+        Self {
+            seed,
+            offset: 0,
+            pending: 0,
+            keys: Vec::new(),
+            queue: Vec::new(),
+            transfer_id: TransferId::default(),
+        }
+    }
+
+    /// Returns `true` if the sender wants to be flushed.
+    pub fn wants_flush(&self) -> bool {
+        self.pending > 0 || !self.queue.is_empty()
+    }
+
+    /// Flushes pending operations, returning the message to send to receiver.
+    ///
+    /// Returns `None` if there's nothing to flush.
+    pub fn flush(&mut self) -> Option<FlushMsg> {
+        if self.pending == 0 && self.queue.is_empty() {
+            return None;
+        }
+
+        let count = self.pending;
+        let current_offset = self.offset;
+
+        if count > 0 {
+            // Generate keys deterministically
+            let keys = generate_keys(self.seed, current_offset, count);
+            self.keys.extend(keys);
+            self.offset += count as u64;
+            self.pending = 0;
+        }
+
+        // Fulfill queued requests
+        for (req_count, sender) in mem::take(&mut self.queue) {
+            let keys = self.keys.drain(..req_count).collect();
+            sender.send(ROTSenderOutput {
+                id: self.transfer_id.next(),
+                keys,
+            });
+        }
+
+        Some(FlushMsg {
+            seed: self.seed,
+            offset: current_offset,
+            count,
+        })
+    }
+}
+
+impl ROTSender<[Block; 2]> for IdealROTSender {
+    type Error = IdealROTError;
+    type Future = MaybeDone<ROTSenderOutput<[Block; 2]>>;
+
+    fn alloc(&mut self, count: usize) -> Result<(), Self::Error> {
+        self.pending += count;
+        Ok(())
+    }
+
+    fn available(&self) -> usize {
+        self.keys.len()
+    }
+
+    fn try_send_rot(&mut self, count: usize) -> Result<ROTSenderOutput<[Block; 2]>, Self::Error> {
+        if count > self.keys.len() {
+            return Err(IdealROTError::new(format!(
+                "not enough ROTs available: {} < {}",
+                self.keys.len(),
+                count
+            )));
+        }
+
+        let keys = self.keys.drain(..count).collect();
+        Ok(ROTSenderOutput {
+            id: self.transfer_id.next(),
+            keys,
+        })
+    }
+
+    fn queue_send_rot(&mut self, count: usize) -> Result<Self::Future, Self::Error> {
+        let (sender, recv) = new_output();
+
+        if self.keys.len() >= count {
+            let keys = self.keys.drain(..count).collect();
+            sender.send(ROTSenderOutput {
+                id: self.transfer_id.next(),
+                keys,
+            });
+        } else {
+            self.queue.push((count, sender));
+        }
+
+        Ok(recv)
+    }
+}
+
+/// Ideal ROT receiver (message-based).
+///
+/// Regenerates keys from the received seed, generates choices from own PRG.
+#[derive(Debug)]
+pub struct IdealROTReceiver {
+    /// RNG for generating choices (constant-seeded).
+    rng: ChaCha8Rng,
+    /// Pending allocation count.
+    pending: usize,
+    /// Generated choices.
+    choices: Vec<bool>,
+    /// Generated messages.
+    msgs: Vec<Block>,
+    /// Queue of (count, sender) for deferred output.
+    queue: Vec<(usize, Sender<ROTReceiverOutput<bool, Block>>)>,
+    /// Transfer ID counter.
+    transfer_id: TransferId,
+}
+
+impl IdealROTReceiver {
+    /// Creates a new receiver with constant-seeded RNG for choices.
+    pub fn new() -> Self {
+        Self {
+            rng: ChaCha8Rng::seed_from_u64(0),
+            pending: 0,
+            choices: Vec::new(),
+            msgs: Vec::new(),
+            queue: Vec::new(),
+            transfer_id: TransferId::default(),
+        }
+    }
+
+    /// Returns `true` if the receiver wants to be flushed.
+    pub fn wants_flush(&self) -> bool {
+        self.pending > 0 || !self.queue.is_empty()
+    }
+
+    /// Flushes pending operations using the message from the sender.
+    pub fn flush(&mut self, flush_msg: FlushMsg) -> Result<(), IdealROTError> {
+        if flush_msg.count != self.pending {
+            return Err(IdealROTError::new(format!(
+                "count mismatch: sender={}, receiver={}",
+                flush_msg.count, self.pending
+            )));
+        }
+
+        if flush_msg.count > 0 {
+            // Regenerate keys from sender's seed (same as sender)
+            let keys = generate_keys(flush_msg.seed, flush_msg.offset, flush_msg.count);
+
+            // Generate choices from receiver's own RNG
+            let choices: Vec<bool> = (0..flush_msg.count).map(|_| self.rng.random()).collect();
+
+            // Compute receiver's messages: msg_i = keys_i[choice_i]
+            let msgs: Vec<Block> = keys
+                .iter()
+                .zip(&choices)
+                .map(|(keys, &choice)| keys[choice as usize])
+                .collect();
+
+            self.choices.extend(choices);
+            self.msgs.extend(msgs);
+            self.pending = 0;
+        }
+
+        // Fulfill queued requests
+        for (req_count, sender) in mem::take(&mut self.queue) {
+            let choices = self.choices.drain(..req_count).collect();
+            let msgs = self.msgs.drain(..req_count).collect();
+            sender.send(ROTReceiverOutput {
+                id: self.transfer_id.next(),
+                choices,
+                msgs,
+            });
+        }
+
+        Ok(())
+    }
+}
+
+impl Default for IdealROTReceiver {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ROTReceiver<bool, Block> for IdealROTReceiver {
+    type Error = IdealROTError;
+    type Future = MaybeDone<ROTReceiverOutput<bool, Block>>;
+
+    fn alloc(&mut self, count: usize) -> Result<(), Self::Error> {
+        self.pending += count;
+        Ok(())
+    }
+
+    fn available(&self) -> usize {
+        self.choices.len()
+    }
+
+    fn try_recv_rot(
+        &mut self,
+        count: usize,
+    ) -> Result<ROTReceiverOutput<bool, Block>, Self::Error> {
+        if count > self.choices.len() {
+            return Err(IdealROTError::new(format!(
+                "not enough ROTs available: {} < {}",
+                self.choices.len(),
+                count
+            )));
+        }
+
+        let choices = self.choices.drain(..count).collect();
+        let msgs = self.msgs.drain(..count).collect();
+        Ok(ROTReceiverOutput {
+            id: self.transfer_id.next(),
+            choices,
+            msgs,
+        })
+    }
+
+    fn queue_recv_rot(&mut self, count: usize) -> Result<Self::Future, Self::Error> {
+        let (sender, recv) = new_output();
+
+        if self.choices.len() >= count {
+            let choices = self.choices.drain(..count).collect();
+            let msgs = self.msgs.drain(..count).collect();
+            sender.send(ROTReceiverOutput {
+                id: self.transfer_id.next(),
+                choices,
+                msgs,
+            });
+        } else {
+            self.queue.push((count, sender));
+        }
+
+        Ok(recv)
+    }
+}
+
+/// Ideal ROT error.
+#[derive(Debug, thiserror::Error)]
+#[error("ideal ROT error: {0}")]
+pub struct IdealROTError(String);
+
+impl IdealROTError {
+    fn new(msg: impl Into<String>) -> Self {
+        Self(msg.into())
+    }
+}
+
+// =============================================================================
+// IdealROT wrapper for test convenience
+// =============================================================================
+
+/// Ideal ROT wrapper that holds both sender and receiver.
+///
+/// This provides a unified interface for tests where both sender and receiver
+/// share state. Internally uses the message-based `IdealROTSender` and
+/// `IdealROTReceiver`.
+#[derive(Debug)]
 pub struct IdealROT {
-    inner: Arc<Mutex<Inner>>,
+    inner: Arc<Mutex<IdealROTInner>>,
 }
 
 #[derive(Debug)]
-struct Inner {
-    prg: Prg,
-    sender_state: SenderState,
-    receiver_state: ReceiverState,
-    keys: Vec<[Block; 2]>,
-    msgs: Vec<Block>,
-    choices: Vec<bool>,
+struct IdealROTInner {
+    sender: IdealROTSender,
+    receiver: IdealROTReceiver,
 }
 
 impl IdealROT {
@@ -55,14 +362,10 @@ impl IdealROT {
     ///
     /// * `seed` - The seed for the PRG.
     pub fn new(seed: Block) -> Self {
-        IdealROT {
-            inner: Arc::new(Mutex::new(Inner {
-                prg: Prg::from_seed(seed),
-                sender_state: SenderState::default(),
-                receiver_state: ReceiverState::default(),
-                keys: Vec::new(),
-                msgs: Vec::new(),
-                choices: Vec::new(),
+        Self {
+            inner: Arc::new(Mutex::new(IdealROTInner {
+                sender: IdealROTSender::new(seed),
+                receiver: IdealROTReceiver::new(),
             })),
         }
     }
@@ -72,181 +375,36 @@ impl IdealROT {
     pub fn transfer(
         &mut self,
         count: usize,
-    ) -> Result<(ROTSenderOutput<[Block; 2]>, ROTReceiverOutput<bool, Block>)> {
+    ) -> Result<(ROTSenderOutput<[Block; 2]>, ROTReceiverOutput<bool, Block>), IdealROTError> {
+        ROTSender::alloc(self, count)?;
+        ROTReceiver::alloc(self, count)?;
+        self.flush()?;
         Ok((self.try_send_rot(count)?, self.try_recv_rot(count)?))
     }
 
     /// Returns `true` if the functionality wants to be flushed.
     pub fn wants_flush(&self) -> bool {
-        let this = self.inner.lock().unwrap();
-        let sender_count = this.sender_state.alloc;
-        let receiver_count = this.receiver_state.alloc;
-
-        sender_count > 0 || receiver_count > 0
+        let inner = self.inner.lock().unwrap();
+        inner.sender.wants_flush() || inner.receiver.wants_flush()
     }
 
     /// Flushes the functionality.
-    pub fn flush(&mut self) -> Result<()> {
-        let mut this = self.inner.lock().unwrap();
-        if this.sender_state.alloc != this.receiver_state.alloc {
-            return Err(Error::new(format!(
-                "sender and receiver alloc out of sync: {} != {}",
-                this.sender_state.alloc, this.receiver_state.alloc
-            )));
+    ///
+    /// Internally passes the flush message from sender to receiver.
+    pub fn flush(&mut self) -> Result<(), IdealROTError> {
+        let mut inner = self.inner.lock().unwrap();
+        if let Some(msg) = inner.sender.flush() {
+            inner.receiver.flush(msg)?;
         }
-
-        let count = this.sender_state.alloc;
-
-        let keys = (0..count)
-            .map(|_| [this.prg.random(), this.prg.random()])
-            .collect::<Vec<_>>();
-        let choices = (0..count).map(|_| this.prg.random()).collect::<Vec<_>>();
-        let msgs = keys
-            .iter()
-            .zip(&choices)
-            .map(|(keys, choice)| keys[*choice as usize])
-            .collect::<Vec<_>>();
-
-        this.keys.extend_from_slice(&keys);
-        this.choices.extend_from_slice(&choices);
-        this.msgs.extend_from_slice(&msgs);
-
-        this.sender_state.alloc = 0;
-        this.receiver_state.alloc = 0;
-
-        let mut i = 0;
-        for (count, sender) in mem::take(&mut this.sender_state.queue) {
-            let keys = this.keys[i..i + count].to_vec();
-            i += count;
-            sender.send(ROTSenderOutput {
-                id: this.sender_state.transfer_id,
-                keys,
-            });
-        }
-        this.keys.drain(..i);
-
-        i = 0;
-        for (count, sender) in mem::take(&mut this.receiver_state.queue) {
-            let choices = this.choices[i..i + count].to_vec();
-            let keys = this.msgs[i..i + count].to_vec();
-            i += count;
-            sender.send(ROTReceiverOutput {
-                id: this.receiver_state.transfer_id,
-                choices,
-                msgs: keys,
-            });
-        }
-        this.choices.drain(..i);
-        this.msgs.drain(..i);
-
         Ok(())
     }
 }
 
-impl ROTSender<[Block; 2]> for IdealROT {
-    type Error = IdealROTError;
-    type Future = MaybeDone<ROTSenderOutput<[Block; 2]>>;
-
-    fn alloc(&mut self, count: usize) -> Result<(), Self::Error> {
-        let mut this = self.inner.lock().unwrap();
-        this.sender_state.alloc += count;
-        Ok(())
-    }
-
-    fn available(&self) -> usize {
-        let this = self.inner.lock().unwrap();
-        this.keys.len()
-    }
-
-    fn try_send_rot(&mut self, count: usize) -> Result<ROTSenderOutput<[Block; 2]>, Self::Error> {
-        let mut this = self.inner.lock().unwrap();
-        if this.keys.len() < count {
-            return Err(IdealROTError::new(format!(
-                "not enough ROTs available: {} < {}",
-                this.keys.len(),
-                count
-            )));
+impl Clone for IdealROT {
+    fn clone(&self) -> Self {
+        Self {
+            inner: Arc::clone(&self.inner),
         }
-
-        let keys = this.keys.drain(..count).collect();
-        Ok(ROTSenderOutput {
-            id: this.sender_state.transfer_id.next(),
-            keys,
-        })
-    }
-
-    fn queue_send_rot(&mut self, count: usize) -> Result<Self::Future, Self::Error> {
-        let mut this = self.inner.lock().unwrap();
-        let (sender, recv) = new_output();
-
-        if this.keys.len() >= count {
-            let keys = this.keys.drain(..count).collect();
-            sender.send(ROTSenderOutput {
-                id: this.sender_state.transfer_id.next(),
-                keys,
-            });
-        } else {
-            this.sender_state.queue.push((count, sender));
-        }
-
-        Ok(recv)
-    }
-}
-
-impl ROTReceiver<bool, Block> for IdealROT {
-    type Error = IdealROTError;
-    type Future = MaybeDone<ROTReceiverOutput<bool, Block>>;
-
-    fn alloc(&mut self, count: usize) -> Result<(), Self::Error> {
-        let mut this = self.inner.lock().unwrap();
-        this.receiver_state.alloc += count;
-        Ok(())
-    }
-
-    fn available(&self) -> usize {
-        let this = self.inner.lock().unwrap();
-        this.choices.len()
-    }
-
-    fn try_recv_rot(
-        &mut self,
-        count: usize,
-    ) -> Result<ROTReceiverOutput<bool, Block>, Self::Error> {
-        let mut this = self.inner.lock().unwrap();
-        if this.choices.len() < count {
-            return Err(IdealROTError::new(format!(
-                "not enough ROTs available: {} < {}",
-                this.choices.len(),
-                count
-            )));
-        }
-
-        let choices = this.choices.drain(..count).collect();
-        let msgs = this.msgs.drain(..count).collect();
-        Ok(ROTReceiverOutput {
-            id: this.receiver_state.transfer_id.next(),
-            choices,
-            msgs,
-        })
-    }
-
-    fn queue_recv_rot(&mut self, count: usize) -> Result<Self::Future, Self::Error> {
-        let mut this = self.inner.lock().unwrap();
-        let (sender, recv) = new_output();
-
-        if this.choices.len() >= count {
-            let choices = this.choices.drain(..count).collect();
-            let keys = this.msgs.drain(..count).collect();
-            sender.send(ROTReceiverOutput {
-                id: this.receiver_state.transfer_id.next(),
-                choices,
-                msgs: keys,
-            });
-        } else {
-            this.receiver_state.queue.push((count, sender));
-        }
-
-        Ok(recv)
     }
 }
 
@@ -257,34 +415,99 @@ impl Default for IdealROT {
     }
 }
 
-/// Error for [`IdealROT`].
-#[derive(Debug, thiserror::Error)]
-#[error("ideal ROT error: {0}")]
-pub struct IdealROTError(String);
+impl ROTSender<[Block; 2]> for IdealROT {
+    type Error = IdealROTError;
+    type Future = MaybeDone<ROTSenderOutput<[Block; 2]>>;
 
-impl IdealROTError {
-    fn new(msg: impl Into<String>) -> Self {
-        IdealROTError(msg.into())
+    fn alloc(&mut self, count: usize) -> Result<(), Self::Error> {
+        self.inner.lock().unwrap().sender.alloc(count)
+    }
+
+    fn available(&self) -> usize {
+        self.inner.lock().unwrap().sender.available()
+    }
+
+    fn try_send_rot(&mut self, count: usize) -> Result<ROTSenderOutput<[Block; 2]>, Self::Error> {
+        self.inner.lock().unwrap().sender.try_send_rot(count)
+    }
+
+    fn queue_send_rot(&mut self, count: usize) -> Result<Self::Future, Self::Error> {
+        self.inner.lock().unwrap().sender.queue_send_rot(count)
+    }
+}
+
+impl ROTReceiver<bool, Block> for IdealROT {
+    type Error = IdealROTError;
+    type Future = MaybeDone<ROTReceiverOutput<bool, Block>>;
+
+    fn alloc(&mut self, count: usize) -> Result<(), Self::Error> {
+        self.inner.lock().unwrap().receiver.alloc(count)
+    }
+
+    fn available(&self) -> usize {
+        self.inner.lock().unwrap().receiver.available()
+    }
+
+    fn try_recv_rot(
+        &mut self,
+        count: usize,
+    ) -> Result<ROTReceiverOutput<bool, Block>, Self::Error> {
+        self.inner.lock().unwrap().receiver.try_recv_rot(count)
+    }
+
+    fn queue_recv_rot(&mut self, count: usize) -> Result<Self::Future, Self::Error> {
+        self.inner.lock().unwrap().receiver.queue_recv_rot(count)
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use rand::{Rng, SeedableRng, rngs::StdRng};
+
     use crate::test::assert_rot;
 
     use super::*;
 
+    /// Test using separate sender/receiver with explicit message passing.
     #[test]
-    fn test_ideal_rot() {
-        let mut rng = ChaCha8Rng::seed_from_u64(0);
+    fn test_ideal_rot_separate() {
+        let mut rng = StdRng::seed_from_u64(0);
+        let seed: Block = rng.random();
+
+        let (mut sender, mut receiver) = ideal_rot(seed);
+
+        let count = 128;
+
+        // Allocate
+        ROTSender::alloc(&mut sender, count).unwrap();
+        ROTReceiver::alloc(&mut receiver, count).unwrap();
+
+        // Flush (sender produces message, receiver consumes it)
+        let flush_msg = sender.flush().expect("should have message");
+        receiver.flush(flush_msg).unwrap();
+
+        // Transfer
+        let ROTSenderOutput {
+            id: sender_id,
+            keys,
+        } = sender.try_send_rot(count).unwrap();
+        let ROTReceiverOutput {
+            id: receiver_id,
+            choices,
+            msgs,
+        } = receiver.try_recv_rot(count).unwrap();
+
+        assert_eq!(sender_id, receiver_id);
+        assert_rot(&choices, &keys, &msgs);
+    }
+
+    /// Test using IdealROT wrapper with unified interface.
+    #[test]
+    fn test_ideal_rot_wrapper() {
+        let mut rng = StdRng::seed_from_u64(0);
         let mut ideal = IdealROT::new(rng.random());
 
-        let count = 10;
-
-        ROTSender::alloc(&mut ideal, count).unwrap();
-        ROTReceiver::alloc(&mut ideal, count).unwrap();
-
-        ideal.flush().unwrap();
+        let count = 128;
 
         let (
             ROTSenderOutput {

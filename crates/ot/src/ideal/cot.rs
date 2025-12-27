@@ -1,39 +1,42 @@
-//! Ideal functionality for correlated OT.
+//! Message-based ideal Correlated Oblivious Transfer functionality.
+//!
+//! This implementation wraps `ot-core`'s `IdealCOTSender`/`IdealCOTReceiver`
+//! and adds async I/O for network communication.
 
 use async_trait::async_trait;
-
-use mpz_common::{
-    Context, Flush,
-    ideal::{CallSync, call_sync},
-};
+use mpz_common::{Context, Flush, future::MaybeDone};
 use mpz_core::Block;
 use mpz_ot_core::{
-    cot::{COTReceiver, COTSender},
-    ideal::cot::{IdealCOT as Core, IdealCOTError as CoreError},
+    cot::{COTReceiver, COTReceiverOutput, COTSender, COTSenderOutput},
+    ideal::cot::{
+        FlushMsg, IdealCOTError as CoreError, IdealCOTReceiver as CoreReceiver,
+        IdealCOTSender as CoreSender,
+    },
 };
+use serio::{SinkExt, stream::IoStreamExt};
 
 /// Returns a new ideal COT sender and receiver.
 pub fn ideal_cot(delta: Block) -> (IdealCOTSender, IdealCOTReceiver) {
-    let core = Core::new(delta);
-    let (sync_0, sync_1) = call_sync();
     (
         IdealCOTSender {
-            core: core.clone(),
-            sync: sync_0,
+            core: CoreSender::new(delta),
         },
-        IdealCOTReceiver { core, sync: sync_1 },
+        IdealCOTReceiver {
+            core: CoreReceiver::new(),
+        },
     )
 }
 
-/// Ideal COT sender.
+/// Message-based ideal COT sender.
+///
+/// Wraps `ot-core`'s `IdealCOTSender` and sends `FlushMsg` over the network.
 pub struct IdealCOTSender {
-    core: Core,
-    sync: CallSync,
+    core: CoreSender,
 }
 
 impl COTSender<Block> for IdealCOTSender {
     type Error = IdealCOTError;
-    type Future = <Core as COTSender<Block>>::Future;
+    type Future = MaybeDone<COTSenderOutput>;
 
     fn alloc(&mut self, count: usize) -> Result<(), Self::Error> {
         COTSender::alloc(&mut self.core, count).map_err(From::from)
@@ -44,11 +47,11 @@ impl COTSender<Block> for IdealCOTSender {
     }
 
     fn delta(&self) -> Block {
-        COTSender::delta(&self.core)
+        self.core.delta()
     }
 
-    fn queue_send_cot(&mut self, msgs: &[Block]) -> Result<Self::Future, Self::Error> {
-        self.core.queue_send_cot(msgs).map_err(From::from)
+    fn queue_send_cot(&mut self, keys: &[Block]) -> Result<Self::Future, Self::Error> {
+        self.core.queue_send_cot(keys).map_err(From::from)
     }
 }
 
@@ -60,27 +63,25 @@ impl Flush for IdealCOTSender {
         self.core.wants_flush()
     }
 
-    async fn flush(&mut self, _ctx: &mut Context) -> Result<(), Self::Error> {
-        if self.core.wants_flush() {
-            self.sync
-                .call(|| self.core.flush().map_err(IdealCOTError::from))
-                .await
-                .transpose()?;
+    async fn flush(&mut self, ctx: &mut Context) -> Result<(), Self::Error> {
+        if let Some(msg) = self.core.flush() {
+            ctx.io_mut().send(msg).await?;
         }
-
         Ok(())
     }
 }
 
-/// Ideal COT receiver.
+/// Message-based ideal COT receiver.
+///
+/// Wraps `ot-core`'s `IdealCOTReceiver` and receives `FlushMsg` from the
+/// network.
 pub struct IdealCOTReceiver {
-    core: Core,
-    sync: CallSync,
+    core: CoreReceiver,
 }
 
 impl COTReceiver<bool, Block> for IdealCOTReceiver {
     type Error = IdealCOTError;
-    type Future = <Core as COTReceiver<bool, Block>>::Future;
+    type Future = MaybeDone<COTReceiverOutput<Block>>;
 
     fn alloc(&mut self, count: usize) -> Result<(), Self::Error> {
         COTReceiver::alloc(&mut self.core, count).map_err(From::from)
@@ -103,34 +104,60 @@ impl Flush for IdealCOTReceiver {
         self.core.wants_flush()
     }
 
-    async fn flush(&mut self, _ctx: &mut Context) -> Result<(), Self::Error> {
+    async fn flush(&mut self, ctx: &mut Context) -> Result<(), Self::Error> {
         if self.core.wants_flush() {
-            self.sync
-                .call(|| self.core.flush().map_err(IdealCOTError::from))
-                .await
-                .transpose()?;
+            let msg: FlushMsg = ctx.io_mut().expect_next().await?;
+            self.core.flush(msg)?;
         }
-
         Ok(())
     }
 }
 
 /// Ideal COT error.
 #[derive(Debug, thiserror::Error)]
-#[error(transparent)]
-pub struct IdealCOTError(#[from] CoreError);
+pub enum IdealCOTError {
+    /// Core error.
+    #[error(transparent)]
+    Core(#[from] CoreError),
+    /// I/O error during message exchange.
+    #[error("io error: {0}")]
+    Io(#[from] std::io::Error),
+}
 
 #[cfg(test)]
 mod tests {
+    use mpz_common::{context::test_st_context, future::Output};
+    use mpz_ot_core::test::assert_cot;
     use rand::{Rng, SeedableRng, rngs::StdRng};
 
     use super::*;
-    use crate::test::test_cot;
 
     #[tokio::test]
     async fn test_ideal_cot() {
         let mut rng = StdRng::seed_from_u64(0);
-        let (sender, receiver) = ideal_cot(rng.random());
-        test_cot(sender, receiver, 8).await;
+        let delta: Block = rng.random();
+
+        let (mut sender, mut receiver) = ideal_cot(delta);
+        let (mut ctx_s, mut ctx_r) = test_st_context(1024 * 1024);
+
+        // Generate keys and choices
+        let keys: Vec<Block> = (0..128).map(|_| rng.random()).collect();
+        let choices: Vec<bool> = (0..128).map(|_| rng.random()).collect();
+
+        // Queue operations
+        let mut sender_out = sender.queue_send_cot(&keys).unwrap();
+        let mut receiver_out = receiver.queue_recv_cot(&choices).unwrap();
+
+        // Flush
+        let (r1, r2) = futures::join!(sender.flush(&mut ctx_s), receiver.flush(&mut ctx_r));
+        r1.unwrap();
+        r2.unwrap();
+
+        // Get outputs
+        let _ = sender_out.try_recv().unwrap().unwrap();
+        let receiver_output = receiver_out.try_recv().unwrap().unwrap();
+
+        // Verify correctness
+        assert_cot(delta, &choices, &keys, &receiver_output.msgs);
     }
 }

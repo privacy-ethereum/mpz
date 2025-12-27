@@ -1,9 +1,9 @@
 use mpz_memory_core::{Slice, View as ViewTrait, binary::Binary, view::VisibilityView};
-use rangeset::{Disjoint, Intersection, Subset};
+use rangeset::{iter::RangeIterator, ops::Set};
 use serde::{Deserialize, Serialize};
 
 type Range = std::ops::Range<usize>;
-type RangeSet = rangeset::RangeSet<usize>;
+type RangeSet = rangeset::set::RangeSet<usize>;
 type Result<T, E = ViewError> = core::result::Result<T, E>;
 
 #[derive(Debug, Default)]
@@ -187,9 +187,9 @@ impl View {
             return Err(ErrorRepr::AlreadyCommitted { range }.into());
         }
 
-        let blind = range.intersection(self.vis.blind());
-        let private = range.intersection(self.vis.private());
-        let public = range.intersection(self.vis.public());
+        let blind = range.intersection(self.vis.blind()).into_set();
+        let private = range.intersection(self.vis.private()).into_set();
+        let public = range.intersection(self.vis.public()).into_set();
 
         // Assert visible data is assigned.
         if !public.is_subset(&self.input.assigned) || !private.is_subset(&self.input.assigned) {

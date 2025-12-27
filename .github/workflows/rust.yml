@@ -51,6 +51,7 @@ jobs:
         with:
           toolchain: nightly
           components: rustfmt, clippy
+          targets: wasm32-unknown-unknown
 
       - uses: Swatinem/rust-cache@v2.7.7
 
@@ -58,7 +59,11 @@ jobs:
         run: cargo +nightly fmt --check --all
 
       - name: Run Clippy
-        run: cargo +nightly clippy --all-targets --all-features -- -D warnings
+        run: cargo +nightly clippy --workspace --exclude mpz-wasm-bench --all-targets --all-features -- -D warnings
+
+      - name: Run Clippy on wasm-bench
+        working-directory: crates/wasm-bench
+        run: cargo +nightly clippy --lib --target wasm32-unknown-unknown -- -D warnings
 
   miri:
     if: ( ! github.event.pull_request.draft )

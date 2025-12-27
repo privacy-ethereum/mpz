@@ -82,6 +82,7 @@ impl<S> MultithreadBuilder<S> {
         self
     }
 
+    #[allow(dead_code)]
     pub(crate) fn mux_internal(mut self, mux: Box<dyn Mux + Send>) -> Self {
         self.mux = Some(mux);
         self

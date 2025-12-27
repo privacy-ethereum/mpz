@@ -9,6 +9,7 @@ workspace = true
 [features]
 default = []
 rayon = ["mpz-zk-core/rayon", "blake3/rayon"]
+mock = ["mpz-ot/ideal"]
 
 [dependencies]
 mpz-vm-core = { workspace = true }
@@ -42,5 +43,11 @@ mpz-ot = { workspace = true, features = ["ideal"] }
 criterion = { workspace = true }
 
 [[bench]]
-name = "zk"
+name = "prover"
 harness = false
+required-features = ["mock"]
+
+[[bench]]
+name = "verifier"
+harness = false
+required-features = ["mock"]
