@@ -1,4 +1,4 @@
-use std::ops::Add;
+use std::ops::BitXor;
 
 use blake3::{Hash, Hasher};
 use mpz_core::{
@@ -40,6 +40,12 @@ impl Mac {
     #[inline]
     pub fn set_pointer(&mut self, bit: bool) {
         self.0.set_lsb(bit);
+    }
+
+    /// Inverts the pointer bit.
+    #[inline]
+    pub fn invert_pointer(&mut self) {
+        self.0.xor_lsb(true);
     }
 
     /// Returns the MAC encoded as bytes.
@@ -91,38 +97,38 @@ impl From<Block> for Mac {
     }
 }
 
-impl Add<Mac> for Mac {
-    type Output = Self;
-
-    #[inline]
-    fn add(self, rhs: Mac) -> Self {
-        Self(self.0 ^ rhs.0)
-    }
-}
-
-impl Add<&Mac> for Mac {
-    type Output = Self;
-
-    #[inline]
-    fn add(self, rhs: &Mac) -> Self {
-        Self(self.0 ^ rhs.0)
-    }
-}
-
-impl Add<Mac> for &Mac {
+impl BitXor<Mac> for Mac {
     type Output = Mac;
 
     #[inline]
-    fn add(self, rhs: Mac) -> Mac {
+    fn bitxor(self, rhs: Mac) -> Self::Output {
+        Self(self.0 ^ rhs.0)
+    }
+}
+
+impl BitXor<&Mac> for Mac {
+    type Output = Mac;
+
+    #[inline]
+    fn bitxor(self, rhs: &Mac) -> Self::Output {
+        Self(self.0 ^ rhs.0)
+    }
+}
+
+impl BitXor<Mac> for &Mac {
+    type Output = Mac;
+
+    #[inline]
+    fn bitxor(self, rhs: Mac) -> Self::Output {
         Mac(self.0 ^ rhs.0)
     }
 }
 
-impl Add<&Mac> for &Mac {
+impl BitXor<&Mac> for &Mac {
     type Output = Mac;
 
     #[inline]
-    fn add(self, rhs: &Mac) -> Mac {
+    fn bitxor(self, rhs: &Mac) -> Self::Output {
         Mac(self.0 ^ rhs.0)
     }
 }

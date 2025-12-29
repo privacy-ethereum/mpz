@@ -1,0 +1,27 @@
+[package]
+name = "mpz-zk-core-new"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+mpz-core = { workspace = true }
+mpz-vm-core-new = { workspace = true }
+mpz-memory-core = { workspace = true }
+mpz-common = { workspace = true }
+mpz-ot = { workspace = true }
+itybity = { workspace = true }
+futures = { workspace = true }
+ir = { path = "../ir" }
+serio = { workspace = true }
+rand = { workspace = true }
+
+[dev-dependencies]
+mpz-ot = { workspace = true, features = ["ideal"] }
+rand = { workspace = true }
+mpz-common = { workspace = true, features = ["test-utils"] }
+pollster = { workspace = true, features = ["macro"] }
+wat = { workspace = true }
+
+
+[lints]
+workspace = true

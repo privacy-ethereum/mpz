@@ -25,6 +25,10 @@ members = [
     "crates/zk-core",
     "crates/zk",
     "crates/wasm-bench",
+    "crates/ir",
+    "crates/vm-core-new",
+    "crates/zk-core-new",
+    "crates/vm-sys", "crates/vm-core-tests",
 ]
 exclude = ["crates/lpn-estimator"]
 resolver = "2"
@@ -68,7 +72,10 @@ mpz-ole = { path = "crates/ole" }
 mpz-ole-core = { path = "crates/ole-core" }
 mpz-memory-core = { path = "crates/memory-core" }
 mpz-vm-core = { path = "crates/vm-core" }
+mpz-vm-core-new = { path = "crates/vm-core-new" }
+mpz-vm-sys = { path = "crates/vm-sys" }
 mpz-zk-core = { path = "crates/zk-core" }
+mpz-zk-core-new = { path = "crates/zk-core-new" }
 mpz-zk = { path = "crates/zk" }
 clmul = { path = "crates/clmul" }
 matrix-transpose = { path = "crates/matrix-transpose" }
@@ -153,3 +160,4 @@ enum-try-as-inner = "0.1.0"
 bitvec = "1.0"
 hashbrown = "0.14.5"
 crossbeam-channel = "0.5"
+wat = "1.219"

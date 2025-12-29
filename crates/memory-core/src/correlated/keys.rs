@@ -21,6 +21,19 @@ type Result<T> = core::result::Result<T, KeyStoreError>;
 pub struct Key(Block);
 
 impl Key {
+    /// Returns the key for the provided public bit.
+    pub fn public(bit: bool, delta: &Delta) -> Self {
+        let mut key = if bit { MAC_ONE } else { MAC_ZERO };
+        key ^= delta.as_block();
+        Self(key)
+    }
+
+    /// Sets the pointer bit.
+    #[inline]
+    pub fn set_pointer(&mut self, bit: bool) {
+        self.0.set_lsb(bit);
+    }
+
     /// Returns the pointer bit.
     #[inline]
     pub fn pointer(&self) -> bool {

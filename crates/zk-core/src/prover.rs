@@ -201,7 +201,7 @@ where
                 Gate::Xor { x, y, z } => {
                     let mac_x = self.macs[x.id()];
                     let mac_y = self.macs[y.id()];
-                    self.macs[z.id()] = mac_x + mac_y;
+                    self.macs[z.id()] = mac_x ^ mac_y;
                 }
                 Gate::And { x, y, z } => {
                     let mac_x = self.macs[x.id()];

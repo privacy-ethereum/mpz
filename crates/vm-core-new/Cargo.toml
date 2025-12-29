@@ -1,0 +1,24 @@
+[package]
+name = "mpz-vm-core-new"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+ir = { path = "../ir" }
+thiserror = { workspace = true }
+rangeset = { workspace = true }
+mpz-memory-core = { workspace = true }
+mpz-common = { workspace = true, features = ["future"] }
+async-trait = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serio = { workspace = true }
+
+[dev-dependencies]
+wat = { workspace = true }
+wast = "243"
+futures = { workspace = true }
+mpz-common = { workspace = true, features = ["test-utils"] }
+aes = { workspace = true }
+
+[lints]
+workspace = true
