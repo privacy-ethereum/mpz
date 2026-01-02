@@ -19,6 +19,7 @@ struct BenchState {
     eval_inputs: Vec<Mac>,
     gates: Vec<EncryptedGate>,
     setup: SetupMsg,
+    seed: [u8; 16],
     // Note: batches are regenerated per iteration since EncryptedGateBatch doesn't impl Clone
 }
 
@@ -26,6 +27,7 @@ impl BenchState {
     fn new() -> Self {
         let mut rng = StdRng::seed_from_u64(0);
         let delta = Delta::random(&mut rng);
+        let seed: [u8; 16] = rng.random();
 
         let inputs: Vec<Key> = (0..256).map(|_| rng.random()).collect();
         let choices: Vec<bool> = (0..256).map(|_| rng.random()).collect();
@@ -37,7 +39,7 @@ impl BenchState {
             .collect();
 
         // Pre-garble circuit for evaluation benchmarks (single gates)
-        let mut gb = Garbler::new(delta);
+        let mut gb = Garbler::new(seed, delta);
         let setup = gb.setup().unwrap();
         let mut iter = gb.generate(&AES128, &inputs).unwrap();
         let gates: Vec<_> = iter.by_ref().collect();
@@ -49,6 +51,7 @@ impl BenchState {
             eval_inputs,
             gates,
             setup,
+            seed,
         }
     }
 }
@@ -101,7 +104,7 @@ pub fn garble_core_half_gates_evaluate_batched(n: u32) -> BenchResult {
         for _ in 0..n {
             // Regenerate batches for this iteration (untimed)
             // EncryptedGateBatch doesn't implement Clone, so we must regenerate
-            let mut gb = Garbler::new(state.delta);
+            let mut gb = Garbler::new(state.seed, state.delta);
             let _ = gb.setup().unwrap();
             let mut iter = gb.generate_batched(&AES128, &state.inputs).unwrap();
             let batches: Vec<_> = iter.by_ref().collect();
@@ -174,6 +177,7 @@ pub async fn garble_core_half_gates_evaluate_parallel(n: u32, concurrency: u32) 
             // Setup: generate keys and macs once
             let mut rng = StdRng::seed_from_u64(0);
             let delta = Delta::random(&mut rng);
+            let seed: [u8; 16] = rng.random();
             let inputs: Vec<Key> = (0..256).map(|_| rng.random()).collect();
             let choices: Vec<bool> = (0..256).map(|_| rng.random()).collect();
             let eval_inputs: Vec<Mac> = inputs
@@ -185,7 +189,7 @@ pub async fn garble_core_half_gates_evaluate_parallel(n: u32, concurrency: u32) 
             for &circuit_count in PARALLEL_THRESHOLDS {
                 // Pre-garble circuits for this threshold (untimed)
                 let mut garbled_circuits = Vec::with_capacity(circuit_count);
-                let mut gb = Garbler::new(delta);
+                let mut gb = Garbler::new(seed, delta);
                 let setup = gb.setup().unwrap();
                 for _ in 0..circuit_count {
                     let mut iter = gb.generate(&AES128, &inputs).unwrap();

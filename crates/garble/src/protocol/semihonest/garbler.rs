@@ -25,11 +25,19 @@ pub struct Garbler<COT> {
 impl<COT> Garbler<COT> {
     /// Creates a new garbler.
     pub fn new(cot: COT, seed: [u8; 16], delta: Delta) -> Self {
+        // Derive separate seeds for store and core to avoid PRG reuse
+        let store_seed: [u8; 16] = *blake3::derive_key("mpz-garble store", &seed)
+            .first_chunk()
+            .unwrap();
+        let core_seed: [u8; 16] = *blake3::derive_key("mpz-garble core", &seed)
+            .first_chunk()
+            .unwrap();
+
         Self {
-            store: Arc::new(Mutex::new(GarblerStore::new(seed, delta, cot))),
+            store: Arc::new(Mutex::new(GarblerStore::new(store_seed, delta, cot))),
             call_stack: Vec::new(),
             preprocessed: Vec::new(),
-            core: Arc::new(Mutex::new(Core::new(delta))),
+            core: Arc::new(Mutex::new(Core::new(core_seed, delta))),
         }
     }
 

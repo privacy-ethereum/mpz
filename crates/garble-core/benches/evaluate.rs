@@ -20,6 +20,7 @@ fn bench_evaluate(c: &mut Criterion) {
 
     let mut rng = StdRng::seed_from_u64(0);
     let delta = Delta::random(&mut rng);
+    let seed: [u8; 16] = rng.random();
 
     // Prepare inputs
     let inputs: Vec<Key> = (0..256).map(|_| rng.random()).collect();
@@ -37,7 +38,7 @@ fn bench_evaluate(c: &mut Criterion) {
         let actual_gates = iterations as u64 * gates_per_circuit;
 
         // Pre-generate garbled circuits (single gates)
-        let mut gb = Garbler::new(delta);
+        let mut gb = Garbler::new(seed, delta);
         let setup = gb.setup().unwrap();
         let all_gates: Vec<Vec<_>> = (0..iterations)
             .map(|_| {
@@ -73,7 +74,7 @@ fn bench_evaluate(c: &mut Criterion) {
         group.bench_function(BenchmarkId::new("batched", name), |b| {
             let mut ev = Evaluator::default();
             ev.setup(setup).unwrap();
-            let mut gb = Garbler::new(delta);
+            let mut gb = Garbler::new(seed, delta);
             let _ = gb.setup().unwrap();
             b.iter(|| {
                 for _ in 0..iterations {
@@ -104,6 +105,7 @@ fn bench_evaluate_parallel(c: &mut Criterion) {
 
     let mut rng = StdRng::seed_from_u64(0);
     let delta = Delta::random(&mut rng);
+    let seed: [u8; 16] = rng.random();
 
     // Prepare inputs
     let inputs: Vec<Key> = (0..256).map(|_| rng.random()).collect();
@@ -121,7 +123,7 @@ fn bench_evaluate_parallel(c: &mut Criterion) {
         let actual_gates = circuit_count as u64 * gates_per_circuit;
 
         // Pre-garble circuits
-        let mut gb = Garbler::new(delta);
+        let mut gb = Garbler::new(seed, delta);
         let setup = gb.setup().unwrap();
         let garbled_circuits: Vec<GarbledCircuit> = (0..circuit_count)
             .map(|_| {

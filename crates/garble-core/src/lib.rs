@@ -111,7 +111,7 @@ mod tests {
             .map(|(key, bit)| key.auth(bit, &delta))
             .collect::<Vec<_>>();
 
-        let mut gb = Garbler::new(delta);
+        let mut gb = Garbler::new(rng.random(), delta);
         let setup = gb.setup().unwrap();
         let mut ev = Evaluator::default();
         ev.setup(setup).unwrap();
@@ -173,7 +173,7 @@ mod tests {
             .map(|(key, bit)| key.auth(bit, &delta))
             .collect::<Vec<_>>();
 
-        let mut gb = Garbler::new(delta);
+        let mut gb = Garbler::new(rng.random(), delta);
         let setup = gb.setup().unwrap();
         let mut ev = Evaluator::default();
         ev.setup(setup).unwrap();
@@ -264,7 +264,7 @@ mod tests {
             .map(|(key, bit)| key.auth(bit, &delta))
             .collect::<Vec<_>>();
 
-        let mut gb = Garbler::new(delta);
+        let mut gb = Garbler::new(rng.random(), delta);
         let setup = gb.setup().unwrap();
         let mut ev = Evaluator::default();
         ev.setup(setup).unwrap();

@@ -1,5 +1,4 @@
 use core::fmt;
-use rand::{Rng, rng};
 use std::{marker::PhantomData, ops::Range};
 
 use crate::{DEFAULT_BATCH_SIZE, EncryptedGateBatch, SetupMsg, circuit::EncryptedGate};
@@ -74,10 +73,30 @@ pub struct Garbler {
 }
 
 impl Garbler {
-    /// Creates a new garbler with the given `delta`.
-    pub fn new(delta: Delta) -> Self {
+    /// Creates a new garbler with the given `seed` and `delta`.
+    ///
+    /// The seed is used to derive the initial gate ID and cipher key
+    /// for multi-instance security (see <https://eprint.iacr.org/2019/1168>).
+    pub fn new(seed: [u8; 16], delta: Delta) -> Self {
+        // Randomize gate id for better multi-instance security
+        // https://eprint.iacr.org/2019/1168 Section 5.
+        let gid_bytes: [u8; 16] = *blake3::derive_key("mpz-garble-core gid", &seed)
+            .first_chunk()
+            .unwrap();
+
+        // Randomize the key of the fixed-key cipher to confine
+        // security degradation to a single instance, preventing
+        // it from compounding across multiple instances
+        // (see Fig. 4 in https://eprint.iacr.org/2019/1168).
+        let key: [u8; 16] = *blake3::derive_key("mpz-garble-core key", &seed)
+            .first_chunk()
+            .unwrap();
+
         Self {
-            state: State::Initialized(Initialized::default()),
+            state: State::Initialized(Initialized {
+                initial_gid: u128::from_le_bytes(gid_bytes),
+                key,
+            }),
             delta,
         }
     }
@@ -225,8 +244,7 @@ impl GarblerWorker {
         circ: &'a Circuit,
         inputs: &[Key],
     ) -> Result<EncryptedGateBatchIter<'a, std::slice::Iter<'a, Gate>>, GarblerError> {
-        self.generate(circ, inputs)
-            .map(EncryptedGateBatchIter)
+        self.generate(circ, inputs).map(EncryptedGateBatchIter)
     }
 }
 
@@ -249,21 +267,6 @@ struct Initialized {
     pub(super) initial_gid: u128,
     /// Key for the cipher used to encrypt the gates.
     pub(super) key: [u8; 16],
-}
-
-impl Default for Initialized {
-    fn default() -> Self {
-        Self {
-            // Randomize gate id for better multi-instance security
-            // https://eprint.iacr.org/2019/1168 Section 5.
-            initial_gid: rng().random(),
-            // Randomize the key of the fixed-key cipher to confine
-            // security degradation to a single instance, preventing
-            // it from compounding across multiple instances
-            // (see Fig. 4 in https://eprint.iacr.org/2019/1168).
-            key: rng().random(),
-        }
-    }
 }
 
 #[derive(Debug)]
