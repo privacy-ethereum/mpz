@@ -39,7 +39,7 @@ const MAX_BATCH_SIZE: usize = 4 * KB;
 pub(crate) const DEFAULT_BATCH_SIZE: usize = MAX_BATCH_SIZE / BYTES_PER_GATE;
 
 /// Setup message passed from the garbler to the evaluator.
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct SetupMsg {
     /// Initial AND gate id.
     initial_gid: u128,
@@ -177,23 +177,38 @@ mod tests {
         let setup = gb.setup().unwrap();
         let mut ev = Evaluator::default();
         ev.setup(setup).unwrap();
-        let mut gb_iter = gb.generate_batched(&AES128, &input_keys).unwrap();
 
-        let mut gates = Vec::new();
-        for batch in gb_iter.by_ref() {
-            gates.extend(batch.into_array());
+        // Allocate 2 workers from garbler
+        let gb_worker1 = gb.alloc_worker(AES128.and_count()).unwrap();
+        let gb_worker2 = gb.alloc_worker(AES128.and_count()).unwrap();
+
+        // Garble circuit 1 with worker1
+        let mut gb_iter1 = gb_worker1.generate_batched(&AES128, &input_keys).unwrap();
+        let mut gates1 = Vec::new();
+        for batch in gb_iter1.by_ref() {
+            gates1.extend(batch.into_array());
         }
-
-        let garbled_circuit = GarbledCircuit { gates };
-
+        let garbled_circuit1 = GarbledCircuit { gates: gates1 };
         let GarblerOutput {
-            outputs: output_keys,
-        } = gb_iter.finish().unwrap();
+            outputs: output_keys1,
+        } = gb_iter1.finish().unwrap();
 
+        // Garble circuit 2 with worker2
+        let mut gb_iter2 = gb_worker2.generate_batched(&AES128, &input_keys).unwrap();
+        let mut gates2 = Vec::new();
+        for batch in gb_iter2.by_ref() {
+            gates2.extend(batch.into_array());
+        }
+        let garbled_circuit2 = GarbledCircuit { gates: gates2 };
+        let GarblerOutput {
+            outputs: output_keys2,
+        } = gb_iter2.finish().unwrap();
+
+        // Allocate 2 workers from evaluator
         let outputs = evaluate_garbled_circuits(
             vec![
-                (AES128.clone(), input_macs.clone(), garbled_circuit.clone()),
-                (AES128.clone(), input_macs.clone(), garbled_circuit.clone()),
+                (AES128.clone(), input_macs.clone(), garbled_circuit1),
+                (AES128.clone(), input_macs.clone(), garbled_circuit2),
             ],
             vec![
                 ev.alloc_worker(AES128.and_count()).unwrap(),
@@ -202,7 +217,7 @@ mod tests {
         )
         .unwrap();
 
-        for output in outputs {
+        for (output, output_keys) in outputs.into_iter().zip([output_keys1, output_keys2]) {
             let EvaluatorOutput {
                 outputs: output_macs,
             } = output;

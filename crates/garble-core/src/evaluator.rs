@@ -298,7 +298,7 @@ where
             and_count,
             outputs,
             complete: false,
-            pd: PhantomData::default(),
+            pd: PhantomData,
         }
     }
 

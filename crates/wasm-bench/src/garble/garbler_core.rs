@@ -40,11 +40,12 @@ pub fn garble_core_aes128_and_count() -> u32 {
 #[wasm_bindgen]
 pub fn garble_core_half_gates_garble(n: u32) -> u32 {
     STATE.with(|state| {
-        let mut gb = Garbler::default();
+        let mut gb = Garbler::new(state.delta);
+        let _ = gb.setup().unwrap();
         let mut checksum = 0u32;
 
         for _ in 0..n {
-            let mut iter = gb.generate(&AES128, state.delta, &state.inputs).unwrap();
+            let mut iter = gb.generate(&AES128, &state.inputs).unwrap();
             let gates: Vec<_> = iter.by_ref().collect();
             let _ = iter.finish().unwrap();
             checksum = checksum.wrapping_add(gates.len() as u32);

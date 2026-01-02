@@ -150,7 +150,7 @@ impl Garbler {
     ) -> Result<EncryptedGateBatchIter<'a, std::slice::Iter<'a, Gate>>, GarblerError> {
         self.alloc_worker(circ.and_count())?
             .generate(circ, inputs)
-            .map(|iter| EncryptedGateBatchIter(iter))
+            .map(EncryptedGateBatchIter)
     }
 
     /// Returns whether garbler was set up.
@@ -226,7 +226,7 @@ impl GarblerWorker {
         inputs: &[Key],
     ) -> Result<EncryptedGateBatchIter<'a, std::slice::Iter<'a, Gate>>, GarblerError> {
         self.generate(circ, inputs)
-            .map(|iter| EncryptedGateBatchIter(iter))
+            .map(EncryptedGateBatchIter)
     }
 }
 
@@ -337,7 +337,7 @@ where
             and_count,
             outputs,
             complete: false,
-            pd: PhantomData::default(),
+            pd: PhantomData,
         }
     }
 

@@ -5,7 +5,7 @@
 use wasm_bindgen::prelude::*;
 
 use mpz_circuits::{AES128, Circuit};
-use mpz_garble_core::{EncryptedGate, Evaluator, GarbledCircuit, Garbler, Key};
+use mpz_garble_core::{EncryptedGate, Evaluator, GarbledCircuit, Garbler, Key, SetupMsg};
 use mpz_memory_core::correlated::{Delta, Mac};
 use rand::{Rng, SeedableRng, rngs::StdRng};
 use std::sync::Arc;
@@ -18,6 +18,7 @@ struct BenchState {
     inputs: Vec<Key>,
     eval_inputs: Vec<Mac>,
     gates: Vec<EncryptedGate>,
+    setup: SetupMsg,
     // Note: batches are regenerated per iteration since EncryptedGateBatch doesn't impl Clone
 }
 
@@ -36,8 +37,9 @@ impl BenchState {
             .collect();
 
         // Pre-garble circuit for evaluation benchmarks (single gates)
-        let mut gb = Garbler::default();
-        let mut iter = gb.generate(&AES128, delta, &inputs).unwrap();
+        let mut gb = Garbler::new(delta);
+        let setup = gb.setup().unwrap();
+        let mut iter = gb.generate(&AES128, &inputs).unwrap();
         let gates: Vec<_> = iter.by_ref().collect();
         let _ = iter.finish().unwrap();
 
@@ -46,6 +48,7 @@ impl BenchState {
             inputs,
             eval_inputs,
             gates,
+            setup,
         }
     }
 }
@@ -66,6 +69,7 @@ pub fn garble_core_half_gates_evaluate(n: u32) -> BenchResult {
         let start = performance.now();
 
         let mut ev = Evaluator::default();
+        ev.setup(state.setup.clone()).unwrap();
         for _ in 0..n {
             let mut consumer = ev.evaluate(&AES128, &state.eval_inputs).unwrap();
             for gate in &state.gates {
@@ -92,14 +96,14 @@ pub fn garble_core_half_gates_evaluate_batched(n: u32) -> BenchResult {
     STATE.with(|state| {
         let mut total_elapsed = 0.0;
         let mut ev = Evaluator::default();
+        ev.setup(state.setup.clone()).unwrap();
 
         for _ in 0..n {
             // Regenerate batches for this iteration (untimed)
             // EncryptedGateBatch doesn't implement Clone, so we must regenerate
-            let mut gb = Garbler::default();
-            let mut iter = gb
-                .generate_batched(&AES128, state.delta, &state.inputs)
-                .unwrap();
+            let mut gb = Garbler::new(state.delta);
+            let _ = gb.setup().unwrap();
+            let mut iter = gb.generate_batched(&AES128, &state.inputs).unwrap();
             let batches: Vec<_> = iter.by_ref().collect();
             let _ = iter.finish().unwrap();
 
@@ -181,9 +185,10 @@ pub async fn garble_core_half_gates_evaluate_parallel(n: u32, concurrency: u32) 
             for &circuit_count in PARALLEL_THRESHOLDS {
                 // Pre-garble circuits for this threshold (untimed)
                 let mut garbled_circuits = Vec::with_capacity(circuit_count);
+                let mut gb = Garbler::new(delta);
+                let setup = gb.setup().unwrap();
                 for _ in 0..circuit_count {
-                    let mut gb = Garbler::default();
-                    let mut iter = gb.generate(&AES128, delta, &inputs).unwrap();
+                    let mut iter = gb.generate(&AES128, &inputs).unwrap();
                     let gates: Vec<_> = iter.by_ref().collect();
                     let _ = iter.finish().unwrap();
                     garbled_circuits.push(GarbledCircuit { gates });
@@ -193,16 +198,25 @@ pub async fn garble_core_half_gates_evaluate_parallel(n: u32, concurrency: u32) 
                     // Build input for parallel evaluation
                     let circs: Vec<_> = garbled_circuits
                         .iter()
-                        .map(|gc| (circuit.clone(), eval_inputs.clone(), gc.clone()))
+                        .map(|gc| {
+                            (
+                                circuit.clone(),
+                                eval_inputs.clone(),
+                                gc.clone(),
+                                setup.clone(),
+                            )
+                        })
                         .collect();
 
                     // Timed: parallel evaluation using par_iter directly in local pool
                     let start = performance.now();
                     let _outputs: Vec<_> = circs
                         .into_par_iter()
-                        .map(|(circ, inputs, garbled_circuit)| {
-                            let mut ev = Evaluator::with_capacity(circ.feed_count());
-                            let mut consumer = ev.evaluate(&circ, &inputs).unwrap();
+                        .map(|(circ, inputs, garbled_circuit, setup)| {
+                            let mut ev = Evaluator::default();
+                            ev.setup(setup).unwrap();
+                            let worker = ev.alloc_worker(circ.and_count()).unwrap();
+                            let mut consumer = worker.evaluate(&circ, &inputs).unwrap();
                             for gate in garbled_circuit.gates {
                                 consumer.next(gate);
                             }
