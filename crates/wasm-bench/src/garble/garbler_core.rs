@@ -13,6 +13,7 @@ use rand::{Rng, SeedableRng, rngs::StdRng};
 struct BenchState {
     delta: Delta,
     inputs: Vec<Key>,
+    seed: [u8; 16],
 }
 
 impl BenchState {
@@ -20,8 +21,13 @@ impl BenchState {
         let mut rng = StdRng::seed_from_u64(0);
         let delta = Delta::random(&mut rng);
         let inputs: Vec<Key> = (0..256).map(|_| rng.random()).collect();
+        let seed: [u8; 16] = rng.random();
 
-        Self { delta, inputs }
+        Self {
+            delta,
+            inputs,
+            seed,
+        }
     }
 }
 
@@ -40,11 +46,12 @@ pub fn garble_core_aes128_and_count() -> u32 {
 #[wasm_bindgen]
 pub fn garble_core_half_gates_garble(n: u32) -> u32 {
     STATE.with(|state| {
-        let mut gb = Garbler::default();
+        let mut gb = Garbler::new(state.seed, state.delta);
+        let _ = gb.setup().unwrap();
         let mut checksum = 0u32;
 
         for _ in 0..n {
-            let mut iter = gb.generate(&AES128, state.delta, &state.inputs).unwrap();
+            let mut iter = gb.generate(&AES128, &state.inputs).unwrap();
             let gates: Vec<_> = iter.by_ref().collect();
             let _ = iter.finish().unwrap();
             checksum = checksum.wrapping_add(gates.len() as u32);

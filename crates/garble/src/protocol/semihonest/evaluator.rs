@@ -2,11 +2,15 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use hashbrown::HashMap;
+use serio::stream::IoStreamExt;
 use tokio::sync::Mutex;
 
 use mpz_common::{Context, Flush};
 use mpz_core::{Block, bitvec::BitVec};
-use mpz_garble_core::{EvaluatorOutput, GarbledCircuit, evaluate_garbled_circuits};
+use mpz_garble_core::{
+    Evaluator as Core, EvaluatorOutput, EvaluatorWorker, GarbledCircuit, SetupMsg,
+    evaluate_garbled_circuits,
+};
 use mpz_memory_core::{DecodeFuture, Memory, Slice, View, binary::Binary};
 use mpz_ot::cot::COTReceiver;
 use mpz_vm_core::{Call, Callable, Execute, Result, VmError};
@@ -22,6 +26,7 @@ pub struct Evaluator<COT> {
     store: Arc<Mutex<EvaluatorStore<COT>>>,
     call_stack: Vec<(Call, Slice)>,
     preprocessed: HashMap<Slice, (Call, GarbledCircuit)>,
+    core: Arc<Mutex<Core>>,
 }
 
 impl<COT> Evaluator<COT> {
@@ -31,6 +36,7 @@ impl<COT> Evaluator<COT> {
             store: Arc::new(Mutex::new(EvaluatorStore::new(cot))),
             call_stack: Vec::new(),
             preprocessed: HashMap::new(),
+            core: Arc::new(Mutex::new(Core::default())),
         }
     }
 
@@ -75,12 +81,23 @@ impl<COT> Evaluator<COT> {
                 break;
             }
 
+            let workers = calls
+                .iter()
+                .map(|(call, _, _)| {
+                    self.core
+                        .try_lock()
+                        .unwrap()
+                        .alloc_worker(call.and_count())
+                        .expect("execute_preprocessed is always called after core was set up")
+                })
+                .collect::<Vec<_>>();
+
             for (
                 EvaluatorOutput {
                     outputs: output_macs,
                 },
                 output,
-            ) in evaluate_garbled_circuits(calls)
+            ) in evaluate_garbled_circuits(calls, workers)
                 .map_err(VmError::execute)?
                 .into_iter()
                 .zip(outputs)
@@ -228,6 +245,14 @@ where
     async fn preprocess(&mut self, ctx: &mut Context) -> Result<()> {
         let mut cot = self.store.try_lock().unwrap().acquire_cot();
 
+        {
+            let mut core = self.core.try_lock().unwrap();
+            if !core.is_setup() {
+                let msg: SetupMsg = ctx.io_mut().expect_next().await?;
+                core.setup(msg).map_err(VmError::execute)?;
+            }
+        }
+
         let mut call_stack = std::mem::take(&mut self.call_stack);
 
         let (_, preprocessed) = ctx
@@ -301,6 +326,14 @@ where
             self.execute_preprocessed()?;
         }
 
+        {
+            let mut core = self.core.try_lock().unwrap();
+            if !core.is_setup() {
+                let msg: SetupMsg = ctx.io_mut().expect_next().await?;
+                core.setup(msg).map_err(VmError::execute)?;
+            }
+        }
+
         while !self.call_stack.is_empty() {
             let calls = self.take_execute_calls();
 
@@ -308,14 +341,28 @@ where
                 break;
             }
 
+            let mut core = self.core.try_lock().unwrap();
+            let workers = calls
+                .iter()
+                .map(|call| {
+                    core.alloc_worker(call.0.circ().and_count())
+                        .expect("core was set up")
+                })
+                .collect::<Vec<_>>();
+
+            let iter = calls
+                .into_iter()
+                .zip(workers.into_iter())
+                .collect::<Vec<_>>();
+
             let store = self.store.clone();
             let outputs = ctx
                 .map(
-                    calls,
-                    async move |ctx, (call, output): (Call, Slice)| {
-                        evaluate(ctx, store.clone(), call, output).await
+                    iter,
+                    async move |ctx, ((call, output), wrk): ((Call, Slice), EvaluatorWorker)| {
+                        evaluate(ctx, store.clone(), call, output, wrk).await
                     },
-                    |(call, _)| call.circ().and_count(),
+                    |((call, _), _)| call.circ().and_count(),
                 )
                 .await
                 .map_err(VmError::execute)?;
@@ -338,6 +385,7 @@ async fn evaluate<COT>(
     store: Arc<Mutex<EvaluatorStore<COT>>>,
     call: Call,
     output: Slice,
+    worker: EvaluatorWorker,
 ) -> Result<()> {
     let (circ, inputs) = call.into_parts();
 
@@ -351,7 +399,7 @@ async fn evaluate<COT>(
 
     let EvaluatorOutput {
         outputs: output_macs,
-    } = crate::evaluator::evaluate(ctx, circ, &input_macs)
+    } = crate::evaluator::evaluate(ctx, circ, &input_macs, worker)
         .await
         .map_err(VmError::execute)?;
 

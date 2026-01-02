@@ -1,11 +1,12 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use serio::SinkExt;
 use tokio::sync::Mutex;
 
 use mpz_common::{Context, Flush};
 use mpz_core::{Block, bitvec::BitVec};
-use mpz_garble_core::GarblerOutput;
+use mpz_garble_core::{Garbler as Core, GarblerOutput, GarblerWorker};
 use mpz_memory_core::{DecodeFuture, Memory, Slice, View, binary::Binary, correlated::Delta};
 use mpz_ot::cot::COTSender;
 use mpz_vm_core::{Call, Callable, Execute, Result, VmError};
@@ -18,15 +19,25 @@ pub struct Garbler<COT> {
     store: Arc<Mutex<GarblerStore<COT>>>,
     call_stack: Vec<(Call, Slice)>,
     preprocessed: Vec<(Vec<Slice>, Slice)>,
+    core: Arc<Mutex<Core>>,
 }
 
 impl<COT> Garbler<COT> {
     /// Creates a new garbler.
     pub fn new(cot: COT, seed: [u8; 16], delta: Delta) -> Self {
+        // Derive separate seeds for store and core to avoid PRG reuse
+        let store_seed: [u8; 16] = *blake3::derive_key("mpz-garble store", &seed)
+            .first_chunk()
+            .unwrap();
+        let core_seed: [u8; 16] = *blake3::derive_key("mpz-garble core", &seed)
+            .first_chunk()
+            .unwrap();
+
         Self {
-            store: Arc::new(Mutex::new(GarblerStore::new(seed, delta, cot))),
+            store: Arc::new(Mutex::new(GarblerStore::new(store_seed, delta, cot))),
             call_stack: Vec::new(),
             preprocessed: Vec::new(),
+            core: Arc::new(Mutex::new(Core::new(core_seed, delta))),
         }
     }
 
@@ -198,10 +209,13 @@ where
     }
 
     async fn preprocess(&mut self, ctx: &mut Context) -> Result<()> {
-        let (delta, mut cot) = {
-            let store = self.store.try_lock().unwrap();
-            (*store.delta(), store.acquire_cot())
-        };
+        let mut cot = self.store.try_lock().unwrap().acquire_cot();
+
+        let mut core = Mutex::try_lock_owned(self.core.clone()).unwrap();
+        if !core.is_setup() {
+            let msg = core.setup().expect("core was not set up");
+            ctx.io_mut().send(msg).await?;
+        }
 
         let mut call_stack = std::mem::take(&mut self.call_stack);
         let store = self.store.clone();
@@ -226,18 +240,43 @@ where
                     // in a non-empty call stack.
                     debug_assert!(!calls.is_empty());
 
+                    let workers = calls
+                        .iter()
+                        .map(|call| {
+                            core.alloc_worker(call.0.circ().and_count())
+                                .expect("core was set up")
+                        })
+                        .collect::<Vec<_>>();
+
+                    let iter = calls
+                        .into_iter()
+                        .zip(workers.into_iter())
+                        .collect::<Vec<_>>();
+
                     let store = store.clone();
-                    let outputs = ctx
-                        .map(
-                            calls,
-                            async move |ctx: &mut Context, (call, output): (Call, Slice)| {
-                                generate(ctx, store.clone(), delta, call, output, Mode::Preprocess)
+                    let outputs =
+                        ctx
+                            .map(
+                                iter,
+                                async move |ctx: &mut Context,
+                                            ((call, output), wrk): (
+                                    (Call, Slice),
+                                    GarblerWorker,
+                                )| {
+                                    generate(
+                                        ctx,
+                                        store.clone(),
+                                        call,
+                                        output,
+                                        Mode::Preprocess,
+                                        wrk,
+                                    )
                                     .await
-                            },
-                            |(call, _)| call.circ().and_count(),
-                        )
-                        .await
-                        .map_err(VmError::execute)?;
+                                },
+                                |((call, _), _)| call.circ().and_count(),
+                            )
+                            .await
+                            .map_err(VmError::execute)?;
 
                     outputs.into_iter().collect::<Result<()>>()?;
                 }
@@ -268,7 +307,11 @@ where
     async fn execute(&mut self, ctx: &mut Context) -> Result<()> {
         self.mark_executed()?;
 
-        let delta = *self.store.try_lock().unwrap().delta();
+        let mut core = Mutex::try_lock_owned(self.core.clone()).unwrap();
+        if !core.is_setup() {
+            let msg = core.setup().expect("core was not set up");
+            ctx.io_mut().send(msg).await?;
+        }
 
         while !self.call_stack.is_empty() {
             let calls = self.take_execute_calls();
@@ -277,14 +320,27 @@ where
                 break;
             }
 
+            let workers = calls
+                .iter()
+                .map(|call| {
+                    core.alloc_worker(call.0.circ().and_count())
+                        .expect("core was set up")
+                })
+                .collect::<Vec<_>>();
+
+            let iter = calls
+                .into_iter()
+                .zip(workers.into_iter())
+                .collect::<Vec<_>>();
+
             let store = self.store.clone();
             let outputs = ctx
                 .map(
-                    calls,
-                    async move |ctx: &mut Context, (call, output): (Call, Slice)| {
-                        generate(ctx, store.clone(), delta, call, output, Mode::Execute).await
+                    iter,
+                    async move |ctx: &mut Context, ((call, output), wrk): ((Call, Slice), GarblerWorker)| {
+                        generate(ctx, store.clone(), call, output, Mode::Execute, wrk).await
                     },
-                    |(call, _)| call.circ().and_count(),
+                    |((call, _), _)| call.circ().and_count(),
                 )
                 .await
                 .map_err(VmError::execute)?;
@@ -306,10 +362,10 @@ enum Mode {
 async fn generate<COT>(
     ctx: &mut Context,
     store: Arc<Mutex<GarblerStore<COT>>>,
-    delta: Delta,
     call: Call,
     output: Slice,
     mode: Mode,
+    worker: GarblerWorker,
 ) -> Result<()> {
     let (circ, inputs) = call.into_parts();
 
@@ -323,7 +379,7 @@ async fn generate<COT>(
 
     let GarblerOutput {
         outputs: output_keys,
-    } = crate::garbler::generate(ctx, circ, delta, &input_keys)
+    } = crate::garbler::generate(ctx, circ, &input_keys, worker)
         .await
         .map_err(VmError::execute)?;
 
