@@ -202,14 +202,7 @@ pub async fn garble_core_half_gates_evaluate_parallel(n: u32, concurrency: u32) 
                     // Build input for parallel evaluation
                     let circs: Vec<_> = garbled_circuits
                         .iter()
-                        .map(|gc| {
-                            (
-                                circuit.clone(),
-                                eval_inputs.clone(),
-                                gc.clone(),
-                                setup,
-                            )
-                        })
+                        .map(|gc| (circuit.clone(), eval_inputs.clone(), gc.clone(), setup))
                         .collect();
 
                     // Timed: parallel evaluation using par_iter directly in local pool
