@@ -55,7 +55,7 @@ fn bench_evaluate(c: &mut Criterion) {
         // Iterator-based (one gate at a time)
         group.bench_function(BenchmarkId::new("iter", name), |b| {
             let mut ev = Evaluator::default();
-            ev.setup(setup).unwrap();
+            ev.setup(setup.clone()).unwrap();
             b.iter(|| {
                 for gates in &all_gates {
                     let worker = ev.alloc_worker(circuit.and_count()).unwrap();
@@ -73,7 +73,7 @@ fn bench_evaluate(c: &mut Criterion) {
         // iteration
         group.bench_function(BenchmarkId::new("batched", name), |b| {
             let mut ev = Evaluator::default();
-            ev.setup(setup).unwrap();
+            ev.setup(setup.clone()).unwrap();
             let mut gb = Garbler::new(seed, delta);
             let _ = gb.setup().unwrap();
             b.iter(|| {
@@ -140,7 +140,7 @@ fn bench_evaluate_parallel(c: &mut Criterion) {
         // Parallel evaluation using evaluate_garbled_circuits (uses rayon par_iter)
         group.bench_function(BenchmarkId::new("rayon", name), |b| {
             let mut ev = Evaluator::default();
-            ev.setup(setup).unwrap();
+            ev.setup(setup.clone()).unwrap();
             b.iter(|| {
                 let circs: Vec<_> = garbled_circuits
                     .iter()

@@ -72,7 +72,7 @@ pub fn garble_core_half_gates_evaluate(n: u32) -> BenchResult {
         let start = performance.now();
 
         let mut ev = Evaluator::default();
-        ev.setup(state.setup).unwrap();
+        ev.setup(state.setup.clone()).unwrap();
         for _ in 0..n {
             let mut consumer = ev.evaluate(&AES128, &state.eval_inputs).unwrap();
             for gate in &state.gates {
@@ -99,7 +99,7 @@ pub fn garble_core_half_gates_evaluate_batched(n: u32) -> BenchResult {
     STATE.with(|state| {
         let mut total_elapsed = 0.0;
         let mut ev = Evaluator::default();
-        ev.setup(state.setup).unwrap();
+        ev.setup(state.setup.clone()).unwrap();
 
         for _ in 0..n {
             // Regenerate batches for this iteration (untimed)
@@ -202,7 +202,14 @@ pub async fn garble_core_half_gates_evaluate_parallel(n: u32, concurrency: u32) 
                     // Build input for parallel evaluation
                     let circs: Vec<_> = garbled_circuits
                         .iter()
-                        .map(|gc| (circuit.clone(), eval_inputs.clone(), gc.clone(), setup))
+                        .map(|gc| {
+                            (
+                                circuit.clone(),
+                                eval_inputs.clone(),
+                                gc.clone(),
+                                setup.clone(),
+                            )
+                        })
                         .collect();
 
                     // Timed: parallel evaluation using par_iter directly in local pool

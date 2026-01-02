@@ -4,7 +4,7 @@
 
 use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
 use mpz_circuits::AES128;
-use mpz_garble_core::{Evaluator, Garbler, Key, SetupMsg};
+use mpz_garble_core::{Evaluator, Garbler, Key};
 use mpz_memory_core::correlated::Delta;
 use rand::{Rng, SeedableRng, rngs::StdRng};
 
@@ -74,10 +74,8 @@ fn bench_garble(c: &mut Criterion) {
             .map(|(input, choice)| input.auth(choice, &delta))
             .collect();
 
-        let msg = bincode::serialize(&setup).unwrap();
-
         b.iter(|| {
-            let setup: SetupMsg = bincode::deserialize(&msg).unwrap();
+            let setup = setup.clone();
             let mut ev = Evaluator::default();
             ev.setup(setup).unwrap();
             let mut ev_consumer = ev.evaluate(&AES128, &inputs).unwrap();

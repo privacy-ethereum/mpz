@@ -39,7 +39,7 @@ const MAX_BATCH_SIZE: usize = 4 * KB;
 pub(crate) const DEFAULT_BATCH_SIZE: usize = MAX_BATCH_SIZE / BYTES_PER_GATE;
 
 /// Setup message passed from the garbler to the evaluator.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SetupMsg {
     /// Initial AND gate id.
     initial_gid: u128,
