@@ -1,7 +1,7 @@
 use derive_builder::Builder;
 
 /// An empirically chosen default value which provides the best performance.
-const DEFAULT_BATCH_SIZE: usize = 400_000;
+const DEFAULT_BATCH_SIZE: usize = 200_000;
 
 /// Prover configuration.
 #[derive(Debug, Clone, Builder)]

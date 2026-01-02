@@ -8,12 +8,17 @@ use mpz_core::{
     Block,
     bitvec::{BitSlice, BitVec},
 };
+use rand_chacha::{ChaCha12Rng, rand_core::SeedableRng};
 use serde::{Deserialize, Serialize};
 use zerocopy::IntoBytes;
 
 use crate::vole::{vole_receiver, vole_sender};
 
 type Result<T> = core::result::Result<T, CheckError>;
+
+/// Chunk size for parallel processing of consistency check.
+/// Large enough to saturate caches, small enough for effective work stealing.
+const SEGMENT_SIZE: usize = 512;
 
 /// Values sent from the prover to the verifier for the consistency check.
 #[derive(Debug, Serialize, Deserialize)]
@@ -56,19 +61,6 @@ impl Check {
         !self.triples.is_empty()
     }
 
-    fn compute_chis(&self, mut chi: Block) -> Vec<Block> {
-        // TODO: Consider using a PRG instead so computing the coefficients
-        // can be done in parallel.
-        let mut chis = Vec::with_capacity(self.triples.len());
-        chis.push(chi);
-        for _ in 1..self.triples.len() {
-            chi = chi.gfmul(chi);
-            chis.push(chi);
-        }
-
-        chis
-    }
-
     /// Executes the prover check, returning `U` and `V` defined in Figure 5,
     /// Step 7.b.
     pub(crate) fn check_prover(
@@ -94,30 +86,58 @@ impl Check {
         let adjust_len = self.adjust.len();
         transcript.update(&self.adjust.as_raw_slice().as_bytes()[..adjust_len.div_ceil(8)]);
 
-        let chi = Block::try_from(&transcript.finalize().as_bytes()[..16])
-            .expect("block should be 16 bytes");
-        let chis = self.compute_chis(chi);
         let macs = mem::take(&mut self.triples);
+
+        let seed = *transcript.finalize().as_bytes();
+        let rng = ChaCha12Rng::from_seed(seed);
+
+        let process_segment = |rng: &mut ChaCha12Rng, segment: &[Triple]| {
+            use rand_chacha::rand_core::RngCore;
+
+            let mut u_acc = Block::ZERO;
+            let mut v_acc = Block::ZERO;
+            let mut chi = Block::ZERO;
+
+            for &triple in segment {
+                rng.fill_bytes(chi.as_mut());
+
+                let (u, v) = compute_terms(triple, chi);
+                u_acc ^= u;
+                v_acc ^= v;
+            }
+            (u_acc, v_acc)
+        };
+
         cfg_if! {
             if #[cfg(feature = "rayon")] {
                 use rayon::prelude::*;
 
                 let (mut u, mut v) = macs
-                    .into_par_iter()
-                    .zip(chis)
-                    .map(|(macs, chi)| compute_terms(macs, chi))
+                    .par_chunks(SEGMENT_SIZE)
+                    .enumerate()
+                    .map_with(
+                        rng,
+                        |rng, (stream_id, segment)| {
+                            rng.set_stream(stream_id as u64);
+                            process_segment(rng, segment)
+                        }
+                    )
                     .reduce(
                         || (Block::ZERO, Block::ZERO),
-                        |(u_acc, v_acc), (u, v)| (u_acc ^ u, v_acc ^ v),
+                        |(u1, v1), (u2, v2)| (u1 ^ u2, v1 ^ v2),
                     );
             } else {
                 let (mut u, mut v) = macs
-                    .into_iter()
-                    .zip(chis)
-                    .map(|(macs, chi)| compute_terms(macs, chi))
+                    .chunks(SEGMENT_SIZE)
+                    .enumerate()
+                    .map(|(stream_id, segment)| {
+                        let mut rng = rng.clone();
+                        rng.set_stream(stream_id as u64);
+                        process_segment(&mut rng, segment)
+                    })
                     .fold(
                         (Block::ZERO, Block::ZERO),
-                        |(u_acc, v_acc), (u, v)| (u_acc ^ u, v_acc ^ v),
+                        |(u1, v1), (u2, v2)| (u1 ^ u2, v1 ^ v2),
                     );
             }
         }
@@ -157,31 +177,55 @@ impl Check {
         let adjust_len = self.adjust.len();
         transcript.update(&self.adjust.as_raw_slice().as_bytes()[..adjust_len.div_ceil(8)]);
 
-        let chi = Block::try_from(&transcript.finalize().as_bytes()[..16])
-            .expect("block should be 16 bytes");
-        let chis = self.compute_chis(chi);
         let keys = mem::take(&mut self.triples);
+
+        let seed = *transcript.finalize().as_bytes();
+        let rng = ChaCha12Rng::from_seed(seed);
+
+        let process_segment = |rng: &mut ChaCha12Rng, segment: &[Triple]| {
+            use rand_chacha::rand_core::RngCore;
+
+            let mut w_acc = Block::ZERO;
+            let mut chi = Block::ZERO;
+
+            for &triple in segment {
+                rng.fill_bytes(chi.as_mut());
+
+                let w = compute_term(triple, chi, delta);
+                w_acc ^= w;
+            }
+
+            w_acc
+        };
+
         cfg_if! {
             if #[cfg(feature = "rayon")] {
                 use rayon::prelude::*;
 
                 let mut w = keys
-                    .into_par_iter()
-                    .zip(chis)
-                    .map(|(keys, chi)| compute_term(keys, chi, delta))
+                    .par_chunks(SEGMENT_SIZE)
+                    .enumerate()
+                    .map_with(
+                        rng,
+                        |rng, (stream_id, segment)| {
+                            rng.set_stream(stream_id as u64);
+                            process_segment(rng, segment)
+                        }
+                    )
                     .reduce(
                         || Block::ZERO,
-                        |w_acc, w| w_acc ^ w,
+                        |w1, w2| w1 ^ w2,
                     );
             } else {
                 let mut w = keys
-                    .into_iter()
-                    .zip(chis)
-                    .map(|(keys, chi)| compute_term(keys, chi, delta))
-                    .fold(
-                        Block::ZERO,
-                        |w_acc, w| w_acc ^ w,
-                    );
+                    .chunks(SEGMENT_SIZE)
+                    .enumerate()
+                    .map(|(stream_id, segment)| {
+                        let mut rng = rng.clone();
+                        rng.set_stream(stream_id as u64);
+                        process_segment(&mut rng, segment)
+                    })
+                    .fold(Block::ZERO, |w1, w2| w1 ^ w2);
             }
         }
 
