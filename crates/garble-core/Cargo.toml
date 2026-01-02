@@ -1,6 +1,6 @@
 [package]
 name = "mpz-garble-core"
-version = "0.1.0-alpha.3"
+version = "0.1.0-alpha.4"
 edition = "2024"
 
 [lints]
@@ -20,41 +20,46 @@ rayon = [
 ]
 
 [dependencies]
-mpz-core.workspace = true
-mpz-circuits.workspace = true
-mpz-ot-core = { workspace = true }
+mpz-circuits = { workspace = true }
 mpz-common = { workspace = true, features = ["future"] }
+mpz-core = { workspace = true }
 mpz-memory-core = { workspace = true }
+mpz-ot-core = { workspace = true }
 mpz-vm-core = { workspace = true }
 
 aes = { workspace = true, features = [] }
-cipher.workspace = true
-blake3 = { workspace = true, features = ["serde"] }
-rand.workspace = true
-rand_core.workspace = true
-rand_chacha.workspace = true
-regex = { workspace = true, optional = true }
-once_cell.workspace = true
-opaque-debug.workspace = true
-rayon = { workspace = true, optional = true }
-rangeset = { workspace = true, features = ["serde"] }
-serde = { workspace = true, features = ["derive"] }
-serde_arrays.workspace = true
-thiserror.workspace = true
-derive_builder.workspace = true
-itybity.workspace = true
 bitvec = { workspace = true, features = ["serde"] }
+blake3 = { workspace = true, features = ["serde"] }
 cfg-if = { workspace = true }
+cipher = { workspace = true }
+derive_builder = { workspace = true }
+itybity = { workspace = true }
+once_cell = { workspace = true }
+opaque-debug = { workspace = true }
+rand = { workspace = true }
+rand_core = { workspace = true }
+rand_chacha = { workspace = true }
+rangeset = { workspace = true, features = ["serde"] }
+rayon = { workspace = true, optional = true }
+regex = { workspace = true, optional = true }
+serde = { workspace = true, features = ["derive"] }
+serde_arrays = { workspace = true }
+thiserror = { workspace = true }
 tokio = { workspace = true, features = ["sync"] }
 
 [dev-dependencies]
+mpz-circuits = { workspace = true, features = ["aes"] }
 mpz-ot-core = { workspace = true, features = ["test-utils"] }
 
-bincode.workspace = true
-rstest.workspace = true
-criterion.workspace = true
-pretty_assertions.workspace = true
+bincode = { workspace = true }
+rstest = { workspace = true }
+criterion = { workspace = true }
+pretty_assertions = { workspace = true }
 
 [[bench]]
 name = "garble"
+harness = false
+
+[[bench]]
+name = "evaluate"
 harness = false

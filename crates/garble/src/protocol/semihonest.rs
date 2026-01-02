@@ -7,7 +7,7 @@ pub use evaluator::Evaluator;
 pub use garbler::Garbler;
 use mpz_memory_core::Slice;
 use mpz_vm_core::Call;
-use rangeset::{Disjoint, RangeSet};
+use rangeset::{ops::Set, set::RangeSet};
 
 /// Takes those calls from the `call_stack` which are ready for preprocessing.
 fn take_preprocess_calls(call_stack: &mut Vec<(Call, Slice)>) -> Vec<(Call, Slice)> {
@@ -32,7 +32,7 @@ fn take_preprocess_calls(call_stack: &mut Vec<(Call, Slice)>) -> Vec<(Call, Slic
 
 #[cfg(test)]
 mod tests {
-    use mpz_circuits::circuits::AES128;
+    use mpz_circuits::AES128;
     use mpz_common::{Flush, context::test_st_context};
     use mpz_core::Block;
     use mpz_memory_core::{

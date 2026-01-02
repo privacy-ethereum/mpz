@@ -1,6 +1,6 @@
 [package]
 name = "mpz-common"
-version = "0.1.0-alpha.3"
+version = "0.1.0-alpha.4"
 edition = "2024"
 
 [features]
@@ -8,7 +8,7 @@ default = []
 executor = []
 sync = ["tokio/sync"]
 future = []
-test-utils = ["uid-mux/test-utils"]
+test-utils = ["uid-mux/test-utils", "tokio/io-util", "tokio-util/compat"]
 ideal = ["tokio/sync"]
 
 [dependencies]

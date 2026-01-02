@@ -5,7 +5,7 @@ use std::{
     sync::{Arc, LazyLock},
 };
 
-use mpz_circuits::{Circuit, CircuitBuilder, circuits::BLAKE3_COMPRESS};
+use mpz_circuits::{BLAKE3_COMPRESS, Circuit, CircuitBuilder};
 use mpz_core::bitvec::BitVec;
 use mpz_vm_core::{
     Call, CallableExt, Vm, VmError,
@@ -554,9 +554,8 @@ enum ErrorKind {
 mod test {
     use mpz_circuits::evaluate;
     use mpz_common::context::test_st_context;
-    use mpz_garble::protocol::semihonest::{Evaluator, Garbler};
-    use mpz_ot::ideal::cot::{IdealCOTReceiver, IdealCOTSender, ideal_cot};
-    use mpz_vm_core::{memory::correlated::Delta, prelude::*};
+    use mpz_ideal_vm::IdealVm;
+    use mpz_vm_core::prelude::*;
 
     use blake3::{BLOCK_LEN, CHUNK_LEN, hazmat::HasherExt};
     use rand::{Rng, SeedableRng, rngs::StdRng};
@@ -571,16 +570,6 @@ mod test {
         assert_eq!(&output, expected.as_slice());
     }
 
-    fn setup_vm(rng: &mut StdRng) -> (Garbler<IdealCOTSender>, Evaluator<IdealCOTReceiver>) {
-        let delta: Delta = rng.random();
-        let (cot_send, cot_recv) = ideal_cot(delta.into_inner());
-
-        let gb = Garbler::new(cot_send, rng.random(), delta);
-        let ev = Evaluator::new(cot_recv);
-
-        (gb, ev)
-    }
-
     #[rstest]
     #[case::less_than_block(1)]
     #[case::less_than_block_many(10)]
@@ -591,13 +580,13 @@ mod test {
     #[tokio::test]
     async fn test_chunk_compress(#[case] len: usize) {
         let mut rng = StdRng::seed_from_u64(0);
-        let (gb, ev) = setup_vm(&mut rng);
+        let (vm_0, vm_1) = (IdealVm::default(), IdealVm::default());
         let (mut ctx_a, mut ctx_b) = test_st_context(8);
         let data = (0..len).map(|_| rng.random::<u8>()).collect::<Vec<_>>();
 
         let (a, b) = tokio::join!(
             async {
-                let mut vm = gb;
+                let mut vm = vm_0;
                 let chunk_counter = 0;
                 let flags = 0u32;
                 let cv = ChainingValue::new(&mut vm, Visibility::Public, IV).unwrap();
@@ -616,7 +605,7 @@ mod test {
                 out.try_recv().unwrap().unwrap()
             },
             async {
-                let mut vm = ev;
+                let mut vm = vm_1;
                 let chunk_counter = 0;
                 let flags = 0u32;
                 let cv = ChainingValue::new(&mut vm, Visibility::Public, IV).unwrap();
@@ -649,13 +638,12 @@ mod test {
     }
 
     async fn hash(data: &Vec<Vec<u8>>) -> [u8; 32] {
-        let mut rng = StdRng::seed_from_u64(0);
-        let (gb, ev) = setup_vm(&mut rng);
+        let (vm_0, vm_1) = (IdealVm::default(), IdealVm::default());
         let (mut ctx_a, mut ctx_b) = test_st_context(8);
 
         let (a, b) = tokio::join!(
             async {
-                let mut vm = gb;
+                let mut vm = vm_0;
                 let mut hasher = Blake3::new(&mut vm).unwrap();
 
                 for data in data {
@@ -674,7 +662,7 @@ mod test {
                 out.try_recv().unwrap().unwrap()
             },
             async {
-                let mut vm = ev;
+                let mut vm = vm_1;
                 let mut hasher = Blake3::new(&mut vm).unwrap();
 
                 for data in data {

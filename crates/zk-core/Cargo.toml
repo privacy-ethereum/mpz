@@ -1,6 +1,6 @@
 [package]
 name = "mpz-zk-core"
-version = "0.1.0-alpha.3"
+version = "0.1.0-alpha.4"
 edition = "2024"
 
 [lints]
@@ -26,6 +26,7 @@ itybity = { workspace = true }
 zerocopy = { workspace = true }
 
 [dev-dependencies]
+mpz-circuits = { workspace = true, features = ["aes"] }
 mpz-ot-core = { workspace = true, features = ["test-utils"] }
 rand = { workspace = true }
 criterion = { workspace = true }
@@ -33,5 +34,9 @@ aes = { workspace = true }
 rstest = { workspace = true }
 
 [[bench]]
-name = "zk"
+name = "prover"
+harness = false
+
+[[bench]]
+name = "verifier"
 harness = false

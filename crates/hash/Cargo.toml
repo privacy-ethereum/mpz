@@ -1,11 +1,11 @@
 [package]
 name = "mpz-hash"
-version = "0.1.0-alpha.3"
+version = "0.1.0-alpha.4"
 edition = "2024"
 
 [dependencies]
 mpz-core = { workspace = true }
-mpz-circuits = { workspace = true }
+mpz-circuits = { workspace = true, features = ["sha2", "blake3", "keccak"] }
 mpz-vm-core = { workspace = true }
 
 blake3 = { workspace = true }
@@ -13,12 +13,12 @@ itybity = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
-mpz-common = { workspace = true }
-mpz-garble = { workspace = true }
-mpz-ot = { workspace = true, features = ["ideal"] }
+mpz-common = { workspace = true, features = ["test-utils"] }
+mpz-ideal-vm = { workspace = true }
 rand = { workspace = true }
 rstest = { workspace = true }
 sha2 = { workspace = true }
+sha3 = { version = "0.10" }
 tokio = { workspace = true, features = [
     "net",
     "macros",

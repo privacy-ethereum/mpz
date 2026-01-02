@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use blake3::Hasher;
-use rangeset::{Difference, Intersection};
+use rangeset::{iter::RangeIterator, ops::Set};
 use tokio::sync::{Mutex, OwnedMutexGuard};
 
 use mpz_common::future::Output;
@@ -143,9 +143,10 @@ impl<COT> EvaluatorStore<COT> {
             .mac_store
             .set_ranges()
             .intersection(self.key_bit_store.set_ranges())
-            .difference(self.data_store.set_ranges());
+            .difference(self.data_store.set_ranges())
+            .into_set();
 
-        for range in idx.iter_ranges() {
+        for range in idx.iter() {
             let slice = Slice::from_range_unchecked(range);
 
             let mac_bits = self.mac_store.try_get_bits(slice)?;
@@ -201,7 +202,7 @@ where
         let cot = if !view.ot.is_empty() {
             // Collect the choices for oblivious transfer.
             let mut choices: Vec<_> = Vec::with_capacity(view.ot.len());
-            for range in view.ot.iter_ranges() {
+            for range in view.ot.iter() {
                 let slice = Slice::from_range_unchecked(range);
                 choices.extend(self.data_store.try_get(slice)?.iter().by_vals());
             }
@@ -258,7 +259,7 @@ where
         }
 
         let mut i = 0;
-        for range in self.view.flush().macs.iter_ranges() {
+        for range in self.view.flush().macs.iter() {
             let slice = Slice::from_range_unchecked(range);
             self.mac_store.try_set(slice, &macs[i..i + slice.len()])?;
             i += slice.len();
@@ -273,7 +274,7 @@ where
             let macs = Mac::from_blocks(macs);
 
             i = 0;
-            for range in self.view.flush().ot.iter_ranges() {
+            for range in self.view.flush().ot.iter() {
                 let slice = Slice::from_range_unchecked(range);
                 self.mac_store.try_set(slice, &macs[i..i + slice.len()])?;
                 i += slice.len();
@@ -296,7 +297,7 @@ where
         }
 
         i = 0;
-        for range in self.view.flush().decode_info.iter_ranges() {
+        for range in self.view.flush().decode_info.iter() {
             let slice = Slice::from_range_unchecked(range);
             self.key_bit_store
                 .try_set(slice, &key_bits[i..i + slice.len()])?;

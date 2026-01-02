@@ -122,6 +122,23 @@ impl Io {
         }
     }
 
+    pub(crate) fn from_io_with_limit<Io: AsyncRead + AsyncWrite + Send + Sync + Unpin + 'static>(
+        io: Io,
+        max_frame_length: usize,
+    ) -> Self {
+        let framed = Box::new(
+            LengthDelimitedCodec::builder()
+                .max_frame_length(max_frame_length)
+                .new_framed(io.compat()),
+        );
+
+        Self {
+            inner: Inner::Transport {
+                framed: Framed::new(framed, Bincode),
+            },
+        }
+    }
+
     /// Returns the maximum message size that can be received.
     pub fn limit(&self) -> usize {
         match &self.inner {

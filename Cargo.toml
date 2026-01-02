@@ -4,9 +4,12 @@ members = [
     "crates/common",
     "crates/fields",
     "crates/circuits",
+    "crates/circuits-core",
+    "crates/circuits-data",
     "crates/cointoss",
     "crates/cointoss-core",
     "crates/hash",
+    "crates/ideal-vm",
     "crates/ot",
     "crates/ot-core",
     "crates/garble",
@@ -21,14 +24,19 @@ members = [
     "crates/vm-core",
     "crates/zk-core",
     "crates/zk",
+    "crates/wasm-bench",
 ]
-exclude = [
-    "crates/lpn-estimator",
-]
+exclude = ["crates/lpn-estimator"]
 resolver = "2"
 
 [profile.release]
 lto = true
+
+[profile.wasm]
+inherits = "release"
+lto = true
+panic = "abort"
+codegen-units = 1
 
 [workspace.lints.rust]
 # unsafe_code = "forbid"
@@ -45,6 +53,8 @@ mpz-core = { path = "crates/core" }
 mpz-common = { path = "crates/common" }
 mpz-fields = { path = "crates/fields" }
 mpz-circuits = { path = "crates/circuits" }
+mpz-circuits-core = { path = "crates/circuits-core" }
+mpz-circuits-data = { path = "crates/circuits-data" }
 mpz-cointoss = { path = "crates/cointoss" }
 mpz-cointoss-core = { path = "crates/cointoss-core" }
 mpz-ot = { path = "crates/ot" }
@@ -52,6 +62,7 @@ mpz-ot-core = { path = "crates/ot-core" }
 mpz-garble = { path = "crates/garble" }
 mpz-garble-core = { path = "crates/garble-core" }
 mpz-hash = { path = "crates/hash" }
+mpz-ideal-vm = { path = "crates/ideal-vm" }
 mpz-share-conversion-core = { path = "crates/share-conversion-core" }
 mpz-ole = { path = "crates/ole" }
 mpz-ole-core = { path = "crates/ole-core" }
@@ -61,7 +72,7 @@ mpz-zk-core = { path = "crates/zk-core" }
 mpz-zk = { path = "crates/zk" }
 clmul = { path = "crates/clmul" }
 matrix-transpose = { path = "crates/matrix-transpose" }
-rangeset = "0.2"
+rangeset = "0.4"
 
 # rand
 rand_chacha = "0.9"
@@ -71,20 +82,21 @@ rand_core_06 = { package = "rand_core", version = "0.6" }
 rand_08 = { package = "rand", version = "0.8" }
 
 # crypto
-cipher = "0.5.0-pre.8"
+cipher = "0.5.0-rc.1"
 sha2 = "0.10"
 blake3 = "1.8.2"
-aes = "0.9.0-pre.3"
+aes = "0.9.0-rc.1"
 ctr = "0.9"
 digest = "0.10"
 curve25519-dalek = "4.1"
-elliptic-curve = "0.14.0-rc.1"
+elliptic-curve = "0.14.0-rc.15"
 merlin = "3"
 p256 = "0.10"
-ghash_rc = { package = "ghash", version = "0.6.0-rc.0" }
+ghash_rc = { package = "ghash", version = "0.6.0-rc.2" }
 ark-ff = "0.4"
 ark-secp256r1 = "0.4"
 num-bigint = "0.4"
+keccak = "0.1"
 
 # async
 async-trait = "0.1"

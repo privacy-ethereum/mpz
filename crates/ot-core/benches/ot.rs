@@ -150,4 +150,4 @@ criterion_group! {
     targets = ferret
 }
 
-criterion_main!(chou_orlandi_benches, kos_benches, ferret_benches);
+criterion_main!(chou_orlandi_benches, kos_benches, ferret_benches,);

@@ -10,7 +10,14 @@ pub use mt::{
     StdSpawn,
 };
 #[cfg(any(test, feature = "test-utils"))]
-pub use test::{test_mt_context, test_st_context};
+pub use test::{
+    RecordedMtData, RecordingDuplex, ReplayDuplex, recording_mt_context,
+    recording_mt_context_with_limit, recording_mt_context_with_spawn,
+    recording_mt_context_with_spawn_and_limit, recording_st_context,
+    recording_st_context_with_limit, replay_mt_context, replay_mt_context_with_limit,
+    replay_mt_context_with_spawn, replay_mt_context_with_spawn_and_limit, replay_st_context,
+    test_mt_context, test_mt_context_with_concurrency, test_mt_context_with_spawn, test_st_context,
+};
 
 use core::fmt;
 use std::sync::{Arc, Mutex};
@@ -48,6 +55,7 @@ impl Context {
         }
     }
 
+    #[allow(dead_code)]
     pub(crate) fn from_io(io: Io) -> Self {
         Self {
             id: ThreadId::default(),

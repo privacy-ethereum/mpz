@@ -1,0 +1,34 @@
+[package]
+name = "mpz-ideal-vm"
+version = "0.1.0-alpha.4"
+edition = "2024"
+
+[lints]
+workspace = true
+
+[lib]
+name = "mpz_ideal_vm"
+
+[dependencies]
+mpz-common = { workspace = true }
+mpz-memory-core = { workspace = true }
+mpz-core = { workspace = true }
+mpz-vm-core = { workspace = true }
+
+async-trait = { workspace = true }
+futures = { workspace = true }
+rangeset = { workspace = true, features = ["serde"] }
+serde = { workspace = true, features = ["derive"] }
+serio = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+mpz-circuits = { workspace = true, features = ["aes"] }
+mpz-common = { workspace = true, features = ["test-utils"] }
+rstest = { workspace = true }
+tokio = { workspace = true, features = [
+    "net",
+    "macros",
+    "rt",
+    "rt-multi-thread",
+] }

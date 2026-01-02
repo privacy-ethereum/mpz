@@ -1,6 +1,6 @@
 [package]
 name = "mpz-ot"
-version = "0.1.0-alpha.3"
+version = "0.1.0-alpha.4"
 edition = "2024"
 
 [lints]
@@ -12,7 +12,7 @@ name = "mpz_ot"
 [features]
 default = []
 rayon = ["mpz-ot-core/rayon"]
-ideal = ["mpz-common/ideal"]
+ideal = ["mpz-common/ideal", "serde"]
 test-utils = ["mpz-ot-core/test-utils"]
 
 [dependencies]
@@ -55,4 +55,12 @@ tokio = { workspace = true, features = [
 
 [[bench]]
 name = "shared"
+harness = false
+
+[[bench]]
+name = "ferret_sender"
+harness = false
+
+[[bench]]
+name = "ferret_receiver"
 harness = false

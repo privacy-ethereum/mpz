@@ -152,7 +152,7 @@ where
 
         // Collect MACs.
         let mut macs = Vec::with_capacity(view.macs.len());
-        for range in view.macs.iter_ranges() {
+        for range in view.macs.iter() {
             let slice = Slice::from_range_unchecked(range);
             let data = self.data_store.try_get(slice)?;
             macs.extend(self.key_store.authenticate(slice, data)?);
@@ -161,7 +161,7 @@ where
         // Send keys for OT.
         if !view.ot.is_empty() {
             let mut keys = Vec::with_capacity(view.ot.len());
-            for range in view.ot.iter_ranges() {
+            for range in view.ot.iter() {
                 let slice = Slice::from_range_unchecked(range);
                 keys.extend_from_slice(self.key_store.oblivious_transfer(slice)?);
             }
@@ -177,14 +177,14 @@ where
 
         // Collect key bits.
         let mut key_bits = BitVec::with_capacity(view.decode_info.len());
-        for range in view.decode_info.iter_ranges() {
+        for range in view.decode_info.iter() {
             let slice = Slice::from_range_unchecked(range);
             key_bits.extend(self.key_store.try_get_bits(slice)?);
         }
 
         // Collect MAC commitments.
         let mut mac_commitments = Vec::with_capacity(view.decode_info.len());
-        for range in view.decode_info.iter_ranges() {
+        for range in view.decode_info.iter() {
             let slice = Slice::from_range_unchecked(range);
             mac_commitments.extend(self.key_store.commit(slice)?);
         }
@@ -222,7 +222,7 @@ where
                 .verify(&self.view.flush().decode, &mut bits, proof)?;
 
             let mut i = 0;
-            for range in self.view.flush().decode.iter_ranges() {
+            for range in self.view.flush().decode.iter() {
                 let slice = Slice::from_range_unchecked(range);
                 self.data_store.try_set(slice, &bits[i..i + slice.len()])?;
                 i += slice.len();

@@ -229,7 +229,7 @@ impl MacStore {
     pub fn prove(&self, ranges: &RangeSet) -> Result<(BitVec, Hash)> {
         let mut bits = BitVec::with_capacity(ranges.len());
         let mut hasher = Hasher::new();
-        for range in ranges.iter_ranges() {
+        for range in ranges.iter() {
             let slice = Slice::from_range_unchecked(range);
             self.macs.try_get(slice)?.iter().for_each(|mac| {
                 bits.push(mac.pointer());
