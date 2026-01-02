@@ -166,9 +166,9 @@ impl State {
 #[derive(Debug)]
 pub(crate) struct Setup {
     /// The id to be assigned to the next evaluated AND gate.
-    pub current_gid: u128,
+    current_gid: u128,
     /// Key for the cipher used to encrypt the gates.
-    pub key: [u8; 16],
+    key: [u8; 16],
 }
 
 impl Setup {

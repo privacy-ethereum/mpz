@@ -249,7 +249,7 @@ where
             let mut core = self.core.try_lock().unwrap();
             if !core.is_setup() {
                 let msg: SetupMsg = ctx.io_mut().expect_next().await?;
-                core.setup(msg).expect("core was not already set up");
+                core.setup(msg).map_err(VmError::execute)?;
             }
         }
 
@@ -330,7 +330,7 @@ where
             let mut core = self.core.try_lock().unwrap();
             if !core.is_setup() {
                 let msg: SetupMsg = ctx.io_mut().expect_next().await?;
-                core.setup(msg).expect("core was not already set up");
+                core.setup(msg).map_err(VmError::execute)?;
             }
         }
 
