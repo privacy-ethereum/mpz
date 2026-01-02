@@ -481,7 +481,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 println!("Note: Run ./build-wasm.sh first to build the WASM module.");
                 return Ok(());
             }
-            _ => {}
+            other => {
+                eprintln!("Unknown argument: {}", other);
+                eprintln!("Use --help to see available options.");
+                std::process::exit(1);
+            }
         }
         i += 1;
     }
