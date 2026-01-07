@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use rand::Rng;
+use rand::{Rng, RngCore};
 use tokio::sync::{Mutex, OwnedMutexGuard};
 
 use mpz_core::{Block, bitvec::BitVec, prg::Prg};
@@ -110,6 +110,13 @@ impl<COT> GarblerStore<COT> {
     /// this output.
     pub fn mark_output_complete(&mut self, slice: Slice) -> Result<()> {
         self.view.set_output(slice.to_range()).map_err(Error::from)
+    }
+
+    /// Generates a random seed from the PRG.
+    pub fn random_seed(&mut self) -> [u8; 32] {
+        let mut seed = [0u8; 32];
+        self.prg.fill_bytes(&mut seed);
+        seed
     }
 
     /// Returns `true` if the store wants to flush.

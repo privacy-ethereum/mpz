@@ -30,6 +30,7 @@ mpz-vm-core = { workspace = true }
 aes = { workspace = true, features = [] }
 bitvec = { workspace = true, features = ["serde"] }
 blake3 = { workspace = true, features = ["serde"] }
+bytemuck = { workspace = true }
 cfg-if = { workspace = true }
 cipher = { workspace = true }
 derive_builder = { workspace = true }
@@ -56,9 +57,17 @@ criterion = { workspace = true }
 pretty_assertions = { workspace = true }
 
 [[bench]]
-name = "garble"
+name = "garbler_hg"
 harness = false
 
 [[bench]]
-name = "evaluate"
+name = "garbler_th"
+harness = false
+
+[[bench]]
+name = "evaluator_hg"
+harness = false
+
+[[bench]]
+name = "evaluator_th"
 harness = false
