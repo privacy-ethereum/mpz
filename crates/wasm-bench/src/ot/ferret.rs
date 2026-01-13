@@ -86,8 +86,8 @@ async fn run_protocol_record_receiver_mt(
     let mut sender = Sender::new(config.clone(), sender_seed, cot_send);
     let mut receiver = Receiver::new(config, receiver_seed, cot_recv);
 
-    let mut ctx_sender = exec_sender.new_context().await.unwrap();
-    let mut ctx_receiver = exec_receiver.new_context().await.unwrap();
+    let mut ctx_sender = exec_sender.new_context().unwrap();
+    let mut ctx_receiver = exec_receiver.new_context().unwrap();
 
     futures::join!(
         async {
@@ -154,7 +154,7 @@ async fn run_sender_with_replay_mt(exec: &mut Multithread, data: &RecordedDataMt
     let config = bench_config();
     let mut sender = Sender::new(config, data.sender_seed, cot_send);
 
-    let mut ctx = exec.new_context().await.unwrap();
+    let mut ctx = exec.new_context().unwrap();
 
     sender.alloc(ot_count).unwrap();
     let output = sender.queue_send_rcot(ot_count).unwrap();

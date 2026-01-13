@@ -57,8 +57,8 @@ async fn run_protocol_record_garbler(
     let mut gb = Garbler::new(cot_send, [0u8; 16], delta);
     let mut ev = Evaluator::new(cot_recv);
 
-    let mut ctx_gb = exec_gb.new_context().await.unwrap();
-    let mut ctx_ev = exec_ev.new_context().await.unwrap();
+    let mut ctx_gb = exec_gb.new_context().unwrap();
+    let mut ctx_ev = exec_ev.new_context().unwrap();
 
     futures::join!(
         async {
@@ -145,7 +145,7 @@ async fn run_evaluator_with_replay(exec: &mut Multithread, circuit_count: usize)
     let (_, cot_recv) = ideal_cot([0u8; 16].into());
     let mut ev = Evaluator::new(cot_recv);
 
-    let mut ctx = exec.new_context().await.unwrap();
+    let mut ctx = exec.new_context().unwrap();
 
     let key: Array<U8, 16> = ev.alloc().unwrap();
     ev.mark_blind(key).unwrap();

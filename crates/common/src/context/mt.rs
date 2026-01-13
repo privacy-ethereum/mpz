@@ -36,7 +36,7 @@ impl Multithread {
     }
 
     /// Creates a new multi-threaded context.
-    pub async fn new_context(&mut self) -> Result<Context, ContextError> {
+    pub fn new_context(&mut self) -> Result<Context, ContextError> {
         let id = self.current_id.increment().ok_or_else(|| {
             ContextError::new(ErrorKind::Thread, "thread ID overflow".to_string())
         })?;

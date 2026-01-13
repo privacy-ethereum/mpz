@@ -181,8 +181,8 @@ async fn run_protocol_record_evaluator_mt(
     let mut gb = Garbler::new(cot_send, [0u8; 16], delta);
     let mut ev = Evaluator::new(cot_recv);
 
-    let mut ctx_gb = exec_gb.new_context().await.unwrap();
-    let mut ctx_ev = exec_ev.new_context().await.unwrap();
+    let mut ctx_gb = exec_gb.new_context().unwrap();
+    let mut ctx_ev = exec_ev.new_context().unwrap();
 
     futures::join!(
         async {
@@ -273,7 +273,7 @@ async fn run_garbler_with_replay_mt(
     let (cot_send, _) = ideal_cot(delta.into_inner());
     let mut gb = Garbler::new(cot_send, [0u8; 16], delta);
 
-    let mut ctx = exec.new_context().await.unwrap();
+    let mut ctx = exec.new_context().unwrap();
 
     let key: Array<U8, 16> = gb.alloc().unwrap();
     gb.mark_private(key).unwrap();

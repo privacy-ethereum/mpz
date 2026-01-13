@@ -60,8 +60,8 @@ async fn test_recording_determinism() {
 async fn test_recording_mt_context() {
     let (mut exec_0, mut exec_1, recorded) = recording_mt_context(1024 * 1024);
 
-    let mut ctx_0 = exec_0.new_context().await.unwrap();
-    let mut ctx_1 = exec_1.new_context().await.unwrap();
+    let mut ctx_0 = exec_0.new_context().unwrap();
+    let mut ctx_1 = exec_1.new_context().unwrap();
 
     // Send a message from ctx_1 to ctx_0 (this should be recorded)
     ctx_1.io_mut().send(42u32).await.unwrap();
@@ -91,8 +91,8 @@ async fn test_replay_mt_context() {
     // First: record some messages
     let (mut exec_0, mut exec_1, recorded) = recording_mt_context(1024 * 1024);
 
-    let mut ctx_0 = exec_0.new_context().await.unwrap();
-    let mut ctx_1 = exec_1.new_context().await.unwrap();
+    let mut ctx_0 = exec_0.new_context().unwrap();
+    let mut ctx_1 = exec_1.new_context().unwrap();
 
     // Send messages from ctx_1 (verifier) to ctx_0 (prover)
     ctx_1.io_mut().send(42u32).await.unwrap();
@@ -107,7 +107,7 @@ async fn test_replay_mt_context() {
 
     // Now replay to a new context
     let mut replay_exec = replay_mt_context(recorded_data);
-    let mut replay_ctx = replay_exec.new_context().await.unwrap();
+    let mut replay_ctx = replay_exec.new_context().unwrap();
 
     // Should be able to receive the same messages from replay
     let msg1: u32 = replay_ctx.io_mut().expect_next().await.unwrap();
@@ -122,8 +122,8 @@ async fn test_recording_mt_multiple_channels() {
     // Test that recording works correctly with multiple channels via ctx.try_join()
     let (mut exec_0, mut exec_1, recorded) = recording_mt_context(1024 * 1024);
 
-    let mut ctx_0 = exec_0.new_context().await.unwrap();
-    let mut ctx_1 = exec_1.new_context().await.unwrap();
+    let mut ctx_0 = exec_0.new_context().unwrap();
+    let mut ctx_1 = exec_1.new_context().unwrap();
 
     // Run both sides concurrently
     let (result, send_result) = futures::join!(
@@ -183,8 +183,8 @@ async fn test_recording_mt_multiple_channels() {
 async fn test_recording_mt_try_join3() {
     let (mut exec_0, mut exec_1, recorded) = recording_mt_context(1024 * 1024);
 
-    let mut ctx_0 = exec_0.new_context().await.unwrap();
-    let mut ctx_1 = exec_1.new_context().await.unwrap();
+    let mut ctx_0 = exec_0.new_context().unwrap();
+    let mut ctx_1 = exec_1.new_context().unwrap();
 
     let (result, send_result) = futures::join!(
         ctx_0.try_join3(
@@ -243,8 +243,8 @@ async fn test_recording_mt_try_join3() {
 async fn test_recording_mt_try_join4() {
     let (mut exec_0, mut exec_1, recorded) = recording_mt_context(1024 * 1024);
 
-    let mut ctx_0 = exec_0.new_context().await.unwrap();
-    let mut ctx_1 = exec_1.new_context().await.unwrap();
+    let mut ctx_0 = exec_0.new_context().unwrap();
+    let mut ctx_1 = exec_1.new_context().unwrap();
 
     let (result, send_result) = futures::join!(
         ctx_0.try_join4(
@@ -311,8 +311,8 @@ async fn test_recording_mt_try_join4() {
 async fn test_recording_mt_map() {
     let (mut exec_0, mut exec_1, recorded) = recording_mt_context(1024 * 1024);
 
-    let mut ctx_0 = exec_0.new_context().await.unwrap();
-    let mut ctx_1 = exec_1.new_context().await.unwrap();
+    let mut ctx_0 = exec_0.new_context().unwrap();
+    let mut ctx_1 = exec_1.new_context().unwrap();
 
     // Create items to map over
     let items: Vec<u32> = (0..8).collect();
@@ -362,8 +362,8 @@ async fn test_recording_mt_map() {
 async fn test_recording_mt_nested_try_join() {
     let (mut exec_0, mut exec_1, recorded) = recording_mt_context(1024 * 1024);
 
-    let mut ctx_0 = exec_0.new_context().await.unwrap();
-    let mut ctx_1 = exec_1.new_context().await.unwrap();
+    let mut ctx_0 = exec_0.new_context().unwrap();
+    let mut ctx_1 = exec_1.new_context().unwrap();
 
     let (result, send_result) = futures::join!(
         // Outer try_join

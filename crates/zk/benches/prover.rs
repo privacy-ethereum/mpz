@@ -178,8 +178,8 @@ async fn run_protocol_record_verifier_mt(
     let mut prover = Prover::new(prover_config, ot_recv);
     let mut verifier = Verifier::new(verifier_config, delta, ot_send);
 
-    let mut ctx_p = exec_p.new_context().await.unwrap();
-    let mut ctx_v = exec_v.new_context().await.unwrap();
+    let mut ctx_p = exec_p.new_context().unwrap();
+    let mut ctx_v = exec_v.new_context().unwrap();
 
     futures::join!(
         async {
@@ -258,7 +258,7 @@ async fn run_prover_with_replay_mt(exec: &mut Multithread, circuit_count: usize)
     let prover_config = ProverConfig::builder().build().unwrap();
     let mut prover = Prover::new(prover_config, ot_recv);
 
-    let mut ctx = exec.new_context().await.unwrap();
+    let mut ctx = exec.new_context().unwrap();
 
     let key: Array<U8, 16> = prover.alloc().unwrap();
     prover.mark_private(key).unwrap();
