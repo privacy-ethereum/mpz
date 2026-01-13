@@ -137,11 +137,9 @@ pub async fn test_mt_context_only() -> Result<u32, JsValue> {
 
     let mut ctx1 = mt1
         .new_context()
-        .await
         .map_err(|e| JsValue::from_str(&e.to_string()))?;
     let mut ctx2 = mt2
         .new_context()
-        .await
         .map_err(|e| JsValue::from_str(&e.to_string()))?;
 
     web_sys::console::log_1(&"Got contexts from MT".into());
