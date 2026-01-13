@@ -118,7 +118,7 @@ impl Context {
         match &mut self.mode {
             Mode::St => Ok(st::map(self, items, f).await),
             Mode::Mt { threads } => {
-                let threads = threads.get(threads.concurrency()).await?;
+                let threads = threads.get(threads.concurrency())?;
                 mt::map(threads, items, f, weight).await
             }
         }
@@ -138,7 +138,7 @@ impl Context {
         match &mut self.mode {
             Mode::St => Ok(st::join(self, a, b).await),
             Mode::Mt { threads } => {
-                let threads = threads.get(2).await?;
+                let threads = threads.get(2)?;
                 mt::join(threads, a, b).await
             }
         }
@@ -167,7 +167,7 @@ impl Context {
         match &mut self.mode {
             Mode::St => Ok(st::try_join(self, a, b).await),
             Mode::Mt { threads } => {
-                let threads = threads.get(2).await?;
+                let threads = threads.get(2)?;
                 mt::try_join(threads, a, b).await
             }
         }
@@ -192,7 +192,7 @@ impl Context {
         match &mut self.mode {
             Mode::St => Ok(st::try_join3(self, a, b, c).await),
             Mode::Mt { threads } => {
-                let threads = threads.get(3).await?;
+                let threads = threads.get(3)?;
                 mt::try_join3(threads, a, b, c).await
             }
         }
@@ -220,7 +220,7 @@ impl Context {
         match &mut self.mode {
             Mode::St => Ok(st::try_join4(self, a, b, c, d).await),
             Mode::Mt { threads } => {
-                let threads = threads.get(4).await?;
+                let threads = threads.get(4)?;
                 mt::try_join4(threads, a, b, c, d).await
             }
         }

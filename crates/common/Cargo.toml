@@ -8,7 +8,7 @@ default = []
 executor = []
 sync = ["tokio/sync"]
 future = []
-test-utils = ["uid-mux/test-utils", "tokio/io-util", "tokio-util/compat"]
+test-utils = ["tokio/io-util", "tokio-util/compat"]
 ideal = ["tokio/sync"]
 
 [dependencies]
@@ -18,7 +18,6 @@ bytes = { workspace = true }
 pin-project-lite.workspace = true
 thiserror.workspace = true
 serio.workspace = true
-uid-mux = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 pollster.workspace = true
 cfg-if.workspace = true
@@ -34,7 +33,6 @@ tokio = { workspace = true, features = [
     "net",
 ] }
 tokio-util = { workspace = true, features = ["compat"] }
-uid-mux = { workspace = true, features = ["test-utils"] }
 tracing-subscriber = { workspace = true, features = ["fmt"] }
 criterion = { workspace = true, features = ["async_tokio"] }
 rstest = { workspace = true }

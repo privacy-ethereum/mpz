@@ -1,63 +1,131 @@
-use std::{future::Future, pin::Pin};
-
-use uid_mux::UidMux;
+//! Multiplexing types.
 
 use crate::{ThreadId, io::Io};
 
-pub(crate) trait Mux {
+/// A multiplexer.
+pub trait Mux {
     /// Opens a new I/O channel for the given thread.
-    fn open(
-        &self,
-        id: ThreadId,
-    ) -> Pin<Box<dyn Future<Output = Result<Io, std::io::Error>> + Send>>;
-}
-
-impl<T> Mux for T
-where
-    T: UidMux<ThreadId> + Clone + Send + Sync + 'static,
-    <T as UidMux<ThreadId>>::Error: std::error::Error + Send + Sync + 'static,
-{
-    fn open(
-        &self,
-        id: ThreadId,
-    ) -> Pin<Box<dyn Future<Output = Result<Io, std::io::Error>> + Send>> {
-        let mux = self.clone();
-        Box::pin(async move {
-            let io = mux.open(&id).await.map_err(std::io::Error::other)?;
-
-            Ok(Io::from_io(io))
-        })
-    }
+    fn open(&self, id: ThreadId) -> Result<Io, std::io::Error>;
 }
 
 #[cfg(any(test, feature = "test-utils"))]
 mod test_utils {
-    use super::*;
-    use uid_mux::{FramedUidMux, test_utils::TestFramedMux};
+    use std::{
+        collections::{HashMap, HashSet},
+        sync::{Arc, Mutex},
+    };
+
+    use serio::channel::{MemoryDuplex, duplex};
+
+    use crate::{ThreadId, io::Io, mux::Mux};
+
+    #[derive(Debug, Default)]
+    struct State {
+        exists: HashSet<Vec<u8>>,
+        waiting_a: HashMap<Vec<u8>, MemoryDuplex>,
+        waiting_b: HashMap<Vec<u8>, MemoryDuplex>,
+    }
+
+    #[derive(Debug, Clone, Copy)]
+    enum Role {
+        A,
+        B,
+    }
+
+    /// A test framed mux.
+    #[derive(Debug, Clone)]
+    pub struct TestFramedMux {
+        role: Role,
+        buffer: usize,
+        state: Arc<Mutex<State>>,
+    }
 
     impl Mux for TestFramedMux {
-        fn open(
-            &self,
-            id: ThreadId,
-        ) -> Pin<Box<dyn Future<Output = Result<Io, std::io::Error>> + Send>> {
-            let mux = self.clone();
-            Box::pin(async move {
-                let io = mux.open_framed(&id).await.map_err(std::io::Error::other)?;
+        fn open(&self, id: ThreadId) -> Result<Io, std::io::Error> {
+            let mut state = self.state.lock().unwrap();
 
-                Ok(Io::from_channel(io))
+            if let Some(channel) = match self.role {
+                Role::A => state.waiting_a.remove(id.as_ref()),
+                Role::B => state.waiting_b.remove(id.as_ref()),
+            } {
+                Ok(Io::from_channel(channel))
+            } else {
+                if !state.exists.insert(id.as_ref().to_vec()) {
+                    return Err(std::io::Error::other("duplicate stream id"));
+                }
+
+                let (a, b) = duplex(self.buffer);
+
+                match self.role {
+                    Role::A => {
+                        state.waiting_b.insert(id.as_ref().to_vec(), b);
+                        Ok(Io::from_channel(a))
+                    }
+                    Role::B => {
+                        state.waiting_a.insert(id.as_ref().to_vec(), a);
+                        Ok(Io::from_channel(b))
+                    }
+                }
+            }
+        }
+    }
+
+    /// Creates a test pair of framed mux instances.
+    pub fn test_framed_mux(buffer: usize) -> (TestFramedMux, TestFramedMux) {
+        let state = Arc::new(Mutex::new(State::default()));
+
+        (
+            TestFramedMux {
+                role: Role::A,
+                buffer,
+                state: state.clone(),
+            },
+            TestFramedMux {
+                role: Role::B,
+                buffer,
+                state,
+            },
+        )
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use crate::{ThreadId, mux::Mux};
+        use serio::{SinkExt, StreamExt};
+
+        #[test]
+        fn test_framed_mux() {
+            let (a, b) = super::test_framed_mux(1);
+
+            futures::executor::block_on(async {
+                let mut a_0 = a.open(ThreadId::new(0)).unwrap();
+                let mut b_0 = b.open(ThreadId::new(0)).unwrap();
+
+                let mut a_1 = a.open(ThreadId::new(1)).unwrap();
+                let mut b_1 = b.open(ThreadId::new(1)).unwrap();
+
+                a_0.send(42u8).await.unwrap();
+                assert_eq!(b_0.next::<u8>().await.unwrap().unwrap(), 42);
+
+                a_1.send(69u8).await.unwrap();
+                assert_eq!(b_1.next::<u8>().await.unwrap().unwrap(), 69u8);
+            })
+        }
+
+        #[test]
+        fn test_framed_mux_duplicate() {
+            let (a, b) = super::test_framed_mux(1);
+
+            futures::executor::block_on(async {
+                let _ = a.open(ThreadId::new(0)).unwrap();
+                let _ = b.open(ThreadId::new(0)).unwrap();
+
+                assert!(a.open(ThreadId::new(0)).is_err());
+                assert!(b.open(ThreadId::new(0)).is_err());
             })
         }
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use uid_mux::yamux::YamuxCtrl;
-
-    #[test]
-    fn test_yamux_is_mux() {
-        fn assert_mux<T: Mux>() {}
-        assert_mux::<YamuxCtrl>();
-    }
-}
+#[cfg(any(test, feature = "test-utils"))]
+pub use test_utils::{TestFramedMux, test_framed_mux};

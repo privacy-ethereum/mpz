@@ -1,7 +1,5 @@
 use std::sync::{Arc, Mutex};
 
-use uid_mux::UidMux;
-
 use crate::{
     ThreadId,
     context::{
@@ -73,18 +71,8 @@ impl<S> MultithreadBuilder<S> {
     }
 
     /// Sets the multiplexer.
-    pub fn mux<M>(mut self, mux: M) -> Self
-    where
-        M: UidMux<ThreadId> + Clone + Send + Sync + 'static,
-        <M as UidMux<ThreadId>>::Error: std::error::Error + Send + Sync + 'static,
-    {
-        self.mux = Some(Box::new(mux));
-        self
-    }
-
-    #[allow(dead_code)]
-    pub(crate) fn mux_internal(mut self, mux: Box<dyn Mux + Send>) -> Self {
-        self.mux = Some(mux);
+    pub fn mux<M: Into<Box<dyn Mux + Send>>>(mut self, mux: M) -> Self {
+        self.mux = Some(mux.into());
         self
     }
 

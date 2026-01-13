@@ -177,75 +177,69 @@ impl std::fmt::Debug for RecordingTestMux {
 }
 
 impl Mux for RecordingTestMux {
-    fn open(
-        &self,
-        id: ThreadId,
-    ) -> Pin<Box<dyn std::future::Future<Output = Result<Io, std::io::Error>> + Send>> {
-        let mux = self.clone();
-        Box::pin(async move {
-            let mut state = mux.state.lock().unwrap();
+    fn open(&self, id: ThreadId) -> Result<Io, std::io::Error> {
+        let mut state = self.state.lock().unwrap();
 
-            // Check if channel already exists from the other side
-            match mux.role {
-                RecordingRole::A => {
-                    if let Some(stream) = state.waiting_a.remove(&id) {
-                        return Ok(if let Some(limit) = mux.max_frame_length {
-                            Io::from_io_with_limit(stream, limit)
-                        } else {
-                            Io::from_io(stream)
-                        });
-                    }
-                }
-                RecordingRole::B => {
-                    if let Some(recording_stream) = state.waiting_b.remove(&id) {
-                        return Ok(if let Some(limit) = mux.max_frame_length {
-                            Io::from_io_with_limit(recording_stream, limit)
-                        } else {
-                            Io::from_io(recording_stream)
-                        });
-                    }
-                }
-            }
-
-            // Check for duplicate
-            if !state.opened.insert(id.clone()) {
-                return Err(std::io::Error::other("duplicate stream id"));
-            }
-
-            // Create new byte-based channel pair
-            let (stream_a, stream_b) = tokio::io::duplex(mux.buffer);
-
-            // Role B's writes are recorded
-            let recorded_for_channel = mux.recorded.clone();
-            let channel_id = id.clone();
-
-            match mux.role {
-                RecordingRole::A => {
-                    // A gets plain stream, B gets recording stream
-                    let recording_stream =
-                        RecordingDuplexWithId::new(stream_b, channel_id, recorded_for_channel);
-                    state
-                        .waiting_b
-                        .insert(id, recording_stream.into_recording_duplex());
-                    Ok(if let Some(limit) = mux.max_frame_length {
-                        Io::from_io_with_limit(stream_a.compat(), limit)
+        // Check if channel already exists from the other side
+        match self.role {
+            RecordingRole::A => {
+                if let Some(stream) = state.waiting_a.remove(&id) {
+                    return Ok(if let Some(limit) = self.max_frame_length {
+                        Io::from_io_with_limit(stream, limit)
                     } else {
-                        Io::from_io(stream_a.compat())
-                    })
-                }
-                RecordingRole::B => {
-                    // B gets recording stream, A gets plain stream
-                    state.waiting_a.insert(id, stream_a.compat());
-                    let recording_stream =
-                        RecordingDuplexWithId::new(stream_b, channel_id, recorded_for_channel);
-                    Ok(if let Some(limit) = mux.max_frame_length {
-                        Io::from_io_with_limit(recording_stream.into_recording_duplex(), limit)
-                    } else {
-                        Io::from_io(recording_stream.into_recording_duplex())
-                    })
+                        Io::from_io(stream)
+                    });
                 }
             }
-        })
+            RecordingRole::B => {
+                if let Some(recording_stream) = state.waiting_b.remove(&id) {
+                    return Ok(if let Some(limit) = self.max_frame_length {
+                        Io::from_io_with_limit(recording_stream, limit)
+                    } else {
+                        Io::from_io(recording_stream)
+                    });
+                }
+            }
+        }
+
+        // Check for duplicate
+        if !state.opened.insert(id.clone()) {
+            return Err(std::io::Error::other("duplicate stream id"));
+        }
+
+        // Create new byte-based channel pair
+        let (stream_a, stream_b) = tokio::io::duplex(self.buffer);
+
+        // Role B's writes are recorded
+        let recorded_for_channel = self.recorded.clone();
+        let channel_id = id.clone();
+
+        match self.role {
+            RecordingRole::A => {
+                // A gets plain stream, B gets recording stream
+                let recording_stream =
+                    RecordingDuplexWithId::new(stream_b, channel_id, recorded_for_channel);
+                state
+                    .waiting_b
+                    .insert(id, recording_stream.into_recording_duplex());
+                Ok(if let Some(limit) = self.max_frame_length {
+                    Io::from_io_with_limit(stream_a.compat(), limit)
+                } else {
+                    Io::from_io(stream_a.compat())
+                })
+            }
+            RecordingRole::B => {
+                // B gets recording stream, A gets plain stream
+                state.waiting_a.insert(id, stream_a.compat());
+                let recording_stream =
+                    RecordingDuplexWithId::new(stream_b, channel_id, recorded_for_channel);
+                Ok(if let Some(limit) = self.max_frame_length {
+                    Io::from_io_with_limit(recording_stream.into_recording_duplex(), limit)
+                } else {
+                    Io::from_io(recording_stream.into_recording_duplex())
+                })
+            }
+        }
     }
 }
 
@@ -374,8 +368,8 @@ pub fn recording_mt_context(
     let mux_1: Box<dyn Mux + Send> = Box::new(mux_1);
 
     (
-        Multithread::builder().mux_internal(mux_0).build().unwrap(),
-        Multithread::builder().mux_internal(mux_1).build().unwrap(),
+        Multithread::builder().mux(mux_0).build().unwrap(),
+        Multithread::builder().mux(mux_1).build().unwrap(),
         recorded,
     )
 }
@@ -397,8 +391,8 @@ pub fn recording_mt_context_with_limit(
     let mux_1: Box<dyn Mux + Send> = Box::new(mux_1);
 
     (
-        Multithread::builder().mux_internal(mux_0).build().unwrap(),
-        Multithread::builder().mux_internal(mux_1).build().unwrap(),
+        Multithread::builder().mux(mux_0).build().unwrap(),
+        Multithread::builder().mux(mux_1).build().unwrap(),
         recorded,
     )
 }
@@ -425,12 +419,12 @@ where
     (
         Multithread::builder()
             .spawn_handler(spawn.clone())
-            .mux_internal(mux_0)
+            .mux(mux_0)
             .build()
             .unwrap(),
         Multithread::builder()
             .spawn_handler(spawn)
-            .mux_internal(mux_1)
+            .mux(mux_1)
             .build()
             .unwrap(),
         recorded,
@@ -465,13 +459,13 @@ where
         Multithread::builder()
             .spawn_handler(spawn.clone())
             .concurrency(concurrency)
-            .mux_internal(mux_0)
+            .mux(mux_0)
             .build()
             .unwrap(),
         Multithread::builder()
             .spawn_handler(spawn)
             .concurrency(concurrency)
-            .mux_internal(mux_1)
+            .mux(mux_1)
             .build()
             .unwrap(),
         recorded,

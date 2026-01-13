@@ -1,8 +1,8 @@
 //! Basic test context helpers.
 
+use crate::mux::test_framed_mux;
 use futures::{AsyncRead, AsyncWrite};
 use serio::channel::duplex;
-use uid_mux::test_utils::test_framed_mux;
 
 use crate::{
     context::{Context, Multithread, SpawnError},
@@ -41,8 +41,8 @@ pub fn test_mt_context(io_buffer: usize) -> (Multithread, Multithread) {
     let mux_1: Box<dyn Mux + Send> = Box::new(mux_1);
 
     (
-        Multithread::builder().mux_internal(mux_0).build().unwrap(),
-        Multithread::builder().mux_internal(mux_1).build().unwrap(),
+        Multithread::builder().mux(mux_0).build().unwrap(),
+        Multithread::builder().mux(mux_1).build().unwrap(),
     )
 }
 
@@ -62,12 +62,12 @@ where
     (
         Multithread::builder()
             .spawn_handler(spawn.clone())
-            .mux_internal(mux_0)
+            .mux(mux_0)
             .build()
             .unwrap(),
         Multithread::builder()
             .spawn_handler(spawn)
-            .mux_internal(mux_1)
+            .mux(mux_1)
             .build()
             .unwrap(),
     )
@@ -95,13 +95,13 @@ where
         Multithread::builder()
             .concurrency(concurrency)
             .spawn_handler(spawn.clone())
-            .mux_internal(mux_0)
+            .mux(mux_0)
             .build()
             .unwrap(),
         Multithread::builder()
             .concurrency(concurrency)
             .spawn_handler(spawn)
-            .mux_internal(mux_1)
+            .mux(mux_1)
             .build()
             .unwrap(),
     )
