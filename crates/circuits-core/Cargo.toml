@@ -1,6 +1,6 @@
 [package]
 name = "mpz-circuits-core"
-version = "0.1.0-alpha.4"
+version = "0.1.0-alpha.5"
 edition = "2024"
 
 [lints]
@@ -27,5 +27,3 @@ thiserror = { workspace = true }
 [dev-dependencies]
 aes = { workspace = true }
 sha2 = { workspace = true, features = ["compress"] }
-
-
