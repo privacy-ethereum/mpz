@@ -25,6 +25,10 @@ impl<COT> GarblerStore<COT> {
         }
     }
 
+    pub(crate) fn delta(&self) -> &Delta {
+        self.core.delta()
+    }
+
     /// Returns a lock on the COT sender.
     pub(crate) fn acquire_cot(&self) -> OwnedMutexGuard<COT> {
         self.core.acquire_cot()

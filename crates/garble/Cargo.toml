@@ -25,7 +25,6 @@ mpz-vm-core = { workspace = true }
 serio = { workspace = true }
 
 async-trait = { workspace = true }
-blake3 = { workspace = true }
 derive_builder = { workspace = true }
 futures = { workspace = true }
 hashbrown = { workspace = true }

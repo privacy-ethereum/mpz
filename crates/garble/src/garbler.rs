@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use mpz_circuits::Circuit;
 use mpz_common::Context;
-use mpz_garble_core::{GarblerOutput, GarblerWorker};
-use mpz_memory_core::correlated::Key;
+use mpz_garble_core::{Garbler as GarblerCore, GarblerOutput};
+use mpz_memory_core::correlated::{Delta, Key};
 use serio::SinkExt;
 
 /// Generate a garbled circuit, streaming the encrypted gates to the evaluator
@@ -18,16 +18,18 @@ use serio::SinkExt;
 ///
 /// * `ctx` - The context to use.
 /// * `circ` - The circuit to garble.
+/// * `delta` - The garblers delta value.
 /// * `inputs` - The inputs of the circuit.
-/// * `worker` - The worker to use.
+/// * `hash` - Whether to hash the circuit.
 #[tracing::instrument(fields(thread = %ctx.id()), skip_all)]
 pub(crate) async fn generate(
     ctx: &mut Context,
     circ: Arc<Circuit>,
+    delta: Delta,
     inputs: &[Key],
-    worker: GarblerWorker,
 ) -> Result<GarblerOutput, GarblerError> {
-    let mut gb_iter = worker.generate_batched(&circ, inputs)?;
+    let mut gb = GarblerCore::default();
+    let mut gb_iter = gb.generate_batched(&circ, delta, inputs)?;
     let io = ctx.io_mut();
 
     while let Some(batch) = gb_iter.by_ref().next() {
