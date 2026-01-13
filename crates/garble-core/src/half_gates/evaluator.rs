@@ -4,9 +4,9 @@ use std::{marker::PhantomData, ops::Range, sync::Arc};
 use cfg_if::cfg_if;
 use mpz_memory_core::correlated::Mac;
 
-use crate::{
-    DEFAULT_BATCH_SIZE, EncryptedGateBatch, GarbledCircuit, SetupMsg, circuit::EncryptedGate,
-};
+use crate::{DEFAULT_BATCH_SIZE, SetupMsg};
+
+use super::circuit::{EncryptedGate, EncryptedGateBatch, GarbledCircuit};
 use mpz_circuits::{Circuit, Gate};
 use mpz_core::{Block, aes::FixedKeyAes};
 

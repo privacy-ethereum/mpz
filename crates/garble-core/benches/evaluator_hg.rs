@@ -1,6 +1,6 @@
 //! Benchmarks for half-gates evaluation.
 //!
-//! Run with: `cargo bench -p mpz-garble-core --bench evaluate`
+//! Run with: `cargo bench -p mpz-garble-core --bench evaluator_hg`
 
 use std::sync::Arc;
 
