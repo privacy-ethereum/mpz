@@ -115,11 +115,11 @@ impl Check {
                 let (mut u, mut v) = macs
                     .par_chunks(SEGMENT_SIZE)
                     .enumerate()
-                    .map_with(
-                        rng,
-                        |rng, (stream_id, segment)| {
+                    .map(
+                        |(stream_id, segment)| {
+                            let mut rng = rng.clone();
                             rng.set_stream(stream_id as u64);
-                            process_segment(rng, segment)
+                            process_segment(&mut rng, segment)
                         }
                     )
                     .reduce(
@@ -205,11 +205,11 @@ impl Check {
                 let mut w = keys
                     .par_chunks(SEGMENT_SIZE)
                     .enumerate()
-                    .map_with(
-                        rng,
-                        |rng, (stream_id, segment)| {
+                    .map(
+                        |(stream_id, segment)| {
+                            let mut rng = rng.clone();
                             rng.set_stream(stream_id as u64);
-                            process_segment(rng, segment)
+                            process_segment(&mut rng, segment)
                         }
                     )
                     .reduce(

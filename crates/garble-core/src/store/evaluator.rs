@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use blake3::Hasher;
 use rangeset::{iter::RangeIterator, ops::Set};
 use tokio::sync::{Mutex, OwnedMutexGuard};
 
@@ -158,7 +157,6 @@ impl<COT> EvaluatorStore<COT> {
                     *bit ^= mac_bit;
                 });
 
-            let mut hasher = Hasher::new();
             let start_id = slice.ptr().as_usize();
             for (i, ((mac, bit), commitment)) in self
                 .mac_store
@@ -168,8 +166,7 @@ impl<COT> EvaluatorStore<COT> {
                 .zip(self.commit_store.try_get(slice)?)
                 .enumerate()
             {
-                hasher.reset();
-                commitment.check((start_id + i) as u64, *bit, mac, &mut hasher)?;
+                commitment.check((start_id + i) as u64, *bit, mac)?;
             }
 
             self.data_store.try_set(slice, &data)?;
