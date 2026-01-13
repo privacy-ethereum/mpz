@@ -41,10 +41,12 @@ impl Multithread {
             ContextError::new(ErrorKind::Thread, "thread ID overflow".to_string())
         })?;
 
-        let io_fut = { self.builder.lock().unwrap().mux.open(id.clone()) };
-
-        let io = io_fut
-            .await
+        let io = self
+            .builder
+            .lock()
+            .unwrap()
+            .mux
+            .open(id.clone())
             .map_err(|e| ContextError::new(ErrorKind::Mux, e))?;
 
         let ctx =
@@ -60,15 +62,16 @@ pub(crate) struct ThreadBuilder {
 }
 
 impl ThreadBuilder {
-    async fn spawn(
+    fn spawn(
         this: Arc<Mutex<Self>>,
         id: ThreadId,
         config: Arc<MtConfig>,
     ) -> Result<Handle, ContextError> {
-        let io_fut = { this.lock().unwrap().mux.open(id.clone()) };
-
-        let io = io_fut
-            .await
+        let io = this
+            .lock()
+            .unwrap()
+            .mux
+            .open(id.clone())
             .map_err(|e| ContextError::new(ErrorKind::Mux, e))?;
 
         let ctx = Context::new_multi_threaded(id.clone(), io, config, this.clone());
@@ -115,7 +118,7 @@ impl Threads {
         self.config.concurrency
     }
 
-    pub(crate) async fn get(&mut self, count: usize) -> Result<&[Handle], ContextError> {
+    pub(crate) fn get(&mut self, count: usize) -> Result<&[Handle], ContextError> {
         if count > self.config.concurrency {
             return Err(ContextError::new(
                 ErrorKind::Thread,
@@ -128,8 +131,7 @@ impl Threads {
                     ContextError::new(ErrorKind::Thread, "thread ID overflow".to_string())
                 })?;
 
-                let child =
-                    ThreadBuilder::spawn(self.builder.clone(), id, self.config.clone()).await?;
+                let child = ThreadBuilder::spawn(self.builder.clone(), id, self.config.clone())?;
                 self.children.push(child);
             }
         }

@@ -23,7 +23,7 @@ mod id;
 pub mod ideal;
 pub mod io;
 pub(crate) mod load_balance;
-mod mux;
+pub mod mux;
 #[cfg(feature = "sync")]
 pub mod sync;
 mod task;

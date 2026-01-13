@@ -122,6 +122,7 @@ impl Io {
         }
     }
 
+    #[cfg(any(test, feature = "test-utils"))]
     pub(crate) fn from_io_with_limit<Io: AsyncRead + AsyncWrite + Send + Sync + Unpin + 'static>(
         io: Io,
         max_frame_length: usize,

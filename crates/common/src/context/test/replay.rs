@@ -103,24 +103,19 @@ impl ReplayTestMux {
 }
 
 impl Mux for ReplayTestMux {
-    fn open(
-        &self,
-        id: ThreadId,
-    ) -> Pin<Box<dyn std::future::Future<Output = Result<Io, std::io::Error>> + Send>> {
+    fn open(&self, id: ThreadId) -> Result<Io, std::io::Error> {
         let recorded = self.recorded.clone();
         let max_frame_length = self.max_frame_length;
-        Box::pin(async move {
-            let data = {
-                let mut rec = recorded.lock().unwrap();
-                rec.channels.remove(&id).unwrap_or_default()
-            };
-            let replay = ReplayDuplex::new(data);
-            if let Some(limit) = max_frame_length {
-                Ok(Io::from_io_with_limit(replay, limit))
-            } else {
-                Ok(Io::from_io(replay))
-            }
-        })
+        let data = {
+            let mut rec = recorded.lock().unwrap();
+            rec.channels.remove(&id).unwrap_or_default()
+        };
+        let replay = ReplayDuplex::new(data);
+        if let Some(limit) = max_frame_length {
+            Ok(Io::from_io_with_limit(replay, limit))
+        } else {
+            Ok(Io::from_io(replay))
+        }
     }
 }
 
@@ -137,7 +132,7 @@ pub fn replay_mt_context(recorded: RecordedMtData) -> Multithread {
     let mux = ReplayTestMux::new(recorded, None);
     let mux: Box<dyn Mux + Send> = Box::new(mux);
 
-    Multithread::builder().mux_internal(mux).build().unwrap()
+    Multithread::builder().mux(mux).build().unwrap()
 }
 
 /// Creates a multi-threaded context that replays recorded data with a custom
@@ -154,7 +149,7 @@ pub fn replay_mt_context_with_limit(
     let mux = ReplayTestMux::new(recorded, Some(max_frame_length));
     let mux: Box<dyn Mux + Send> = Box::new(mux);
 
-    Multithread::builder().mux_internal(mux).build().unwrap()
+    Multithread::builder().mux(mux).build().unwrap()
 }
 
 /// Creates a multi-threaded context that replays recorded data with custom
@@ -173,7 +168,7 @@ where
 
     Multithread::builder()
         .spawn_handler(spawn)
-        .mux_internal(mux)
+        .mux(mux)
         .build()
         .unwrap()
 }
@@ -203,7 +198,7 @@ where
     Multithread::builder()
         .spawn_handler(spawn)
         .concurrency(concurrency)
-        .mux_internal(mux)
+        .mux(mux)
         .build()
         .unwrap()
 }

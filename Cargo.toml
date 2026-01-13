@@ -119,9 +119,6 @@ bytemuck = { version = "1.13", features = ["derive"] }
 zerocopy = "0.8"
 serio = { version = "0.2" }
 
-# io
-uid-mux = { version = "0.2" }
-
 # testing
 rstest = "0.12"
 pretty_assertions = "1"
