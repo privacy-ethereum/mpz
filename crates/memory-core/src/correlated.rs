@@ -195,13 +195,7 @@ impl BitXor<&Delta> for &Block {
 pub struct MacCommitment(pub(crate) [Block; 2]);
 
 impl MacCommitment {
-    pub fn check(
-        &self,
-        id: u64,
-        value: bool,
-        mac: &Mac,
-        hasher: &mut Hasher,
-    ) -> Result<(), MacCommitmentError> {
+    pub fn check(&self, id: u64, value: bool, mac: &Mac) -> Result<(), MacCommitmentError> {
         let [low, high] = &self.0;
         let select = &self.0[value as usize];
 
@@ -213,6 +207,7 @@ impl MacCommitment {
             });
         }
 
+        let mut hasher = Hasher::new();
         hasher.update(&id.to_be_bytes());
         hasher.update(mac.as_bytes());
         let out: [u8; 16] = hasher.finalize().as_bytes()[0..16]

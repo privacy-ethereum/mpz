@@ -43,23 +43,17 @@ impl Key {
 
     /// Commits to the MACs of a value.
     #[inline]
-    pub fn commit(&self, id: u64, delta: &Delta, hasher: &mut Hasher) -> MacCommitment {
+    pub fn commit(&self, id: u64, delta: &Delta) -> MacCommitment {
         let macs = [self.0, self.0 ^ delta.as_block()];
 
-        let commitments = macs
-            .into_iter()
-            .map(|mac| {
-                hasher.reset();
-                hasher.update(&id.to_be_bytes());
-                hasher.update(mac.as_bytes());
-                let out: [u8; 16] = hasher.finalize().as_bytes()[0..16]
-                    .try_into()
-                    .expect("16 bytes");
-                Block::from(out)
-            })
-            .collect::<Vec<_>>();
+        let commitments = macs.map(|mac| {
+            let mut hasher = Hasher::new();
+            hasher.update(&id.to_be_bytes());
+            hasher.update(mac.as_bytes());
+            Block::new(hasher.finalize().as_bytes()[..16].try_into().unwrap())
+        });
 
-        MacCommitment(commitments.try_into().expect("only 2 MACs"))
+        MacCommitment(commitments)
     }
 
     /// Returns a MAC for the given bit.
@@ -260,15 +254,11 @@ impl KeyStore {
     pub fn commit(&self, slice: Slice) -> Result<Vec<MacCommitment>> {
         let start_id = slice.ptr.0;
         let keys = self.keys.try_get(slice)?;
-        let mut hasher = Hasher::new();
 
         let commitments = keys
             .iter()
             .enumerate()
-            .map(|(i, key)| {
-                hasher.reset();
-                key.commit((start_id + i) as u64, &self.delta, &mut hasher)
-            })
+            .map(|(i, key)| key.commit((start_id + i) as u64, &self.delta))
             .collect();
 
         Ok(commitments)
