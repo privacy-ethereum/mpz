@@ -1,4 +1,7 @@
-use std::sync::{Arc, Mutex};
+use std::{
+    fmt::Debug,
+    sync::{Arc, Mutex},
+};
 
 use blake3::Hasher;
 use mpz_circuits::{Circuit, Gate};
@@ -15,6 +18,15 @@ type Result<T> = core::result::Result<T, VerifierError>;
 pub struct Verifier {
     delta: Delta,
     check: Arc<Mutex<Check>>,
+}
+
+impl Debug for Verifier {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Verifier")
+            .field("delta", &"{{ .. }}")
+            .field("check", &self.check)
+            .finish()
+    }
 }
 
 impl Verifier {

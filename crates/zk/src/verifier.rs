@@ -19,6 +19,7 @@ use crate::{callstack::CallStack, config::VerifierConfig};
 #[derive(Debug)]
 pub struct Verifier<OT> {
     config: VerifierConfig,
+    core: Core,
     store: VerifierStore,
     ot: OT,
     callstack: CallStack,
@@ -30,6 +31,7 @@ impl<OT> Verifier<OT> {
     pub fn new(config: VerifierConfig, delta: Delta, ot: OT) -> Self {
         Self {
             config,
+            core: Core::new(delta),
             store: VerifierStore::new(delta),
             ot,
             callstack: CallStack::default(),
@@ -110,13 +112,11 @@ where
     }
 
     async fn execute(&mut self, ctx: &mut Context) -> VmResult<()> {
-        let mut verifier = Core::new(*self.store.delta());
-
         while !self.callstack.is_empty() {
             let ready_calls: Vec<_> = self
                 .callstack
                 .extract_if(
-                    self.config.batch_size().saturating_sub(verifier.pending()),
+                    self.config.batch_size().saturating_sub(self.core.pending()),
                     |call| {
                         call.inputs()
                             .iter()
@@ -151,7 +151,7 @@ where
                     .map_err(VmError::execute)?;
                 let gate_keys = Key::from_blocks(gate_keys);
 
-                let execute = verifier
+                let execute = self.core
                     .execute(circ, &input_keys, &gate_keys)
                     .map_err(VmError::execute)?;
                 tasks.push((execute, output));
@@ -186,26 +186,29 @@ where
                     .map_err(VmError::memory)?;
             }
 
-            if verifier.pending() >= self.config.batch_size() {
+            if self.core.pending() >= self.config.batch_size() {
                 let RCOTSenderOutput {
                     keys: svole_keys, ..
                 } = self.ot.try_send_rcot(128).map_err(VmError::execute)?;
 
                 let uv = ctx.io_mut().expect_next().await?;
-                verifier
+                self.core
                     .check(&mut self.transcript, &svole_keys, uv)
                     .map_err(VmError::execute)?;
             }
         }
 
-        // Check the last partial batch.
-        if verifier.wants_check() {
+        // Check the last partial batch only when all circuits have been
+        // processed. With a persistent Core, triples accumulate across
+        // execute() calls and mid-loop checks fire at batch boundaries,
+        // so the final check should only happen once at the very end.
+        if self.callstack.is_empty() && self.core.wants_check() {
             let RCOTSenderOutput {
                 keys: svole_keys, ..
             } = self.ot.try_send_rcot(128).map_err(VmError::execute)?;
 
             let uv = ctx.io_mut().expect_next().await?;
-            verifier
+            self.core
                 .check(&mut self.transcript, &svole_keys, uv)
                 .map_err(VmError::execute)?;
         }

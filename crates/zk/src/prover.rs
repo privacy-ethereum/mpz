@@ -15,6 +15,7 @@ use crate::{callstack::CallStack, config::ProverConfig};
 #[derive(Debug)]
 pub struct Prover<OT> {
     config: ProverConfig,
+    core: Core,
     store: ProverStore,
     ot: OT,
     callstack: CallStack,
@@ -26,6 +27,7 @@ impl<OT> Prover<OT> {
     pub fn new(config: ProverConfig, ot: OT) -> Self {
         Self {
             config,
+            core: Core::default(),
             store: ProverStore::new(),
             ot,
             callstack: CallStack::default(),
@@ -109,13 +111,11 @@ where
     }
 
     async fn execute(&mut self, ctx: &mut Context) -> VmResult<()> {
-        let mut prover = Core::default();
-
         while !self.callstack.is_empty() {
             let ready_calls: Vec<_> = self
                 .callstack
                 .extract_if(
-                    self.config.batch_size().saturating_sub(prover.pending()),
+                    self.config.batch_size().saturating_sub(self.core.pending()),
                     |call| {
                         call.inputs()
                             .iter()
@@ -153,7 +153,7 @@ where
                     .map_err(VmError::execute)?;
                 let gate_macs = Mac::from_blocks(gate_macs);
 
-                let execute = prover
+                let execute = self.core
                     .execute(circ, &input_macs, &gate_masks, &gate_macs)
                     .map_err(VmError::execute)?;
                 tasks.push((execute, output));
@@ -192,29 +192,32 @@ where
                     .map_err(VmError::memory)?;
             }
 
-            if prover.pending() >= self.config.batch_size() {
+            if self.core.pending() >= self.config.batch_size() {
                 let RCOTReceiverOutput {
                     choices: svole_choices,
                     msgs: svole_ev,
                     ..
                 } = self.ot.try_recv_rcot(128).map_err(VmError::execute)?;
 
-                let uv = prover
+                let uv = self.core
                     .check(&mut self.transcript, &svole_choices, &svole_ev)
                     .map_err(VmError::execute)?;
                 ctx.io_mut().send(uv).await?;
             }
         }
 
-        // Check the last partial batch.
-        if prover.wants_check() {
+        // Check the last partial batch only when all circuits have been
+        // processed. With a persistent Core, triples accumulate across
+        // execute() calls and mid-loop checks fire at batch boundaries,
+        // so the final check should only happen once at the very end.
+        if self.callstack.is_empty() && self.core.wants_check() {
             let RCOTReceiverOutput {
                 choices: svole_choices,
                 msgs: svole_ev,
                 ..
             } = self.ot.try_recv_rcot(128).map_err(VmError::execute)?;
 
-            let uv = prover
+            let uv = self.core
                 .check(&mut self.transcript, &svole_choices, &svole_ev)
                 .map_err(VmError::execute)?;
             ctx.io_mut().send(uv).await?;
