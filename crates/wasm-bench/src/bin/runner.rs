@@ -233,10 +233,10 @@ async fn run_benchmarks_with_concurrency(
         let logs_check = page
             .evaluate("window.__consoleLogs ? JSON.stringify(window.__consoleLogs) : '[]'")
             .await?;
-        if let Ok(logs_json) = logs_check.into_value::<String>() {
-            if let Ok(logs) = serde_json::from_str::<Vec<String>>(&logs_json) {
-                let _ = logs.len();
-            }
+        if let Ok(logs_json) = logs_check.into_value::<String>()
+            && let Ok(logs) = serde_json::from_str::<Vec<String>>(&logs_json)
+        {
+            let _ = logs.len();
         }
 
         // Check for errors
@@ -247,13 +247,13 @@ async fn run_benchmarks_with_concurrency(
 
         // Check progress
         let progress_check = page.evaluate("window.__benchProgress || null").await?;
-        if let Ok(Some(progress)) = progress_check.into_value::<Option<String>>() {
-            if progress != last_status {
-                print!("\r\x1b[K{}", progress);
-                use std::io::Write;
-                std::io::stdout().flush().ok();
-                last_status = progress;
-            }
+        if let Ok(Some(progress)) = progress_check.into_value::<Option<String>>()
+            && progress != last_status
+        {
+            print!("\r\x1b[K{}", progress);
+            use std::io::Write;
+            std::io::stdout().flush().ok();
+            last_status = progress;
         }
 
         // Check if results are available
@@ -499,12 +499,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Validate concurrency for MT benchmarks (need at least 2 threads)
     let has_mt_benchmarks = benchmarks.iter().any(|b| is_mt_benchmark(b));
-    if has_mt_benchmarks {
-        if let Some(c) = concurrency {
-            if c < 2 {
-                return Err("MT benchmarks require at least 2 threads (garbler uses try_join). Use -c 2 or higher.".into());
-            }
-        }
+    if has_mt_benchmarks
+        && let Some(c) = concurrency
+        && c < 2
+    {
+        return Err(
+            "MT benchmarks require at least 2 threads (garbler uses try_join). Use -c 2 or higher."
+                .into(),
+        );
     }
 
     let crate_dir = get_crate_dir();

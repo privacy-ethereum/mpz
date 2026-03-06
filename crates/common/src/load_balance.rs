@@ -23,7 +23,7 @@ where
         .collect();
 
     // Sort in decreasing order of weight
-    items_with_weights.sort_by(|a, b| b.1.cmp(&a.1));
+    items_with_weights.sort_by_key(|item| std::cmp::Reverse(item.1));
 
     let mut lanes: Vec<Vec<T>> = (0..num_lanes).map(|_| Vec::new()).collect();
     let mut lane_weights = vec![0; num_lanes];

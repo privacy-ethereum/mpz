@@ -9,8 +9,8 @@ set -e
 # Check formatting
 cargo +nightly fmt --check --all
 
-# Check clippy (excluding wasm-bench which requires wasm32 target)
+# Check clippy
 cargo +nightly clippy --workspace --exclude mpz-wasm-bench --all-targets --all-features -- -D warnings
 
-# To check wasm-bench lib, run separately with wasm32 target (from crates/wasm-bench/):
-# cargo +nightly clippy --lib --target wasm32-unknown-unknown -- -D warnings
+# Check clippy on wasm-bench (requires wasm32 target: rustup target add wasm32-unknown-unknown)
+(cd crates/wasm-bench && cargo +nightly clippy --lib --target wasm32-unknown-unknown -- -D warnings)
