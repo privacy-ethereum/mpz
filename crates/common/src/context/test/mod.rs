@@ -1,6 +1,8 @@
 //! Test utilities for context.
 
 mod helpers;
+#[cfg(test)]
+mod pool_tests;
 mod recording;
 mod replay;
 #[cfg(test)]

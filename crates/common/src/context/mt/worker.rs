@@ -1,83 +1,55 @@
-use std::future::Future;
-
-use crossbeam_channel::{Receiver, Sender, unbounded};
-use futures::{TryFutureExt, channel::oneshot};
+use std::sync::{Arc, Mutex};
 
 use crate::{Context, ContextError, ThreadId, context::ErrorKind};
 
-type Job = Box<dyn FnOnce(&mut Context) + Send>;
+use super::pool::TaskFn;
 
+/// A lightweight handle to a logical worker thread.
+///
+/// Each handle is assigned to a specific pool thread (via its sender) and
+/// holds a context that is moved into tasks and returned when they complete.
 pub(crate) struct Handle {
     id: ThreadId,
-    sender: Sender<Job>,
+    ctx_slot: Arc<Mutex<Option<Context>>>,
+    sender: async_channel::Sender<TaskFn>,
 }
 
 impl Handle {
-    /// Sends a job to the worker.
-    pub(crate) fn send<F>(&self, job: F) -> Result<(), ContextError>
-    where
-        F: FnOnce(&mut Context) + Send + 'static,
-    {
-        self.sender.send(Box::new(job)).map_err(|_| {
+    /// Creates a new handle with the given context and pool thread sender.
+    pub(crate) fn new(id: ThreadId, ctx: Context, sender: async_channel::Sender<TaskFn>) -> Self {
+        Self {
+            id,
+            ctx_slot: Arc::new(Mutex::new(Some(ctx))),
+            sender,
+        }
+    }
+
+    /// Takes the context from this handle.
+    pub(crate) fn take_ctx(&self) -> Result<Context, ContextError> {
+        self.ctx_slot.lock().unwrap().take().ok_or_else(|| {
             ContextError::new(
                 ErrorKind::Thread,
-                format!("failed to send job to worker {}", &self.id),
+                format!(
+                    "context not available for worker {} (concurrent use?)",
+                    &self.id
+                ),
             )
         })
     }
 
-    /// Sends a job to the worker and returns a future that resolves to the
-    /// result of the job.
-    pub(crate) fn send_with_return<F, R>(
-        &self,
-        job: F,
-    ) -> Result<impl Future<Output = Result<R, ContextError>>, ContextError>
-    where
-        F: FnOnce(&mut Context) -> R + Send + 'static,
-        R: Send + 'static,
-    {
-        let (sender, receive) = oneshot::channel();
+    /// Returns the context to this handle after a task completes.
+    pub(crate) fn put_ctx(&self, ctx: Context) {
+        self.ctx_slot.lock().unwrap().replace(ctx);
+    }
 
-        self.send(move |ctx| {
-            let result = job(ctx);
-            let _ = sender.send(result);
-        })?;
-
-        let id = self.id.clone();
-        Ok(receive.map_err(move |_| {
-            ContextError::new(
-                ErrorKind::Thread,
-                format!("failed to receive result from worker {id}"),
-            )
-        }))
+    /// Returns a reference to the sender for dispatching tasks.
+    pub(crate) fn sender(&self) -> &async_channel::Sender<TaskFn> {
+        &self.sender
     }
 }
 
 impl std::fmt::Debug for Handle {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Handle").field("id", &self.id).finish()
-    }
-}
-
-pub(crate) struct Worker {
-    ctx: Context,
-    queue: Receiver<Job>,
-}
-
-impl Worker {
-    pub(crate) fn new(id: ThreadId, ctx: Context) -> (Self, Handle) {
-        let (sender, receiver) = unbounded();
-        let worker = Self {
-            ctx,
-            queue: receiver,
-        };
-        let handle = Handle { id, sender };
-        (worker, handle)
-    }
-
-    pub(crate) fn run(mut self) {
-        while let Ok(job) = self.queue.recv() {
-            job(&mut self.ctx);
-        }
     }
 }

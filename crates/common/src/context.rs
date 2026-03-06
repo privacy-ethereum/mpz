@@ -26,7 +26,7 @@ use futures::{AsyncRead, AsyncWrite};
 
 use crate::{
     ThreadId,
-    context::mt::{MtConfig, ThreadBuilder, Threads},
+    context::mt::{MtConfig, ThreadBuilder, Threads, pool::TaskSenders},
     io::Io,
 };
 
@@ -69,12 +69,13 @@ impl Context {
         io: Io,
         config: Arc<MtConfig>,
         builder: Arc<Mutex<ThreadBuilder>>,
+        senders: TaskSenders,
     ) -> Self {
         Self {
             id: id.clone(),
             io,
             mode: Mode::Mt {
-                threads: Threads::new(id, config, builder),
+                threads: Threads::new(id, config, builder, senders),
             },
         }
     }
@@ -147,8 +148,9 @@ impl Context {
     /// Forks the thread and executes the provided closures concurrently,
     /// returning an error if one of the closures fails.
     ///
-    /// This method is short circuiting, meaning that it returns as soon as one
-    /// of the closures fails, potentially canceling the other.
+    /// Both closures always run to completion so that their contexts can be
+    /// recovered. If either returns an error, that error is propagated after
+    /// both finish.
     ///
     /// Implementations may not be able to fork, in which case the closures are
     /// executed sequentially.

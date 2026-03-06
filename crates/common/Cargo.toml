@@ -23,7 +23,8 @@ pollster.workspace = true
 cfg-if.workspace = true
 tokio = { workspace = true, optional = true }
 tokio-util = { workspace = true }
-crossbeam-channel = { workspace = true }
+async-executor = { workspace = true }
+async-channel = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = [

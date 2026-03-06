@@ -1,17 +1,20 @@
 mod builder;
+pub(crate) mod pool;
 mod spawn;
 mod worker;
 
 use std::sync::{Arc, Mutex};
 
-use futures::{FutureExt, StreamExt as _, stream::FuturesUnordered};
-use pollster::FutureExt as _;
-use worker::{Handle, Worker};
+use futures::{StreamExt as _, stream::FuturesUnordered};
+use worker::Handle;
 
 use crate::{
     Context, ContextError, ThreadId, context::ErrorKind, load_balance::distribute_by_weight,
     mux::Mux,
 };
+
+use async_executor::LocalExecutor;
+use pool::{SharedPool, TaskFn, TaskSenders};
 
 pub use builder::{MultithreadBuilder, MultithreadBuilderError};
 pub use spawn::{CustomSpawn, Spawn, SpawnError, StdSpawn};
@@ -22,11 +25,22 @@ pub(crate) struct MtConfig {
 }
 
 /// A multi-threaded context.
-#[derive(Debug)]
 pub struct Multithread {
     current_id: ThreadId,
     config: Arc<MtConfig>,
     builder: Arc<Mutex<ThreadBuilder>>,
+    senders: TaskSenders,
+    // Held to keep pool workers alive; dropping shuts them down.
+    _pool: SharedPool,
+}
+
+impl std::fmt::Debug for Multithread {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Multithread")
+            .field("current_id", &self.current_id)
+            .field("config", &self.config)
+            .finish_non_exhaustive()
+    }
 }
 
 impl Multithread {
@@ -49,41 +63,20 @@ impl Multithread {
             .open(id.clone())
             .map_err(|e| ContextError::new(ErrorKind::Mux, e))?;
 
-        let ctx =
-            Context::new_multi_threaded(id.clone(), io, self.config.clone(), self.builder.clone());
+        let ctx = Context::new_multi_threaded(
+            id.clone(),
+            io,
+            self.config.clone(),
+            self.builder.clone(),
+            self.senders.clone(),
+        );
 
         Ok(ctx)
     }
 }
 
 pub(crate) struct ThreadBuilder {
-    spawn: Box<dyn Spawn + Send>,
     mux: Box<dyn Mux + Send>,
-}
-
-impl ThreadBuilder {
-    fn spawn(
-        this: Arc<Mutex<Self>>,
-        id: ThreadId,
-        config: Arc<MtConfig>,
-    ) -> Result<Handle, ContextError> {
-        let io = this
-            .lock()
-            .unwrap()
-            .mux
-            .open(id.clone())
-            .map_err(|e| ContextError::new(ErrorKind::Mux, e))?;
-
-        let ctx = Context::new_multi_threaded(id.clone(), io, config, this.clone());
-        let (worker, handle) = Worker::new(id, ctx);
-
-        this.lock()
-            .unwrap()
-            .spawn
-            .spawn(Box::new(move || worker.run()))?;
-
-        Ok(handle)
-    }
 }
 
 impl std::fmt::Debug for ThreadBuilder {
@@ -92,12 +85,21 @@ impl std::fmt::Debug for ThreadBuilder {
     }
 }
 
-#[derive(Debug)]
 pub(crate) struct Threads {
     config: Arc<MtConfig>,
     builder: Arc<Mutex<ThreadBuilder>>,
+    senders: TaskSenders,
     child_id: ThreadId,
     children: Vec<Handle>,
+}
+
+impl std::fmt::Debug for Threads {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Threads")
+            .field("child_id", &self.child_id)
+            .field("children", &self.children)
+            .finish_non_exhaustive()
+    }
 }
 
 impl Threads {
@@ -105,10 +107,12 @@ impl Threads {
         parent_id: ThreadId,
         config: Arc<MtConfig>,
         builder: Arc<Mutex<ThreadBuilder>>,
+        senders: TaskSenders,
     ) -> Self {
         Self {
             config,
             builder,
+            senders,
             child_id: parent_id.fork(),
             children: Vec::new(),
         }
@@ -118,6 +122,9 @@ impl Threads {
         self.config.concurrency
     }
 
+    /// Returns handles for `count` logical worker threads.
+    ///
+    /// Each handle is assigned to a pool thread via round-robin.
     pub(crate) fn get(&mut self, count: usize) -> Result<&[Handle], ContextError> {
         if count > self.config.concurrency {
             return Err(ContextError::new(
@@ -131,13 +138,77 @@ impl Threads {
                     ContextError::new(ErrorKind::Thread, "thread ID overflow".to_string())
                 })?;
 
-                let child = ThreadBuilder::spawn(self.builder.clone(), id, self.config.clone())?;
-                self.children.push(child);
+                let io = self
+                    .builder
+                    .lock()
+                    .unwrap()
+                    .mux
+                    .open(id.clone())
+                    .map_err(|e| ContextError::new(ErrorKind::Mux, e))?;
+
+                let ctx = Context::new_multi_threaded(
+                    id.clone(),
+                    io,
+                    self.config.clone(),
+                    self.builder.clone(),
+                    self.senders.clone(),
+                );
+
+                // Assign to pool thread round-robin.
+                let sender_idx = self.children.len() % self.senders.len();
+                let sender = self.senders[sender_idx].clone();
+
+                self.children.push(Handle::new(id, ctx, sender));
             }
         }
 
         Ok(&self.children[..count])
     }
+}
+
+/// Dispatches an async closure to a pool thread and returns a receiver for
+/// the result.
+///
+/// The closure is `Send` and crosses the thread boundary. The future it
+/// produces runs on the pool thread's `LocalExecutor` and does NOT need to
+/// be `Send`.
+fn spawn_task<A, R>(
+    sender: &async_channel::Sender<TaskFn>,
+    ctx: Context,
+    a: A,
+) -> Result<async_channel::Receiver<(R, Context)>, ContextError>
+where
+    A: AsyncFnOnce(&mut Context) -> R + Send + 'static,
+    R: Send + 'static,
+{
+    let (tx, rx) = async_channel::bounded(1);
+    // Closure is Send (captures Send types). It spawns on the pool thread's
+    // LocalExecutor directly — no extra boxing needed.
+    sender
+        .try_send(Box::new(move |ex: &LocalExecutor<'_>| {
+            ex.spawn(async move {
+                let mut ctx = ctx;
+                let r = a(&mut ctx).await;
+                let _ = tx.send((r, ctx)).await;
+            })
+            .detach();
+        }))
+        .map_err(|_| send_error())?;
+    Ok(rx)
+}
+
+fn send_error() -> ContextError {
+    ContextError::new(
+        ErrorKind::Thread,
+        "failed to dispatch task: pool thread channel closed".to_string(),
+    )
+}
+
+fn recv_error() -> ContextError {
+    ContextError::new(
+        ErrorKind::Thread,
+        "pool thread dropped task before completion".to_string(),
+    )
 }
 
 pub(crate) async fn map<F, T, R, W>(
@@ -156,25 +227,40 @@ where
     let item_count = items.len();
     let lanes = distribute_by_weight(items, |item| weight(&item.1), threads.len());
 
-    let mut queue = FuturesUnordered::new();
-    for (lane, thread) in lanes.into_iter().zip(threads) {
+    let mut tasks = Vec::new();
+    for (i, (lane, thread)) in lanes.into_iter().zip(threads.iter()).enumerate() {
         let f = f.clone();
-        let task = thread.send_with_return(move |ctx| {
-            async move {
-                let mut outputs = Vec::with_capacity(lane.len());
-                for (i, item) in lane {
-                    outputs.push((i, f(ctx, item).await));
-                }
-                outputs
-            }
-            .block_on()
-        })?;
-        queue.push(task);
+        let ctx = thread.take_ctx()?;
+        let (tx, rx) = async_channel::bounded(1);
+
+        thread
+            .sender()
+            .try_send(Box::new(move |ex: &LocalExecutor<'_>| {
+                ex.spawn(async move {
+                    let mut ctx = ctx;
+                    let mut results = Vec::with_capacity(lane.len());
+                    for (idx, item) in lane {
+                        results.push((idx, f(&mut ctx, item).await));
+                    }
+                    let _ = tx.send((results, ctx)).await;
+                })
+                .detach();
+            }))
+            .map_err(|_| send_error())?;
+
+        tasks.push((i, rx));
+    }
+
+    let mut queue = FuturesUnordered::new();
+    for (i, rx) in tasks {
+        queue.push(async move { (i, rx.recv().await) });
     }
 
     let mut outputs = Vec::with_capacity(item_count);
-    while let Some(lane) = queue.next().await {
-        outputs.extend(lane?);
+    while let Some((thread_idx, result)) = queue.next().await {
+        let (lane, ctx) = result.map_err(|_| recv_error())?;
+        threads[thread_idx].put_ctx(ctx);
+        outputs.extend(lane);
     }
 
     outputs.sort_by_key(|(i, _)| *i);
@@ -182,7 +268,7 @@ where
     Ok(outputs.into_iter().map(|(_, output)| output).collect())
 }
 
-pub(crate) async fn join<'a, A, B, RA, RB>(
+pub(crate) async fn join<A, B, RA, RB>(
     threads: &[Handle],
     a: A,
     b: B,
@@ -195,15 +281,22 @@ where
 {
     assert_eq!(threads.len(), 2, "expecting exactly two threads");
 
-    let ra = threads[0].send_with_return(|ctx| a(ctx).block_on())?;
-    let rb = threads[1].send_with_return(|ctx| b(ctx).block_on())?;
+    let ctx_a = threads[0].take_ctx()?;
+    let ctx_b = threads[1].take_ctx()?;
 
-    let (ra, rb) = futures::try_join!(ra, rb)?;
+    let rx_a = spawn_task(threads[0].sender(), ctx_a, a)?;
+    let rx_b = spawn_task(threads[1].sender(), ctx_b, b)?;
+
+    let (ra, ctx_a) = rx_a.recv().await.map_err(|_| recv_error())?;
+    let (rb, ctx_b) = rx_b.recv().await.map_err(|_| recv_error())?;
+
+    threads[0].put_ctx(ctx_a);
+    threads[1].put_ctx(ctx_b);
 
     Ok((ra, rb))
 }
 
-pub(crate) async fn try_join<'a, A, B, RA, RB, E>(
+pub(crate) async fn try_join<A, B, RA, RB, E>(
     threads: &[Handle],
     a: A,
     b: B,
@@ -217,36 +310,29 @@ where
 {
     assert_eq!(threads.len(), 2, "expecting exactly two threads");
 
-    let mut a = threads[0].send_with_return(|ctx| a(ctx).block_on())?.fuse();
-    let mut b = threads[1].send_with_return(|ctx| b(ctx).block_on())?.fuse();
+    let ctx_a = threads[0].take_ctx()?;
+    let ctx_b = threads[1].take_ctx()?;
 
-    let mut ra = None;
-    let mut rb = None;
-    loop {
-        futures::select! {
-            output = a => {
-                match output? {
-                    Ok(output) => ra = Some(output),
-                    Err(error) => return Ok(Err(error)),
-                }
-            },
-            output = b => {
-                match output? {
-                    Ok(output) => rb = Some(output),
-                    Err(error) => return Ok(Err(error)),
-                }
-            }
-            complete => break,
-        }
-    }
+    let rx_a = spawn_task(threads[0].sender(), ctx_a, a)?;
+    let rx_b = spawn_task(threads[1].sender(), ctx_b, b)?;
 
-    let ra = ra.expect("a future should have resolved");
-    let rb = rb.expect("b future should have resolved");
+    // Await both concurrently. We must recover contexts from both tasks
+    // even if one returns an error, so we cannot short-circuit here.
+    let (result_a, result_b) = futures::join!(rx_a.recv(), rx_b.recv());
 
-    Ok(Ok((ra, rb)))
+    let (output_a, ctx_a) = result_a.map_err(|_| recv_error())?;
+    let (output_b, ctx_b) = result_b.map_err(|_| recv_error())?;
+
+    threads[0].put_ctx(ctx_a);
+    threads[1].put_ctx(ctx_b);
+
+    Ok(match (output_a, output_b) {
+        (Ok(a), Ok(b)) => Ok((a, b)),
+        (Err(e), _) | (_, Err(e)) => Err(e),
+    })
 }
 
-pub(crate) async fn try_join3<'a, A, B, C, RA, RB, RC, E>(
+pub(crate) async fn try_join3<A, B, C, RA, RB, RC, E>(
     threads: &[Handle],
     a: A,
     b: B,
@@ -263,45 +349,32 @@ where
 {
     assert_eq!(threads.len(), 3, "expecting exactly three threads");
 
-    let mut a = threads[0].send_with_return(|ctx| a(ctx).block_on())?.fuse();
-    let mut b = threads[1].send_with_return(|ctx| b(ctx).block_on())?.fuse();
-    let mut c = threads[2].send_with_return(|ctx| c(ctx).block_on())?.fuse();
+    let ctx_a = threads[0].take_ctx()?;
+    let ctx_b = threads[1].take_ctx()?;
+    let ctx_c = threads[2].take_ctx()?;
 
-    let mut ra = None;
-    let mut rb = None;
-    let mut rc = None;
-    loop {
-        futures::select! {
-            output = a => {
-                match output? {
-                    Ok(output) => ra = Some(output),
-                    Err(error) => return Ok(Err(error)),
-                }
-            },
-            output = b => {
-                match output? {
-                    Ok(output) => rb = Some(output),
-                    Err(error) => return Ok(Err(error)),
-                }
-            }
-            output = c => {
-                match output? {
-                    Ok(output) => rc = Some(output),
-                    Err(error) => return Ok(Err(error)),
-                }
-            }
-            complete => break,
-        }
-    }
+    let rx_a = spawn_task(threads[0].sender(), ctx_a, a)?;
+    let rx_b = spawn_task(threads[1].sender(), ctx_b, b)?;
+    let rx_c = spawn_task(threads[2].sender(), ctx_c, c)?;
 
-    let ra = ra.expect("a future should have resolved");
-    let rb = rb.expect("b future should have resolved");
-    let rc = rc.expect("c future should have resolved");
+    // Await all concurrently to recover contexts from every task.
+    let (result_a, result_b, result_c) = futures::join!(rx_a.recv(), rx_b.recv(), rx_c.recv());
 
-    Ok(Ok((ra, rb, rc)))
+    let (output_a, ctx_a) = result_a.map_err(|_| recv_error())?;
+    let (output_b, ctx_b) = result_b.map_err(|_| recv_error())?;
+    let (output_c, ctx_c) = result_c.map_err(|_| recv_error())?;
+
+    threads[0].put_ctx(ctx_a);
+    threads[1].put_ctx(ctx_b);
+    threads[2].put_ctx(ctx_c);
+
+    Ok(match (output_a, output_b, output_c) {
+        (Ok(a), Ok(b), Ok(c)) => Ok((a, b, c)),
+        (Err(e), _, _) | (_, Err(e), _) | (_, _, Err(e)) => Err(e),
+    })
 }
 
-pub(crate) async fn try_join4<'a, A, B, C, D, RA, RB, RC, RD, E>(
+pub(crate) async fn try_join4<A, B, C, D, RA, RB, RC, RD, E>(
     threads: &[Handle],
     a: A,
     b: B,
@@ -321,49 +394,32 @@ where
 {
     assert_eq!(threads.len(), 4, "expecting exactly four threads");
 
-    let mut a = threads[0].send_with_return(|ctx| a(ctx).block_on())?.fuse();
-    let mut b = threads[1].send_with_return(|ctx| b(ctx).block_on())?.fuse();
-    let mut c = threads[2].send_with_return(|ctx| c(ctx).block_on())?.fuse();
-    let mut d = threads[3].send_with_return(|ctx| d(ctx).block_on())?.fuse();
+    let ctx_a = threads[0].take_ctx()?;
+    let ctx_b = threads[1].take_ctx()?;
+    let ctx_c = threads[2].take_ctx()?;
+    let ctx_d = threads[3].take_ctx()?;
 
-    let mut ra = None;
-    let mut rb = None;
-    let mut rc = None;
-    let mut rd = None;
-    loop {
-        futures::select! {
-            output = a => {
-                match output? {
-                    Ok(output) => ra = Some(output),
-                    Err(error) => return Ok(Err(error)),
-                }
-            },
-            output = b => {
-                match output? {
-                    Ok(output) => rb = Some(output),
-                    Err(error) => return Ok(Err(error)),
-                }
-            }
-            output = c => {
-                match output? {
-                    Ok(output) => rc = Some(output),
-                    Err(error) => return Ok(Err(error)),
-                }
-            }
-            output = d => {
-                match output? {
-                    Ok(output) => rd = Some(output),
-                    Err(error) => return Ok(Err(error)),
-                }
-            }
-            complete => break,
-        }
-    }
+    let rx_a = spawn_task(threads[0].sender(), ctx_a, a)?;
+    let rx_b = spawn_task(threads[1].sender(), ctx_b, b)?;
+    let rx_c = spawn_task(threads[2].sender(), ctx_c, c)?;
+    let rx_d = spawn_task(threads[3].sender(), ctx_d, d)?;
 
-    let ra = ra.expect("a future should have resolved");
-    let rb = rb.expect("b future should have resolved");
-    let rc = rc.expect("c future should have resolved");
-    let rd = rd.expect("d future should have resolved");
+    // Await all concurrently to recover contexts from every task.
+    let (result_a, result_b, result_c, result_d) =
+        futures::join!(rx_a.recv(), rx_b.recv(), rx_c.recv(), rx_d.recv());
 
-    Ok(Ok((ra, rb, rc, rd)))
+    let (output_a, ctx_a) = result_a.map_err(|_| recv_error())?;
+    let (output_b, ctx_b) = result_b.map_err(|_| recv_error())?;
+    let (output_c, ctx_c) = result_c.map_err(|_| recv_error())?;
+    let (output_d, ctx_d) = result_d.map_err(|_| recv_error())?;
+
+    threads[0].put_ctx(ctx_a);
+    threads[1].put_ctx(ctx_b);
+    threads[2].put_ctx(ctx_c);
+    threads[3].put_ctx(ctx_d);
+
+    Ok(match (output_a, output_b, output_c, output_d) {
+        (Ok(a), Ok(b), Ok(c), Ok(d)) => Ok((a, b, c, d)),
+        (Err(e), _, _, _) | (_, Err(e), _, _) | (_, _, Err(e), _) | (_, _, _, Err(e)) => Err(e),
+    })
 }
