@@ -1,8 +1,4 @@
-#![cfg_attr(
-    feature = "simd-transpose",
-    feature(portable_simd),
-    feature(stmt_expr_attributes)
-)]
+#![cfg_attr(feature = "simd-transpose", feature(portable_simd))]
 
 #[cfg(feature = "simd-transpose")]
 #[cfg(target_arch = "x86_64")]

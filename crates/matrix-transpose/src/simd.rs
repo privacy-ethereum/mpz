@@ -1,7 +1,7 @@
 use super::{LANE_COUNT, TransposeError};
 use std::{
     ops::ShlAssign,
-    simd::{LaneCount, Simd, SimdElement, SupportedLaneCount},
+    simd::{Simd, SimdElement},
 };
 
 /// SIMD version for bit-level transposition
@@ -49,7 +49,6 @@ pub fn transpose_bits(matrix: &mut [u8], rows: usize) -> Result<(), TransposeErr
 #[inline]
 pub unsafe fn transpose_unchecked<const N: usize, T>(matrix: &mut [T], rounds: usize)
 where
-    LaneCount<N>: SupportedLaneCount,
     T: SimdElement + Copy,
 {
     let half = matrix.len() >> 1;

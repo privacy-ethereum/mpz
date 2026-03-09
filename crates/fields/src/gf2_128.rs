@@ -201,10 +201,7 @@ mod tests {
             test_field_compute_product_repeated,
         },
     };
-    use ghash_rc::{
-        GHash,
-        universal_hash::{KeyInit, UniversalHash},
-    };
+    use ghash_rc::{GHash, universal_hash::UniversalHash};
     use mpz_core::{Block, prg::Prg};
     use rand::SeedableRng;
 
