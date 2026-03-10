@@ -1,4 +1,7 @@
-use std::{rc::Rc, sync::Arc};
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
 
 use async_executor::LocalExecutor;
 
@@ -27,34 +30,74 @@ pub(crate) type TaskSenders = Arc<Vec<async_channel::Sender<TaskFn>>>;
 #[derive(Clone)]
 pub struct SharedPool {
     senders: TaskSenders,
+    // Shared flag that signals workers to stop when all senders are dropped.
+    _shutdown: Arc<ShutdownFlag>,
+}
+
+/// Sets the shutdown flag on drop, signaling worker threads to exit.
+struct ShutdownFlag {
+    flag: Arc<AtomicBool>,
+}
+
+impl Drop for ShutdownFlag {
+    fn drop(&mut self) {
+        self.flag.store(true, Ordering::Release);
+    }
 }
 
 impl SharedPool {
     /// Creates a new pool with `num_threads` worker threads.
     ///
     /// Each worker thread runs a `LocalExecutor` that processes tasks received
-    /// via an async channel. Dropping all clones of the pool closes the
-    /// channels, causing workers to exit.
+    /// via a channel. The worker loop uses synchronous `try_recv` to drain the
+    /// channel, then ticks the executor to drive spawned async tasks. This
+    /// avoids relying on async waker propagation through `pollster`, which
+    /// does not work reliably in WASM Web Workers.
     pub fn new(num_threads: usize, spawn: &mut dyn Spawn) -> Result<Self, SpawnError> {
         if num_threads == 0 {
             return Err(SpawnError::new("pool requires at least 1 worker thread"));
         }
 
+        let shutdown = Arc::new(AtomicBool::new(false));
         let mut senders = Vec::with_capacity(num_threads);
 
         for _ in 0..num_threads {
             let (tx, rx) = async_channel::unbounded::<TaskFn>();
+            let shutdown = shutdown.clone();
 
             spawn.spawn(Box::new(move || {
-                // Rc breaks the self-referential borrow: run() borrows
-                // through one Rc handle while the async block captures another.
-                let local_ex = Rc::new(LocalExecutor::new());
-                let ex = Rc::clone(&local_ex);
-                pollster::block_on(local_ex.run(async move {
-                    while let Ok(task_fn) = rx.recv().await {
-                        task_fn(&ex);
+                let local_ex = LocalExecutor::new();
+
+                // Spin loop: drain incoming task closures, tick the executor,
+                // and park briefly when idle. Each TaskFn spawns an async task
+                // on the LocalExecutor; ticking drives those tasks forward.
+                loop {
+                    // Drain all pending task submissions.
+                    let mut received = false;
+                    while let Ok(task_fn) = rx.try_recv() {
+                        task_fn(&local_ex);
+                        received = true;
                     }
-                }));
+
+                    // Tick executor to drive spawned async tasks.
+                    while local_ex.try_tick() {
+                        received = true;
+                    }
+
+                    // If channel is closed and no tasks remain, exit.
+                    if rx.is_closed() && local_ex.is_empty() {
+                        break;
+                    }
+
+                    if shutdown.load(Ordering::Acquire) && local_ex.is_empty() {
+                        break;
+                    }
+
+                    // Park briefly to avoid busy-spinning when idle.
+                    if !received {
+                        std::thread::park_timeout(std::time::Duration::from_millis(1));
+                    }
+                }
             }))?;
 
             senders.push(tx);
@@ -62,6 +105,7 @@ impl SharedPool {
 
         Ok(Self {
             senders: Arc::new(senders),
+            _shutdown: Arc::new(ShutdownFlag { flag: shutdown }),
         })
     }
 
