@@ -1,6 +1,6 @@
 mod builder;
 pub(crate) mod pool;
-mod spawn;
+pub(crate) mod spawn;
 mod worker;
 
 use std::sync::{Arc, Mutex};
@@ -14,9 +14,10 @@ use crate::{
 };
 
 use async_executor::LocalExecutor;
-use pool::{SharedPool, TaskFn, TaskSenders};
+use pool::{TaskFn, TaskSenders};
 
 pub use builder::{MultithreadBuilder, MultithreadBuilderError};
+pub use pool::SharedPool;
 pub use spawn::{CustomSpawn, Spawn, SpawnError, StdSpawn};
 
 #[derive(Debug)]

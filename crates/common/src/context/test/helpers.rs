@@ -5,7 +5,7 @@ use futures::{AsyncRead, AsyncWrite};
 use serio::channel::duplex;
 
 use crate::{
-    context::{Context, Multithread, SpawnError},
+    context::{Context, CustomSpawn, Multithread, SharedPool, SpawnError, StdSpawn},
     io::Io,
     mux::Mux,
 };
@@ -33,16 +33,31 @@ pub fn test_st_context(io_buffer: usize) -> (Context, Context) {
     )
 }
 
+/// Creates a default pool with 8 threads using `std::thread::spawn`.
+fn default_pool() -> SharedPool {
+    SharedPool::new(8, &mut StdSpawn).unwrap()
+}
+
 /// Creates a pair of multi-threaded contexts using multiplexed I/O channels.
 pub fn test_mt_context(io_buffer: usize) -> (Multithread, Multithread) {
+    let pool = default_pool();
+
     let (mux_0, mux_1) = test_framed_mux(io_buffer);
 
     let mux_0: Box<dyn Mux + Send> = Box::new(mux_0);
     let mux_1: Box<dyn Mux + Send> = Box::new(mux_1);
 
     (
-        Multithread::builder().mux(mux_0).build().unwrap(),
-        Multithread::builder().mux(mux_1).build().unwrap(),
+        Multithread::builder()
+            .pool(pool.clone())
+            .mux(mux_0)
+            .build()
+            .unwrap(),
+        Multithread::builder()
+            .pool(pool)
+            .mux(mux_1)
+            .build()
+            .unwrap(),
     )
 }
 
@@ -54,6 +69,8 @@ pub fn test_mt_context_with_spawn<F>(io_buffer: usize, spawn: F) -> (Multithread
 where
     F: FnMut(Box<dyn FnOnce() + Send>) -> Result<(), SpawnError> + Clone + Send + 'static,
 {
+    let pool = SharedPool::new(8, &mut CustomSpawn(spawn)).unwrap();
+
     let (mux_0, mux_1) = test_framed_mux(io_buffer);
 
     let mux_0: Box<dyn Mux + Send> = Box::new(mux_0);
@@ -61,12 +78,38 @@ where
 
     (
         Multithread::builder()
-            .spawn_handler(spawn.clone())
+            .pool(pool.clone())
             .mux(mux_0)
             .build()
             .unwrap(),
         Multithread::builder()
-            .spawn_handler(spawn)
+            .pool(pool)
+            .mux(mux_1)
+            .build()
+            .unwrap(),
+    )
+}
+
+/// Creates a pair of multi-threaded contexts sharing a single pool.
+///
+/// Both sides reuse the same worker threads, which mirrors the intended
+/// usage in resource-constrained environments like WASM.
+pub fn test_mt_context_with_shared_pool(io_buffer: usize) -> (Multithread, Multithread) {
+    let pool = default_pool();
+
+    let (mux_0, mux_1) = test_framed_mux(io_buffer);
+
+    let mux_0: Box<dyn Mux + Send> = Box::new(mux_0);
+    let mux_1: Box<dyn Mux + Send> = Box::new(mux_1);
+
+    (
+        Multithread::builder()
+            .pool(pool.clone())
+            .mux(mux_0)
+            .build()
+            .unwrap(),
+        Multithread::builder()
+            .pool(pool)
             .mux(mux_1)
             .build()
             .unwrap(),
@@ -86,6 +129,8 @@ pub fn test_mt_context_with_concurrency<F>(
 where
     F: FnMut(Box<dyn FnOnce() + Send>) -> Result<(), SpawnError> + Clone + Send + 'static,
 {
+    let pool = SharedPool::new(concurrency, &mut CustomSpawn(spawn)).unwrap();
+
     let (mux_0, mux_1) = test_framed_mux(io_buffer);
 
     let mux_0: Box<dyn Mux + Send> = Box::new(mux_0);
@@ -93,14 +138,12 @@ where
 
     (
         Multithread::builder()
-            .concurrency(concurrency)
-            .spawn_handler(spawn.clone())
+            .pool(pool.clone())
             .mux(mux_0)
             .build()
             .unwrap(),
         Multithread::builder()
-            .concurrency(concurrency)
-            .spawn_handler(spawn)
+            .pool(pool)
             .mux(mux_1)
             .build()
             .unwrap(),

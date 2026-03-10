@@ -2,9 +2,11 @@
 
 use serio::{SinkExt, stream::IoStreamExt};
 
-use crate::context::{Context, Multithread, MultithreadBuilderError, SpawnError};
+use crate::context::{Context, Multithread, SharedPool, SpawnError, StdSpawn};
 
-use super::helpers::{test_mt_context, test_mt_context_with_concurrency};
+use super::helpers::{
+    test_mt_context, test_mt_context_with_concurrency, test_mt_context_with_shared_pool,
+};
 
 /// Tests that `join` (non-try variant) executes both branches and returns
 /// their results.
@@ -256,14 +258,10 @@ async fn test_map_preserves_order() {
     assert_eq!(results, expected);
 }
 
-/// Tests that building a pool with concurrency = 0 returns an error.
+/// Tests that creating a pool with 0 threads returns an error.
 #[tokio::test]
 async fn test_concurrency_zero_rejected() {
-    let (mux_0, _mux_1) = crate::mux::test_framed_mux(1024);
-    let mux_0: Box<dyn crate::mux::Mux + Send> = Box::new(mux_0);
-
-    let result: Result<Multithread, MultithreadBuilderError> =
-        Multithread::builder().concurrency(0).mux(mux_0).build();
+    let result = SharedPool::new(0, &mut StdSpawn);
 
     assert!(result.is_err());
     let err = result.unwrap_err();
@@ -271,6 +269,41 @@ async fn test_concurrency_zero_rejected() {
         err.to_string().contains("at least 1"),
         "error should mention minimum threads: {err}"
     );
+}
+
+/// Tests that two `Multithread` instances sharing a pool can both execute
+/// tasks concurrently on the same worker threads.
+#[tokio::test]
+async fn test_shared_pool_across_instances() {
+    let (mut exec_0, mut exec_1) = test_mt_context_with_shared_pool(1024 * 1024);
+
+    let mut ctx_0 = exec_0.new_context().unwrap();
+    let mut ctx_1 = exec_1.new_context().unwrap();
+
+    let (result, _) = futures::join!(
+        ctx_0.join(
+            async |ctx: &mut Context| {
+                let msg: u32 = ctx.io_mut().expect_next().await.unwrap();
+                msg
+            },
+            async |ctx: &mut Context| {
+                let msg: String = ctx.io_mut().expect_next().await.unwrap();
+                msg
+            },
+        ),
+        ctx_1.join(
+            async |ctx: &mut Context| {
+                ctx.io_mut().send(42u32).await.unwrap();
+            },
+            async |ctx: &mut Context| {
+                ctx.io_mut().send("shared".to_string()).await.unwrap();
+            },
+        )
+    );
+
+    let (msg_a, msg_b) = result.unwrap();
+    assert_eq!(msg_a, 42);
+    assert_eq!(msg_b, "shared");
 }
 
 /// Tests that dropping `Multithread` shuts down pool workers.
@@ -283,8 +316,9 @@ async fn test_pool_shutdown_on_drop() {
     let (mux_0, _mux_1) = crate::mux::test_framed_mux(1024);
     let mux_0: Box<dyn crate::mux::Mux + Send> = Box::new(mux_0);
 
+    let pool = SharedPool::new(2, &mut StdSpawn).unwrap();
     let mut exec = Multithread::builder()
-        .concurrency(2)
+        .pool(pool)
         .mux(mux_0)
         .build()
         .unwrap();

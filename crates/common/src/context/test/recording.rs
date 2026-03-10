@@ -12,7 +12,7 @@ use tokio_util::compat::{Compat, TokioAsyncReadCompatExt};
 
 use crate::{
     ThreadId,
-    context::{Context, Multithread, SpawnError},
+    context::{Context, CustomSpawn, Multithread, SharedPool, SpawnError, StdSpawn},
     io::Io,
     mux::Mux,
 };
@@ -367,9 +367,19 @@ pub fn recording_mt_context(
     let mux_0: Box<dyn Mux + Send> = Box::new(mux_0);
     let mux_1: Box<dyn Mux + Send> = Box::new(mux_1);
 
+    let pool = SharedPool::new(8, &mut StdSpawn).unwrap();
+
     (
-        Multithread::builder().mux(mux_0).build().unwrap(),
-        Multithread::builder().mux(mux_1).build().unwrap(),
+        Multithread::builder()
+            .pool(pool.clone())
+            .mux(mux_0)
+            .build()
+            .unwrap(),
+        Multithread::builder()
+            .pool(pool)
+            .mux(mux_1)
+            .build()
+            .unwrap(),
         recorded,
     )
 }
@@ -390,9 +400,19 @@ pub fn recording_mt_context_with_limit(
     let mux_0: Box<dyn Mux + Send> = Box::new(mux_0);
     let mux_1: Box<dyn Mux + Send> = Box::new(mux_1);
 
+    let pool = SharedPool::new(8, &mut StdSpawn).unwrap();
+
     (
-        Multithread::builder().mux(mux_0).build().unwrap(),
-        Multithread::builder().mux(mux_1).build().unwrap(),
+        Multithread::builder()
+            .pool(pool.clone())
+            .mux(mux_0)
+            .build()
+            .unwrap(),
+        Multithread::builder()
+            .pool(pool)
+            .mux(mux_1)
+            .build()
+            .unwrap(),
         recorded,
     )
 }
@@ -416,14 +436,16 @@ where
     let mux_0: Box<dyn Mux + Send> = Box::new(mux_0);
     let mux_1: Box<dyn Mux + Send> = Box::new(mux_1);
 
+    let pool = SharedPool::new(8, &mut CustomSpawn(spawn)).unwrap();
+
     (
         Multithread::builder()
-            .spawn_handler(spawn.clone())
+            .pool(pool.clone())
             .mux(mux_0)
             .build()
             .unwrap(),
         Multithread::builder()
-            .spawn_handler(spawn)
+            .pool(pool)
             .mux(mux_1)
             .build()
             .unwrap(),
@@ -455,16 +477,16 @@ where
     let mux_0: Box<dyn Mux + Send> = Box::new(mux_0);
     let mux_1: Box<dyn Mux + Send> = Box::new(mux_1);
 
+    let pool = SharedPool::new(concurrency, &mut CustomSpawn(spawn)).unwrap();
+
     (
         Multithread::builder()
-            .spawn_handler(spawn.clone())
-            .concurrency(concurrency)
+            .pool(pool.clone())
             .mux(mux_0)
             .build()
             .unwrap(),
         Multithread::builder()
-            .spawn_handler(spawn)
-            .concurrency(concurrency)
+            .pool(pool)
             .mux(mux_1)
             .build()
             .unwrap(),

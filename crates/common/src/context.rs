@@ -6,8 +6,8 @@ mod st;
 mod test;
 
 pub use mt::{
-    CustomSpawn, Multithread, MultithreadBuilder, MultithreadBuilderError, Spawn, SpawnError,
-    StdSpawn,
+    CustomSpawn, Multithread, MultithreadBuilder, MultithreadBuilderError, SharedPool, Spawn,
+    SpawnError, StdSpawn,
 };
 #[cfg(any(test, feature = "test-utils"))]
 pub use test::{
@@ -16,7 +16,8 @@ pub use test::{
     recording_mt_context_with_spawn_and_limit, recording_st_context,
     recording_st_context_with_limit, replay_mt_context, replay_mt_context_with_limit,
     replay_mt_context_with_spawn, replay_mt_context_with_spawn_and_limit, replay_st_context,
-    test_mt_context, test_mt_context_with_concurrency, test_mt_context_with_spawn, test_st_context,
+    test_mt_context, test_mt_context_with_concurrency, test_mt_context_with_shared_pool,
+    test_mt_context_with_spawn, test_st_context,
 };
 
 use core::fmt;

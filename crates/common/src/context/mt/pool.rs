@@ -19,7 +19,13 @@ pub(crate) type TaskSenders = Arc<Vec<async_channel::Sender<TaskFn>>>;
 /// `LocalExecutor`. Tasks are dispatched to specific threads via channels.
 /// This avoids requiring `Send` on spawned futures while still allowing
 /// cooperative async scheduling within each thread.
-pub(crate) struct SharedPool {
+///
+/// Cloning a `SharedPool` shares the same underlying worker threads.
+/// This allows multiple [`Multithread`](super::Multithread) instances to
+/// reuse the same pool, which is important in resource-constrained
+/// environments like WASM where each worker is an expensive Web Worker.
+#[derive(Clone)]
+pub struct SharedPool {
     senders: TaskSenders,
 }
 
@@ -27,9 +33,9 @@ impl SharedPool {
     /// Creates a new pool with `num_threads` worker threads.
     ///
     /// Each worker thread runs a `LocalExecutor` that processes tasks received
-    /// via an async channel. Dropping the pool closes all channels, causing
-    /// workers to exit.
-    pub(crate) fn new(num_threads: usize, spawn: &mut dyn Spawn) -> Result<Self, SpawnError> {
+    /// via an async channel. Dropping all clones of the pool closes the
+    /// channels, causing workers to exit.
+    pub fn new(num_threads: usize, spawn: &mut dyn Spawn) -> Result<Self, SpawnError> {
         if num_threads == 0 {
             return Err(SpawnError::new("pool requires at least 1 worker thread"));
         }
@@ -57,6 +63,11 @@ impl SharedPool {
         Ok(Self {
             senders: Arc::new(senders),
         })
+    }
+
+    /// Returns the number of worker threads in the pool.
+    pub fn num_threads(&self) -> usize {
+        self.senders.len()
     }
 
     /// Returns shared senders for dispatching tasks to pool threads.

@@ -10,7 +10,7 @@ use futures::{AsyncRead, AsyncWrite};
 
 use crate::{
     ThreadId,
-    context::{Context, Multithread, SpawnError},
+    context::{Context, CustomSpawn, Multithread, SharedPool, SpawnError, StdSpawn},
     io::Io,
     mux::Mux,
 };
@@ -131,8 +131,9 @@ impl Mux for ReplayTestMux {
 pub fn replay_mt_context(recorded: RecordedMtData) -> Multithread {
     let mux = ReplayTestMux::new(recorded, None);
     let mux: Box<dyn Mux + Send> = Box::new(mux);
+    let pool = SharedPool::new(8, &mut StdSpawn).unwrap();
 
-    Multithread::builder().mux(mux).build().unwrap()
+    Multithread::builder().pool(pool).mux(mux).build().unwrap()
 }
 
 /// Creates a multi-threaded context that replays recorded data with a custom
@@ -148,8 +149,9 @@ pub fn replay_mt_context_with_limit(
 ) -> Multithread {
     let mux = ReplayTestMux::new(recorded, Some(max_frame_length));
     let mux: Box<dyn Mux + Send> = Box::new(mux);
+    let pool = SharedPool::new(8, &mut StdSpawn).unwrap();
 
-    Multithread::builder().mux(mux).build().unwrap()
+    Multithread::builder().pool(pool).mux(mux).build().unwrap()
 }
 
 /// Creates a multi-threaded context that replays recorded data with custom
@@ -165,12 +167,9 @@ where
 {
     let mux = ReplayTestMux::new(recorded, None);
     let mux: Box<dyn Mux + Send> = Box::new(mux);
+    let pool = SharedPool::new(8, &mut CustomSpawn(spawn)).unwrap();
 
-    Multithread::builder()
-        .spawn_handler(spawn)
-        .mux(mux)
-        .build()
-        .unwrap()
+    Multithread::builder().pool(pool).mux(mux).build().unwrap()
 }
 
 /// Creates a multi-threaded context that replays recorded data with custom
@@ -194,11 +193,7 @@ where
 {
     let mux = ReplayTestMux::new(recorded, Some(max_frame_length));
     let mux: Box<dyn Mux + Send> = Box::new(mux);
+    let pool = SharedPool::new(concurrency, &mut CustomSpawn(spawn)).unwrap();
 
-    Multithread::builder()
-        .spawn_handler(spawn)
-        .concurrency(concurrency)
-        .mux(mux)
-        .build()
-        .unwrap()
+    Multithread::builder().pool(pool).mux(mux).build().unwrap()
 }

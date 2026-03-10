@@ -9,7 +9,8 @@ mod replay;
 mod tests;
 
 pub use helpers::{
-    test_mt_context, test_mt_context_with_concurrency, test_mt_context_with_spawn, test_st_context,
+    test_mt_context, test_mt_context_with_concurrency, test_mt_context_with_shared_pool,
+    test_mt_context_with_spawn, test_st_context,
 };
 pub use recording::{
     RecordedMtData, RecordingDuplex, recording_mt_context, recording_mt_context_with_limit,
