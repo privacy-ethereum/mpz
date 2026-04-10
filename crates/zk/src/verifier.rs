@@ -210,6 +210,12 @@ where
                 .map_err(VmError::execute)?;
         }
 
+        // Pre-allocate OTs for the next execute() call's final check
+        // if circuits remain in the callstack.
+        if !self.callstack.is_empty() {
+            self.ot.alloc(128).map_err(VmError::execute)?;
+        }
+
         Ok(())
     }
 }
