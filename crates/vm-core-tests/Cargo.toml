@@ -1,0 +1,16 @@
+[package]
+name = "vm-core-tests"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+aes = { workspace = true }
+mpz-vm-sys = { workspace = true }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+[lints]
+workspace = true

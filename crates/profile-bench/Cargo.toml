@@ -1,0 +1,16 @@
+[package]
+name = "profile-bench"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+futures = "0.3"
+inventory = "0.3"
+ir = { path = "../ir" }
+mpz-common = { path = "../common", features = ["test-utils"] }
+mpz-vm-core-new = { path = "../vm-core-new" }
+rustc-demangle = "0.1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+spansy = { git = "https://github.com/tlsnotary/tlsn-utils", rev = "dd419bf" }
+rangeset = "0.4"

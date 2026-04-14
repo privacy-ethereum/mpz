@@ -25,8 +25,13 @@ members = [
     "crates/zk-core",
     "crates/zk",
     "crates/wasm-bench",
+    "crates/ir",
+    "crates/vm-core-new",
+    "crates/profile-bench",
+    "crates/vm-core-tests",
+    "crates/vm-sys",
 ]
-exclude = ["crates/lpn-estimator"]
+exclude = ["crates/lpn-estimator", "crates/profile-bench-programs"]
 resolver = "2"
 
 [profile.release]
@@ -68,6 +73,7 @@ mpz-ole = { path = "crates/ole" }
 mpz-ole-core = { path = "crates/ole-core" }
 mpz-memory-core = { path = "crates/memory-core" }
 mpz-vm-core = { path = "crates/vm-core" }
+mpz-vm-sys = { path = "crates/vm-sys" }
 mpz-zk-core = { path = "crates/zk-core" }
 mpz-zk = { path = "crates/zk" }
 clmul = { path = "crates/clmul" }
@@ -150,3 +156,4 @@ enum-try-as-inner = "0.1.0"
 bitvec = "1.0"
 hashbrown = "0.14.5"
 crossbeam-channel = "0.5"
+wat = "1.219"

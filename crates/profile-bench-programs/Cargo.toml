@@ -1,0 +1,20 @@
+cargo-features = ["panic-immediate-abort"]
+
+[package]
+name = "profile-bench-programs"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+sha2 = { version = "0.10", default-features = false }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+[profile.wasm]
+inherits = "release"
+lto = true
+panic = "immediate-abort"
+codegen-units = 1
