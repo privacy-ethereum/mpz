@@ -309,10 +309,10 @@ mod tests {
 
         // Edge cases: identity, zero, inverse.
         let x = 0xDEAD_BEEF_CAFE_BABE;
-        check(x, 1);                          // a * 1 = a
-        check(1, x);                          // 1 * a = a
-        check(x, 0);                          // a * 0 = 0
-        check(0, x);                          // 0 * a = 0
+        check(x, 1); // a * 1 = a
+        check(1, x); // 1 * a = a
+        check(x, 0); // a * 0 = 0
+        check(0, x); // 0 * a = 0
 
         // All bits set — maximum carry during reduction.
         check(u64::MAX, u64::MAX);
@@ -333,9 +333,10 @@ mod tests {
         // Squaring — catches asymmetric bugs.
         check(0xAAAA_AAAA_AAAA_AAAA, 0xAAAA_AAAA_AAAA_AAAA);
 
-        // 1000 random pairs.
+        // Miri is ~100x slower, so shrink the random sweep under it.
+        let iters = if cfg!(miri) { 100 } else { 1000 };
         let mut rng = Prg::from_seed(Block::ZERO);
-        for _ in 0..1000 {
+        for _ in 0..iters {
             let a: u64 = rng.random();
             let b: u64 = rng.random();
             check(a, b);

@@ -77,7 +77,6 @@ pub trait Field:
 
     /// Return field element as big-endian bytes.
     fn to_be_bytes(&self) -> Vec<u8>;
-
 }
 
 /// Error type for finite fields.

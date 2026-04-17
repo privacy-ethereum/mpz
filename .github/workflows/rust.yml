@@ -69,6 +69,12 @@ jobs:
     if: ( ! github.event.pull_request.draft )
     name: "Test with Miri"
     runs-on: ubuntu-latest
+    env:
+      # blake3's build.rs cross-compiles NEON asm for aarch64, which requires
+      # a C cross-compiler the runner doesn't have. Miri can't meaningfully
+      # interpret the asm anyway, so force the pure-Rust path by setting the
+      # env var blake3 probes for its `no_neon` cargo feature.
+      CARGO_FEATURE_NO_NEON: "1"
     steps:
       - uses: actions/checkout@v4
 
