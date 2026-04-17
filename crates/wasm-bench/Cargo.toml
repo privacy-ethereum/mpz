@@ -29,7 +29,14 @@ rand = { workspace = true }
 futures = { workspace = true }
 web-spawn = { version = "0.2", features = ["no-bundler"] }
 rayon = { workspace = true }
-web-sys = { version = "0.3", features = ["console", "Window", "Performance"] }
+web-sys = { version = "0.3", features = [
+    "console",
+    "Window",
+    "Performance",
+    "Worker",
+    "WorkerOptions",
+    "WorkerType",
+] }
 serio = { workspace = true }
 aes-wasm = "0.1"
 aes = { workspace = true }
