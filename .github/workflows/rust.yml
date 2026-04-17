@@ -79,7 +79,7 @@ jobs:
           cargo miri setup
 
       - name: Test with Miri on x86_64
-        run: cargo miri test -p clmul -p matrix-transpose --target x86_64-unknown-linux-gnu
-      
+        run: cargo miri test -p clmul -p matrix-transpose -p mpz-fields --target x86_64-unknown-linux-gnu
+
       - name: Test with Miri on aarch64
-        run: cargo miri test -p clmul -p matrix-transpose --target aarch64-unknown-linux-gnu
+        run: cargo miri test -p clmul -p matrix-transpose -p mpz-fields --target aarch64-unknown-linux-gnu

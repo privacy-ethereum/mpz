@@ -2,10 +2,14 @@
 
 #![deny(missing_docs, unreachable_pub, unused_must_use)]
 #![deny(clippy::all)]
-#![forbid(unsafe_code)]
+#![deny(unsafe_code)]
 
 pub mod gf2_128;
+pub mod gf2_64;
 pub mod p256;
+
+#[cfg(test)]
+mod test_data;
 
 use std::{
     error::Error,
@@ -73,6 +77,7 @@ pub trait Field:
 
     /// Return field element as big-endian bytes.
     fn to_be_bytes(&self) -> Vec<u8>;
+
 }
 
 /// Error type for finite fields.
