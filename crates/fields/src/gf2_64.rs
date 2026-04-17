@@ -277,8 +277,8 @@ mod tests {
 
         fn mat_mul(rows: &[u64; 64], x: u64) -> u64 {
             let mut result = 0u64;
-            for i in 0..64 {
-                let dot = (rows[i] & x).count_ones() & 1;
+            for (i, row) in rows.iter().enumerate() {
+                let dot = (row & x).count_ones() & 1;
                 result |= (dot as u64) << i;
             }
             result
