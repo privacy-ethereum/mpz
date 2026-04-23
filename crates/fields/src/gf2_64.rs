@@ -142,6 +142,11 @@ impl Field for Gf2_64 {
         assert_eq!(a.len(), b.len(), "inner_product: slice length mismatch");
         Gf2_64(gf64_inner_product(a, b))
     }
+
+    #[inline]
+    fn square(self) -> Self {
+        Gf2_64(gf64_square(self.0))
+    }
 }
 
 cfg_select! {
@@ -174,10 +179,15 @@ fn gf64_inverse(a: u64) -> u64 {
     backend::inverse(a)
 }
 
+#[inline(always)]
+fn gf64_square(a: u64) -> u64 {
+    backend::square(a)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tests::{test_field_axioms_random, test_field_inner_product};
+    use crate::tests::{test_field_axioms_random, test_field_inner_product, test_field_square};
 
     #[test]
     fn test_inner_product() {
@@ -187,6 +197,11 @@ mod tests {
     #[test]
     fn test_axioms_random() {
         test_field_axioms_random::<Gf2_64>();
+    }
+
+    #[test]
+    fn test_square() {
+        test_field_square::<Gf2_64>();
     }
 
     #[test]

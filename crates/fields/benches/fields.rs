@@ -31,6 +31,24 @@ fn bench_mul(c: &mut Criterion) {
     }
 }
 
+fn bench_square(c: &mut Criterion) {
+    let mut rng = Prg::from_seed(Block::ZERO);
+
+    {
+        let a: Gf2_64 = rng.random();
+        c.bench_function("gf2_64/square", move |bench| {
+            bench.iter(|| black_box(a).square());
+        });
+    }
+
+    {
+        let a: Gf2_128 = rng.random();
+        c.bench_function("gf2_128/square", move |bench| {
+            bench.iter(|| black_box(a).square());
+        });
+    }
+}
+
 fn bench_inverse(c: &mut Criterion) {
     let mut rng = Prg::from_seed(Block::ZERO);
 
@@ -89,5 +107,11 @@ fn bench_inner_product(c: &mut Criterion) {
     }
 }
 
-criterion_group!(benches, bench_mul, bench_inverse, bench_inner_product);
+criterion_group!(
+    benches,
+    bench_mul,
+    bench_square,
+    bench_inverse,
+    bench_inner_product
+);
 criterion_main!(benches);

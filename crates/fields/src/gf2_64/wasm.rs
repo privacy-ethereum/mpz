@@ -8,13 +8,25 @@
 
 use std::arch::wasm32::*;
 
-use crate::bmul_simd::{bmul64_full, bmul64_lo_v128, rev64};
+use crate::bmul_simd::{bit_spread_v128, bmul64_full, bmul64_lo_v128, rev64};
 
 use super::Gf2_64;
 
 #[inline]
 pub(super) fn mul(a: u64, b: u64) -> u64 {
     let (lo, hi) = bmul64_full(a, b);
+    reduce64(lo, hi)
+}
+
+/// Squaring via parallel bit-spread. In char 2,
+/// `(Σ aᵢ xⁱ)² = Σ aᵢ x^(2i)`. Pack the low and high 32-bit halves of
+/// `a` into the two v128 lanes and run the 32→64 bit-spread on both
+/// simultaneously — no multiplies at all.
+#[inline]
+pub(super) fn square(a: u64) -> u64 {
+    let v = bit_spread_v128(u64x2(a as u32 as u64, (a >> 32) as u64));
+    let lo = u64x2_extract_lane::<0>(v);
+    let hi = u64x2_extract_lane::<1>(v);
     reduce64(lo, hi)
 }
 
@@ -38,10 +50,10 @@ pub(super) fn inner_product(a: &[Gf2_64], b: &[Gf2_64]) -> u64 {
 
 #[inline]
 pub(super) fn inverse(a: u64) -> u64 {
-    let mut y = mul(a, a);
+    let mut y = square(a);
     let mut out = y;
     for _ in 2..64 {
-        y = mul(y, y);
+        y = square(y);
         out = mul(out, y);
     }
     out

@@ -3,7 +3,7 @@
 //! schoolbook's per-bit u128 loop, and amortises reduction across the
 //! inner-product accumulator.
 
-use crate::bmul::bmul128_full;
+use crate::bmul::{bit_spread_u32, bmul128_full};
 
 use super::Gf2_128;
 
@@ -13,13 +13,30 @@ pub(super) fn mul(a: u128, b: u128) -> u128 {
     reduce128(lo, hi)
 }
 
-/// Multiplicative inverse via Fermat's little theorem.
+/// Squaring via bit-spread. In characteristic 2, `(a_lo + a_hi·x⁶⁴)² =
+/// a_lo² + a_hi²·x¹²⁸` — the cross term vanishes — and each half-square
+/// is a pure bit-spread of the input's bits to double their positions.
+/// Four 32→64 bit-spreads form the full 256-bit squared polynomial.
+#[inline]
+pub(super) fn square(a: u128) -> u128 {
+    let a_ll = bit_spread_u32(a as u32); // a_lo low 32 → bits [0..64]
+    let a_lh = bit_spread_u32((a >> 32) as u32); // a_lo high 32 → bits [64..128]
+    let a_hl = bit_spread_u32((a >> 64) as u32); // a_hi low 32 → bits [128..192]
+    let a_hh = bit_spread_u32((a >> 96) as u32); // a_hi high 32 → bits [192..256]
+
+    let lo = ((a_lh as u128) << 64) | (a_ll as u128);
+    let hi = ((a_hh as u128) << 64) | (a_hl as u128);
+    reduce128(lo, hi)
+}
+
+/// Multiplicative inverse via Fermat's little theorem. Uses the cheaper
+/// `square` for the ~half of the chain that's squarings.
 #[inline]
 pub(super) fn inverse(a: u128) -> u128 {
-    let mut y = mul(a, a);
+    let mut y = square(a);
     let mut out = y;
     for _ in 2..128 {
-        y = mul(y, y);
+        y = square(y);
         out = mul(out, y);
     }
     out

@@ -18,6 +18,15 @@ pub(super) fn mul(a: u64, b: u64) -> u64 {
     }
 }
 
+/// Squaring: at the CLMUL level this is identical to `mul(a, a)` (one
+/// carry-less multiply either way), but exposing a dedicated `square`
+/// lets callers express intent and keeps the backend interface uniform
+/// with the soft/wasm backends that *do* have a cheaper path.
+#[inline(always)]
+pub(super) fn square(a: u64) -> u64 {
+    mul(a, a)
+}
+
 /// Multiplicative inverse via Fermat's little theorem — keeps the running
 /// state in XMM across all 63 squarings + 62 accumulating multiplies.
 #[inline(always)]
@@ -26,10 +35,10 @@ pub(super) fn inverse(a: u64) -> u64 {
     unsafe {
         let x = _mm_set_epi64x(0, a as i64);
         // Fermat: x⁻¹ = x^(2⁶⁴ − 2) = x² · x⁴ · … · x^(2⁶³).
-        let mut y = mul_xmm(x, x); // x²
+        let mut y = square_xmm(x); // x²
         let mut out = y;
         for _ in 2..64 {
-            y = mul_xmm(y, y);
+            y = square_xmm(y);
             out = mul_xmm(out, y);
         }
         _mm_cvtsi128_si64(out) as u64
@@ -45,6 +54,13 @@ unsafe fn mul_xmm(a: __m128i, b: __m128i) -> __m128i {
         let prod = _mm_clmulepi64_si128(a, b, 0x00);
         reduce64(prod)
     }
+}
+
+#[inline(always)]
+unsafe fn square_xmm(a: __m128i) -> __m128i {
+    // Same work as mul_xmm(a, a) — squaring via CLMUL takes one carry-less
+    // multiply. Inlined here purely to keep the inverse loop's intent clear.
+    unsafe { mul_xmm(a, a) }
 }
 
 #[inline(always)]

@@ -2,7 +2,7 @@
 //! constant-time `bmul64_full` to avoid schoolbook's per-bit loop, and
 //! amortises reduction across the inner-product accumulator.
 
-use crate::bmul::bmul64_full;
+use crate::bmul::{bit_spread_u32, bmul64_full};
 
 use super::Gf2_64;
 
@@ -12,13 +12,25 @@ pub(super) fn mul(a: u64, b: u64) -> u64 {
     reduce64(lo, hi)
 }
 
-/// Multiplicative inverse via Fermat's little theorem.
+/// Squaring via bit-spread. In characteristic 2,
+/// `(Σ aᵢ xⁱ)² = Σ aᵢ x^(2i)` — squaring a polynomial is just spreading
+/// each coefficient to twice its position. No carry-less multiply
+/// needed; cheaper than `mul(a, a)`.
+#[inline]
+pub(super) fn square(a: u64) -> u64 {
+    let lo = bit_spread_u32(a as u32);
+    let hi = bit_spread_u32((a >> 32) as u32);
+    reduce64(lo, hi)
+}
+
+/// Multiplicative inverse via Fermat's little theorem. Uses the cheaper
+/// `square` on the half of the iterations that are squarings.
 #[inline]
 pub(super) fn inverse(a: u64) -> u64 {
-    let mut y = mul(a, a);
+    let mut y = square(a);
     let mut out = y;
     for _ in 2..64 {
-        y = mul(y, y);
+        y = square(y);
         out = mul(out, y);
     }
     out

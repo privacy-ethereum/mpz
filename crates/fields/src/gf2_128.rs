@@ -161,6 +161,11 @@ impl Field for Gf2_128 {
         assert_eq!(a.len(), b.len(), "inner_product: slice length mismatch");
         Gf2_128(gf128_inner_product(a, b))
     }
+
+    #[inline]
+    fn square(self) -> Self {
+        Gf2_128(gf128_square(self.0))
+    }
 }
 
 cfg_select! {
@@ -191,6 +196,11 @@ fn gf128_inner_product(a: &[Gf2_128], b: &[Gf2_128]) -> u128 {
 #[inline(always)]
 fn gf128_inverse(a: u128) -> u128 {
     backend::inverse(a)
+}
+
+#[inline(always)]
+fn gf128_square(a: u128) -> u128 {
+    backend::square(a)
 }
 
 impl BitLength for Gf2_128 {
@@ -227,7 +237,7 @@ mod tests {
         tests::{
             test_field_axioms_random, test_field_basic, test_field_bit_ops_lsb0,
             test_field_bit_ops_msb0, test_field_compute_product_repeated,
-            test_field_inner_product,
+            test_field_inner_product, test_field_square,
         },
     };
     #[test]
@@ -250,6 +260,11 @@ mod tests {
     #[test]
     fn test_gf2_128_axioms_random() {
         test_field_axioms_random::<Gf2_128>();
+    }
+
+    #[test]
+    fn test_gf2_128_square() {
+        test_field_square::<Gf2_128>();
     }
 
     #[test]

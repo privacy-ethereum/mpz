@@ -18,20 +18,36 @@ pub(super) fn mul(a: u128, b: u128) -> u128 {
     }
 }
 
+/// Squaring uses only two CLMULs instead of four. In characteristic 2,
+/// `(a_lo + a_hi · x⁶⁴)² = a_lo² + a_hi² · x¹²⁸` — the cross term
+/// `2·a_lo·a_hi` vanishes. So we only need `a_lo²` (for bits [0..128])
+/// and `a_hi²` (for bits [128..256]); the two middle CLMULs that a
+/// general `mul` needs drop out entirely.
+#[inline(always)]
+pub(super) fn square(a: u128) -> u128 {
+    // SAFETY: see `mul`.
+    unsafe {
+        let a_vec = load(a);
+        let (lo, hi) = sq128(a_vec);
+        extract(reduce128(lo, hi))
+    }
+}
+
 /// Multiplicative inverse via Fermat's little theorem — keeps the running
 /// state in XMM across all 127 squarings + 126 accumulating multiplies,
-/// collapsing 254 GPR↔XMM transfers down to 2.
+/// collapsing 254 GPR↔XMM transfers down to 2. Uses the 2-CLMUL
+/// squaring path on the squaring half of the chain.
 #[inline(always)]
 pub(super) fn inverse(a: u128) -> u128 {
     // SAFETY: see `mul`.
     unsafe {
         let x = load(a);
         // Fermat: x⁻¹ = x^(2¹²⁸ − 2) = x² · x⁴ · x⁸ · … · x^(2¹²⁷).
-        let mut y = mul_xmm(x, x); // x²
+        let mut y = square_xmm(x); // x²
         let mut out = y;
         for _ in 2..128 {
-            y = mul_xmm(y, y); // y ← y²
-            out = mul_xmm(out, y); // out ← out · y
+            y = square_xmm(y); // y ← y² (2 CLMULs)
+            out = mul_xmm(out, y); // out ← out · y (4 CLMULs)
         }
         extract(out)
     }
@@ -41,6 +57,14 @@ pub(super) fn inverse(a: u128) -> u128 {
 unsafe fn mul_xmm(a: __m128i, b: __m128i) -> __m128i {
     unsafe {
         let (lo, hi) = clmul128(a, b);
+        reduce128(lo, hi)
+    }
+}
+
+#[inline(always)]
+unsafe fn square_xmm(a: __m128i) -> __m128i {
+    unsafe {
+        let (lo, hi) = sq128(a);
         reduce128(lo, hi)
     }
 }
@@ -60,6 +84,18 @@ pub(super) fn inner_product(a: &[Gf2_128], b: &[Gf2_128]) -> u128 {
         }
 
         extract(reduce128(acc_lo, acc_hi))
+    }
+}
+
+/// 256-bit carry-less square of a 128-bit input (two 64×64 CLMULs). In
+/// characteristic 2, all cross terms vanish — we only need `a_lo²`
+/// (for bits [0..128]) and `a_hi²` (for bits [128..256]).
+#[inline(always)]
+unsafe fn sq128(a: __m128i) -> (__m128i, __m128i) {
+    unsafe {
+        let lo = _mm_clmulepi64_si128(a, a, 0x00); // a_lo · a_lo
+        let hi = _mm_clmulepi64_si128(a, a, 0x11); // a_hi · a_hi
+        (lo, hi)
     }
 }
 

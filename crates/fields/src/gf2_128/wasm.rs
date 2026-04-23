@@ -7,13 +7,35 @@
 
 use std::arch::wasm32::*;
 
-use crate::bmul_simd::{bmul128_full, bmul64_raw, recover_raw};
+use crate::bmul_simd::{bit_spread_v128, bmul128_full, bmul64_raw, recover_raw};
 
 use super::Gf2_128;
 
 #[inline]
 pub(super) fn mul(a: u128, b: u128) -> u128 {
     let (lo, hi) = bmul128_full(a, b);
+    reduce128(lo, hi)
+}
+
+/// Squaring via parallel bit-spread. In characteristic 2,
+/// `(a_lo + a_hi · x⁶⁴)² = a_lo² + a_hi² · x¹²⁸` — the cross term
+/// vanishes. Each half-square is a pure bit-spread of a u64 into a
+/// u128. We run two 32→64 spreads per v128, so the whole 256-bit
+/// squared polynomial comes from two `bit_spread_v128` calls — zero
+/// multiplies.
+#[inline]
+pub(super) fn square(a: u128) -> u128 {
+    let v_lo = bit_spread_v128(u64x2(a as u32 as u64, (a >> 32) as u32 as u64));
+    let v_hi = bit_spread_v128(u64x2((a >> 64) as u32 as u64, (a >> 96) as u64));
+
+    let ll = u64x2_extract_lane::<0>(v_lo);
+    let lh = u64x2_extract_lane::<1>(v_lo);
+    let hl = u64x2_extract_lane::<0>(v_hi);
+    let hh = u64x2_extract_lane::<1>(v_hi);
+
+    // a_lo² fills bits [0..128], a_hi² fills bits [128..256].
+    let lo = ((lh as u128) << 64) | (ll as u128);
+    let hi = ((hh as u128) << 64) | (hl as u128);
     reduce128(lo, hi)
 }
 
@@ -59,10 +81,10 @@ pub(super) fn inner_product(a: &[Gf2_128], b: &[Gf2_128]) -> u128 {
 
 #[inline]
 pub(super) fn inverse(a: u128) -> u128 {
-    let mut y = mul(a, a);
+    let mut y = square(a);
     let mut out = y;
     for _ in 2..128 {
-        y = mul(y, y);
+        y = square(y);
         out = mul(out, y);
     }
     out

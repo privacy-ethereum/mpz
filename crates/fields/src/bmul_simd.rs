@@ -11,6 +11,34 @@
 
 use std::arch::wasm32::*;
 
+/// Spreads two `u32`s (one per lane) into two `u64`s with one zero
+/// between each bit — the GF(2^n) squaring primitive, run on both
+/// v128 lanes in parallel.
+#[inline(always)]
+pub(crate) fn bit_spread_v128(mut v: v128) -> v128 {
+    v = v128_and(
+        v128_or(v, u64x2_shl(v, 16)),
+        u64x2_splat(0x0000_FFFF_0000_FFFF),
+    );
+    v = v128_and(
+        v128_or(v, u64x2_shl(v, 8)),
+        u64x2_splat(0x00FF_00FF_00FF_00FF),
+    );
+    v = v128_and(
+        v128_or(v, u64x2_shl(v, 4)),
+        u64x2_splat(0x0F0F_0F0F_0F0F_0F0F),
+    );
+    v = v128_and(
+        v128_or(v, u64x2_shl(v, 2)),
+        u64x2_splat(0x3333_3333_3333_3333),
+    );
+    v = v128_and(
+        v128_or(v, u64x2_shl(v, 1)),
+        u64x2_splat(0x5555_5555_5555_5555),
+    );
+    v
+}
+
 /// Returns a `v128` whose lane `i` holds the low-64 carry-less product of
 /// `x`'s and `y`'s lane `i`. Both lanes run the BearSSL bit-interleaving
 /// algorithm simultaneously via `i64x2_mul`.

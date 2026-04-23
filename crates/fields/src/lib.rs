@@ -79,6 +79,17 @@ pub trait Field:
     /// zero.
     fn inverse(self) -> Option<Self>;
 
+    /// Return `self * self`.
+    ///
+    /// The default implementation is `self * self`. Concrete types may
+    /// override this with a cheaper dedicated squaring routine — most
+    /// notably, in characteristic-2 extension fields squaring is just a
+    /// bit-spread of the coefficients and needs no carry-less multiply.
+    #[inline]
+    fn square(self) -> Self {
+        self * self
+    }
+
     /// Return field element as little-endian bytes.
     fn to_le_bytes(&self) -> Vec<u8>;
 
@@ -180,6 +191,18 @@ mod tests {
         assert_eq!(powers[0], a);
         assert_eq!(powers[1], powers[0] * factor);
         assert_eq!(powers[2], powers[1] * factor);
+    }
+
+    pub(crate) fn test_field_square<T: Field>() {
+        let mut rng = Prg::from_seed(Block::ZERO);
+        // Zero and one.
+        assert_eq!(T::zero().square(), T::zero());
+        assert_eq!(T::one().square(), T::one());
+        // Matches `x * x` for many random values.
+        for _ in 0..1000 {
+            let x = T::rand(&mut rng);
+            assert_eq!(x.square(), x * x);
+        }
     }
 
     pub(crate) fn test_field_axioms_random<T: Field>() {
