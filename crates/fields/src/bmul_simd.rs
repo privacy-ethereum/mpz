@@ -62,18 +62,33 @@ pub(crate) fn rev64(mut x: u64) -> u64 {
     x.swap_bytes()
 }
 
-/// Full 64×64 → 128 bit carry-less product. Returns `(lo, hi)` such that
-/// the 128-bit product is `hi·2⁶⁴ + lo`.
+/// Full 64×64 carry-less product, left in *raw* v128 form. Lane 0 is
+/// the low 64 bits of the product; lane 1 is the BearSSL bit-reversed
+/// product form (which still needs `rev64(lane1) >> 1` to recover the
+/// high 64 bits — see [`recover_raw`]).
 ///
-/// Packs `(x, rev(x))` and `(y, rev(y))` into the two lanes of a `v128`,
-/// computes both `bmul64_lo` products in parallel, then extracts lane 0
-/// as `lo` and recovers `hi = rev64(lane1) >> 1`.
+/// Prefer this over [`bmul64_full`] whenever many partials are going to
+/// be XOR-accumulated: since `rev64` and `>> 1` are linear over GF(2),
+/// they commute with XOR and can be deferred to the end of the
+/// accumulation.
 #[inline(always)]
-pub(crate) fn bmul64_full(x: u64, y: u64) -> (u64, u64) {
-    let v = bmul64_lo_v128(u64x2(x, rev64(x)), u64x2(y, rev64(y)));
+pub(crate) fn bmul64_raw(x: u64, y: u64) -> v128 {
+    bmul64_lo_v128(u64x2(x, rev64(x)), u64x2(y, rev64(y)))
+}
+
+/// Recover scalar `(lo, hi)` from an accumulated raw v128 bmul partial.
+#[inline(always)]
+pub(crate) fn recover_raw(v: v128) -> (u64, u64) {
     let lo = u64x2_extract_lane::<0>(v);
     let hi = rev64(u64x2_extract_lane::<1>(v)) >> 1;
     (lo, hi)
+}
+
+/// Full 64×64 → 128 bit carry-less product. Returns `(lo, hi)` such that
+/// the 128-bit product is `hi·2⁶⁴ + lo`.
+#[inline(always)]
+pub(crate) fn bmul64_full(x: u64, y: u64) -> (u64, u64) {
+    recover_raw(bmul64_raw(x, y))
 }
 
 /// Full 128×128 → 256 bit carry-less product. Returns `(lo, hi)` such
