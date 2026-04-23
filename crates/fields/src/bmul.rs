@@ -8,24 +8,6 @@
 //!
 //! Adapted from BearSSL's `ghash_ctmul64` (MIT licensed, © 2016 Thomas Pornin).
 
-/// Spreads a `u32`'s bits into a `u64` with one zero between each bit.
-/// Bit `i` of input ends up at position `2i` of output.
-///
-/// Used for GF(2^n) squaring: in characteristic 2 we have
-/// `(Σ aᵢ xⁱ)² = Σ aᵢ x^(2i)`, so squaring a polynomial is exactly
-/// bit-spreading its coefficients — cheaper than a full carry-less
-/// multiply.
-#[inline(always)]
-pub(crate) fn bit_spread_u32(x: u32) -> u64 {
-    let mut x = x as u64;
-    x = (x | (x << 16)) & 0x0000_FFFF_0000_FFFF;
-    x = (x | (x << 8)) & 0x00FF_00FF_00FF_00FF;
-    x = (x | (x << 4)) & 0x0F0F_0F0F_0F0F_0F0F;
-    x = (x | (x << 2)) & 0x3333_3333_3333_3333;
-    x = (x | (x << 1)) & 0x5555_5555_5555_5555;
-    x
-}
-
 /// Returns the low 64 bits of the carry-less product `x · y`.
 #[inline(always)]
 fn bmul64_lo(x: u64, y: u64) -> u64 {

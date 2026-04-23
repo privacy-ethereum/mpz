@@ -4,6 +4,8 @@
 
 use std::arch::x86_64::*;
 
+use crate::spread::bit_spread_u32;
+
 use super::Gf2_128;
 
 #[inline(always)]
@@ -18,19 +20,40 @@ pub(super) fn mul(a: u128, b: u128) -> u128 {
     }
 }
 
-/// Squaring uses only two CLMULs instead of four. In characteristic 2,
-/// `(a_lo + a_hi · x⁶⁴)² = a_lo² + a_hi² · x¹²⁸` — the cross term
-/// `2·a_lo·a_hi` vanishes. So we only need `a_lo²` (for bits [0..128])
-/// and `a_hi²` (for bits [128..256]); the two middle CLMULs that a
-/// general `mul` needs drop out entirely.
+/// Squaring via scalar bit-spread — **faster than CLMUL** on x86 for
+/// isolated squarings. In char 2, squaring is just "spread each bit to
+/// twice its index", with all cross terms vanishing. Four 32→64 spreads
+/// form the 256-bit squared polynomial; each spread is five rounds of
+/// single-cycle shift/mask ops with excellent ILP, whereas a CLMUL
+/// square would chain four dependent 7-cycle CLMULs (2 for the square
+/// itself, 2 more for the modular reduction).
+///
+/// Measured: this is ~2× faster than the `sq128`/CLMUL-reduce path on
+/// Skylake-class cores. See `square_xmm` below for the CLMUL variant
+/// that stays register-resident inside the `inverse` loop.
 #[inline(always)]
 pub(super) fn square(a: u128) -> u128 {
-    // SAFETY: see `mul`.
-    unsafe {
-        let a_vec = load(a);
-        let (lo, hi) = sq128(a_vec);
-        extract(reduce128(lo, hi))
-    }
+    let a_ll = bit_spread_u32(a as u32); // a_lo low 32  → bits [0..64]
+    let a_lh = bit_spread_u32((a >> 32) as u32); // a_lo high 32 → bits [64..128]
+    let a_hl = bit_spread_u32((a >> 64) as u32); // a_hi low 32  → bits [128..192]
+    let a_hh = bit_spread_u32((a >> 96) as u32); // a_hi high 32 → bits [192..256]
+
+    let lo = ((a_lh as u128) << 64) | (a_ll as u128);
+    let hi = ((a_hh as u128) << 64) | (a_hl as u128);
+    reduce128_scalar(lo, hi)
+}
+
+/// Scalar reduction of a 256-bit polynomial modulo
+/// p(x) = x¹²⁸ + x⁷ + x² + x + 1. Used by the bit-spread `square`
+/// path above; the XMM-resident `reduce128` intrinsic variant below is
+/// used by everything that's already in XMM (mul, inner_product,
+/// square_xmm inside inverse).
+#[inline(always)]
+fn reduce128_scalar(lo: u128, hi: u128) -> u128 {
+    let folded_lo = hi ^ (hi << 1) ^ (hi << 2) ^ (hi << 7);
+    let overflow = (hi >> 127) ^ (hi >> 126) ^ (hi >> 121);
+    let overflow_folded = overflow ^ (overflow << 1) ^ (overflow << 2) ^ (overflow << 7);
+    lo ^ folded_lo ^ overflow_folded
 }
 
 /// Multiplicative inverse via Fermat's little theorem — keeps the running

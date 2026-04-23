@@ -2,7 +2,7 @@
 //! constant-time `bmul64_full` to avoid schoolbook's per-bit loop, and
 //! amortises reduction across the inner-product accumulator.
 
-use crate::bmul::{bit_spread_u32, bmul64_full};
+use crate::{bmul::bmul64_full, spread::bit_spread_u32};
 
 use super::Gf2_64;
 

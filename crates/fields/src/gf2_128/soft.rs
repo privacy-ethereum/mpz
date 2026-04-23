@@ -3,7 +3,7 @@
 //! schoolbook's per-bit u128 loop, and amortises reduction across the
 //! inner-product accumulator.
 
-use crate::bmul::{bit_spread_u32, bmul128_full};
+use crate::{bmul::bmul128_full, spread::bit_spread_u32};
 
 use super::Gf2_128;
 

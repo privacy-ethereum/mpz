@@ -18,6 +18,11 @@ mod bmul;
 #[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]
 mod bmul_simd;
 
+// Shared by the soft backend and by the x86 Gf2_128 square path — the
+// scalar bit-spread trick beats PCLMUL on dependent squarings.
+#[cfg(not(all(target_arch = "wasm32", target_feature = "simd128")))]
+mod spread;
+
 use std::{
     error::Error,
     fmt::Debug,
