@@ -168,6 +168,10 @@ cfg_select! {
         mod x86;
         use x86 as backend;
     }
+    all(target_arch = "wasm32", target_feature = "simd128") => {
+        mod wasm;
+        use wasm as backend;
+    }
     _ => {
         mod soft;
         use soft as backend;
