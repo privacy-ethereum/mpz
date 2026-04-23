@@ -24,11 +24,12 @@ typenum.workspace = true
 hybrid-array.workspace = true
 thiserror.workspace = true
 rand_08.workspace = true
+zerocopy = { workspace = true, features = ["derive"] }
 
 [dev-dependencies]
 ghash_rc.workspace = true
 criterion.workspace = true
 
 [[bench]]
-name = "inverse_gf2_128"
+name = "fields"
 harness = false

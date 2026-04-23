@@ -4,9 +4,13 @@
 #![deny(clippy::all)]
 #![deny(unsafe_code)]
 
+pub mod gf2;
 pub mod gf2_128;
 pub mod gf2_64;
 pub mod p256;
+
+#[cfg(not(all(target_arch = "x86_64", target_feature = "pclmulqdq")))]
+mod bmul;
 
 use std::{
     error::Error,
@@ -74,6 +78,22 @@ pub trait Field:
 
     /// Return field element as big-endian bytes.
     fn to_be_bytes(&self) -> Vec<u8>;
+
+    /// Compute the inner product `Σ aᵢ · bᵢ` of two slices of field elements.
+    ///
+    /// The default implementation is a straight fold; concrete types may
+    /// override this with an accelerated variant (e.g. accumulating
+    /// carry-less products without reducing, then reducing once at the end).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the two slices have different lengths.
+    fn inner_product(a: &[Self], b: &[Self]) -> Self {
+        assert_eq!(a.len(), b.len(), "inner_product: slice length mismatch");
+        a.iter()
+            .zip(b.iter())
+            .fold(Self::zero(), |acc, (x, y)| acc + *x * *y)
+    }
 }
 
 /// Error type for finite fields.
@@ -154,6 +174,55 @@ mod tests {
         assert_eq!(powers[0], a);
         assert_eq!(powers[1], powers[0] * factor);
         assert_eq!(powers[2], powers[1] * factor);
+    }
+
+    pub(crate) fn test_field_axioms_random<T: Field>() {
+        let mut rng = Prg::from_seed(Block::ZERO);
+        let zero = T::zero();
+        let one = T::one();
+
+        for _ in 0..1000 {
+            let a = T::rand(&mut rng);
+            let b = T::rand(&mut rng);
+            let c = T::rand(&mut rng);
+
+            assert_eq!(a * b, b * a, "commutativity");
+            assert_eq!((a * b) * c, a * (b * c), "associativity");
+            assert_eq!(a * (b + c), a * b + a * c, "distributivity");
+            assert_eq!(a + -a, zero, "additive inverse");
+            #[allow(clippy::eq_op)]
+            {
+                assert_eq!(a - a, zero, "self-subtraction");
+            }
+            if a != zero {
+                assert_eq!(a * a.inverse().unwrap(), one, "multiplicative inverse");
+            }
+        }
+    }
+
+    pub(crate) fn test_field_inner_product<T: Field>() {
+        let mut rng = Prg::from_seed(Block::ZERO);
+
+        // Empty → zero.
+        assert_eq!(T::inner_product(&[], &[]), T::zero());
+
+        // Length 1 → a · b.
+        let a0 = T::rand(&mut rng);
+        let b0 = T::rand(&mut rng);
+        assert_eq!(T::inner_product(&[a0], &[b0]), a0 * b0);
+
+        // Length 1024 — stresses the x86 accumulator across many folds.
+        for &len in &[17usize, 1024] {
+            let a: Vec<T> = (0..len).map(|_| T::rand(&mut rng)).collect();
+            let b: Vec<T> = (0..len).map(|_| T::rand(&mut rng)).collect();
+
+            let expected = a
+                .iter()
+                .zip(b.iter())
+                .fold(T::zero(), |acc, (x, y)| acc + *x * *y);
+
+            assert_eq!(T::inner_product(&a, &b), expected, "len={len}");
+        }
     }
 
     pub(crate) fn test_field_bit_ops_lsb0<T: Field>() {
