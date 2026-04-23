@@ -138,8 +138,7 @@ impl Field for Gf2_64 {
     }
 
     #[inline]
-    fn inner_product(a: &[Self], b: &[Self]) -> Self {
-        assert_eq!(a.len(), b.len(), "inner_product: slice length mismatch");
+    fn inner_product_chunk(a: &[Self], b: &[Self]) -> Self {
         Gf2_64(gf64_inner_product(a, b))
     }
 

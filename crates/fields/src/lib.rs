@@ -101,17 +101,55 @@ pub trait Field:
     /// Return field element as big-endian bytes.
     fn to_be_bytes(&self) -> Vec<u8>;
 
-    /// Compute the inner product `Σ aᵢ · bᵢ` of two slices of field elements.
+    /// Compute the inner product `Σ aᵢ · bᵢ` of two slices of field
+    /// elements.
     ///
-    /// The default implementation is a straight fold; concrete types may
-    /// override this with an accelerated variant (e.g. accumulating
-    /// carry-less products without reducing, then reducing once at the end).
+    /// When the `rayon` feature is enabled and the input is larger than
+    /// ~L2 cache on a single core, the work is split across threads so
+    /// each chunk stays cache-local on its worker core. Below that
+    /// threshold the sequential chunk path runs directly — thread
+    /// spawning overhead would dominate the gain.
+    ///
+    /// Concrete types override [`Self::inner_product_chunk`] (not this
+    /// method) to provide an accelerated single-chunk implementation;
+    /// the parallel path calls the override once per chunk and
+    /// XOR/+-combines the partial results.
     ///
     /// # Panics
     ///
     /// Panics if the two slices have different lengths.
+    #[inline]
     fn inner_product(a: &[Self], b: &[Self]) -> Self {
         assert_eq!(a.len(), b.len(), "inner_product: slice length mismatch");
+
+        #[cfg(feature = "rayon")]
+        {
+            // Target ~64 KB per chunk so each worker's chunk (plus the
+            // matching chunk of `b`) fits comfortably in L1/L2.
+            const TARGET_CHUNK_BYTES: usize = 64 * 1024;
+            let chunk = (TARGET_CHUNK_BYTES / Self::BYTE_SIZE).max(1);
+            // Only parallelise once we'd have ≥2 chunks' worth of work,
+            // i.e. when a single core's cache wouldn't hold both input
+            // slices anyway.
+            if a.len() >= chunk * 2 {
+                use rayon::prelude::*;
+                return a
+                    .par_chunks(chunk)
+                    .zip(b.par_chunks(chunk))
+                    .map(|(ac, bc)| Self::inner_product_chunk(ac, bc))
+                    .reduce(Self::zero, |x, y| x + y);
+            }
+        }
+
+        Self::inner_product_chunk(a, b)
+    }
+
+    /// Sequential inner-product kernel. Concrete types override this with
+    /// their optimised single-threaded SIMD implementation; [`Self::inner_product`]
+    /// calls it once (sequential) or once per chunk (parallel).
+    #[doc(hidden)]
+    #[inline]
+    fn inner_product_chunk(a: &[Self], b: &[Self]) -> Self {
         a.iter()
             .zip(b.iter())
             .fold(Self::zero(), |acc, (x, y)| acc + *x * *y)
@@ -246,7 +284,12 @@ mod tests {
         assert_eq!(T::inner_product(&[a0], &[b0]), a0 * b0);
 
         // Length 1024 — stresses the x86 accumulator across many folds.
-        for &len in &[17usize, 1024] {
+        // Length 20_000 — crosses the `rayon` feature's parallel threshold
+        // (~8192 for 16-byte types, higher for narrower), so it exercises
+        // the par_chunks path when rayon is enabled and the sequential
+        // path when it isn't. Either way the result must match the naive
+        // fold bit-for-bit.
+        for &len in &[17usize, 1024, 20_000] {
             let a: Vec<T> = (0..len).map(|_| T::rand(&mut rng)).collect();
             let b: Vec<T> = (0..len).map(|_| T::rand(&mut rng)).collect();
 

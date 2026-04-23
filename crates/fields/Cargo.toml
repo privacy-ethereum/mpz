@@ -25,6 +25,13 @@ hybrid-array.workspace = true
 thiserror.workspace = true
 rand_08.workspace = true
 zerocopy = { workspace = true, features = ["derive"] }
+rayon = { workspace = true, optional = true }
+
+[features]
+# When enabled, `Field::inner_product` automatically parallelises across
+# cores when the input is large enough to benefit (i.e. when the
+# single-core sequential path would blow past L2 cache).
+rayon = ["dep:rayon"]
 
 [dev-dependencies]
 ghash_rc.workspace = true
