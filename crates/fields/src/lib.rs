@@ -2,9 +2,10 @@
 
 #![deny(missing_docs, unreachable_pub, unused_must_use)]
 #![deny(clippy::all)]
-#![forbid(unsafe_code)]
+#![deny(unsafe_code)]
 
 pub mod gf2_128;
+pub mod gf2_64;
 pub mod p256;
 
 use std::{
