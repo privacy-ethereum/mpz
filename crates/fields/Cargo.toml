@@ -28,8 +28,6 @@ rand_08.workspace = true
 [dev-dependencies]
 ghash_rc.workspace = true
 criterion.workspace = true
-swanky-field-binary = { git = "https://github.com/GaloisInc/swanky.git", tag = "v0.6.0" }
-swanky-serialization = { git = "https://github.com/GaloisInc/swanky.git", tag = "v0.6.0" }
 
 [[bench]]
 name = "inverse_gf2_128"

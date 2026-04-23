@@ -269,77 +269,39 @@ mod tests {
         }
     }
 
-    /// Reference GF(2⁶⁴) multiplication.
-    fn reference_mul(a: u64, b: u64) -> u64 {
-        use crate::test_data::{GF64_TO_SWANKY, SWANKY_TO_GF64};
-        use swanky_field_binary::F64b;
-        use swanky_serialization::CanonicalSerialize;
-
-        fn mat_mul(rows: &[u64; 64], x: u64) -> u64 {
-            let mut result = 0u64;
-            for (i, row) in rows.iter().enumerate() {
-                let dot = (row & x).count_ones() & 1;
-                result |= (dot as u64) << i;
-            }
-            result
-        }
-
-        // Convert to Swanky basis, multiply, convert back.
-        let a_s = mat_mul(&GF64_TO_SWANKY, a);
-        let b_s = mat_mul(&GF64_TO_SWANKY, b);
-        let c_s = F64b::from(a_s) * F64b::from(b_s);
-        let bytes = c_s.to_bytes();
-        let c_s_u64 = u64::from_le_bytes(bytes.as_slice().try_into().unwrap());
-        mat_mul(&SWANKY_TO_GF64, c_s_u64)
-    }
-
     #[test]
-    fn test_mul_against_reference() {
-        use mpz_core::{Block, prg::Prg};
-        use rand::{Rng, SeedableRng};
-
-        fn check(a: u64, b: u64) {
+    fn test_mul_edge_cases() {
+        for &(a, b, expected) in REFERENCE_PRODUCTS {
             let ours = (Gf2_64(a) * Gf2_64(b)).0;
-            let ref_val = reference_mul(a, b);
             assert_eq!(
-                ours, ref_val,
-                "mismatch: a={a:#018x} b={b:#018x} ours={ours:#018x} ref={ref_val:#018x}"
+                ours, expected,
+                "mismatch: a={a:#018x} b={b:#018x} ours={ours:#018x} expected={expected:#018x}"
             );
         }
-
-        // Edge cases: identity, zero, inverse.
-        let x = 0xDEAD_BEEF_CAFE_BABE;
-        check(x, 1); // a * 1 = a
-        check(1, x); // 1 * a = a
-        check(x, 0); // a * 0 = 0
-        check(0, x); // 0 * a = 0
-
-        // All bits set — maximum carry during reduction.
-        check(u64::MAX, u64::MAX);
-
-        // Single high bit — product has bit 126 set.
-        check(1 << 63, 1 << 63);
-
-        // Minimal reduction trigger — product has exactly bit 64 set.
-        check(1 << 32, 1 << 32);
-
-        // Bits near the reduction polynomial taps (x⁴, x³, x¹).
-        check(1 << 4, 1 << 60);
-        check(1 << 3, 1 << 61);
-
-        // The reduction constant itself as a field element.
-        check(0x1b, 0x1b);
-
-        // Squaring — catches asymmetric bugs.
-        check(0xAAAA_AAAA_AAAA_AAAA, 0xAAAA_AAAA_AAAA_AAAA);
-
-        // Miri is ~100x slower, so shrink the random sweep under it.
-        let iters = if cfg!(miri) { 100 } else { 1000 };
-        let mut rng = Prg::from_seed(Block::ZERO);
-        for _ in 0..iters {
-            let a: u64 = rng.random();
-            let b: u64 = rng.random();
-            check(a, b);
-        }
     }
+
+    /// Reference products `(a, b, a·b)` in GF(2⁶⁴), computed in SageMath
+    /// against p(x) = x⁶⁴ + x⁴ + x³ + x + 1.
+    const REFERENCE_PRODUCTS: &[(u64, u64, u64)] = &[
+        (0xDEADBEEFCAFEBABE, 0x0000000000000001, 0xDEADBEEFCAFEBABE), // identity-right
+        (0x0000000000000001, 0xDEADBEEFCAFEBABE, 0xDEADBEEFCAFEBABE), // identity-left
+        (0xDEADBEEFCAFEBABE, 0x0000000000000000, 0x0000000000000000), // zero-right
+        (0x0000000000000000, 0xDEADBEEFCAFEBABE, 0x0000000000000000), // zero-left
+        (0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF, 0x5555555555555513), // all-ones-squared
+        (0x8000000000000000, 0x8000000000000000, 0xC00000000000005A), // top-bit-squared
+        (0x0000000100000000, 0x0000000100000000, 0x000000000000001B), // bit32-squared
+        (0x0000000000000010, 0x1000000000000000, 0x000000000000001B), // bit4-x-bit60
+        (0x0000000000000008, 0x2000000000000000, 0x000000000000001B), // bit3-x-bit61
+        (0x000000000000001B, 0x000000000000001B, 0x0000000000000145), // reduction-const-squared
+        (0xAAAAAAAAAAAAAAAA, 0xAAAAAAAAAAAAAAAA, 0xEEEEEEEEEEEEEEB2), // alternating-squared
+        (0x0000000000000001, 0x0000000000000001, 0x0000000000000001), // one-squared
+        (0x8000000000000000, 0x0000000000000001, 0x8000000000000000), // bit63-times-one
+        (0xDEADBEEFCAFEBABE, 0xDEADBEEFCAFEBABE, 0x3C5EFE39F55F5E12), // x-times-x
+        (0x0123456789ABCDEF, 0xFEDCBA9876543210, 0x48827AB55D976FA0),
+        (0xA5A5A5A5A5A5A5A5, 0x5A5A5A5A5A5A5A5A, 0x0257025702570279),
+        (0x1111222233334444, 0x5555666677778888, 0x6E6EC6C6FCFD2524),
+        (0x8000000000000001, 0x8000000000000001, 0xC00000000000005B),
+        (0xCAFEBABEDEADBEEF, 0x0123456789ABCDEF, 0x63DB23766D1CD7C9),
+        (0xFFFF0000FFFF0000, 0x0000FFFF0000FFFF, 0x0007555555520000),
+    ];
 }

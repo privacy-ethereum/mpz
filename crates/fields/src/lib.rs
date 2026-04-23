@@ -8,9 +8,6 @@ pub mod gf2_128;
 pub mod gf2_64;
 pub mod p256;
 
-#[cfg(test)]
-mod test_data;
-
 use std::{
     error::Error,
     fmt::Debug,
