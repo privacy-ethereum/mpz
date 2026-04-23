@@ -122,26 +122,27 @@ pub trait Field:
     fn inner_product(a: &[Self], b: &[Self]) -> Self {
         assert_eq!(a.len(), b.len(), "inner_product: slice length mismatch");
 
-        #[cfg(feature = "rayon")]
-        {
-            // Target ~64 KB per chunk so each worker's chunk (plus the
-            // matching chunk of `b`) fits comfortably in L1/L2.
-            const TARGET_CHUNK_BYTES: usize = 64 * 1024;
-            let chunk = (TARGET_CHUNK_BYTES / Self::BYTE_SIZE).max(1);
-            // Only parallelise once we'd have ≥2 chunks' worth of work,
-            // i.e. when a single core's cache wouldn't hold both input
-            // slices anyway.
-            if a.len() >= chunk * 2 {
-                use rayon::prelude::*;
-                return a
-                    .par_chunks(chunk)
-                    .zip(b.par_chunks(chunk))
-                    .map(|(ac, bc)| Self::inner_product_chunk(ac, bc))
-                    .reduce(Self::zero, |x, y| x + y);
+        cfg_select! {
+            feature = "rayon" => {
+                // Target ~64 KB per chunk so each worker's chunk (plus
+                // the matching chunk of `b`) fits comfortably in L1/L2.
+                const TARGET_CHUNK_BYTES: usize = 64 * 1024;
+                let chunk = (TARGET_CHUNK_BYTES / Self::BYTE_SIZE).max(1);
+                // Only parallelise once we'd have ≥2 chunks' worth of
+                // work — i.e. when a single core's cache wouldn't hold
+                // both input slices anyway.
+                if a.len() >= chunk * 2 {
+                    use rayon::prelude::*;
+                    a.par_chunks(chunk)
+                        .zip(b.par_chunks(chunk))
+                        .map(|(ac, bc)| Self::inner_product_chunk(ac, bc))
+                        .reduce(Self::zero, |x, y| x + y)
+                } else {
+                    Self::inner_product_chunk(a, b)
+                }
             }
+            _ => Self::inner_product_chunk(a, b),
         }
-
-        Self::inner_product_chunk(a, b)
     }
 
     /// Sequential inner-product kernel. Concrete types override this with
