@@ -4,9 +4,24 @@
 #![deny(clippy::all)]
 #![deny(unsafe_code)]
 
+pub mod gf2;
 pub mod gf2_128;
 pub mod gf2_64;
 pub mod p256;
+
+#[cfg(not(any(
+    all(target_arch = "x86_64", target_feature = "pclmulqdq"),
+    all(target_arch = "wasm32", target_feature = "simd128"),
+)))]
+mod bmul;
+
+#[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]
+mod bmul_simd;
+
+// Shared by the soft backend and by the x86 Gf2_128 square path — the
+// scalar bit-spread trick beats PCLMUL on dependent squarings.
+#[cfg(not(all(target_arch = "wasm32", target_feature = "simd128")))]
+mod spread;
 
 use std::{
     error::Error,
@@ -69,11 +84,78 @@ pub trait Field:
     /// zero.
     fn inverse(self) -> Option<Self>;
 
+    /// Return `self * self`.
+    ///
+    /// The default implementation is `self * self`. Concrete types may
+    /// override this with a cheaper dedicated squaring routine — most
+    /// notably, in characteristic-2 extension fields squaring is just a
+    /// bit-spread of the coefficients and needs no carry-less multiply.
+    #[inline]
+    fn square(self) -> Self {
+        self * self
+    }
+
     /// Return field element as little-endian bytes.
     fn to_le_bytes(&self) -> Vec<u8>;
 
     /// Return field element as big-endian bytes.
     fn to_be_bytes(&self) -> Vec<u8>;
+
+    /// Compute the inner product `Σ aᵢ · bᵢ` of two slices of field
+    /// elements.
+    ///
+    /// When the `rayon` feature is enabled and the input is larger than
+    /// ~L2 cache on a single core, the work is split across threads so
+    /// each chunk stays cache-local on its worker core. Below that
+    /// threshold the sequential chunk path runs directly — thread
+    /// spawning overhead would dominate the gain.
+    ///
+    /// Concrete types override [`Self::inner_product_chunk`] (not this
+    /// method) to provide an accelerated single-chunk implementation;
+    /// the parallel path calls the override once per chunk and
+    /// XOR/+-combines the partial results.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the two slices have different lengths.
+    #[inline]
+    fn inner_product(a: &[Self], b: &[Self]) -> Self {
+        assert_eq!(a.len(), b.len(), "inner_product: slice length mismatch");
+
+        cfg_select! {
+            feature = "rayon" => {
+                // Target ~64 KB per chunk so each worker's chunk (plus
+                // the matching chunk of `b`) fits comfortably in L1/L2.
+                const TARGET_CHUNK_BYTES: usize = 64 * 1024;
+                let chunk = (TARGET_CHUNK_BYTES / Self::BYTE_SIZE).max(1);
+                // Only parallelise once we'd have ≥2 chunks' worth of
+                // work — i.e. when a single core's cache wouldn't hold
+                // both input slices anyway.
+                if a.len() >= chunk * 2 {
+                    use rayon::prelude::*;
+                    a.par_chunks(chunk)
+                        .zip(b.par_chunks(chunk))
+                        .map(|(ac, bc)| Self::inner_product_chunk(ac, bc))
+                        .reduce(Self::zero, |x, y| x + y)
+                } else {
+                    Self::inner_product_chunk(a, b)
+                }
+            }
+            _ => Self::inner_product_chunk(a, b),
+        }
+    }
+
+    /// Sequential inner-product kernel. Concrete types override this with
+    /// their optimised single-threaded SIMD implementation;
+    /// [`Self::inner_product`] calls it once (sequential) or once per chunk
+    /// (parallel).
+    #[doc(hidden)]
+    #[inline]
+    fn inner_product_chunk(a: &[Self], b: &[Self]) -> Self {
+        a.iter()
+            .zip(b.iter())
+            .fold(Self::zero(), |acc, (x, y)| acc + *x * *y)
+    }
 }
 
 /// Error type for finite fields.
@@ -154,6 +236,72 @@ mod tests {
         assert_eq!(powers[0], a);
         assert_eq!(powers[1], powers[0] * factor);
         assert_eq!(powers[2], powers[1] * factor);
+    }
+
+    pub(crate) fn test_field_square<T: Field>() {
+        let mut rng = Prg::from_seed(Block::ZERO);
+        // Zero and one.
+        assert_eq!(T::zero().square(), T::zero());
+        assert_eq!(T::one().square(), T::one());
+        // Matches `x * x` for many random values.
+        for _ in 0..1000 {
+            let x = T::rand(&mut rng);
+            assert_eq!(x.square(), x * x);
+        }
+    }
+
+    pub(crate) fn test_field_axioms_random<T: Field>() {
+        let mut rng = Prg::from_seed(Block::ZERO);
+        let zero = T::zero();
+        let one = T::one();
+
+        for _ in 0..1000 {
+            let a = T::rand(&mut rng);
+            let b = T::rand(&mut rng);
+            let c = T::rand(&mut rng);
+
+            assert_eq!(a * b, b * a, "commutativity");
+            assert_eq!((a * b) * c, a * (b * c), "associativity");
+            assert_eq!(a * (b + c), a * b + a * c, "distributivity");
+            assert_eq!(a + -a, zero, "additive inverse");
+            #[allow(clippy::eq_op)]
+            {
+                assert_eq!(a - a, zero, "self-subtraction");
+            }
+            if a != zero {
+                assert_eq!(a * a.inverse().unwrap(), one, "multiplicative inverse");
+            }
+        }
+    }
+
+    pub(crate) fn test_field_inner_product<T: Field>() {
+        let mut rng = Prg::from_seed(Block::ZERO);
+
+        // Empty → zero.
+        assert_eq!(T::inner_product(&[], &[]), T::zero());
+
+        // Length 1 → a · b.
+        let a0 = T::rand(&mut rng);
+        let b0 = T::rand(&mut rng);
+        assert_eq!(T::inner_product(&[a0], &[b0]), a0 * b0);
+
+        // Length 1024 — stresses the x86 accumulator across many folds.
+        // Length 20_000 — crosses the `rayon` feature's parallel threshold
+        // (~8192 for 16-byte types, higher for narrower), so it exercises
+        // the par_chunks path when rayon is enabled and the sequential
+        // path when it isn't. Either way the result must match the naive
+        // fold bit-for-bit.
+        for &len in &[17usize, 1024, 20_000] {
+            let a: Vec<T> = (0..len).map(|_| T::rand(&mut rng)).collect();
+            let b: Vec<T> = (0..len).map(|_| T::rand(&mut rng)).collect();
+
+            let expected = a
+                .iter()
+                .zip(b.iter())
+                .fold(T::zero(), |acc, (x, y)| acc + *x * *y);
+
+            assert_eq!(T::inner_product(&a, &b), expected, "len={len}");
+        }
     }
 
     pub(crate) fn test_field_bit_ops_lsb0<T: Field>() {

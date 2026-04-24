@@ -126,14 +126,7 @@ impl Field for Gf2_64 {
         if self == Gf2_64::ZERO {
             return None;
         }
-        // Fermat in GF(2⁶⁴): x⁻¹ = x^(2⁶⁴ − 2) = x² · x⁴ · … · x^(2⁶³).
-        let mut y = self * self; // x²
-        let mut result = y;
-        for _ in 2..64 {
-            y = y * y;
-            result = result * y;
-        }
-        Some(result)
+        Some(Gf2_64(gf64_inverse(self.0)))
     }
 
     fn to_le_bytes(&self) -> Vec<u8> {
@@ -143,71 +136,89 @@ impl Field for Gf2_64 {
     fn to_be_bytes(&self) -> Vec<u8> {
         self.0.to_be_bytes().to_vec()
     }
+
+    #[inline]
+    fn inner_product_chunk(a: &[Self], b: &[Self]) -> Self {
+        Gf2_64(gf64_inner_product(a, b))
+    }
+
+    #[inline]
+    fn square(self) -> Self {
+        Gf2_64(gf64_square(self.0))
+    }
 }
 
-/// Carry-less multiply + reduce in XMM registers (SSE2 + PCLMULQDQ).
-#[cfg(all(target_arch = "x86_64", target_feature = "pclmulqdq"))]
+cfg_select! {
+    all(target_arch = "x86_64", target_feature = "pclmulqdq") => {
+        mod x86;
+        use x86 as backend;
+    }
+    all(target_arch = "wasm32", target_feature = "simd128") => {
+        mod wasm;
+        use wasm as backend;
+    }
+    _ => {
+        mod soft;
+        use soft as backend;
+    }
+}
+
 #[inline(always)]
-#[allow(unsafe_code)]
 fn gf64_mul(a: u64, b: u64) -> u64 {
-    use std::arch::x86_64::*;
-
-    unsafe {
-        let a_vec = _mm_set_epi64x(0, a as i64);
-        let b_vec = _mm_set_epi64x(0, b as i64);
-        let prod = _mm_clmulepi64_si128(a_vec, b_vec, 0x00);
-
-        // hi = bits 64..127 of the product (byte-shift right by 8).
-        let hi = _mm_srli_si128(prod, 8);
-
-        // Round 1: lo ^= hi ^ (hi << 1) ^ (hi << 3) ^ (hi << 4)
-        let h1 = _mm_slli_epi64(hi, 1);
-        let h3 = _mm_slli_epi64(hi, 3);
-        let h4 = _mm_slli_epi64(hi, 4);
-        let folded = _mm_xor_si128(
-            _mm_xor_si128(prod, hi),
-            _mm_xor_si128(_mm_xor_si128(h1, h3), h4),
-        );
-
-        // Round 2: overflow from hi<<1/3/4 lands in bits 64..67.
-        let hi2 = _mm_xor_si128(
-            _mm_srli_epi64(hi, 63),
-            _mm_xor_si128(_mm_srli_epi64(hi, 61), _mm_srli_epi64(hi, 60)),
-        );
-        let h2_1 = _mm_slli_epi64(hi2, 1);
-        let h2_3 = _mm_slli_epi64(hi2, 3);
-        let h2_4 = _mm_slli_epi64(hi2, 4);
-        let result = _mm_xor_si128(
-            _mm_xor_si128(folded, hi2),
-            _mm_xor_si128(_mm_xor_si128(h2_1, h2_3), h2_4),
-        );
-
-        _mm_cvtsi128_si64(result) as u64
-    }
+    backend::mul(a, b)
 }
 
-/// Portable carry-less multiply + reduce fallback.
-#[cfg(not(all(target_arch = "x86_64", target_feature = "pclmulqdq")))]
-#[inline]
-fn gf64_mul(a: u64, b: u64) -> u64 {
-    // R = x⁴ + x³ + x + 1 = 0b11011 = 0x1b.
-    const R: u64 = 0x1b;
+#[inline(always)]
+fn gf64_inner_product(a: &[Gf2_64], b: &[Gf2_64]) -> u64 {
+    backend::inner_product(a, b)
+}
 
-    let mut x = a;
-    let mut y = b;
-    let mut z = 0u64;
+#[inline(always)]
+fn gf64_inverse(a: u64) -> u64 {
+    backend::inverse(a)
+}
 
-    while (x != 0) && (y != 0) {
-        z ^= (y & 1) * x;
-        x = (x << 1) ^ ((x >> 63) * R);
-        y >>= 1;
-    }
-    z
+#[inline(always)]
+fn gf64_square(a: u64) -> u64 {
+    backend::square(a)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tests::{test_field_axioms_random, test_field_inner_product, test_field_square};
+
+    #[test]
+    fn test_inner_product() {
+        test_field_inner_product::<Gf2_64>();
+    }
+
+    #[test]
+    fn test_axioms_random() {
+        test_field_axioms_random::<Gf2_64>();
+    }
+
+    #[test]
+    fn test_square() {
+        test_field_square::<Gf2_64>();
+    }
+
+    #[test]
+    #[should_panic(expected = "inner_product: slice length mismatch")]
+    fn test_inner_product_length_mismatch() {
+        let a = [Gf2_64::ONE, Gf2_64::ONE];
+        let b = [Gf2_64::ONE];
+        let _ = Gf2_64::inner_product(&a, &b);
+    }
+
+    #[test]
+    fn test_reduction_constant() {
+        // p(x) = x⁶⁴ + x⁴ + x³ + x + 1, so x⁶⁴ ≡ R = x⁴ + x³ + x + 1 = 0x1b.
+        // x⁶³ · x = x⁶⁴ ≡ R.
+        assert_eq!(Gf2_64(1 << 63) * Gf2_64(2), Gf2_64(0x1b));
+        // x⁶³ · x² = x⁶⁵ = x·R = x⁵ + x⁴ + x² + x = 0x36.
+        assert_eq!(Gf2_64(1 << 63) * Gf2_64(4), Gf2_64(0x36));
+    }
 
     #[test]
     fn test_basic_arithmetic() {
