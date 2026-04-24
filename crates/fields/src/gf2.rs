@@ -10,18 +10,7 @@ use serde::{Deserialize, Serialize};
 use crate::{Field, FieldError};
 
 /// An element of GF(2), i.e. a single bit under XOR/AND.
-#[derive(
-    Copy,
-    Clone,
-    Debug,
-    Default,
-    PartialEq,
-    Eq,
-    PartialOrd,
-    Ord,
-    Serialize,
-    Deserialize,
-)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[repr(transparent)]
 pub struct Gf2(pub bool);
 

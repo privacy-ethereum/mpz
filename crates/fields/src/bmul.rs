@@ -20,22 +20,14 @@ fn bmul64_lo(x: u64, y: u64) -> u64 {
     let b2 = y & 0x4444_4444_4444_4444;
     let b3 = y & 0x8888_8888_8888_8888;
 
-    let mut z0 = a0.wrapping_mul(b0)
-        ^ a1.wrapping_mul(b3)
-        ^ a2.wrapping_mul(b2)
-        ^ a3.wrapping_mul(b1);
-    let mut z1 = a0.wrapping_mul(b1)
-        ^ a1.wrapping_mul(b0)
-        ^ a2.wrapping_mul(b3)
-        ^ a3.wrapping_mul(b2);
-    let mut z2 = a0.wrapping_mul(b2)
-        ^ a1.wrapping_mul(b1)
-        ^ a2.wrapping_mul(b0)
-        ^ a3.wrapping_mul(b3);
-    let mut z3 = a0.wrapping_mul(b3)
-        ^ a1.wrapping_mul(b2)
-        ^ a2.wrapping_mul(b1)
-        ^ a3.wrapping_mul(b0);
+    let mut z0 =
+        a0.wrapping_mul(b0) ^ a1.wrapping_mul(b3) ^ a2.wrapping_mul(b2) ^ a3.wrapping_mul(b1);
+    let mut z1 =
+        a0.wrapping_mul(b1) ^ a1.wrapping_mul(b0) ^ a2.wrapping_mul(b3) ^ a3.wrapping_mul(b2);
+    let mut z2 =
+        a0.wrapping_mul(b2) ^ a1.wrapping_mul(b1) ^ a2.wrapping_mul(b0) ^ a3.wrapping_mul(b3);
+    let mut z3 =
+        a0.wrapping_mul(b3) ^ a1.wrapping_mul(b2) ^ a2.wrapping_mul(b1) ^ a3.wrapping_mul(b0);
 
     z0 &= 0x1111_1111_1111_1111;
     z1 &= 0x2222_2222_2222_2222;

@@ -146,8 +146,9 @@ pub trait Field:
     }
 
     /// Sequential inner-product kernel. Concrete types override this with
-    /// their optimised single-threaded SIMD implementation; [`Self::inner_product`]
-    /// calls it once (sequential) or once per chunk (parallel).
+    /// their optimised single-threaded SIMD implementation;
+    /// [`Self::inner_product`] calls it once (sequential) or once per chunk
+    /// (parallel).
     #[doc(hidden)]
     #[inline]
     fn inner_product_chunk(a: &[Self], b: &[Self]) -> Self {

@@ -235,8 +235,8 @@ mod tests {
         Field,
         tests::{
             test_field_axioms_random, test_field_basic, test_field_bit_ops_lsb0,
-            test_field_bit_ops_msb0, test_field_compute_product_repeated,
-            test_field_inner_product, test_field_square,
+            test_field_bit_ops_msb0, test_field_compute_product_repeated, test_field_inner_product,
+            test_field_square,
         },
     };
     #[test]
@@ -285,7 +285,10 @@ mod tests {
         // p(x) = x¹²⁸ + x⁷ + x² + x + 1, so x¹²⁸ ≡ R = x⁷+x²+x+1 = 0x87.
         assert_eq!(Gf2_128::new(1 << 127) * Gf2_128::new(2), Gf2_128::new(0x87));
         // x¹²⁹ = x·R = x⁸ + x³ + x² + x = 0x10e.
-        assert_eq!(Gf2_128::new(1 << 127) * Gf2_128::new(4), Gf2_128::new(0x10e));
+        assert_eq!(
+            Gf2_128::new(1 << 127) * Gf2_128::new(4),
+            Gf2_128::new(0x10e)
+        );
     }
 
     #[test]
@@ -294,12 +297,12 @@ mod tests {
             1u128,
             2,
             3,
-            0x87,                                      // reduction constant R
+            0x87, // reduction constant R
             0xDEADBEEFCAFEBABE0123456789ABCDEF,
-            1u128 << 127,                              // top bit
-            0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF,        // all ones
-            0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA,        // alternating
-            0x7b5b54657374566563746f725d53475d,        // Intel test vector operand
+            1u128 << 127,                       // top bit
+            0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF, // all ones
+            0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA, // alternating
+            0x7b5b54657374566563746f725d53475d, // Intel test vector operand
         ] {
             let x = Gf2_128::new(raw);
             let xi = x.inverse().unwrap();
@@ -317,7 +320,10 @@ mod tests {
                 "mismatch: a={a:#034x} b={b:#034x} ours={ours:#034x} expected={expected:#034x}"
             );
             // Commutativity spot-check on every vector.
-            assert_eq!(Gf2_128::new(a) * Gf2_128::new(b), Gf2_128::new(b) * Gf2_128::new(a));
+            assert_eq!(
+                Gf2_128::new(a) * Gf2_128::new(b),
+                Gf2_128::new(b) * Gf2_128::new(a)
+            );
         }
     }
 
@@ -329,16 +335,24 @@ mod tests {
         // identity / zero
         (0, 0, 0),
         (0, 0xDEADBEEFCAFEBABE0123456789ABCDEF, 0),
-        (1, 0xDEADBEEFCAFEBABE0123456789ABCDEF, 0xDEADBEEFCAFEBABE0123456789ABCDEF),
-        (0xDEADBEEFCAFEBABE0123456789ABCDEF, 1, 0xDEADBEEFCAFEBABE0123456789ABCDEF),
+        (
+            1,
+            0xDEADBEEFCAFEBABE0123456789ABCDEF,
+            0xDEADBEEFCAFEBABE0123456789ABCDEF,
+        ),
+        (
+            0xDEADBEEFCAFEBABE0123456789ABCDEF,
+            1,
+            0xDEADBEEFCAFEBABE0123456789ABCDEF,
+        ),
         // no-reduction cases
-        (2, 2, 4),                            // x · x = x²
-        (3, 5, 15),                           // (1+x)(1+x²) = 1+x+x²+x³
-        (3, 7, 9),                            // (1+x)(1+x+x²) = 1 + x³
+        (2, 2, 4),  // x · x = x²
+        (3, 5, 15), // (1+x)(1+x²) = 1+x+x²+x³
+        (3, 7, 9),  // (1+x)(1+x+x²) = 1 + x³
         // reduction-triggering cases (derived from x¹²⁸ ≡ x⁷+x²+x+1)
-        (1 << 127, 2, 0x87),                  // x¹²⁷ · x = x¹²⁸ ≡ R
-        (1 << 127, 4, 0x10e),                 // x¹²⁷ · x² = x¹²⁹ = x·R = x⁸+x³+x²+x
-        (0x87, 0x87, 0x4015),                 // R² = x¹⁴+x⁴+x²+1 (Freshman's dream)
+        (1 << 127, 2, 0x87),  // x¹²⁷ · x = x¹²⁸ ≡ R
+        (1 << 127, 4, 0x10e), // x¹²⁷ · x² = x¹²⁹ = x·R = x⁸+x³+x²+x
+        (0x87, 0x87, 0x4015), // R² = x¹⁴+x⁴+x²+1 (Freshman's dream)
         // x¹²⁷ · x¹²⁷ = x²⁵⁴ ≡ x¹²⁷+x¹²⁶+x¹²+x⁶+x⁵+x²+x+1
         (1 << 127, 1 << 127, 0xC0000000000000000000000000001067),
         // Intel® Carry-Less Multiplication Instruction white paper
