@@ -1,0 +1,46 @@
+[package]
+name = "perm-proof-core"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "perm_proof_core"
+
+[lints]
+workspace = true
+
+[features]
+test-utils = []
+
+[dependencies]
+bcs = { workspace = true }
+blake3 = { workspace = true }
+hybrid-array = { workspace = true }
+mpz-common = { workspace = true, features = ["future"] }
+mpz-fields = { workspace = true }
+mpz-vole-core = { workspace = true }
+poly-proof-core = { workspace = true }
+rand = { workspace = true }
+rand_chacha = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+
+[[test]]
+name = "api"
+path = "tests/api.rs"
+required-features = ["test-utils"]
+
+[[bench]]
+name = "prover"
+path = "benches/prover.rs"
+harness = false
+required-features = ["test-utils"]
+
+[[bench]]
+name = "verifier"
+path = "benches/verifier.rs"
+harness = false
+required-features = ["test-utils"]

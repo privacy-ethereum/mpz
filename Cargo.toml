@@ -31,6 +31,7 @@ members = [
     "crates/poly-proof-core",
     "crates/poly-proof-lifter",
     "crates/poly-proof-macros",
+    "crates/perm-proof-core",
 ]
 exclude = ["crates/lpn-estimator"]
 resolver = "2"
@@ -127,6 +128,7 @@ ark-serialize = "0.4"
 serde = "1.0"
 serde_yaml = "0.9"
 serde_arrays = "0.1"
+bcs = "0.1.5"
 bincode = "1.3.3"
 bytes = "1"
 yamux = "0.10"
