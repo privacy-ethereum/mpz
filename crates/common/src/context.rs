@@ -23,45 +23,63 @@ use crate::{ContextId, executor::Inner, io::Io, mux::Mux};
 
 /// A task execution context.
 ///
-/// Each context has a unique [`ContextId`] and its own I/O channel.
-/// Child tasks created via [`try_join`](Self::try_join) etc. run either:
-/// - Cooperatively via async interleaving (single-threaded mode)
-/// - In parallel via work-stealing executor (multi-threaded mode)
+/// Each context owns an I/O channel and a [`ContextId`]. Use [`join`],
+/// [`try_join`], [`map`] etc. to run sub-tasks concurrently; whether they
+/// actually execute in parallel depends on how the context was built.
+///
+/// [`join`]: Self::join
+/// [`try_join`]: Self::try_join
+/// [`map`]: Self::map
 pub struct Context {
     id: ContextId,
     io: Io,
-    /// Mux for opening per-task channels. `None` for single-channel contexts
-    /// created via [`Context::from_io`]; in that case fork operations
-    /// degrade to sequential execution on the parent's IO.
-    mux: Option<Arc<dyn Mux + Send + Sync>>,
-    executor: Option<Arc<Inner>>,
+    mode: Mode,
     /// Sub-namespace counter incremented on each fork.
     fork_counter: u32,
 }
 
+enum Mode {
+    Single,
+    Multi {
+        mux: Arc<dyn Mux + Send + Sync>,
+        executor: Option<Arc<Inner>>,
+    },
+}
+
 impl std::fmt::Debug for Context {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mode = match &self.mode {
+            Mode::Single => "single",
+            Mode::Multi { executor: Some(_), .. } => "multi-threaded",
+            Mode::Multi { executor: None, .. } => "multi-cooperative",
+        };
         f.debug_struct("Context")
             .field("id", &self.id)
             .field("io", &self.io)
-            .field("executor", &self.executor.is_some())
+            .field("mode", &mode)
             .finish()
     }
 }
 
 impl Context {
-    /// Creates a new context in single-threaded mode rooted at
-    /// [`ContextId::default`].
+    /// Creates a new context that uses `mux` to allocate a channel per
+    /// sub-task.
+    ///
+    /// Sub-tasks are executed cooperatively on the calling future. For
+    /// parallel execution, build an [`Executor`](crate::Executor) and use
+    /// [`Executor::new_context`](crate::Executor::new_context) instead.
     pub fn new<M: Mux + Send + Sync + 'static>(mux: M) -> Result<Self, ContextError> {
         Self::with_prefix(mux, ContextId::default())
     }
 
-    /// Creates a new context backed by a single I/O channel, without a mux.
+    /// Creates a new context backed by a single I/O channel.
     ///
-    /// Useful when there is only one logical channel and no need to fork.
-    /// [`join`](Self::join), [`try_join`](Self::try_join), [`map`](Self::map)
-    /// etc. still work, but degrade to **sequential** execution on the
-    /// parent's IO since there is no mux to allocate per-task channels.
+    /// Sub-tasks spawned via [`join`], [`try_join`], [`map`] etc. share the
+    /// channel and run **sequentially** in the order given.
+    ///
+    /// [`join`]: Self::join
+    /// [`try_join`]: Self::try_join
+    /// [`map`]: Self::map
     pub fn new_single_threaded<I>(io: I) -> Self
     where
         I: AsyncRead + AsyncWrite + Send + Sync + Unpin + 'static,
@@ -69,26 +87,17 @@ impl Context {
         Self::from_io(Io::from_io(io))
     }
 
-    /// Creates a new context backed by a pre-built [`Io`], without a mux.
-    ///
-    /// Like [`Context::new_single_threaded`] but takes an `Io` directly so
-    /// callers can choose the framing (e.g. typed serio channels in tests).
     pub(crate) fn from_io(io: Io) -> Self {
         Self {
             id: ContextId::default(),
             io,
-            mux: None,
-            executor: None,
+            mode: Mode::Single,
             fork_counter: 0,
         }
     }
 
-    /// Creates a new context in single-threaded mode rooted at the given byte
-    /// prefix.
-    ///
-    /// All child contexts forked off this one will be namespaced under
-    /// `prefix`, allowing several sub-protocols to share a mux without
-    /// collisions.
+    /// Like [`Context::new`], but namespaces all channels under `prefix` so
+    /// several sub-protocols can share a mux without colliding.
     pub fn with_prefix<M: Mux + Send + Sync + 'static>(
         mux: M,
         prefix: impl AsRef<[u8]>,
@@ -99,13 +108,11 @@ impl Context {
         Ok(Self {
             id,
             io,
-            mux: Some(mux),
-            executor: None,
+            mode: Mode::Multi { mux, executor: None },
             fork_counter: 0,
         })
     }
 
-    /// Creates a new context in multi-threaded mode.
     pub(crate) fn with_executor(
         id: ContextId,
         io: Io,
@@ -115,41 +122,42 @@ impl Context {
         Self {
             id,
             io,
-            mux: Some(mux),
-            executor: Some(executor),
+            mode: Mode::Multi {
+                mux,
+                executor: Some(executor),
+            },
             fork_counter: 0,
         }
     }
 
-    /// Creates a child context with the given ID. Caller must ensure a mux
-    /// is configured.
     fn child(&self, id: ContextId) -> Result<Self, ContextError> {
-        let mux = self.mux.as_ref().expect("mux should be set when forking");
+        let Mode::Multi { mux, executor } = &self.mode else {
+            unreachable!("child() called on a single-channel context");
+        };
         let io = mux.open(id.as_ref()).map_err(ContextError::mux)?;
         Ok(Self {
             id,
             io,
-            mux: Some(mux.clone()),
-            executor: self.executor.clone(),
+            mode: Mode::Multi {
+                mux: mux.clone(),
+                executor: executor.clone(),
+            },
             fork_counter: 0,
         })
     }
 
-    /// Returns a fresh fork base ID, advancing this context's fork counter.
     fn next_fork(&mut self) -> ContextId {
         let base = self.id.child(self.fork_counter);
         self.fork_counter += 1;
         base
     }
 
-    /// Spawns the future on the executor if one is available, otherwise returns
-    /// it as-is. The result is a future of the same output type.
-    fn run<F>(&self, fut: F) -> impl std::future::Future<Output = F::Output> + Send
+    fn run<F>(executor: Option<&Arc<Inner>>, fut: F) -> impl std::future::Future<Output = F::Output> + Send
     where
         F: std::future::Future + Send + 'static,
         F::Output: Send + 'static,
     {
-        match &self.executor {
+        match executor {
             Some(exec) => Either::Left(crate::executor::spawn_on(exec, fut)),
             None => Either::Right(fut),
         }
@@ -170,18 +178,15 @@ impl Context {
         &mut self.io
     }
 
-    /// Executes a collection of tasks concurrently.
-    ///
-    /// Each task is assigned a deterministic child ID based on its index.
-    /// Results are returned in the original order.
+    /// Applies `f` to each item concurrently, returning the results in input
+    /// order.
     pub async fn map<F, T, R>(&mut self, items: Vec<T>, f: F) -> Result<Vec<R>, ContextError>
     where
         F: for<'a> Fn(&'a mut Context, T) -> BoxFuture<'a, R> + Clone + Send + 'static,
         T: Send + 'static,
         R: Send + 'static,
     {
-        if self.mux.is_none() {
-            // No mux: run sequentially on the parent's IO.
+        if matches!(self.mode, Mode::Single) {
             let mut results = Vec::with_capacity(items.len());
             for item in items {
                 results.push(f(self, item).await);
@@ -190,16 +195,20 @@ impl Context {
         }
 
         let parent_id = self.next_fork();
+        let executor = self.executor().cloned();
         let mut tasks = Vec::with_capacity(items.len());
         for (i, item) in items.into_iter().enumerate() {
             let mut ctx = self.child(parent_id.child(i as u32))?;
             let f = f.clone();
-            tasks.push(self.run(async move { f(&mut ctx, item).await }));
+            tasks.push(Self::run(
+                executor.as_ref(),
+                async move { f(&mut ctx, item).await },
+            ));
         }
         Ok(futures::future::join_all(tasks).await)
     }
 
-    /// Executes two tasks concurrently.
+    /// Runs `a` and `b` concurrently and returns both results.
     pub async fn join<A, B, RA, RB>(&mut self, a: A, b: B) -> Result<(RA, RB), ContextError>
     where
         A: for<'a> FnOnce(&'a mut Context) -> BoxFuture<'a, RA> + Send + 'static,
@@ -207,22 +216,24 @@ impl Context {
         RA: Send + 'static,
         RB: Send + 'static,
     {
-        if self.mux.is_none() {
+        if matches!(self.mode, Mode::Single) {
             let ra = a(self).await;
             let rb = b(self).await;
             return Ok((ra, rb));
         }
 
         let parent_id = self.next_fork();
+        let executor = self.executor().cloned();
         let mut ctx_a = self.child(parent_id.child(0))?;
         let mut ctx_b = self.child(parent_id.child(1))?;
 
-        let task_a = self.run(async move { a(&mut ctx_a).await });
-        let task_b = self.run(async move { b(&mut ctx_b).await });
+        let task_a = Self::run(executor.as_ref(), async move { a(&mut ctx_a).await });
+        let task_b = Self::run(executor.as_ref(), async move { b(&mut ctx_b).await });
         Ok(futures::future::join(task_a, task_b).await)
     }
 
-    /// Executes two fallible tasks concurrently, returning early on error.
+    /// Like [`Context::join`], but short-circuits as soon as either branch
+    /// returns an error, potentially cancelling the other.
     pub async fn try_join<A, B, RA, RB, E>(
         &mut self,
         a: A,
@@ -235,7 +246,7 @@ impl Context {
         RB: Send + 'static,
         E: Send + 'static,
     {
-        if self.mux.is_none() {
+        if matches!(self.mode, Mode::Single) {
             return Ok(async {
                 let ra = a(self).await?;
                 let rb = b(self).await?;
@@ -245,15 +256,16 @@ impl Context {
         }
 
         let parent_id = self.next_fork();
+        let executor = self.executor().cloned();
         let mut ctx_a = self.child(parent_id.child(0))?;
         let mut ctx_b = self.child(parent_id.child(1))?;
 
-        let task_a = self.run(async move { a(&mut ctx_a).await });
-        let task_b = self.run(async move { b(&mut ctx_b).await });
+        let task_a = Self::run(executor.as_ref(), async move { a(&mut ctx_a).await });
+        let task_b = Self::run(executor.as_ref(), async move { b(&mut ctx_b).await });
         Ok(futures::future::try_join(task_a, task_b).await)
     }
 
-    /// Executes three fallible tasks concurrently, returning early on error.
+    /// Same as [`Context::try_join`], but with three branches.
     pub async fn try_join3<A, B, C, RA, RB, RC, E>(
         &mut self,
         a: A,
@@ -269,7 +281,7 @@ impl Context {
         RC: Send + 'static,
         E: Send + 'static,
     {
-        if self.mux.is_none() {
+        if matches!(self.mode, Mode::Single) {
             return Ok(async {
                 let ra = a(self).await?;
                 let rb = b(self).await?;
@@ -280,17 +292,18 @@ impl Context {
         }
 
         let parent_id = self.next_fork();
+        let executor = self.executor().cloned();
         let mut ctx_a = self.child(parent_id.child(0))?;
         let mut ctx_b = self.child(parent_id.child(1))?;
         let mut ctx_c = self.child(parent_id.child(2))?;
 
-        let task_a = self.run(async move { a(&mut ctx_a).await });
-        let task_b = self.run(async move { b(&mut ctx_b).await });
-        let task_c = self.run(async move { c(&mut ctx_c).await });
+        let task_a = Self::run(executor.as_ref(), async move { a(&mut ctx_a).await });
+        let task_b = Self::run(executor.as_ref(), async move { b(&mut ctx_b).await });
+        let task_c = Self::run(executor.as_ref(), async move { c(&mut ctx_c).await });
         Ok(futures::future::try_join3(task_a, task_b, task_c).await)
     }
 
-    /// Executes four fallible tasks concurrently, returning early on error.
+    /// Same as [`Context::try_join`], but with four branches.
     pub async fn try_join4<A, B, C, D, RA, RB, RC, RD, E>(
         &mut self,
         a: A,
@@ -309,7 +322,7 @@ impl Context {
         RD: Send + 'static,
         E: Send + 'static,
     {
-        if self.mux.is_none() {
+        if matches!(self.mode, Mode::Single) {
             return Ok(async {
                 let ra = a(self).await?;
                 let rb = b(self).await?;
@@ -321,16 +334,24 @@ impl Context {
         }
 
         let parent_id = self.next_fork();
+        let executor = self.executor().cloned();
         let mut ctx_a = self.child(parent_id.child(0))?;
         let mut ctx_b = self.child(parent_id.child(1))?;
         let mut ctx_c = self.child(parent_id.child(2))?;
         let mut ctx_d = self.child(parent_id.child(3))?;
 
-        let task_a = self.run(async move { a(&mut ctx_a).await });
-        let task_b = self.run(async move { b(&mut ctx_b).await });
-        let task_c = self.run(async move { c(&mut ctx_c).await });
-        let task_d = self.run(async move { d(&mut ctx_d).await });
+        let task_a = Self::run(executor.as_ref(), async move { a(&mut ctx_a).await });
+        let task_b = Self::run(executor.as_ref(), async move { b(&mut ctx_b).await });
+        let task_c = Self::run(executor.as_ref(), async move { c(&mut ctx_c).await });
+        let task_d = Self::run(executor.as_ref(), async move { d(&mut ctx_d).await });
         Ok(futures::future::try_join4(task_a, task_b, task_c, task_d).await)
+    }
+
+    fn executor(&self) -> Option<&Arc<Inner>> {
+        match &self.mode {
+            Mode::Multi { executor, .. } => executor.as_ref(),
+            Mode::Single => None,
+        }
     }
 }
 
@@ -347,4 +368,3 @@ impl ContextError {
         Self { source }
     }
 }
-
