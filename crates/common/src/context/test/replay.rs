@@ -84,7 +84,9 @@ impl Mux for SingleReplayMux {
     fn open(&self, id: &[u8]) -> Result<Io, std::io::Error> {
         // Only allow opening the root ID
         if id != [0] {
-            return Err(std::io::Error::other("single replay mux only supports root ID"));
+            return Err(std::io::Error::other(
+                "single replay mux only supports root ID",
+            ));
         }
         let replay = self
             .replay
@@ -175,10 +177,7 @@ pub fn replay_mt_context(recorded: RecordedMtData) -> Executor {
 ///
 /// * `recorded` - The recorded data to replay (per-channel).
 /// * `max_frame_length` - Maximum frame size in bytes.
-pub fn replay_mt_context_with_limit(
-    recorded: RecordedMtData,
-    max_frame_length: usize,
-) -> Executor {
+pub fn replay_mt_context_with_limit(recorded: RecordedMtData, max_frame_length: usize) -> Executor {
     let mux = ReplayTestMux::new(recorded, Some(max_frame_length));
     ExecutorBuilder::default().build(mux)
 }
@@ -192,10 +191,7 @@ pub fn replay_mt_context_with_spawn_and_limit<F>(
     spawn: F,
 ) -> Executor
 where
-    F: Fn(Box<dyn FnOnce() + Send + 'static>) -> Result<(), std::io::Error>
-        + Send
-        + Sync
-        + 'static,
+    F: Fn(Box<dyn FnOnce() + Send + 'static>) -> Result<(), std::io::Error> + Send + Sync + 'static,
 {
     let mux = ReplayTestMux::new(recorded, Some(max_frame_length));
     ExecutorBuilder::default()
@@ -203,4 +199,3 @@ where
         .spawn(spawn)
         .build(mux)
 }
-
