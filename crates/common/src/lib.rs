@@ -16,20 +16,21 @@
 )]
 
 pub mod context;
+pub mod executor;
 #[cfg(any(test, feature = "future"))]
 pub mod future;
 mod id;
 #[cfg(any(test, feature = "ideal"))]
 pub mod ideal;
 pub mod io;
-pub(crate) mod load_balance;
 pub mod mux;
 #[cfg(feature = "sync")]
 pub mod sync;
 mod task;
 
 pub use context::{Context, ContextError};
-pub use id::{Counter, ThreadId};
+pub use executor::{Executor, ExecutorBuilder};
+pub use id::ContextId;
 pub use task::Task;
 
 use async_trait::async_trait;

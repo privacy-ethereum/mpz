@@ -162,7 +162,7 @@ where
             let outputs = ctx
                 .map(
                     tasks,
-                    async move |ctx, (mut execute, output)| {
+                    move |ctx, (mut execute, output)| Box::pin(async move {
                         let mut iter = execute.iter();
                         loop {
                             // Stream the `adjust` bits to avoid buffering them in memory.
@@ -178,8 +178,7 @@ where
                         let output_macs = execute.finish().map_err(VmError::execute)?;
 
                         Ok((output, output_macs))
-                    },
-                    |(execute, _)| execute.and_count(),
+                    })
                 )
                 .await
                 .map_err(VmError::execute)?

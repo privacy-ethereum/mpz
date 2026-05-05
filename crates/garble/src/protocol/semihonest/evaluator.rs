@@ -232,12 +232,12 @@ where
 
         let (_, preprocessed) = ctx
             .try_join(
-                async move |ctx| {
+                move |ctx| Box::pin(async move {
                     // This flush is primarily intended to perform OT setup
                     // concurrently with preprocessing.
                     cot.flush(ctx).await.map_err(VmError::execute)
-                },
-                async move |ctx| {
+                }),
+                move |ctx| Box::pin(async move {
                     let mut preprocessed = Vec::new();
 
                     while !call_stack.is_empty() {
@@ -250,13 +250,12 @@ where
                         let mut outputs = ctx
                             .map(
                                 calls,
-                                async move |ctx, (call, output): (Call, Slice)| {
+                                move |ctx, (call, output): (Call, Slice)| Box::pin(async move {
                                     let garbled_circuit = receive_garbled_circuit(ctx, call.circ())
                                         .await
                                         .map_err(VmError::execute)?;
                                     Ok::<_, VmError>((call, output, garbled_circuit))
-                                },
-                                |(call, _)| call.circ().and_count(),
+                                })
                             )
                             .await
                             .map_err(VmError::execute)?;
@@ -265,7 +264,7 @@ where
                     }
 
                     Ok::<_, VmError>(preprocessed)
-                },
+                }),
             )
             .await
             .map_err(VmError::execute)??;
@@ -312,10 +311,12 @@ where
             let outputs = ctx
                 .map(
                     calls,
-                    async move |ctx, (call, output): (Call, Slice)| {
-                        evaluate(ctx, store.clone(), call, output).await
-                    },
-                    |(call, _)| call.circ().and_count(),
+                    move |ctx, (call, output): (Call, Slice)| {
+                        let store = store.clone();
+                        Box::pin(async move {
+                            evaluate(ctx, store, call, output).await
+                        })
+                    }
                 )
                 .await
                 .map_err(VmError::execute)?;

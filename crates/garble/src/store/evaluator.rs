@@ -130,7 +130,7 @@ where
             let expected_size = self.core.flush_view().garbler_flush_size();
             let (flush, ()) = ctx
                 .try_join(
-                    async move |ctx| {
+                    move |ctx| Box::pin(async move {
                         ctx.io_mut().with_limit(flush_size).send(flush).await?;
 
                         // Adjust the limit to expected size.
@@ -140,8 +140,8 @@ where
                             .expect_next()
                             .await
                             .map_err(Error::from)
-                    },
-                    async move |ctx| cot.flush(ctx).await.map_err(Error::cot),
+                    }),
+                    move |ctx| Box::pin(async move { cot.flush(ctx).await.map_err(Error::cot) }),
                 )
                 .await??;
 

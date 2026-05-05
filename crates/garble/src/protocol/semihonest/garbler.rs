@@ -213,12 +213,12 @@ where
             .collect::<Vec<_>>();
 
         ctx.try_join(
-            async move |ctx| {
+            move |ctx| Box::pin(async move {
                 // This flush is primarily intended to perform OT setup
                 // concurrently with preprocessing.
                 cot.flush(ctx).await.map_err(VmError::execute)
-            },
-            async move |ctx| {
+            }),
+            move |ctx| Box::pin(async move {
                 while !call_stack.is_empty() {
                     let calls = take_preprocess_calls(&mut call_stack);
 
@@ -230,11 +230,13 @@ where
                     let outputs = ctx
                         .map(
                             calls,
-                            async move |ctx: &mut Context, (call, output): (Call, Slice)| {
-                                generate(ctx, store.clone(), delta, call, output, Mode::Preprocess)
-                                    .await
-                            },
-                            |(call, _)| call.circ().and_count(),
+                            move |ctx: &mut Context, (call, output): (Call, Slice)| {
+                                let store = store.clone();
+                                Box::pin(async move {
+                                    generate(ctx, store, delta, call, output, Mode::Preprocess)
+                                        .await
+                                })
+                            }
                         )
                         .await
                         .map_err(VmError::execute)?;
@@ -243,7 +245,7 @@ where
                 }
 
                 Ok::<_, VmError>(())
-            },
+            }),
         )
         .await
         .map_err(VmError::execute)??;
@@ -281,10 +283,12 @@ where
             let outputs = ctx
                 .map(
                     calls,
-                    async move |ctx: &mut Context, (call, output): (Call, Slice)| {
-                        generate(ctx, store.clone(), delta, call, output, Mode::Execute).await
-                    },
-                    |(call, _)| call.circ().and_count(),
+                    move |ctx: &mut Context, (call, output): (Call, Slice)| {
+                        let store = store.clone();
+                        Box::pin(async move {
+                            generate(ctx, store, delta, call, output, Mode::Execute).await
+                        })
+                    }
                 )
                 .await
                 .map_err(VmError::execute)?;

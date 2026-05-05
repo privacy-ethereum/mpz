@@ -7,8 +7,9 @@
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use futures::executor::block_on;
 use mpz_circuits::AES128;
+use mpz_common::Executor;
 use mpz_common::context::{
-    Multithread, RecordedMtData, recording_mt_context_with_limit, recording_st_context_with_limit,
+    RecordedMtData, recording_mt_context_with_limit, recording_st_context_with_limit,
     replay_mt_context_with_limit, replay_st_context,
 };
 use mpz_ot::ideal::rcot::ideal_rcot;
@@ -162,8 +163,8 @@ async fn run_prover_with_replay(ctx: &mut mpz_common::Context, circuit_count: us
 
 /// Runs the full ZK protocol with MT contexts.
 async fn run_protocol_record_verifier_mt(
-    exec_p: &mut Multithread,
-    exec_v: &mut Multithread,
+    exec_p: &mut Executor,
+    exec_v: &mut Executor,
     circuit_count: usize,
     seed: u64,
 ) {
@@ -253,7 +254,7 @@ fn record_for_prover_mt(circuit_count: usize, seed: u64) -> RecordedMtData {
 }
 
 /// Runs MT prover only with replay context.
-async fn run_prover_with_replay_mt(exec: &mut Multithread, circuit_count: usize) {
+async fn run_prover_with_replay_mt(exec: &mut Executor, circuit_count: usize) {
     let (_, ot_recv) = ideal_rcot([0u8; 16].into(), [0u8; 16].into());
     let prover_config = ProverConfig::builder().build().unwrap();
     let mut prover = Prover::new(prover_config, ot_recv);
