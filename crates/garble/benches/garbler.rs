@@ -9,10 +9,12 @@ use std::sync::Arc;
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use futures::executor::block_on;
 use mpz_circuits::{AES128, Circuit};
-use mpz_common::Executor;
-use mpz_common::context::{
-    RecordedMtData, recording_mt_context_with_limit, recording_st_context_with_limit,
-    replay_mt_context_with_limit, replay_st_context,
+use mpz_common::{
+    Executor,
+    context::{
+        RecordedMtData, recording_mt_context_with_limit, recording_st_context_with_limit,
+        replay_mt_context_with_limit, replay_st_context,
+    },
 };
 use mpz_garble::protocol::semihonest::{Evaluator, Garbler};
 use mpz_memory_core::{Array, binary::U8, correlated::Delta};

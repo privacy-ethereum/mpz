@@ -8,11 +8,10 @@
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use futures::executor::block_on;
 use mpz_common::{
-    Flush,
-    Executor,
+    Executor, Flush,
     context::{
-        RecordedMtData, recording_mt_context_with_limit,
-        recording_st_context_with_limit, replay_mt_context_with_limit, replay_st_context,
+        RecordedMtData, recording_mt_context_with_limit, recording_st_context_with_limit,
+        replay_mt_context_with_limit, replay_st_context,
     },
 };
 use mpz_core::Block;

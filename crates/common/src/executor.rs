@@ -57,9 +57,8 @@ impl std::fmt::Debug for Inner {
 ///
 /// Receives a worker entry-point and dispatches it on a thread (or
 /// platform-equivalent, e.g. `web_spawn::spawn` on wasm).
-pub type SpawnFn = Box<
-    dyn Fn(Box<dyn FnOnce() + Send + 'static>) -> Result<(), std::io::Error> + Send + Sync,
->;
+pub type SpawnFn =
+    Box<dyn Fn(Box<dyn FnOnce() + Send + 'static>) -> Result<(), std::io::Error> + Send + Sync>;
 
 /// Builder for [`Executor`].
 pub struct ExecutorBuilder {
@@ -93,7 +92,7 @@ fn default_spawn(f: Box<dyn FnOnce() + Send + 'static>) -> Result<(), std::io::E
     std::thread::Builder::new()
         .name("mpz-executor-worker".to_string())
         .spawn(f)
-        .map(|_| ())
+        .map(drop)
 }
 
 impl ExecutorBuilder {
@@ -269,17 +268,12 @@ where
     F: std::future::Future + Send + 'static,
     F::Output: Send + 'static,
 {
-    let inner_clone = inner.clone();
-
-    let schedule = move |runnable: Runnable| {
-        inner_clone.injector.push(runnable);
-    };
-
+    let inner = Arc::clone(inner);
+    let schedule = move |runnable: Runnable| inner.injector.push(runnable);
     let (runnable, task) = async_task::spawn(future, schedule);
     runnable.schedule();
     task
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -323,12 +317,10 @@ mod tests {
 
         let mut ctx = executor.new_context().unwrap();
 
-        let result = futures::executor::block_on(
-            ctx.join(
-                |_ctx| Box::pin(async move { 1 + 1 }),
-                |_ctx| Box::pin(async move { 2 + 2 }),
-            ),
-        );
+        let result = futures::executor::block_on(ctx.join(
+            |_ctx| Box::pin(async move { 1 + 1 }),
+            |_ctx| Box::pin(async move { 2 + 2 }),
+        ));
 
         assert_eq!(result.unwrap(), (2, 4));
 
@@ -403,7 +395,7 @@ mod tests {
         });
 
         let (results_a, results_b) =
-            futures::executor::block_on(async { futures::future::join(task_a, task_b).await });
+            futures::executor::block_on(futures::future::join(task_a, task_b));
 
         assert!(results_a.is_ok());
         let results_b = results_b.unwrap();

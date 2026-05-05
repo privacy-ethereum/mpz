@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use futures::{
     AsyncRead, AsyncWrite,
-    future::{BoxFuture, Either},
+    future::{self, BoxFuture, Either},
 };
 
 #[cfg(any(test, feature = "test-utils"))]
@@ -50,7 +50,9 @@ impl std::fmt::Debug for Context {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mode = match &self.mode {
             Mode::Single => "single",
-            Mode::Multi { executor: Some(_), .. } => "multi-threaded",
+            Mode::Multi {
+                executor: Some(_), ..
+            } => "multi-threaded",
             Mode::Multi { executor: None, .. } => "multi-cooperative",
         };
         f.debug_struct("Context")
@@ -108,7 +110,10 @@ impl Context {
         Ok(Self {
             id,
             io,
-            mode: Mode::Multi { mux, executor: None },
+            mode: Mode::Multi {
+                mux,
+                executor: None,
+            },
             fork_counter: 0,
         })
     }
@@ -152,17 +157,6 @@ impl Context {
         base
     }
 
-    fn run<F>(executor: Option<&Arc<Inner>>, fut: F) -> impl std::future::Future<Output = F::Output> + Send
-    where
-        F: std::future::Future + Send + 'static,
-        F::Output: Send + 'static,
-    {
-        match executor {
-            Some(exec) => Either::Left(crate::executor::spawn_on(exec, fut)),
-            None => Either::Right(fut),
-        }
-    }
-
     /// Returns the context ID.
     pub fn id(&self) -> &ContextId {
         &self.id
@@ -198,14 +192,15 @@ impl Context {
         let executor = self.executor().cloned();
         let mut tasks = Vec::with_capacity(items.len());
         for (i, item) in items.into_iter().enumerate() {
-            let mut ctx = self.child(parent_id.child(i as u32))?;
+            let i = u32::try_from(i).expect("more than u32::MAX items");
+            let mut ctx = self.child(parent_id.child(i))?;
             let f = f.clone();
-            tasks.push(Self::run(
+            tasks.push(run(
                 executor.as_ref(),
                 async move { f(&mut ctx, item).await },
             ));
         }
-        Ok(futures::future::join_all(tasks).await)
+        Ok(future::join_all(tasks).await)
     }
 
     /// Runs `a` and `b` concurrently and returns both results.
@@ -227,9 +222,9 @@ impl Context {
         let mut ctx_a = self.child(parent_id.child(0))?;
         let mut ctx_b = self.child(parent_id.child(1))?;
 
-        let task_a = Self::run(executor.as_ref(), async move { a(&mut ctx_a).await });
-        let task_b = Self::run(executor.as_ref(), async move { b(&mut ctx_b).await });
-        Ok(futures::future::join(task_a, task_b).await)
+        let task_a = run(executor.as_ref(), async move { a(&mut ctx_a).await });
+        let task_b = run(executor.as_ref(), async move { b(&mut ctx_b).await });
+        Ok(future::join(task_a, task_b).await)
     }
 
     /// Like [`Context::join`], but short-circuits as soon as either branch
@@ -260,9 +255,9 @@ impl Context {
         let mut ctx_a = self.child(parent_id.child(0))?;
         let mut ctx_b = self.child(parent_id.child(1))?;
 
-        let task_a = Self::run(executor.as_ref(), async move { a(&mut ctx_a).await });
-        let task_b = Self::run(executor.as_ref(), async move { b(&mut ctx_b).await });
-        Ok(futures::future::try_join(task_a, task_b).await)
+        let task_a = run(executor.as_ref(), async move { a(&mut ctx_a).await });
+        let task_b = run(executor.as_ref(), async move { b(&mut ctx_b).await });
+        Ok(future::try_join(task_a, task_b).await)
     }
 
     /// Same as [`Context::try_join`], but with three branches.
@@ -273,9 +268,9 @@ impl Context {
         c: C,
     ) -> Result<Result<(RA, RB, RC), E>, ContextError>
     where
-        A: for<'x> FnOnce(&'x mut Context) -> BoxFuture<'x, Result<RA, E>> + Send + 'static,
-        B: for<'x> FnOnce(&'x mut Context) -> BoxFuture<'x, Result<RB, E>> + Send + 'static,
-        C: for<'x> FnOnce(&'x mut Context) -> BoxFuture<'x, Result<RC, E>> + Send + 'static,
+        A: for<'a> FnOnce(&'a mut Context) -> BoxFuture<'a, Result<RA, E>> + Send + 'static,
+        B: for<'a> FnOnce(&'a mut Context) -> BoxFuture<'a, Result<RB, E>> + Send + 'static,
+        C: for<'a> FnOnce(&'a mut Context) -> BoxFuture<'a, Result<RC, E>> + Send + 'static,
         RA: Send + 'static,
         RB: Send + 'static,
         RC: Send + 'static,
@@ -297,10 +292,10 @@ impl Context {
         let mut ctx_b = self.child(parent_id.child(1))?;
         let mut ctx_c = self.child(parent_id.child(2))?;
 
-        let task_a = Self::run(executor.as_ref(), async move { a(&mut ctx_a).await });
-        let task_b = Self::run(executor.as_ref(), async move { b(&mut ctx_b).await });
-        let task_c = Self::run(executor.as_ref(), async move { c(&mut ctx_c).await });
-        Ok(futures::future::try_join3(task_a, task_b, task_c).await)
+        let task_a = run(executor.as_ref(), async move { a(&mut ctx_a).await });
+        let task_b = run(executor.as_ref(), async move { b(&mut ctx_b).await });
+        let task_c = run(executor.as_ref(), async move { c(&mut ctx_c).await });
+        Ok(future::try_join3(task_a, task_b, task_c).await)
     }
 
     /// Same as [`Context::try_join`], but with four branches.
@@ -312,10 +307,10 @@ impl Context {
         d: D,
     ) -> Result<Result<(RA, RB, RC, RD), E>, ContextError>
     where
-        A: for<'x> FnOnce(&'x mut Context) -> BoxFuture<'x, Result<RA, E>> + Send + 'static,
-        B: for<'x> FnOnce(&'x mut Context) -> BoxFuture<'x, Result<RB, E>> + Send + 'static,
-        C: for<'x> FnOnce(&'x mut Context) -> BoxFuture<'x, Result<RC, E>> + Send + 'static,
-        D: for<'x> FnOnce(&'x mut Context) -> BoxFuture<'x, Result<RD, E>> + Send + 'static,
+        A: for<'a> FnOnce(&'a mut Context) -> BoxFuture<'a, Result<RA, E>> + Send + 'static,
+        B: for<'a> FnOnce(&'a mut Context) -> BoxFuture<'a, Result<RB, E>> + Send + 'static,
+        C: for<'a> FnOnce(&'a mut Context) -> BoxFuture<'a, Result<RC, E>> + Send + 'static,
+        D: for<'a> FnOnce(&'a mut Context) -> BoxFuture<'a, Result<RD, E>> + Send + 'static,
         RA: Send + 'static,
         RB: Send + 'static,
         RC: Send + 'static,
@@ -340,18 +335,35 @@ impl Context {
         let mut ctx_c = self.child(parent_id.child(2))?;
         let mut ctx_d = self.child(parent_id.child(3))?;
 
-        let task_a = Self::run(executor.as_ref(), async move { a(&mut ctx_a).await });
-        let task_b = Self::run(executor.as_ref(), async move { b(&mut ctx_b).await });
-        let task_c = Self::run(executor.as_ref(), async move { c(&mut ctx_c).await });
-        let task_d = Self::run(executor.as_ref(), async move { d(&mut ctx_d).await });
-        Ok(futures::future::try_join4(task_a, task_b, task_c, task_d).await)
+        let task_a = run(executor.as_ref(), async move { a(&mut ctx_a).await });
+        let task_b = run(executor.as_ref(), async move { b(&mut ctx_b).await });
+        let task_c = run(executor.as_ref(), async move { c(&mut ctx_c).await });
+        let task_d = run(executor.as_ref(), async move { d(&mut ctx_d).await });
+        Ok(future::try_join4(task_a, task_b, task_c, task_d).await)
     }
 
     fn executor(&self) -> Option<&Arc<Inner>> {
-        match &self.mode {
-            Mode::Multi { executor, .. } => executor.as_ref(),
-            Mode::Single => None,
+        if let Mode::Multi { executor, .. } = &self.mode {
+            executor.as_ref()
+        } else {
+            None
         }
+    }
+}
+
+/// Spawns `fut` on `executor` if one is provided, otherwise yields the future
+/// as-is. The output type is identical either way.
+fn run<F>(
+    executor: Option<&Arc<Inner>>,
+    fut: F,
+) -> impl std::future::Future<Output = F::Output> + Send
+where
+    F: std::future::Future + Send + 'static,
+    F::Output: Send + 'static,
+{
+    match executor {
+        Some(exec) => Either::Left(crate::executor::spawn_on(exec, fut)),
+        None => Either::Right(fut),
     }
 }
 

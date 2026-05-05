@@ -90,7 +90,9 @@ where
     fn open(&self, id: &[u8]) -> Result<Io, std::io::Error> {
         // Only allow opening the root ID
         if id != ContextId::default().as_bytes() {
-            return Err(std::io::Error::other("single channel mux only supports root ID"));
+            return Err(std::io::Error::other(
+                "single channel mux only supports root ID",
+            ));
         }
         let io = self
             .io
@@ -403,9 +405,7 @@ fn recording_test_mux(
 /// # Arguments
 ///
 /// * `io_buffer` - Size of the I/O buffer per channel.
-pub fn recording_mt_context(
-    io_buffer: usize,
-) -> (Executor, Executor, Arc<Mutex<RecordedMtData>>) {
+pub fn recording_mt_context(io_buffer: usize) -> (Executor, Executor, Arc<Mutex<RecordedMtData>>) {
     let (mux_0, mux_1, recorded) = recording_test_mux(io_buffer, None);
 
     (
@@ -463,4 +463,3 @@ where
         .build(mux_1);
     (exec_0, exec_1, recorded)
 }
-

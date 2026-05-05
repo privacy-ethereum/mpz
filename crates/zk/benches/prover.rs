@@ -7,10 +7,12 @@
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use futures::executor::block_on;
 use mpz_circuits::AES128;
-use mpz_common::Executor;
-use mpz_common::context::{
-    RecordedMtData, recording_mt_context_with_limit, recording_st_context_with_limit,
-    replay_mt_context_with_limit, replay_st_context,
+use mpz_common::{
+    Executor,
+    context::{
+        RecordedMtData, recording_mt_context_with_limit, recording_st_context_with_limit,
+        replay_mt_context_with_limit, replay_st_context,
+    },
 };
 use mpz_ot::ideal::rcot::ideal_rcot;
 use mpz_vm_core::{

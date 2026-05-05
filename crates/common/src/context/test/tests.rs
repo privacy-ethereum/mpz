@@ -318,19 +318,15 @@ async fn test_recording_mt_map() {
     let items: Vec<u32> = (0..8).collect();
 
     let (recv_results, send_results) = futures::join!(
-        ctx_0.map(
-            items.clone(),
-            |ctx: &mut Context, _item: u32| Box::pin(async move {
+        ctx_0.map(items.clone(), |ctx: &mut Context, _item: u32| Box::pin(
+            async move {
                 let msg: u32 = ctx.io_mut().expect_next().await.unwrap();
                 msg
-            }),
-        ),
-        ctx_1.map(
-            items,
-            |ctx: &mut Context, item: u32| Box::pin(async move {
-                ctx.io_mut().send(item * 10).await.unwrap();
-            }),
-        )
+            }
+        ),),
+        ctx_1.map(items, |ctx: &mut Context, item: u32| Box::pin(async move {
+            ctx.io_mut().send(item * 10).await.unwrap();
+        }),)
     );
 
     let recv_results = recv_results.unwrap();
@@ -373,14 +369,18 @@ async fn test_recording_mt_nested_try_join() {
                 assert_eq!(outer_msg, 999);
                 let inner_result = ctx
                     .try_join(
-                        |ctx: &mut Context| Box::pin(async move {
-                            let msg: u32 = ctx.io_mut().expect_next().await.unwrap();
-                            Ok::<_, std::io::Error>(msg)
-                        }),
-                        |ctx: &mut Context| Box::pin(async move {
-                            let msg: u64 = ctx.io_mut().expect_next().await.unwrap();
-                            Ok::<_, std::io::Error>(msg)
-                        }),
+                        |ctx: &mut Context| {
+                            Box::pin(async move {
+                                let msg: u32 = ctx.io_mut().expect_next().await.unwrap();
+                                Ok::<_, std::io::Error>(msg)
+                            })
+                        },
+                        |ctx: &mut Context| {
+                            Box::pin(async move {
+                                let msg: u64 = ctx.io_mut().expect_next().await.unwrap();
+                                Ok::<_, std::io::Error>(msg)
+                            })
+                        },
                     )
                     .await
                     .unwrap()
@@ -399,14 +399,18 @@ async fn test_recording_mt_nested_try_join() {
                 // Write something on outer child before inner try_join
                 ctx.io_mut().send(999u32).await.unwrap();
                 ctx.try_join(
-                    |ctx: &mut Context| Box::pin(async move {
-                        ctx.io_mut().send(42u32).await.unwrap();
-                        Ok::<_, std::io::Error>(())
-                    }),
-                    |ctx: &mut Context| Box::pin(async move {
-                        ctx.io_mut().send(123u64).await.unwrap();
-                        Ok::<_, std::io::Error>(())
-                    }),
+                    |ctx: &mut Context| {
+                        Box::pin(async move {
+                            ctx.io_mut().send(42u32).await.unwrap();
+                            Ok::<_, std::io::Error>(())
+                        })
+                    },
+                    |ctx: &mut Context| {
+                        Box::pin(async move {
+                            ctx.io_mut().send(123u64).await.unwrap();
+                            Ok::<_, std::io::Error>(())
+                        })
+                    },
                 )
                 .await
                 .unwrap()
