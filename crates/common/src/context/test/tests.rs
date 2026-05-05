@@ -58,7 +58,7 @@ async fn test_recording_determinism() {
 
 #[tokio::test]
 async fn test_recording_mt_context() {
-    let (mut exec_0, mut exec_1, recorded) = recording_mt_context(1024 * 1024);
+    let (exec_0, exec_1, recorded) = recording_mt_context(1024 * 1024);
 
     let mut ctx_0 = exec_0.new_context().unwrap();
     let mut ctx_1 = exec_1.new_context().unwrap();
@@ -89,7 +89,7 @@ async fn test_recording_mt_context() {
 #[tokio::test]
 async fn test_replay_mt_context() {
     // First: record some messages
-    let (mut exec_0, mut exec_1, recorded) = recording_mt_context(1024 * 1024);
+    let (exec_0, exec_1, recorded) = recording_mt_context(1024 * 1024);
 
     let mut ctx_0 = exec_0.new_context().unwrap();
     let mut ctx_1 = exec_1.new_context().unwrap();
@@ -106,7 +106,7 @@ async fn test_replay_mt_context() {
     let recorded_data = recorded.lock().unwrap().clone();
 
     // Now replay to a new context
-    let mut replay_exec = replay_mt_context(recorded_data);
+    let replay_exec = replay_mt_context(recorded_data);
     let mut replay_ctx = replay_exec.new_context().unwrap();
 
     // Should be able to receive the same messages from replay
@@ -120,7 +120,7 @@ async fn test_replay_mt_context() {
 #[tokio::test]
 async fn test_recording_mt_multiple_channels() {
     // Test that recording works correctly with multiple channels via ctx.try_join()
-    let (mut exec_0, mut exec_1, recorded) = recording_mt_context(1024 * 1024);
+    let (exec_0, exec_1, recorded) = recording_mt_context(1024 * 1024);
 
     let mut ctx_0 = exec_0.new_context().unwrap();
     let mut ctx_1 = exec_1.new_context().unwrap();
@@ -129,25 +129,25 @@ async fn test_recording_mt_multiple_channels() {
     let (result, send_result) = futures::join!(
         // ctx_0 uses try_join to receive on multiple channels
         ctx_0.try_join(
-            async |ctx: &mut Context| {
+            |ctx: &mut Context| Box::pin(async move {
                 let msg: u32 = ctx.io_mut().expect_next().await.unwrap();
                 Ok::<_, std::io::Error>(msg)
-            },
-            async |ctx: &mut Context| {
+            }),
+            |ctx: &mut Context| Box::pin(async move {
                 let msg: u64 = ctx.io_mut().expect_next().await.unwrap();
                 Ok::<_, std::io::Error>(msg)
-            },
+            }),
         ),
         // ctx_1 uses try_join to send on multiple channels
         ctx_1.try_join(
-            async |ctx: &mut Context| {
+            |ctx: &mut Context| Box::pin(async move {
                 ctx.io_mut().send(42u32).await.unwrap();
                 Ok::<_, std::io::Error>(())
-            },
-            async |ctx: &mut Context| {
+            }),
+            |ctx: &mut Context| Box::pin(async move {
                 ctx.io_mut().send(123u64).await.unwrap();
                 Ok::<_, std::io::Error>(())
-            },
+            }),
         )
     );
 
@@ -181,39 +181,39 @@ async fn test_recording_mt_multiple_channels() {
 
 #[tokio::test]
 async fn test_recording_mt_try_join3() {
-    let (mut exec_0, mut exec_1, recorded) = recording_mt_context(1024 * 1024);
+    let (exec_0, exec_1, recorded) = recording_mt_context(1024 * 1024);
 
     let mut ctx_0 = exec_0.new_context().unwrap();
     let mut ctx_1 = exec_1.new_context().unwrap();
 
     let (result, send_result) = futures::join!(
         ctx_0.try_join3(
-            async |ctx: &mut Context| {
+            |ctx: &mut Context| Box::pin(async move {
                 let msg: u32 = ctx.io_mut().expect_next().await.unwrap();
                 Ok::<_, std::io::Error>(msg)
-            },
-            async |ctx: &mut Context| {
+            }),
+            |ctx: &mut Context| Box::pin(async move {
                 let msg: u64 = ctx.io_mut().expect_next().await.unwrap();
                 Ok::<_, std::io::Error>(msg)
-            },
-            async |ctx: &mut Context| {
+            }),
+            |ctx: &mut Context| Box::pin(async move {
                 let msg: String = ctx.io_mut().expect_next().await.unwrap();
                 Ok::<_, std::io::Error>(msg)
-            },
+            }),
         ),
         ctx_1.try_join3(
-            async |ctx: &mut Context| {
+            |ctx: &mut Context| Box::pin(async move {
                 ctx.io_mut().send(42u32).await.unwrap();
                 Ok::<_, std::io::Error>(())
-            },
-            async |ctx: &mut Context| {
+            }),
+            |ctx: &mut Context| Box::pin(async move {
                 ctx.io_mut().send(123u64).await.unwrap();
                 Ok::<_, std::io::Error>(())
-            },
-            async |ctx: &mut Context| {
+            }),
+            |ctx: &mut Context| Box::pin(async move {
                 ctx.io_mut().send("hello".to_string()).await.unwrap();
                 Ok::<_, std::io::Error>(())
-            },
+            }),
         )
     );
 
@@ -241,47 +241,47 @@ async fn test_recording_mt_try_join3() {
 
 #[tokio::test]
 async fn test_recording_mt_try_join4() {
-    let (mut exec_0, mut exec_1, recorded) = recording_mt_context(1024 * 1024);
+    let (exec_0, exec_1, recorded) = recording_mt_context(1024 * 1024);
 
     let mut ctx_0 = exec_0.new_context().unwrap();
     let mut ctx_1 = exec_1.new_context().unwrap();
 
     let (result, send_result) = futures::join!(
         ctx_0.try_join4(
-            async |ctx: &mut Context| {
+            |ctx: &mut Context| Box::pin(async move {
                 let msg: u32 = ctx.io_mut().expect_next().await.unwrap();
                 Ok::<_, std::io::Error>(msg)
-            },
-            async |ctx: &mut Context| {
+            }),
+            |ctx: &mut Context| Box::pin(async move {
                 let msg: u64 = ctx.io_mut().expect_next().await.unwrap();
                 Ok::<_, std::io::Error>(msg)
-            },
-            async |ctx: &mut Context| {
+            }),
+            |ctx: &mut Context| Box::pin(async move {
                 let msg: String = ctx.io_mut().expect_next().await.unwrap();
                 Ok::<_, std::io::Error>(msg)
-            },
-            async |ctx: &mut Context| {
+            }),
+            |ctx: &mut Context| Box::pin(async move {
                 let msg: Vec<u8> = ctx.io_mut().expect_next().await.unwrap();
                 Ok::<_, std::io::Error>(msg)
-            },
+            }),
         ),
         ctx_1.try_join4(
-            async |ctx: &mut Context| {
+            |ctx: &mut Context| Box::pin(async move {
                 ctx.io_mut().send(42u32).await.unwrap();
                 Ok::<_, std::io::Error>(())
-            },
-            async |ctx: &mut Context| {
+            }),
+            |ctx: &mut Context| Box::pin(async move {
                 ctx.io_mut().send(123u64).await.unwrap();
                 Ok::<_, std::io::Error>(())
-            },
-            async |ctx: &mut Context| {
+            }),
+            |ctx: &mut Context| Box::pin(async move {
                 ctx.io_mut().send("hello".to_string()).await.unwrap();
                 Ok::<_, std::io::Error>(())
-            },
-            async |ctx: &mut Context| {
+            }),
+            |ctx: &mut Context| Box::pin(async move {
                 ctx.io_mut().send(vec![1u8, 2, 3]).await.unwrap();
                 Ok::<_, std::io::Error>(())
-            },
+            }),
         )
     );
 
@@ -309,7 +309,7 @@ async fn test_recording_mt_try_join4() {
 
 #[tokio::test]
 async fn test_recording_mt_map() {
-    let (mut exec_0, mut exec_1, recorded) = recording_mt_context(1024 * 1024);
+    let (exec_0, exec_1, recorded) = recording_mt_context(1024 * 1024);
 
     let mut ctx_0 = exec_0.new_context().unwrap();
     let mut ctx_1 = exec_1.new_context().unwrap();
@@ -320,18 +320,16 @@ async fn test_recording_mt_map() {
     let (recv_results, send_results) = futures::join!(
         ctx_0.map(
             items.clone(),
-            async |ctx: &mut Context, _item: u32| {
+            |ctx: &mut Context, _item: u32| Box::pin(async move {
                 let msg: u32 = ctx.io_mut().expect_next().await.unwrap();
                 msg
-            },
-            |_| 1, // weight
+            }),
         ),
         ctx_1.map(
             items,
-            async |ctx: &mut Context, item: u32| {
+            |ctx: &mut Context, item: u32| Box::pin(async move {
                 ctx.io_mut().send(item * 10).await.unwrap();
-            },
-            |_| 1,
+            }),
         )
     );
 
@@ -360,7 +358,7 @@ async fn test_recording_mt_map() {
 
 #[tokio::test]
 async fn test_recording_mt_nested_try_join() {
-    let (mut exec_0, mut exec_1, recorded) = recording_mt_context(1024 * 1024);
+    let (exec_0, exec_1, recorded) = recording_mt_context(1024 * 1024);
 
     let mut ctx_0 = exec_0.new_context().unwrap();
     let mut ctx_1 = exec_1.new_context().unwrap();
@@ -369,56 +367,56 @@ async fn test_recording_mt_nested_try_join() {
         // Outer try_join
         ctx_0.try_join(
             // Inner try_join in first branch
-            async |ctx: &mut Context| {
+            |ctx: &mut Context| Box::pin(async move {
                 // Receive the outer child's message first
                 let outer_msg: u32 = ctx.io_mut().expect_next().await.unwrap();
                 assert_eq!(outer_msg, 999);
                 let inner_result = ctx
                     .try_join(
-                        async |ctx: &mut Context| {
+                        |ctx: &mut Context| Box::pin(async move {
                             let msg: u32 = ctx.io_mut().expect_next().await.unwrap();
                             Ok::<_, std::io::Error>(msg)
-                        },
-                        async |ctx: &mut Context| {
+                        }),
+                        |ctx: &mut Context| Box::pin(async move {
                             let msg: u64 = ctx.io_mut().expect_next().await.unwrap();
                             Ok::<_, std::io::Error>(msg)
-                        },
+                        }),
                     )
                     .await
                     .unwrap()
                     .unwrap();
                 Ok::<_, std::io::Error>(inner_result)
-            },
+            }),
             // Simple receive in second branch
-            async |ctx: &mut Context| {
+            |ctx: &mut Context| Box::pin(async move {
                 let msg: String = ctx.io_mut().expect_next().await.unwrap();
                 Ok::<_, std::io::Error>(msg)
-            },
+            }),
         ),
         // Matching structure on sender side
         ctx_1.try_join(
-            async |ctx: &mut Context| {
+            |ctx: &mut Context| Box::pin(async move {
                 // Write something on outer child before inner try_join
                 ctx.io_mut().send(999u32).await.unwrap();
                 ctx.try_join(
-                    async |ctx: &mut Context| {
+                    |ctx: &mut Context| Box::pin(async move {
                         ctx.io_mut().send(42u32).await.unwrap();
                         Ok::<_, std::io::Error>(())
-                    },
-                    async |ctx: &mut Context| {
+                    }),
+                    |ctx: &mut Context| Box::pin(async move {
                         ctx.io_mut().send(123u64).await.unwrap();
                         Ok::<_, std::io::Error>(())
-                    },
+                    }),
                 )
                 .await
                 .unwrap()
                 .unwrap();
                 Ok::<_, std::io::Error>(())
-            },
-            async |ctx: &mut Context| {
+            }),
+            |ctx: &mut Context| Box::pin(async move {
                 ctx.io_mut().send("nested".to_string()).await.unwrap();
                 Ok::<_, std::io::Error>(())
-            },
+            }),
         )
     );
 
