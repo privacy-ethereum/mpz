@@ -5,7 +5,10 @@ mod test;
 
 use std::sync::Arc;
 
-use futures::future::{BoxFuture, Either};
+use futures::{
+    AsyncRead, AsyncWrite,
+    future::{BoxFuture, Either},
+};
 
 #[cfg(any(test, feature = "test-utils"))]
 pub use test::{
@@ -27,7 +30,10 @@ use crate::{ContextId, executor::Inner, io::Io, mux::Mux};
 pub struct Context {
     id: ContextId,
     io: Io,
-    mux: Arc<dyn Mux + Send + Sync>,
+    /// Mux for opening per-task channels. `None` for single-channel contexts
+    /// created via [`Context::from_io`]; in that case fork operations
+    /// degrade to sequential execution on the parent's IO.
+    mux: Option<Arc<dyn Mux + Send + Sync>>,
     executor: Option<Arc<Inner>>,
     /// Sub-namespace counter incremented on each fork.
     fork_counter: u32,
@@ -50,6 +56,33 @@ impl Context {
         Self::with_prefix(mux, ContextId::default())
     }
 
+    /// Creates a new context backed by a single I/O channel, without a mux.
+    ///
+    /// Useful when there is only one logical channel and no need to fork.
+    /// [`join`](Self::join), [`try_join`](Self::try_join), [`map`](Self::map)
+    /// etc. still work, but degrade to **sequential** execution on the
+    /// parent's IO since there is no mux to allocate per-task channels.
+    pub fn new_single_threaded<I>(io: I) -> Self
+    where
+        I: AsyncRead + AsyncWrite + Send + Sync + Unpin + 'static,
+    {
+        Self::from_io(Io::from_io(io))
+    }
+
+    /// Creates a new context backed by a pre-built [`Io`], without a mux.
+    ///
+    /// Like [`Context::new_single_threaded`] but takes an `Io` directly so
+    /// callers can choose the framing (e.g. typed serio channels in tests).
+    pub(crate) fn from_io(io: Io) -> Self {
+        Self {
+            id: ContextId::default(),
+            io,
+            mux: None,
+            executor: None,
+            fork_counter: 0,
+        }
+    }
+
     /// Creates a new context in single-threaded mode rooted at the given byte
     /// prefix.
     ///
@@ -66,7 +99,7 @@ impl Context {
         Ok(Self {
             id,
             io,
-            mux,
+            mux: Some(mux),
             executor: None,
             fork_counter: 0,
         })
@@ -82,19 +115,21 @@ impl Context {
         Self {
             id,
             io,
-            mux,
+            mux: Some(mux),
             executor: Some(executor),
             fork_counter: 0,
         }
     }
 
-    /// Creates a child context with the given ID.
+    /// Creates a child context with the given ID. Caller must ensure a mux
+    /// is configured.
     fn child(&self, id: ContextId) -> Result<Self, ContextError> {
-        let io = self.mux.open(id.as_ref()).map_err(ContextError::mux)?;
+        let mux = self.mux.as_ref().expect("mux should be set when forking");
+        let io = mux.open(id.as_ref()).map_err(ContextError::mux)?;
         Ok(Self {
             id,
             io,
-            mux: self.mux.clone(),
+            mux: Some(mux.clone()),
             executor: self.executor.clone(),
             fork_counter: 0,
         })
@@ -145,6 +180,15 @@ impl Context {
         T: Send + 'static,
         R: Send + 'static,
     {
+        if self.mux.is_none() {
+            // No mux: run sequentially on the parent's IO.
+            let mut results = Vec::with_capacity(items.len());
+            for item in items {
+                results.push(f(self, item).await);
+            }
+            return Ok(results);
+        }
+
         let parent_id = self.next_fork();
         let mut tasks = Vec::with_capacity(items.len());
         for (i, item) in items.into_iter().enumerate() {
@@ -163,6 +207,12 @@ impl Context {
         RA: Send + 'static,
         RB: Send + 'static,
     {
+        if self.mux.is_none() {
+            let ra = a(self).await;
+            let rb = b(self).await;
+            return Ok((ra, rb));
+        }
+
         let parent_id = self.next_fork();
         let mut ctx_a = self.child(parent_id.child(0))?;
         let mut ctx_b = self.child(parent_id.child(1))?;
@@ -185,6 +235,15 @@ impl Context {
         RB: Send + 'static,
         E: Send + 'static,
     {
+        if self.mux.is_none() {
+            return Ok(async {
+                let ra = a(self).await?;
+                let rb = b(self).await?;
+                Ok((ra, rb))
+            }
+            .await);
+        }
+
         let parent_id = self.next_fork();
         let mut ctx_a = self.child(parent_id.child(0))?;
         let mut ctx_b = self.child(parent_id.child(1))?;
@@ -210,6 +269,16 @@ impl Context {
         RC: Send + 'static,
         E: Send + 'static,
     {
+        if self.mux.is_none() {
+            return Ok(async {
+                let ra = a(self).await?;
+                let rb = b(self).await?;
+                let rc = c(self).await?;
+                Ok((ra, rb, rc))
+            }
+            .await);
+        }
+
         let parent_id = self.next_fork();
         let mut ctx_a = self.child(parent_id.child(0))?;
         let mut ctx_b = self.child(parent_id.child(1))?;
@@ -240,6 +309,17 @@ impl Context {
         RD: Send + 'static,
         E: Send + 'static,
     {
+        if self.mux.is_none() {
+            return Ok(async {
+                let ra = a(self).await?;
+                let rb = b(self).await?;
+                let rc = c(self).await?;
+                let rd = d(self).await?;
+                Ok((ra, rb, rc, rd))
+            }
+            .await);
+        }
+
         let parent_id = self.next_fork();
         let mut ctx_a = self.child(parent_id.child(0))?;
         let mut ctx_b = self.child(parent_id.child(1))?;
@@ -267,3 +347,4 @@ impl ContextError {
         Self { source }
     }
 }
+
