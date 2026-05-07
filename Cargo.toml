@@ -28,6 +28,7 @@ members = [
     "crates/zk",
     "crates/vole-core",
     "crates/wasm-bench",
+    "crates/poly-proof-core",
 ]
 exclude = ["crates/lpn-estimator"]
 resolver = "2"
