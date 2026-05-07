@@ -18,7 +18,22 @@ use crate::{ExtensionField, Field, FieldError, gf2::Gf2};
 ///
 /// Field arithmetic uses the irreducible polynomial
 /// p(x) = x^64 + x^4 + x^3 + x + 1.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(
+    Copy,
+    Clone,
+    Debug,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Serialize,
+    Deserialize,
+    zerocopy::FromBytes,
+    zerocopy::IntoBytes,
+    zerocopy::Immutable,
+    zerocopy::KnownLayout,
+)]
+#[repr(transparent)]
 pub struct Gf2_64(pub u64);
 
 impl Gf2_64 {
