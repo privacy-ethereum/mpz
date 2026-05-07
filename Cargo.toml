@@ -24,6 +24,7 @@ members = [
     "crates/memory-core",
     "crates/vm-core",
     "crates/zk-core",
+    "crates/zk-core-new",
     "crates/zk",
     "crates/wasm-bench",
 ]
@@ -74,6 +75,7 @@ mpz-ole-core = { path = "crates/ole-core" }
 mpz-memory-core = { path = "crates/memory-core" }
 mpz-vm-core = { path = "crates/vm-core" }
 mpz-zk-core = { path = "crates/zk-core" }
+mpz-zk-core-new = { path = "crates/zk-core-new" }
 mpz-zk = { path = "crates/zk" }
 clmul = { path = "crates/clmul" }
 matrix-transpose = { path = "crates/matrix-transpose" }
