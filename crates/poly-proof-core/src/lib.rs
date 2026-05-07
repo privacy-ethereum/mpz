@@ -10,8 +10,10 @@
 //! - **`E: mpz_fields::Field`** — the extension field used for MACs, keys, and
 //!   Delta (e.g., GF(2^64) via [`mpz_fields::gf2_64::Gf2_64`]).
 //!
-//! - **`W: SubfieldOf<E>`** — the witness value type, a subfield element that
-//!   embeds into `E` (e.g., `bool` for F_2, or `u64` for F_{2^64}).
+//! - **`W: Field`** with `E: ExtensionField<W>` — the witness value type, a
+//!   subfield element that embeds into `E` (e.g.,
+//!   [`mpz_fields::gf2::Gf2`] for F_2, or `Gf2_64` itself for the full-field
+//!   case once the corresponding `ExtensionField` impl exists).
 //!
 //! ## Soundness budget
 //!
@@ -40,11 +42,8 @@ pub mod verifier;
 
 use std::fmt::Debug;
 
-pub use mpz_fields::Field;
+pub use mpz_fields::{ExtensionField, Field};
 use serde::{Deserialize, Serialize};
-
-pub mod subfield;
-pub use subfield::SubfieldOf;
 
 /// Default — and minimum — statistical security parameter (SSP), in bits.
 pub const DEFAULT_SSP: u32 = 40;
@@ -79,23 +78,26 @@ pub struct VerifierVope<E> {
 mod tests {
     use super::*;
     use crate::circuit::CircuitBuilder;
-    use mpz_fields::gf2_64::Gf2_64;
+    use mpz_fields::{gf2::Gf2, gf2_64::Gf2_64};
     use rand::{Rng, SeedableRng, rngs::StdRng};
 
     fn random_gf64(rng: &mut impl Rng) -> Gf2_64 {
         Gf2_64(rng.random::<u64>())
     }
 
-    fn auth_all<W: SubfieldOf<Gf2_64>>(
+    fn auth_all<W: Field>(
         values: &[W],
         delta: Gf2_64,
         rng: &mut impl Rng,
-    ) -> (Vec<Gf2_64>, Vec<Gf2_64>) {
+    ) -> (Vec<Gf2_64>, Vec<Gf2_64>)
+    where
+        Gf2_64: ExtensionField<W>,
+    {
         let mut macs = Vec::new();
         let mut keys = Vec::new();
         for &v in values {
             let mac = random_gf64(rng);
-            let key = mac + v.embed() * delta;
+            let key = mac + Gf2_64::embed(v) * delta;
             macs.push(mac);
             keys.push(key);
         }
@@ -136,7 +138,7 @@ mod tests {
         let chi = random_gf64(&mut rng);
 
         let circuit = and_gate_circuit();
-        let values: Vec<bool> = vec![true, true, true];
+        let values: Vec<Gf2> = vec![Gf2::ONE, Gf2::ONE, Gf2::ONE];
         let (macs, vk) = auth_all(&values, delta, &mut rng);
 
         let d_max = circuit.degree();
@@ -163,7 +165,7 @@ mod tests {
         let chi = random_gf64(&mut rng);
 
         let circuit = and_gate_circuit();
-        let values: Vec<bool> = vec![true, true, false];
+        let values: Vec<Gf2> = vec![Gf2::ONE, Gf2::ONE, Gf2::ZERO];
         let (macs, vk) = auth_all(&values, delta, &mut rng);
 
         let d_max = circuit.degree();
@@ -190,8 +192,8 @@ mod tests {
         let chi = random_gf64(&mut rng);
 
         let circuit = and_gate_circuit();
-        let vals1: Vec<bool> = vec![true, true, true];
-        let vals2: Vec<bool> = vec![false, true, false];
+        let vals1: Vec<Gf2> = vec![Gf2::ONE, Gf2::ONE, Gf2::ONE];
+        let vals2: Vec<Gf2> = vec![Gf2::ZERO, Gf2::ONE, Gf2::ZERO];
         let (macs1, vk1) = auth_all(&vals1, delta, &mut rng);
         let (macs2, vk2) = auth_all(&vals2, delta, &mut rng);
 
@@ -224,8 +226,8 @@ mod tests {
         let chi_2 = random_gf64(&mut rng);
 
         let circuit = and_gate_circuit();
-        let vals1: Vec<bool> = vec![true, true, true];
-        let vals2: Vec<bool> = vec![false, false, false];
+        let vals1: Vec<Gf2> = vec![Gf2::ONE, Gf2::ONE, Gf2::ONE];
+        let vals2: Vec<Gf2> = vec![Gf2::ZERO, Gf2::ZERO, Gf2::ZERO];
         let (macs1, vk1) = auth_all(&vals1, delta, &mut rng);
         let (macs2, vk2) = auth_all(&vals2, delta, &mut rng);
 
@@ -261,8 +263,8 @@ mod tests {
         let out = cb.add(a, b);
         let circ1 = cb.build(out);
 
-        let vals0: Vec<bool> = vec![true, true, true];
-        let vals1: Vec<bool> = vec![false, false];
+        let vals0: Vec<Gf2> = vec![Gf2::ONE, Gf2::ONE, Gf2::ONE];
+        let vals1: Vec<Gf2> = vec![Gf2::ZERO, Gf2::ZERO];
         let (macs0, vk0) = auth_all(&vals0, delta, &mut rng);
         let (macs1, vk1) = auth_all(&vals1, delta, &mut rng);
 
@@ -305,24 +307,25 @@ mod tests {
         let (pv, vv) = mock_vope(d_max, delta, &mut rng);
 
         let mut all_macs: Vec<Vec<Gf2_64>> = Vec::new();
-        let mut all_vals: Vec<Vec<bool>> = Vec::new();
+        let mut all_vals: Vec<Vec<Gf2>> = Vec::new();
         let mut all_keys: Vec<Vec<Gf2_64>> = Vec::new();
 
         for circ in &circuits {
             let nv = circ.num_vars();
 
-            // Random bits for all vars; Y (var 0) = false initially.
-            let mut vals: Vec<bool> = (0..nv).map(|_| rng.random::<bool>()).collect();
-            vals[0] = false;
+            // Random bits for all vars; Y (var 0) = ZERO initially.
+            let mut vals: Vec<Gf2> = (0..nv).map(|_| Gf2(rng.random::<bool>())).collect();
+            vals[0] = Gf2::ZERO;
 
             // Evaluate in cleartext to get the residual, then set Y so
             // the output is zero.
-            let embedded: Vec<Gf2_64> = vals
-                .iter()
-                .map(|&v| if v { Gf2_64::ONE } else { Gf2_64::ZERO })
-                .collect();
+            let embedded: Vec<Gf2_64> = vals.iter().map(|&v| Gf2_64::embed(v)).collect();
             let residual = circ.evaluate(&embedded);
-            vals[0] = residual == Gf2_64::ONE;
+            vals[0] = if residual == Gf2_64::ONE {
+                Gf2::ONE
+            } else {
+                Gf2::ZERO
+            };
 
             // Authenticate.
             let (macs, keys) = auth_all(&vals, delta, &mut rng);
@@ -331,7 +334,7 @@ mod tests {
             all_keys.push(keys);
         }
 
-        let p_evals: Vec<(usize, &[Gf2_64], &[bool])> = all_macs
+        let p_evals: Vec<(usize, &[Gf2_64], &[Gf2])> = all_macs
             .iter()
             .zip(&all_vals)
             .enumerate()

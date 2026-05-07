@@ -1,5 +1,5 @@
 use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
-use mpz_fields::gf2_64::Gf2_64;
+use mpz_fields::{gf2::Gf2, gf2_64::Gf2_64};
 use poly_proof_core::{circuit::Circuit, fixture::step_circuit_polynomials, prover::Prover};
 use rand::{Rng, SeedableRng, rngs::StdRng};
 
@@ -11,7 +11,7 @@ struct TestData {
     /// The 12 fixture circuits.
     circuits: Vec<Circuit<Gf2_64>>,
     /// Pre-generated evaluations: (poly_id, macs, values).
-    evals: Vec<(usize, Vec<Gf2_64>, Vec<bool>)>,
+    evals: Vec<(usize, Vec<Gf2_64>, Vec<Gf2>)>,
     /// Batching challenge.
     chi: Gf2_64,
 }
@@ -28,12 +28,12 @@ fn setup(num_evals: usize) -> TestData {
         .flat_map(|(i, &c)| std::iter::repeat_n(i, c))
         .collect();
 
-    let evals: Vec<(usize, Vec<Gf2_64>, Vec<bool>)> = (0..num_evals)
+    let evals: Vec<(usize, Vec<Gf2_64>, Vec<Gf2>)> = (0..num_evals)
         .map(|_| {
             let poly_id = weighted_pool[rng.random::<u64>() as usize % weighted_pool.len()];
             let n_vars = circuit_num_vars[poly_id];
             let macs: Vec<Gf2_64> = (0..n_vars).map(|_| random_gf64(&mut rng)).collect();
-            let values: Vec<bool> = (0..n_vars).map(|_| rng.random::<bool>()).collect();
+            let values: Vec<Gf2> = (0..n_vars).map(|_| Gf2(rng.random::<bool>())).collect();
             (poly_id, macs, values)
         })
         .collect();
@@ -54,7 +54,7 @@ fn bench_prover(c: &mut Criterion) {
     for &num_evals in &[5_000_000, 10_000_000] {
         let data = setup(num_evals);
 
-        let batch: Vec<(usize, &[Gf2_64], &[bool])> = data
+        let batch: Vec<(usize, &[Gf2_64], &[Gf2])> = data
             .evals
             .iter()
             .map(|(id, m, v)| (*id, m.as_slice(), v.as_slice()))

@@ -1,7 +1,7 @@
 //! Prover-side logic for the QuickSilver polynomial proof.
 
 use crate::{
-    DEFAULT_SSP, Field, ProofMessage, ProverVope, SubfieldOf,
+    DEFAULT_SSP, ExtensionField, Field, ProofMessage, ProverVope,
     circuit::{Circuit, CircuitNode},
     soundness::max_evaluations,
 };
@@ -68,11 +68,14 @@ impl<E: Field> Prover<E> {
     /// Each evaluation is a `(poly_id, macs, values)`
     /// triple: the circuit to evaluate, one MAC per variable, and one
     /// witness value per variable.
-    pub fn accumulate<W: SubfieldOf<E>>(
+    pub fn accumulate<W: Field>(
         &mut self,
         evaluations: &[(usize, &[E], &[W])],
         chi: E,
-    ) -> Result<(), ProverError> {
+    ) -> Result<(), ProverError>
+    where
+        E: ExtensionField<W>,
+    {
         let new_count = self.eval_count.saturating_add(evaluations.len() as u64);
         if new_count > self.max_evaluations {
             return Err(ErrorRepr::SoundnessBudget {
@@ -112,13 +115,16 @@ impl<E: Field> Prover<E> {
     /// Walk circuit `poly_id` bottom-up on `macs` and `values`, computing
     /// coefficient vectors at each node, then accumulate the output into
     /// the running accumulator with degree-shift and χ-scaling by `chi_power`.
-    fn evaluate_circuit<W: SubfieldOf<E>>(
+    fn evaluate_circuit<W: Field>(
         &mut self,
         poly_id: usize,
         macs: &[E],
         values: &[W],
         chi_power: E,
-    ) -> Result<(), ProverError> {
+    ) -> Result<(), ProverError>
+    where
+        E: ExtensionField<W>,
+    {
         if poly_id >= self.circuits.len() {
             return Err(ErrorRepr::UnknownPolyId {
                 poly_id,
@@ -156,7 +162,7 @@ impl<E: Field> Prover<E> {
             match *node {
                 CircuitNode::Var(idx) => {
                     scratch[offset] = macs[idx];
-                    scratch[offset + 1] = values[idx].embed();
+                    scratch[offset + 1] = E::embed(values[idx]);
                 }
                 CircuitNode::Const(c) => {
                     scratch[offset] = c;
@@ -164,8 +170,8 @@ impl<E: Field> Prover<E> {
                 CircuitNode::Mul(a, b) => {
                     // Var nodes are always degree-1 polynomials with two
                     // coefficients: [mac, embed(w)]. The arms below exploit
-                    // this structure to replace full field multiplications
-                    // with cheaper scalar_mul calls on the witness term.
+                    // this structure to keep witness terms in the subfield
+                    // until they have to enter the extension field.
                     match (circuit.nodes[a], circuit.nodes[b]) {
                         // Variable × variable
                         (CircuitNode::Var(a_idx), CircuitNode::Var(b_idx)) => {
@@ -178,8 +184,8 @@ impl<E: Field> Prover<E> {
                             let b_mac = macs[b_idx];
                             let b_w = values[b_idx];
                             scratch[offset] = a_mac * b_mac;
-                            scratch[offset + 1] = b_w.scalar_mul(a_mac) + a_w.scalar_mul(b_mac);
-                            scratch[offset + 2] = a_w.scalar_mul(b_w.embed());
+                            scratch[offset + 1] = E::embed(b_w) * a_mac + E::embed(a_w) * b_mac;
+                            scratch[offset + 2] = E::embed(a_w * b_w);
                         }
                         // Variable × coefficient vector (either operand may
                         // be the Var; we pick out which and use one loop body)
@@ -195,14 +201,14 @@ impl<E: Field> Prover<E> {
                                 scratch[offset + k] = E::zero();
                             }
                             let v_mac = macs[var_idx];
-                            let v_w = values[var_idx];
+                            let v_w_embed = E::embed(values[var_idx]);
                             let e_off = layout.node_offsets[other];
                             let e_len = circuit.node_degrees[other] + 1;
                             for i in 0..e_len {
                                 let coeff = scratch[e_off + i];
                                 scratch[offset + i] = scratch[offset + i] + coeff * v_mac;
                                 scratch[offset + i + 1] =
-                                    scratch[offset + i + 1] + v_w.scalar_mul(coeff);
+                                    scratch[offset + i + 1] + v_w_embed * coeff;
                             }
                         }
                         // Coefficient vector × coefficient vector (general convolution)
@@ -346,7 +352,7 @@ enum ErrorRepr {
 mod tests {
     use super::*;
     use crate::circuit::CircuitBuilder;
-    use mpz_fields::gf2_64::Gf2_64;
+    use mpz_fields::{gf2::Gf2, gf2_64::Gf2_64};
 
     fn and_gate_circuit() -> Circuit<Gf2_64> {
         let mut cb = CircuitBuilder::new();
@@ -375,7 +381,7 @@ mod tests {
         p.set_max_evaluations(1);
 
         let macs = vec![Gf2_64(0); 3];
-        let values = vec![false; 3];
+        let values = vec![Gf2::ZERO; 3];
         let chi = Gf2_64(1);
 
         p.accumulate(&[(0, macs.as_slice(), values.as_slice())], chi)

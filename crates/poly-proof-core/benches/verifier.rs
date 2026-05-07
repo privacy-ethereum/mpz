@@ -1,8 +1,6 @@
 use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
-use mpz_fields::gf2_64::Gf2_64;
-use poly_proof_core::{
-    SubfieldOf, circuit::Circuit, fixture::step_circuit_polynomials, verifier::Verifier,
-};
+use mpz_fields::{ExtensionField, gf2::Gf2, gf2_64::Gf2_64};
+use poly_proof_core::{circuit::Circuit, fixture::step_circuit_polynomials, verifier::Verifier};
 use rand::{Rng, SeedableRng, rngs::StdRng};
 
 fn random_gf64(rng: &mut impl Rng) -> Gf2_64 {
@@ -41,8 +39,8 @@ fn setup(num_evals: usize) -> TestData {
             let keys: Vec<Gf2_64> = (0..n_vars)
                 .map(|_| {
                     let mac = random_gf64(&mut rng);
-                    let v: bool = rng.random();
-                    mac + v.embed() * delta
+                    let v = Gf2(rng.random::<bool>());
+                    mac + Gf2_64::embed(v) * delta
                 })
                 .collect();
             (poly_id, keys)
