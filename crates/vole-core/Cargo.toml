@@ -1,0 +1,16 @@
+[package]
+name = "mpz-vole-core"
+version = "0.1.0-alpha.5"
+edition = "2024"
+
+[lints]
+workspace = true
+
+[dependencies]
+mpz-common = { workspace = true, features = ["future"] }
+mpz-fields = { workspace = true }
+
+hybrid-array = { workspace = true }
+rand = { workspace = true, features = ["small_rng"] }
+serde = { workspace = true, features = ["derive"] }
+thiserror = { workspace = true }
