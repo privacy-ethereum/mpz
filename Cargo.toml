@@ -80,6 +80,7 @@ mpz-zk-core = { path = "crates/zk-core" }
 mpz-zk-core-new = { path = "crates/zk-core-new" }
 mpz-zk = { path = "crates/zk" }
 mpz-vole-core = { path = "crates/vole-core" }
+mpz-poly-proof-core = { path = "crates/poly-proof-core" }
 clmul = { path = "crates/clmul" }
 matrix-transpose = { path = "crates/matrix-transpose" }
 rangeset = "0.4"

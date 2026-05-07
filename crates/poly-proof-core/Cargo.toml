@@ -1,10 +1,10 @@
 [package]
-name = "poly-proof-core"
+name = "mpz-poly-proof-core"
 version = "0.1.0"
 edition = "2024"
 
 [lib]
-name = "poly_proof_core"
+name = "mpz_poly_proof_core"
 
 [dependencies]
 mpz-fields = { path = "../fields" }

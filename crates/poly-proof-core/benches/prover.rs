@@ -1,6 +1,6 @@
 use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
 use mpz_fields::{gf2::Gf2, gf2_64::Gf2_64};
-use poly_proof_core::{circuit::Circuit, fixture::step_circuit_polynomials, prover::Prover};
+use mpz_poly_proof_core::{circuit::Circuit, fixture::step_circuit_polynomials, prover::Prover};
 use rand::{Rng, SeedableRng, rngs::StdRng};
 
 fn random_gf64(rng: &mut impl Rng) -> Gf2_64 {
