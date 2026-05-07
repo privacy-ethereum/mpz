@@ -1,0 +1,20 @@
+[package]
+name = "mpz-circuits-new"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+mpz-fields = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+itybity = { workspace = true }
+rand = { workspace = true }
+sha2 = { workspace = true, features = ["compress"] }
+
+[[bench]]
+name = "sha256"
+harness = false
+
+[lints]
+workspace = true
