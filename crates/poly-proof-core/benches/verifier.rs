@@ -14,8 +14,8 @@ struct TestData {
     evals: Vec<(usize, Vec<Gf2_64>)>,
     /// MAC key Δ.
     delta: Gf2_64,
-    /// Batching challenge.
-    chi: Gf2_64,
+    /// Batching seed.
+    seed: [u8; 32],
 }
 
 fn setup(num_evals: usize) -> TestData {
@@ -47,13 +47,13 @@ fn setup(num_evals: usize) -> TestData {
         })
         .collect();
 
-    let chi = random_gf64(&mut rng);
+    let seed: [u8; 32] = rng.random();
 
     TestData {
         circuits,
         evals,
         delta,
-        chi,
+        seed,
     }
 }
 
@@ -79,7 +79,7 @@ fn bench_verifier(c: &mut Criterion) {
                 bench.iter_batched(
                     || verifier.clone(),
                     |mut v| {
-                        v.accumulate(black_box(&batch), black_box(data.chi))
+                        v.accumulate(black_box(&batch), black_box(data.seed))
                             .unwrap();
                         black_box(&v);
                     },

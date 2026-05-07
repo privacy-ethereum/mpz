@@ -3,50 +3,30 @@
 //! This crate implements the polynomial satisfiability proof from QuickSilver
 //! (Yang et al., CCS'21), Section 3.2 / Figure 6.
 //!
-//! # Setting
+//! ## Soundness
 //!
-//! The protocol is generic over two type parameters:
+//! The protocol operates in the random oracle model. Error is bounded
+//! by
 //!
-//! - **`E: mpz_fields::Field`** — the extension field used for MACs, keys, and
-//!   Delta (e.g., GF(2^64) via [`mpz_fields::gf2_64::Gf2_64`]).
+//! ```text
+//! q / 2^256 + (d_max + 2) / |E|
+//! ```
 //!
-//! - **`W: Field`** with `E: ExtensionField<W>` — the witness value type, a
-//!   subfield element that embeds into `E` (e.g.,
-//!   [`mpz_fields::gf2::Gf2`] for F_2, or `Gf2_64` itself for the full-field
-//!   case once the corresponding `ExtensionField` impl exists).
-//!
-//! ## Soundness budget
-//!
-//! Soundness of the proof rests on Schwartz-Zippel over `E`: for a batch of
-//! `T` evaluations of constraints with maximum degree `d_max`, a cheating
-//! prover succeeds with probability at most `(T + d_max) / |E|`.
-//!
-//! [`prover::Prover`] and [`verifier::Verifier`] therefore cap the cumulative
-//! batch size across all [`accumulate`](prover::Prover::accumulate) calls.
-//! The cap is chosen so that the resulting error stays at most `2⁻ˢˢᵖ`, where
-//! the statistical security parameter (SSP) defaults to [`DEFAULT_SSP`] bits.
-//! Callers can raise the SSP via
-//! [`Prover::with_statistical_security_bits`](prover::Prover::with_statistical_security_bits)
-//! or
-//! [`Verifier::with_statistical_security_bits`](verifier::Verifier::with_statistical_security_bits).
-//!
-//! Once the cap is reached, `accumulate` returns a `SoundnessBudget` error;
-//! callers must either start a fresh session or widen `E`.
+//! where `d_max` is the maximum degree across the constraint circuits
+//! and `q` bounds the adversary's RO-query budget. Independent of the
+//! number of evaluations. Both terms are negligible for any
+//! cryptographically sized `E` and seed.
 
 pub mod circuit;
 #[cfg(any(test, feature = "fixture"))]
 pub mod fixture;
 pub mod prover;
-pub(crate) mod soundness;
 pub mod verifier;
 
 use std::fmt::Debug;
 
 pub use mpz_fields::{ExtensionField, Field};
 use serde::{Deserialize, Serialize};
-
-/// Default — and minimum — statistical security parameter (SSP), in bits.
-pub const DEFAULT_SSP: u32 = 40;
 
 // ---------------------------------------------------------------------------
 // Protocol types
@@ -135,7 +115,7 @@ mod tests {
     fn test_and_gate_bool() {
         let mut rng = StdRng::seed_from_u64(42);
         let delta = random_gf64(&mut rng);
-        let chi = random_gf64(&mut rng);
+        let seed: [u8; 32] = rng.random();
 
         let circuit = and_gate_circuit();
         let values: Vec<Gf2> = vec![Gf2::ONE, Gf2::ONE, Gf2::ONE];
@@ -145,12 +125,12 @@ mod tests {
         let (pv, vv) = mock_vope(d_max, delta, &mut rng);
 
         let mut p = prover::Prover::new(vec![circuit.clone()]);
-        p.accumulate(&[(0, macs.as_slice(), values.as_slice())], chi)
+        p.accumulate(&[(0, macs.as_slice(), values.as_slice())], seed)
             .unwrap();
         let proof = p.finalize(&pv).unwrap();
 
         let mut v = verifier::Verifier::new(delta, vec![circuit]);
-        v.accumulate(&[(0, vk.as_slice())], chi).unwrap();
+        v.accumulate(&[(0, vk.as_slice())], seed).unwrap();
         assert!(
             v.finalize(&proof, &vv).is_ok(),
             "honest AND gate must verify"
@@ -162,7 +142,7 @@ mod tests {
     fn test_and_gate_dishonest() {
         let mut rng = StdRng::seed_from_u64(99);
         let delta = random_gf64(&mut rng);
-        let chi = random_gf64(&mut rng);
+        let seed: [u8; 32] = rng.random();
 
         let circuit = and_gate_circuit();
         let values: Vec<Gf2> = vec![Gf2::ONE, Gf2::ONE, Gf2::ZERO];
@@ -172,24 +152,24 @@ mod tests {
         let (pv, vv) = mock_vope(d_max, delta, &mut rng);
 
         let mut p = prover::Prover::new(vec![circuit.clone()]);
-        p.accumulate(&[(0, macs.as_slice(), values.as_slice())], chi)
+        p.accumulate(&[(0, macs.as_slice(), values.as_slice())], seed)
             .unwrap();
         let proof = p.finalize(&pv).unwrap();
 
         let mut v = verifier::Verifier::new(delta, vec![circuit]);
-        v.accumulate(&[(0, vk.as_slice())], chi).unwrap();
+        v.accumulate(&[(0, vk.as_slice())], seed).unwrap();
         assert!(
             v.finalize(&proof, &vv).is_err(),
             "dishonest must be rejected"
         );
     }
 
-    /// Multiple evaluations batched with one chi.
+    /// Multiple evaluations batched with one seed.
     #[test]
     fn test_multiple_evaluations_batched() {
         let mut rng = StdRng::seed_from_u64(555);
         let delta = random_gf64(&mut rng);
-        let chi = random_gf64(&mut rng);
+        let seed: [u8; 32] = rng.random();
 
         let circuit = and_gate_circuit();
         let vals1: Vec<Gf2> = vec![Gf2::ONE, Gf2::ONE, Gf2::ONE];
@@ -206,24 +186,24 @@ mod tests {
                 (0, macs1.as_slice(), vals1.as_slice()),
                 (0, macs2.as_slice(), vals2.as_slice()),
             ],
-            chi,
+            seed,
         )
         .unwrap();
         let proof = p.finalize(&pv).unwrap();
 
         let mut v = verifier::Verifier::new(delta, vec![circuit]);
-        v.accumulate(&[(0, vk1.as_slice()), (0, vk2.as_slice())], chi)
+        v.accumulate(&[(0, vk1.as_slice()), (0, vk2.as_slice())], seed)
             .unwrap();
         assert!(v.finalize(&proof, &vv).is_ok(), "batched must verify");
     }
 
-    /// Streaming: two separate accumulate calls with different chi values.
+    /// Streaming: two separate accumulate calls with different seeds.
     #[test]
     fn test_streaming_batches() {
         let mut rng = StdRng::seed_from_u64(777);
         let delta = random_gf64(&mut rng);
-        let chi_1 = random_gf64(&mut rng);
-        let chi_2 = random_gf64(&mut rng);
+        let seed_1: [u8; 32] = rng.random();
+        let seed_2: [u8; 32] = rng.random();
 
         let circuit = and_gate_circuit();
         let vals1: Vec<Gf2> = vec![Gf2::ONE, Gf2::ONE, Gf2::ONE];
@@ -235,15 +215,15 @@ mod tests {
         let (pv, vv) = mock_vope(d_max, delta, &mut rng);
 
         let mut p = prover::Prover::new(vec![circuit.clone()]);
-        p.accumulate(&[(0, macs1.as_slice(), vals1.as_slice())], chi_1)
+        p.accumulate(&[(0, macs1.as_slice(), vals1.as_slice())], seed_1)
             .unwrap();
-        p.accumulate(&[(0, macs2.as_slice(), vals2.as_slice())], chi_2)
+        p.accumulate(&[(0, macs2.as_slice(), vals2.as_slice())], seed_2)
             .unwrap();
         let proof = p.finalize(&pv).unwrap();
 
         let mut v = verifier::Verifier::new(delta, vec![circuit]);
-        v.accumulate(&[(0, vk1.as_slice())], chi_1).unwrap();
-        v.accumulate(&[(0, vk2.as_slice())], chi_2).unwrap();
+        v.accumulate(&[(0, vk1.as_slice())], seed_1).unwrap();
+        v.accumulate(&[(0, vk2.as_slice())], seed_2).unwrap();
         assert!(v.finalize(&proof, &vv).is_ok(), "streaming must verify");
     }
 
@@ -252,7 +232,7 @@ mod tests {
     fn test_mixed_degrees() {
         let mut rng = StdRng::seed_from_u64(333);
         let delta = random_gf64(&mut rng);
-        let chi = random_gf64(&mut rng);
+        let seed: [u8; 32] = rng.random();
 
         // Circuit 0 (degree 2): w0·w1 + w2 = 0
         let circ0 = and_gate_circuit();
@@ -278,13 +258,13 @@ mod tests {
                 (0, macs0.as_slice(), vals0.as_slice()),
                 (1, macs1.as_slice(), vals1.as_slice()),
             ],
-            chi,
+            seed,
         )
         .unwrap();
         let proof = p.finalize(&pv).unwrap();
 
         let mut v = verifier::Verifier::new(delta, circuits);
-        v.accumulate(&[(0, vk0.as_slice()), (1, vk1.as_slice())], chi)
+        v.accumulate(&[(0, vk0.as_slice()), (1, vk1.as_slice())], seed)
             .unwrap();
         assert!(v.finalize(&proof, &vv).is_ok(), "mixed degrees must verify");
     }
@@ -300,7 +280,7 @@ mod tests {
 
         let mut rng = StdRng::seed_from_u64(0xE2E);
         let delta = random_gf64(&mut rng);
-        let chi = random_gf64(&mut rng);
+        let seed: [u8; 32] = rng.random();
 
         let (circuits, _counts) = step_circuit_polynomials::<Gf2_64>();
         let d_max = circuits.iter().map(|c| c.degree()).max().unwrap();
@@ -347,11 +327,11 @@ mod tests {
             .collect();
 
         let mut p = prover::Prover::new(circuits.clone());
-        p.accumulate(&p_evals, chi).unwrap();
+        p.accumulate(&p_evals, seed).unwrap();
         let proof = p.finalize(&pv).unwrap();
 
         let mut v = verifier::Verifier::new(delta, circuits);
-        v.accumulate(&v_evals, chi).unwrap();
+        v.accumulate(&v_evals, seed).unwrap();
         assert!(
             v.finalize(&proof, &vv).is_ok(),
             "all 12 fixture circuits must verify"
