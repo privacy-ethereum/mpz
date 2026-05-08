@@ -21,7 +21,7 @@ impl Handle {
         self.sender.send(Box::new(job)).map_err(|_| {
             ContextError::new(
                 ErrorKind::Thread,
-                format!("failed to send job to worker {}", &self.id),
+                format!("failed to send job to worker {}", self.id),
             )
         })
     }
