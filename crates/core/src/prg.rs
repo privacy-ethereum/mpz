@@ -8,6 +8,7 @@ use rand_core::{
     CryptoRng, RngCore, SeedableRng,
     block::{BlockRng, BlockRngCore},
 };
+use zerocopy::IntoBytes;
 
 /// Struct of PRG Core
 #[derive(Clone)]
@@ -40,7 +41,7 @@ impl BlockRngCore for PrgCore {
             },
         );
         self.aes.encrypt_many_blocks(&mut states);
-        *results = bytemuck::cast(states);
+        *results = zerocopy::transmute!(states);
     }
 }
 
@@ -167,7 +168,7 @@ impl Prg {
     /// Fill a block slice with random block values.
     #[inline(always)]
     pub fn random_blocks(&mut self, buf: &mut [Block]) {
-        let bytes: &mut [u8] = bytemuck::cast_slice_mut(buf);
+        let bytes: &mut [u8] = buf.as_mut_bytes();
         self.fill_bytes(bytes);
     }
 }
