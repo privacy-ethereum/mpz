@@ -1,4 +1,4 @@
-//! Verifier-side logic for the QuickSilver polynomial proof.
+//! Verifier for the QuickSilver polynomial proof protocol.
 
 use rand_chacha::{
     ChaCha12Rng,
@@ -7,18 +7,14 @@ use rand_chacha::{
 use zerocopy::IntoBytes;
 
 use crate::{
-    Field, ProofMessage, VerifierVope,
+    ConstraintId, Constraints, Field, ProofMessage, VerifierVope,
     circuit::{Circuit, CircuitNode},
 };
 
-/// Verifier for the QuickSilver polynomial proof.
-///
-/// Constructed with the same constraint circuits as the prover.
-/// Accumulates the same evaluations in the same order, then checks
-/// the proof.
+/// Verifier for the QuickSilver polynomial proof protocol.
 #[derive(Clone)]
 pub struct Verifier<E: Field> {
-    /// The constraint circuits, indexed by `poly_id`.
+    /// The compiled constraint circuits, indexed by `ConstraintId`.
     circuits: Vec<Circuit<E>>,
     /// Maximum polynomial degree across all circuits.
     d_max: usize,
@@ -29,9 +25,10 @@ pub struct Verifier<E: Field> {
 }
 
 impl<E: Field> Verifier<E> {
-    /// Create a new verifier from the MAC key `delta` and constraint
-    /// `circuits`.
-    pub fn new(delta: E, circuits: Vec<Circuit<E>>) -> Self {
+    /// Create a new verifier from the MAC key `delta` and a
+    /// constraint set.
+    pub fn new(delta: E, constraints: &Constraints<E>) -> Self {
+        let circuits = constraints.circuits.clone();
         let d_max = circuits.iter().map(|c| c.degree()).max().unwrap_or(0);
         let mut delta_pow = vec![E::one(); d_max + 1];
         for i in 1..=d_max {
@@ -47,14 +44,14 @@ impl<E: Field> Verifier<E> {
 
     /// Accumulate a batch of polynomial evaluations under a `seed`.
     ///
-    /// Each evaluation is a `(poly_id, keys)` pair: the circuit to
+    /// Each evaluation is a `(id, keys)` pair: the constraint to
     /// evaluate and one verifier key per variable.
     ///
     /// `seed` must be bound to a Fiat-Shamir transcript covering all
     /// witness commitments preceding the call.
     pub fn accumulate(
         &mut self,
-        evaluations: &[(usize, &[E])],
+        evaluations: &[(ConstraintId, &[E])],
         seed: [u8; 32],
     ) -> Result<(), VerifierError>
     where
@@ -64,8 +61,8 @@ impl<E: Field> Verifier<E> {
         let mut rng = ChaCha12Rng::from_seed(seed);
         rng.fill_bytes(chis.as_mut_slice().as_mut_bytes());
 
-        for (&(poly_id, keys), &chi) in evaluations.iter().zip(chis.iter()) {
-            let b = self.evaluate_circuit(poly_id, keys)?;
+        for (&(id, keys), &chi) in evaluations.iter().zip(chis.iter()) {
+            let b = self.evaluate_circuit(id, keys)?;
             self.accumulator = self.accumulator + b * chi;
         }
         Ok(())
@@ -99,22 +96,22 @@ impl<E: Field> Verifier<E> {
         Ok(())
     }
 
-    /// Walk the circuit bottom-up, computing a single scalar per node
-    /// (substituting verifier keys for variables, with Δ-power alignment
-    /// for Add nodes of different degrees).
-    fn evaluate_circuit(&self, poly_id: usize, keys: &[E]) -> Result<E, VerifierError> {
-        if poly_id >= self.circuits.len() {
-            return Err(ErrorRepr::UnknownPolyId {
-                poly_id,
+    /// Walk constraint `id`'s circuit bottom-up, computing a single
+    /// scalar per node (substituting verifier keys for variables,
+    /// with Δ-power alignment for Add nodes of different degrees).
+    fn evaluate_circuit(&self, id: ConstraintId, keys: &[E]) -> Result<E, VerifierError> {
+        if id.0 >= self.circuits.len() {
+            return Err(ErrorRepr::UnknownConstraint {
+                id,
                 count: self.circuits.len(),
             }
             .into());
         }
-        let circuit = &self.circuits[poly_id];
+        let circuit = &self.circuits[id.0];
         let n_vars = circuit.num_vars();
         if keys.len() != n_vars {
             return Err(ErrorRepr::KeyCount {
-                poly_id,
+                id,
                 expected: n_vars,
                 actual: keys.len(),
             }
@@ -180,11 +177,11 @@ enum ErrorRepr {
     Invalid,
     #[error("incorrect proof length: expected {expected}, got {actual}")]
     ProofLength { expected: usize, actual: usize },
-    #[error("unknown poly_id: {poly_id} (only {count} circuits registered)")]
-    UnknownPolyId { poly_id: usize, count: usize },
-    #[error("wrong number of keys for poly_id {poly_id}: expected {expected}, got {actual}")]
+    #[error("unknown constraint id {id:?} (only {count} constraints registered)")]
+    UnknownConstraint { id: ConstraintId, count: usize },
+    #[error("wrong number of keys for constraint {id:?}: expected {expected}, got {actual}")]
     KeyCount {
-        poly_id: usize,
+        id: ConstraintId,
         expected: usize,
         actual: usize,
     },

@@ -1,9 +1,8 @@
-//! Arithmetic-circuit representation of multivariate constraint polynomials.
-//!
-//! A DAG of `{Var, Const, Mul, Add}` nodes that represents a constraint
-//! polynomial as a factored arithmetic circuit. Intermediate sums are
-//! first-class nodes that can feed into multiplications — e.g.
-//! `(a + c) · (bf + c)` is 2 multiplications, reusing `c` in both factors.
+//! Arithmetic-circuit representation of multivariate constraint
+//! polynomials. Stored as a DAG of operation nodes: `Var`, `Const`,
+//! `Mul`, `Add`, `Neg`.
+
+use mpz_circuits_new::Context;
 
 use crate::Field;
 
@@ -12,7 +11,7 @@ pub type NodeId = usize;
 
 /// A node in the arithmetic circuit.
 #[derive(Debug, Clone, Copy)]
-pub enum CircuitNode<E> {
+pub(crate) enum CircuitNode<E> {
     /// An input variable (leaf). Index into the input slice.
     Var(usize),
     /// A constant scalar (leaf).
@@ -31,7 +30,7 @@ pub enum CircuitNode<E> {
 /// topological order, pre-computed per-node degrees, and the single
 /// output node.
 #[derive(Debug, Clone)]
-pub struct Circuit<E> {
+pub(crate) struct Circuit<E> {
     /// The node arena in topological order (children before parents).
     pub(crate) nodes: Vec<CircuitNode<E>>,
     /// Degree of each node.
@@ -46,17 +45,13 @@ pub struct Circuit<E> {
 
 impl<E: Field> Circuit<E> {
     /// Total degree of the polynomial.
-    pub fn degree(&self) -> usize {
+    pub(crate) fn degree(&self) -> usize {
         self.degree
     }
 
-    /// Number of nodes in the arena.
-    pub fn node_count(&self) -> usize {
-        self.nodes.len()
-    }
-
     /// Number of `Mul` nodes (multiplication gates in the circuit).
-    pub fn mul_count(&self) -> usize {
+    #[cfg(test)]
+    pub(crate) fn mul_count(&self) -> usize {
         self.nodes
             .iter()
             .filter(|n| matches!(n, CircuitNode::Mul(_, _)))
@@ -64,14 +59,15 @@ impl<E: Field> Circuit<E> {
     }
 
     /// Number of input variables.
-    pub fn num_vars(&self) -> usize {
+    pub(crate) fn num_vars(&self) -> usize {
         self.num_vars
     }
 
     /// Evaluate the circuit on the given input values.
     ///
     /// Returns the output node's value.
-    pub fn evaluate(&self, values: &[E]) -> E {
+    #[cfg(test)]
+    pub(crate) fn evaluate(&self, values: &[E]) -> E {
         let mut node_vals: Vec<E> = Vec::with_capacity(self.nodes.len());
         for node in &self.nodes {
             let val = match *node {
@@ -104,6 +100,8 @@ pub struct CircuitBuilder<E> {
     node_degrees: Vec<usize>,
     /// Largest `Var` index seen so far; drives `num_vars` on build.
     max_var: Option<usize>,
+    /// Root of the constraint polynomial.
+    output: Option<NodeId>,
 }
 
 impl<E: Field> Default for CircuitBuilder<E> {
@@ -119,6 +117,7 @@ impl<E: Field> CircuitBuilder<E> {
             nodes: Vec::new(),
             node_degrees: Vec::new(),
             max_var: None,
+            output: None,
         }
     }
 
@@ -165,7 +164,7 @@ impl<E: Field> CircuitBuilder<E> {
     }
 
     /// Freeze the circuit, declaring `output` as the root.
-    pub fn build(self, output: NodeId) -> Circuit<E> {
+    pub(crate) fn build(self, output: NodeId) -> Circuit<E> {
         let degree = self.node_degrees[output];
         let num_vars = self.max_var.map_or(0, |m| m + 1);
 
@@ -177,6 +176,72 @@ impl<E: Field> CircuitBuilder<E> {
             num_vars,
         }
     }
+}
+
+/// Errors raised while compiling a constraint closure.
+#[derive(Debug, thiserror::Error)]
+pub enum BuildError {
+    /// The closure returned without calling any `assert_*` method —
+    /// no constraint polynomial was produced.
+    #[error("constraint closure emitted no assertion")]
+    NoConstraint,
+    /// The closure called `assert_*` more than once.
+    #[error("constraint closure emitted multiple assertions; split into separate circuits")]
+    MultipleConstraints,
+}
+
+impl<E: Field> Context for CircuitBuilder<E> {
+    type Error = BuildError;
+    type Wire = NodeId;
+    type Field = E;
+
+    fn add(&mut self, a: NodeId, b: NodeId) -> NodeId {
+        CircuitBuilder::add(self, a, b)
+    }
+
+    fn sub(&mut self, a: NodeId, b: NodeId) -> NodeId {
+        CircuitBuilder::sub(self, a, b)
+    }
+
+    fn mul(&mut self, a: NodeId, b: NodeId) -> NodeId {
+        CircuitBuilder::mul(self, a, b)
+    }
+
+    fn constant(&mut self, v: E) -> NodeId {
+        CircuitBuilder::constant(self, v)
+    }
+
+    fn assert_const(&mut self, v: NodeId, expected: E) -> Result<(), BuildError> {
+        if self.output.is_some() {
+            return Err(BuildError::MultipleConstraints);
+        }
+        let root = if expected == E::zero() {
+            v
+        } else {
+            let c = CircuitBuilder::constant(self, expected);
+            CircuitBuilder::sub(self, v, c)
+        };
+        self.output = Some(root);
+        Ok(())
+    }
+}
+
+/// Compile a constraint closure into a [`Circuit`].
+///
+/// `num_vars` input wires are pre-allocated via [`CircuitBuilder::var`]
+/// and passed to `f` as a slice. The closure expresses its constraint
+/// with `Context` operations and must end with exactly one `assert_*`
+/// call.
+pub(crate) fn compile<E, F>(num_vars: usize, f: F) -> Result<Circuit<E>, BuildError>
+where
+    E: Field,
+    F: FnOnce(&mut CircuitBuilder<E>, &[NodeId]) -> Result<(), BuildError>,
+{
+    let mut builder = CircuitBuilder::<E>::new();
+    let vars: Vec<NodeId> = (0..num_vars).map(|i| builder.var(i)).collect();
+    f(&mut builder, &vars)?;
+    let output = builder.output.ok_or(BuildError::NoConstraint)?;
+    Ok(builder.build(output))
 }
 
 #[cfg(test)]
@@ -513,5 +578,84 @@ mod tests {
             add_circuit.evaluate(&[F17(5), F17(3)]),
             "sub and add must give different results over a non-char-2 field"
         );
+    }
+
+    /// Build the AND-gate constraint `w0·w1 - w2 = 0` via the Context
+    /// API and verify the compiled circuit matches the imperative one.
+    #[test]
+    fn test_compile_via_fixture() {
+        use mpz_circuits_new::fixtures::and_gate;
+
+        // Compile the upstream `and_gate` constraint (`w0·w1 + w2 = 0`)
+        // through our Context impl. The fixture ends with
+        // `assert_const(_, zero)` so we exercise the zero-expected
+        // branch of `assert_const`.
+        let circuit = compile::<F17, _>(3, |cb, vars| {
+            let arr: [_; 3] = vars.try_into().unwrap();
+            and_gate::<CircuitBuilder<F17>, F17>(cb, arr)
+        })
+        .expect("compile must succeed");
+
+        assert_eq!(circuit.num_vars(), 3);
+        assert_eq!(circuit.degree(), 2);
+        assert_eq!(circuit.mul_count(), 1);
+
+        // Output evaluates to `w0·w1 + w2`. Sample at satisfying and
+        // unsatisfying assignments.
+        // 1·1 + 16 = 17 ≡ 0 (mod 17)  → satisfying
+        assert_eq!(circuit.evaluate(&[F17(1), F17(1), F17(16)]), F17(0));
+        // 2·3 + 5 = 11 ≢ 0  → unsatisfying
+        assert_eq!(circuit.evaluate(&[F17(2), F17(3), F17(5)]), F17(11));
+    }
+
+    /// `assert_const(v, c)` with `c != zero` should produce an AST
+    /// rooted at `v - c` (extra `Const` + `Neg + Add` nodes vs the
+    /// zero-expected branch).
+    #[test]
+    fn test_compile_assert_const_nonzero() {
+        // assert: w0 · w1 = 7. Compile produces output = w0·w1 - 7.
+        let circuit = compile::<F17, _>(2, |cb, vars| {
+            let prod = Context::mul(cb, vars[0], vars[1]);
+            Context::assert_const(cb, prod, F17(7))
+        })
+        .expect("compile must succeed");
+
+        assert_eq!(circuit.num_vars(), 2);
+        // 1 · 7 − 7 = 0  → satisfying
+        assert_eq!(circuit.evaluate(&[F17(1), F17(7)]), F17(0));
+        // 2 · 3 − 7 = −1 ≡ 16 (mod 17)  → unsatisfying
+        assert_eq!(circuit.evaluate(&[F17(2), F17(3)]), F17(16));
+    }
+
+    /// An error returned from the constraint closure must propagate
+    /// out of `compile` unchanged (the post-closure
+    /// `NoConstraint`/`MultipleConstraints` checks must not run).
+    #[test]
+    fn test_compile_propagates_closure_error() {
+        let result = compile::<F17, _>(2, |_cb, _vars| {
+            // Closure errors out before any assert_* call. The error
+            // must reach the caller as-is, even though the post-check
+            // would otherwise produce `NoConstraint`.
+            Err(BuildError::MultipleConstraints)
+        });
+        assert!(matches!(result, Err(BuildError::MultipleConstraints)));
+    }
+
+    /// `compile` rejects closures that emit zero assertions.
+    #[test]
+    fn test_compile_rejects_no_constraint() {
+        let result = compile::<F17, _>(1, |_cb, _vars| Ok(()));
+        assert!(matches!(result, Err(BuildError::NoConstraint)));
+    }
+
+    /// `compile` rejects closures that emit multiple assertions.
+    #[test]
+    fn test_compile_rejects_multiple_constraints() {
+        let result = compile::<F17, _>(1, |cb, vars| {
+            Context::assert_const(cb, vars[0], F17(0))?;
+            Context::assert_const(cb, vars[0], F17(0))?; // second assert errors
+            Ok(())
+        });
+        assert!(matches!(result, Err(BuildError::MultipleConstraints)));
     }
 }

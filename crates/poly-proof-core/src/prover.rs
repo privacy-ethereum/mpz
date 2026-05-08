@@ -1,4 +1,4 @@
-//! Prover-side logic for the QuickSilver polynomial proof.
+//! Prover for the QuickSilver polynomial proof protocol.
 
 use rand_chacha::{
     ChaCha12Rng,
@@ -7,19 +7,19 @@ use rand_chacha::{
 use zerocopy::IntoBytes;
 
 use crate::{
-    ExtensionField, Field, ProofMessage, ProverVope,
+    ConstraintId, Constraints, ExtensionField, Field, ProofMessage, ProverVope,
     circuit::{Circuit, CircuitNode},
 };
 
 /// Prover for the QuickSilver polynomial proof.
 #[derive(Clone)]
 pub struct Prover<E: Field> {
-    /// The constraint circuits, indexed by `poly_id`.
+    /// The compiled constraint circuits, indexed by `ConstraintId`.
     circuits: Vec<Circuit<E>>,
     /// Scratch-buffer layout for each circuit, parallel to `circuits`.
     layouts: Vec<CircuitLayout>,
-    /// Shared scratch buffer for circuit evaluation, sized for the largest
-    /// circuit.
+    /// Shared scratch buffer for circuit evaluation, sized for the
+    /// largest circuit.
     scratch: Vec<E>,
     /// Maximum polynomial degree across all circuits.
     d_max: usize,
@@ -31,8 +31,9 @@ pub struct Prover<E: Field> {
 }
 
 impl<E: Field> Prover<E> {
-    /// Create a new prover with the given constraint circuits.
-    pub fn new(circuits: Vec<Circuit<E>>) -> Self {
+    /// Create a new prover from a constraint set.
+    pub fn new(constraints: &Constraints<E>) -> Self {
+        let circuits = constraints.circuits.clone();
         let d_max = circuits.iter().map(|c| c.degree()).max().unwrap_or(0);
         let layouts: Vec<CircuitLayout> =
             circuits.iter().map(CircuitLayout::from_circuit).collect();
@@ -48,16 +49,16 @@ impl<E: Field> Prover<E> {
     }
 
     /// Accumulate a batch of polynomial evaluations under a `seed`.
-    /// 
-    /// Each evaluation is a `(poly_id, macs, values)` triple: the
-    /// circuit to evaluate, one MAC per variable, and one witness
+    ///
+    /// Each evaluation is a `(id, macs, values)` triple: the
+    /// constraint to evaluate, one MAC per variable, and one witness
     /// value per variable.
     ///
     /// `seed` must be bound to a Fiat-Shamir transcript covering all
     /// witness commitments preceding the call.
     pub fn accumulate<W: Field>(
         &mut self,
-        evaluations: &[(usize, &[E], &[W])],
+        evaluations: &[(ConstraintId, &[E], &[W])],
         seed: [u8; 32],
     ) -> Result<(), ProverError>
     where
@@ -68,8 +69,8 @@ impl<E: Field> Prover<E> {
         let mut rng = ChaCha12Rng::from_seed(seed);
         rng.fill_bytes(chis.as_mut_slice().as_mut_bytes());
 
-        for (&(poly_id, macs, values), &chi) in evaluations.iter().zip(chis.iter()) {
-            self.evaluate_circuit(poly_id, macs, values, chi)?;
+        for (&(id, macs, values), &chi) in evaluations.iter().zip(chis.iter()) {
+            self.evaluate_circuit(id, macs, values, chi)?;
         }
         Ok(())
     }
@@ -93,12 +94,13 @@ impl<E: Field> Prover<E> {
         })
     }
 
-    /// Walk circuit `poly_id` bottom-up on `macs` and `values`, computing
-    /// coefficient vectors at each node, then accumulate the output into
-    /// the running accumulator with degree-shift and χ-scaling by `chi_power`.
+    /// Walk constraint `id`'s circuit bottom-up on `macs` and
+    /// `values`, computing coefficient vectors at each node, then
+    /// accumulate the output into the running accumulator with
+    /// degree-shift and χ-scaling by `chi_power`.
     fn evaluate_circuit<W: Field>(
         &mut self,
-        poly_id: usize,
+        id: ConstraintId,
         macs: &[E],
         values: &[W],
         chi_power: E,
@@ -106,18 +108,18 @@ impl<E: Field> Prover<E> {
     where
         E: ExtensionField<W>,
     {
-        if poly_id >= self.circuits.len() {
-            return Err(ErrorRepr::UnknownPolyId {
-                poly_id,
+        if id.0 >= self.circuits.len() {
+            return Err(ErrorRepr::UnknownConstraint {
+                id,
                 count: self.circuits.len(),
             }
             .into());
         }
-        let circuit = &self.circuits[poly_id];
+        let circuit = &self.circuits[id.0];
         let n_vars = circuit.num_vars();
         if macs.len() != n_vars {
             return Err(ErrorRepr::MacCount {
-                poly_id,
+                id,
                 expected: n_vars,
                 actual: macs.len(),
             }
@@ -125,13 +127,13 @@ impl<E: Field> Prover<E> {
         }
         if values.len() != n_vars {
             return Err(ErrorRepr::ValueCount {
-                poly_id,
+                id,
                 expected: n_vars,
                 actual: values.len(),
             }
             .into());
         }
-        let layout = &self.layouts[poly_id];
+        let layout = &self.layouts[id.0];
         let scratch = &mut self.scratch;
 
         for ((node, &offset), &out_deg) in circuit
@@ -262,7 +264,6 @@ impl<E: Field> Prover<E> {
         // d+1 coefficients, minus the highest-degree one (not sent) = d.
         self.d_max
     }
-
 }
 
 /// Scratch-buffer layout for one circuit.
@@ -303,17 +304,17 @@ pub struct ProverError(#[from] ErrorRepr);
 enum ErrorRepr {
     #[error("incorrect VOPE length: expected {expected}, got {actual}")]
     VopeLength { expected: usize, actual: usize },
-    #[error("unknown poly_id: {poly_id} (only {count} circuits registered)")]
-    UnknownPolyId { poly_id: usize, count: usize },
-    #[error("wrong number of MACs for poly_id {poly_id}: expected {expected}, got {actual}")]
+    #[error("unknown constraint id {id:?} (only {count} constraints registered)")]
+    UnknownConstraint { id: ConstraintId, count: usize },
+    #[error("wrong number of MACs for constraint {id:?}: expected {expected}, got {actual}")]
     MacCount {
-        poly_id: usize,
+        id: ConstraintId,
         expected: usize,
         actual: usize,
     },
-    #[error("wrong number of values for poly_id {poly_id}: expected {expected}, got {actual}")]
+    #[error("wrong number of values for constraint {id:?}: expected {expected}, got {actual}")]
     ValueCount {
-        poly_id: usize,
+        id: ConstraintId,
         expected: usize,
         actual: usize,
     },

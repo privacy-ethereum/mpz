@@ -6,6 +6,11 @@ edition = "2024"
 [dependencies]
 mpz-fields = { workspace = true }
 
+[features]
+default = []
+# Test-only circuit fixtures, intended for downstream crates' tests/benches.
+fixtures = []
+
 [dev-dependencies]
 criterion = { workspace = true }
 itybity = { workspace = true }

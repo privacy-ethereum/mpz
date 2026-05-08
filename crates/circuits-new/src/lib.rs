@@ -2,6 +2,9 @@ use mpz_fields::Field;
 
 pub mod sha256;
 
+#[cfg(feature = "fixtures")]
+pub mod fixtures;
+
 /// A wire that may be constant.
 #[derive(Debug, Clone, Copy)]
 pub enum MaybeConst<A, B> {
