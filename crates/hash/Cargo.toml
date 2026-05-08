@@ -3,12 +3,18 @@ name = "mpz-hash"
 version = "0.1.0-alpha.5"
 edition = "2024"
 
+[features]
+default = ["sha256", "blake3", "keccak256"]
+sha256 = ["mpz-circuits/sha2"]
+blake3 = ["mpz-circuits/blake3", "dep:blake3"]
+keccak256 = ["mpz-circuits/keccak"]
+
 [dependencies]
 mpz-core = { workspace = true }
-mpz-circuits = { workspace = true, features = ["sha2", "blake3", "keccak"] }
+mpz-circuits = { workspace = true }
 mpz-vm-core = { workspace = true }
 
-blake3 = { workspace = true }
+blake3 = { workspace = true, optional = true }
 itybity = { workspace = true }
 thiserror = { workspace = true }
 
