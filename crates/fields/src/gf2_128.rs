@@ -35,6 +35,11 @@ pub struct Gf2_128(pub(crate) u128);
 opaque_debug::implement!(Gf2_128);
 
 impl Gf2_128 {
+    /// The additive identity (zero).
+    pub const ZERO: Self = Gf2_128(0);
+    /// The multiplicative identity (one).
+    pub const ONE: Self = Gf2_128(1);
+
     /// Creates a new field element from a u128,
     /// mapping the integer to the corresponding polynomial.
     ///
@@ -211,6 +216,21 @@ impl ExtensionField<Gf2> for Gf2_128 {
             acc ^= c.to_inner() & mask;
         }
         Gf2_128::new(acc)
+    }
+}
+
+/// Trivial self-extension: degree-1, basis `[1]`, embed is identity.
+impl ExtensionField<Gf2_128> for Gf2_128 {
+    const MONOMIAL_BASIS: &'static [Self] = &[Gf2_128::ONE];
+
+    #[inline]
+    fn embed(base: Gf2_128) -> Self {
+        base
+    }
+
+    #[inline]
+    fn inner_product_subfield(values: &[Gf2_128], challenges: &[Self]) -> Self {
+        Gf2_128::inner_product(values, challenges)
     }
 }
 
