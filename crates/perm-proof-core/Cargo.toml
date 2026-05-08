@@ -16,14 +16,16 @@ test-utils = []
 bcs = { workspace = true }
 blake3 = { workspace = true }
 hybrid-array = { workspace = true }
+mpz-circuits-new = { workspace = true }
 mpz-common = { workspace = true, features = ["future"] }
 mpz-fields = { workspace = true }
 mpz-vole-core = { workspace = true }
-poly-proof-core = { workspace = true }
+mpz-poly-proof-core = { workspace = true }
 rand = { workspace = true }
 rand_chacha = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 thiserror = { workspace = true }
+zerocopy = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true }

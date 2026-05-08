@@ -2,18 +2,15 @@
 //! authentication with a QuickSilver polynomial proof for fan-in
 //! multiplications.
 
+use mpz_circuits_new::Context;
 use mpz_fields::Field;
-use poly_proof_core::circuit::{Circuit, CircuitBuilder};
+use mpz_poly_proof_core::{ConstraintId, Constraints};
 
 pub mod prover;
 pub mod verifier;
 
 pub use prover::{Preparation, Proof, VoleZkProverBackend, VoleZkProverError};
 pub use verifier::{VoleZkVerifierBackend, VoleZkVerifierError};
-
-/// Poly-id of the only QS circuit this backend registers (the
-/// fan-in-`fan_in_degree` product circuit).
-pub(crate) const PRODUCT_POLY_ID: usize = 0;
 
 /// Internal-node count of a fan-in-`d` tree over `n` leaves —
 /// `⌈(n−1)/(d−1)⌉`, since each merge takes `d` items into 1 and
@@ -30,20 +27,28 @@ pub(crate) fn chunk_ranges_and_leftover(n: usize, d: usize) -> (Vec<(usize, usiz
     (chunks, leftover)
 }
 
-/// Build a circuit computing `(x_0 · x_1 · … · x_{n-1}) − prod`.
+/// Build a `Constraints` set holding the single fan-in-product
+/// constraint `(x_0 · x_1 · … · x_{n-1}) − prod = 0`.
+///
 /// Variable layout: `var(0)…var(n−1)` are the factors, `var(n)` is
-/// `prod`.
-pub(crate) fn build_circuit<E: Field>(factor_count: usize) -> Circuit<E> {
+/// `prod`. Returns the set alongside the constraint's id.
+pub(crate) fn build_product_constraints<E: Field>(
+    factor_count: usize,
+) -> (Constraints<E>, ConstraintId) {
     assert!(factor_count >= 1);
-    let mut cb = CircuitBuilder::new();
-    let factors: Vec<_> = (0..factor_count).map(|i| cb.var(i)).collect();
-    let prod = cb.var(factor_count);
-    let mut product = factors[0];
-    for &f in &factors[1..] {
-        product = cb.mul(product, f);
-    }
-    let out = cb.sub(product, prod);
-    cb.build(out)
+    let mut b = Constraints::<E>::builder();
+    let id = b
+        .add_dynamic(factor_count + 1, |ctx, vars| {
+            // `add_dynamic(factor_count + 1, …)` allocates exactly that
+            // many wires, so the indices below are always in bounds.
+            let mut product = vars[0];
+            for &f in &vars[1..factor_count] {
+                product = ctx.mul(product, f);
+            }
+            ctx.assert_eq(product, vars[factor_count])
+        })
+        .expect("product constraint shape is well-formed");
+    (b.build(), id)
 }
 
 #[cfg(test)]
@@ -54,8 +59,10 @@ mod tests {
     use rand::{Rng, SeedableRng};
     use rand_chacha::ChaCha8Rng;
 
-    use crate::backend::{ProverBackend, VerifierBackend};
-    use crate::test_utils::{Committed, commit_values};
+    use crate::{
+        backend::{ProverBackend, VerifierBackend},
+        test_utils::{Committed, commit_values},
+    };
     use mpz_vole_core::{
         RVOLEReceiver, RVOLESender, RVOPEReceiver, RVOPESender,
         ideal::{
@@ -100,8 +107,8 @@ mod tests {
         }
 
         // Pre-fill RVOPE — query a throwaway QS prover.
-        let circuit = build_circuit::<Gf2_128>(eps);
-        let tmp_qs = poly_proof_core::prover::Prover::<Gf2_128>::new(vec![circuit]);
+        let (constraints, _) = build_product_constraints::<Gf2_128>(eps);
+        let tmp_qs = mpz_poly_proof_core::prover::Prover::<Gf2_128>::new(&constraints);
         let required_vopes = tmp_qs.required_vopes();
 
         let (mut rvope_s, mut rvope_r) = ideal_rvope::<Gf2_128>(rvope_seed, delta);
@@ -140,7 +147,8 @@ mod tests {
         let (delta, mut prover, mut verifier) = build_pair(rng_seed, n, eps);
 
         let mut rng = ChaCha8Rng::seed_from_u64(rng_seed ^ 0xABCD_EF01);
-        let mut values: Vec<[Gf2_128; 1]> = (0..n).map(|_| [rng.random()]).collect();
+        // Width-1 tuples: each position is a singleton Vec.
+        let mut values: Vec<Vec<Gf2_128>> = (0..n).map(|_| vec![rng.random()]).collect();
         let Committed {
             macs: [macs],
             keys: [keys],
@@ -159,12 +167,15 @@ mod tests {
         let mut tp = transcript.clone();
         let mut tv = transcript;
 
-        let (prod_value, prod_mac) = prover
-            .product(&mut tp, values.as_flattened(), macs.as_flattened())
-            .unwrap();
+        // Flatten width-1 tuples into plain slices for the backend.
+        let flat_values: Vec<Gf2_128> = values.iter().flatten().copied().collect();
+        let flat_macs: Vec<Gf2_128> = macs.iter().flatten().copied().collect();
+        let flat_keys: Vec<Gf2_128> = keys.iter().flatten().copied().collect();
+
+        let (prod_value, prod_mac) = prover.product(&mut tp, &flat_values, &flat_macs).unwrap();
         let prep = prover.drain_preparation().unwrap();
         verifier.load_preparation(prep);
-        let prod_key = verifier.product(&mut tv, keys.as_flattened()).unwrap();
+        let prod_key = verifier.product(&mut tv, &flat_keys).unwrap();
 
         if matches!(mode, Mode::Honest) {
             assert_eq!(

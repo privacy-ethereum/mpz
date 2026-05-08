@@ -44,27 +44,27 @@ type ProverBackend = VoleZkProverBackend<
 /// Per-`(n, L)` data that's immutable across bench iterations: the
 /// shared MAC secret, the input permutation, its authenticated wires,
 /// and the transcript state from the ideal-VOLE commit.
-struct Fixture<const L: usize> {
+struct Fixture {
     delta: Gf2_64,
-    x_values: Vec<[Gf2_64; L]>,
-    x_macs: Vec<[Gf2_64; L]>,
-    y_values: Vec<[Gf2_64; L]>,
-    y_macs: Vec<[Gf2_64; L]>,
+    x_values: Vec<Vec<Gf2_64>>,
+    x_macs: Vec<Vec<Gf2_64>>,
+    y_values: Vec<Vec<Gf2_64>>,
+    y_macs: Vec<Vec<Gf2_64>>,
     transcript: Hasher,
 }
 
 /// One-shot: pick `delta`, generate the input permutation, authenticate
 /// both vectors via the ideal-VOLE `commit_values` helper, and bundle
 /// the result. Called once per `(n, L)` bench point.
-fn build_fixture<const L: usize>(rng: &mut ChaCha8Rng, n: usize) -> Fixture<L> {
+fn build_fixture<const L: usize>(rng: &mut ChaCha8Rng, n: usize) -> Fixture {
     let delta: Gf2_64 = rng.random();
 
-    let x_values: Vec<[Gf2_64; L]> = (0..n)
-        .map(|_| std::array::from_fn(|_| rng.random()))
+    let x_values: Vec<Vec<Gf2_64>> = (0..n)
+        .map(|_| (0..L).map(|_| rng.random()).collect())
         .collect();
     let mut perm_indices: Vec<usize> = (0..n).collect();
     perm_indices.shuffle(rng);
-    let y_values: Vec<[Gf2_64; L]> = perm_indices.iter().map(|&i| x_values[i]).collect();
+    let y_values: Vec<Vec<Gf2_64>> = perm_indices.iter().map(|&i| x_values[i].clone()).collect();
 
     let Committed {
         macs: [x_macs, y_macs],
@@ -136,7 +136,7 @@ fn bench_prove(c: &mut Criterion) {
                 },
                 |(prover, transcript)| {
                     let (_preparation, prover) = prover
-                        .prepare::<L>(
+                        .prepare(
                             transcript,
                             (&fixture.x_values, &fixture.x_macs),
                             (&fixture.y_values, &fixture.y_macs),

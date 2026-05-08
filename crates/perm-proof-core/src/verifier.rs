@@ -1,17 +1,16 @@
 //! Permutation protocol verifier.
 
 use blake3::Hasher;
-use mpz_fields::Field;
-use poly_proof_core::SubfieldOf;
+use mpz_fields::{ExtensionField, Field};
 use serde::Serialize;
 
-use crate::{KeyTuple, Proof, backend::VerifierBackend, draw_field, inner_product};
+use crate::{Proof, backend::VerifierBackend, draw_field};
 
 /// Permutation protocol verifier.
 pub struct Verifier<W, E, B, S = verifier_state::Initialized>
 where
-    W: SubfieldOf<E>,
-    E: Field,
+    W: Field,
+    E: ExtensionField<W>,
     B: VerifierBackend<W, E>,
     S: verifier_state::State,
 {
@@ -22,8 +21,8 @@ where
 
 impl<W, E, B> Verifier<W, E, B, verifier_state::Initialized>
 where
-    W: SubfieldOf<E>,
-    E: Field,
+    W: Field,
+    E: ExtensionField<W>,
     B: VerifierBackend<W, E>,
 {
     /// Build a new verifier around `backend`.
@@ -57,11 +56,11 @@ where
     /// It is crucial that `transcript` has absorbed `x_keys` and
     /// `y_keys` before this method is invoked. The protocol's soundness
     /// depends on this binding.
-    pub fn prepare<const L: usize>(
+    pub fn prepare(
         mut self,
         mut transcript: Hasher,
-        x_keys: &[KeyTuple<E, L>],
-        y_keys: &[KeyTuple<E, L>],
+        x_keys: &[Vec<E>],
+        y_keys: &[Vec<E>],
         preparation: B::Preparation,
     ) -> Result<Verifier<W, E, B, verifier_state::Prepared<E>>, VerifyError<B::Error>> {
         let xn = x_keys.len();
@@ -69,17 +68,31 @@ where
         if xn != yn {
             return Err(VerifyError::LengthMismatch { xn, yn });
         }
-        if xn == 0 || L == 0 {
+        if xn == 0 {
             return Err(VerifyError::EmptyInputs);
+        }
+
+        // Tuple width: read from the first input tuple.
+        let tuple_width = x_keys[0].len();
+        if tuple_width == 0 {
+            return Err(VerifyError::EmptyInputs);
+        }
+
+        // Uniformity: every tuple (across both x and y) must have the
+        // same width.
+        let all_uniform = x_keys.iter().all(|k| k.len() == tuple_width)
+            && y_keys.iter().all(|k| k.len() == tuple_width);
+        if !all_uniform {
+            return Err(VerifyError::TupleWidthMismatch);
         }
 
         // Draw the random challenge `r`.
         let r = draw_field::<E>(&mut transcript, b"permutation-proof::challenge_r");
 
-        // Draw the tuple-collapse challenge `s ∈ E^L`.
-        let s: [E; L] = std::array::from_fn(|_| {
-            draw_field::<E>(&mut transcript, b"permutation-proof::challenge_s")
-        });
+        // Draw the tuple-collapse challenge `s ∈ E^tuple_width`.
+        let s: Vec<E> = (0..tuple_width)
+            .map(|_| draw_field::<E>(&mut transcript, b"permutation-proof::challenge_s"))
+            .collect();
 
         // Compute per-position collapsed factors.
         //
@@ -89,11 +102,11 @@ where
         let minus_delta_r = -(delta * r);
         let fx_keys: Vec<E> = x_keys
             .iter()
-            .map(|k| minus_delta_r - inner_product(&s, k))
+            .map(|k| minus_delta_r - E::inner_product(&s, k))
             .collect();
         let fy_keys: Vec<E> = y_keys
             .iter()
-            .map(|k| minus_delta_r - inner_product(&s, k))
+            .map(|k| minus_delta_r - E::inner_product(&s, k))
             .collect();
 
         // Install the preparation DTOs.
@@ -122,8 +135,8 @@ where
 
 impl<W, E, B> Verifier<W, E, B, verifier_state::Prepared<E>>
 where
-    W: SubfieldOf<E>,
-    E: Field,
+    W: Field,
+    E: ExtensionField<W>,
     B: VerifierBackend<W, E>,
 {
     /// Verify the proof.
@@ -177,9 +190,13 @@ pub enum VerifyError<E: std::error::Error + Send + Sync + 'static> {
         yn: usize,
     },
 
-    /// Input key slices had length zero.
+    /// Input key slices had length zero, or the tuple width was zero.
     #[error("empty inputs: permutation proof requires at least one wire per side")]
     EmptyInputs,
+
+    /// Not all input tuples had the same width.
+    #[error("tuple width mismatch across input vectors")]
+    TupleWidthMismatch,
 
     /// The prover's opened MAC disagreed with the verifier's
     /// locally-computed key.
@@ -239,18 +256,23 @@ mod tests {
         Verifier::new(MockVerifierBackend::<Gf2_128, Gf2_128>::new(delta))
     }
 
+    /// Construct a uniform-width key Vec for tests.
+    fn key_ones(n: usize, width: usize) -> Vec<Vec<Gf2_128>> {
+        (0..n).map(|_| vec![Gf2_128::one(); width]).collect()
+    }
+
     /// Mismatched `x_keys.len()` vs `y_keys.len()` must surface as
     /// `LengthMismatch`.
     #[test]
     fn prepare_rejects_length_mismatch() {
         let verifier = build_mock_verifier();
         let transcript = Hasher::new();
-        let x_keys: Vec<[Gf2_128; 1]> = vec![[Gf2_128::one()]; 3];
-        let y_keys: Vec<[Gf2_128; 1]> = vec![[Gf2_128::one()]; 5];
+        let x_keys = key_ones(3, 1);
+        let y_keys = key_ones(5, 1);
         let preparation = Preparation { prod_keys: vec![] };
 
         let err = verifier
-            .prepare::<1>(transcript, &x_keys, &y_keys, preparation)
+            .prepare(transcript, &x_keys, &y_keys, preparation)
             .err()
             .expect("length mismatch must surface an error");
         match err {
@@ -266,11 +288,11 @@ mod tests {
     fn prepare_rejects_empty_vectors() {
         let verifier = build_mock_verifier();
         let transcript = Hasher::new();
-        let empty: Vec<[Gf2_128; 1]> = Vec::new();
+        let empty: Vec<Vec<Gf2_128>> = Vec::new();
         let preparation = Preparation { prod_keys: vec![] };
 
         let err = verifier
-            .prepare::<1>(transcript, &empty, &empty, preparation)
+            .prepare(transcript, &empty, &empty, preparation)
             .err()
             .expect("empty inputs must surface an error");
         assert!(
@@ -279,22 +301,44 @@ mod tests {
         );
     }
 
-    /// Zero-width tuples (`L = 0`) are rejected.
+    /// Zero-width tuples are rejected.
     #[test]
     fn prepare_rejects_zero_width_tuples() {
         let verifier = build_mock_verifier();
         let transcript = Hasher::new();
-        let x_keys: Vec<[Gf2_128; 0]> = vec![[]];
-        let y_keys: Vec<[Gf2_128; 0]> = vec![[]];
+        let x_keys = key_ones(1, 0);
+        let y_keys = key_ones(1, 0);
         let preparation = Preparation { prod_keys: vec![] };
 
         let err = verifier
-            .prepare::<0>(transcript, &x_keys, &y_keys, preparation)
+            .prepare(transcript, &x_keys, &y_keys, preparation)
             .err()
             .expect("zero-width tuples must surface an error");
         assert!(
             matches!(err, VerifyError::EmptyInputs),
             "expected EmptyInputs, got {err:?}"
+        );
+    }
+
+    /// Non-uniform tuple widths rejected.
+    #[test]
+    fn prepare_rejects_tuple_width_mismatch() {
+        let verifier = build_mock_verifier();
+        let transcript = Hasher::new();
+        let x_keys: Vec<Vec<Gf2_128>> = vec![
+            vec![Gf2_128::one(); 2],
+            vec![Gf2_128::one(); 3],
+        ];
+        let y_keys = x_keys.clone();
+        let preparation = Preparation { prod_keys: vec![] };
+
+        let err = verifier
+            .prepare(transcript, &x_keys, &y_keys, preparation)
+            .err()
+            .expect("non-uniform tuple width must surface an error");
+        assert!(
+            matches!(err, VerifyError::TupleWidthMismatch),
+            "expected TupleWidthMismatch, got {err:?}"
         );
     }
 

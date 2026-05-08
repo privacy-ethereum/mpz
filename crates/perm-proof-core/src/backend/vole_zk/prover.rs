@@ -3,13 +3,11 @@
 use std::{borrow::Cow, marker::PhantomData};
 
 use mpz_common::future::Output;
-use mpz_fields::Field;
-use poly_proof_core::SubfieldOf;
+use mpz_fields::{ExtensionField, Field};
+use mpz_poly_proof_core::ConstraintId;
 use serde::{Deserialize, Serialize};
 
-use super::{
-    PRODUCT_POLY_ID, build_circuit, chunk_ranges_and_leftover, fan_in_tree_internal_nodes,
-};
+use super::{build_product_constraints, chunk_ranges_and_leftover, fan_in_tree_internal_nodes};
 use crate::backend::{Backend, ProverBackend};
 use mpz_vole_core::{
     DerandVOLEReceiver, RVOLEReceiver, RVOPEReceiver, VOLEReceiver, VoleAdjustment,
@@ -18,8 +16,8 @@ use mpz_vole_core::{
 /// VOLE-ZK prover backend.
 pub struct VoleZkProverBackend<W, E, VL, VP>
 where
-    W: SubfieldOf<E>,
-    E: Field,
+    W: Field,
+    E: ExtensionField<W> + ExtensionField<E>,
     VL: RVOLEReceiver<E, E>,
     VP: RVOPEReceiver<E>,
 {
@@ -35,7 +33,10 @@ where
     rvope: VP,
 
     /// QuickSilver polynomial-proof prover.
-    qs: poly_proof_core::prover::Prover<E>,
+    qs: mpz_poly_proof_core::prover::Prover<E>,
+
+    /// Id of the single product constraint registered with `qs`.
+    product_constraint: ConstraintId,
 
     /// Running size of the permutation vector this backend will prove
     /// over.
@@ -58,8 +59,8 @@ where
 
 impl<W, E, VL, VP> VoleZkProverBackend<W, E, VL, VP>
 where
-    W: SubfieldOf<E>,
-    E: Field,
+    W: Field,
+    E: ExtensionField<W> + ExtensionField<E>,
     VL: RVOLEReceiver<E, E>,
     VP: RVOPEReceiver<E>,
 {
@@ -76,8 +77,8 @@ where
         if fan_in_degree < 2 {
             return Err(VoleZkProverError::InvalidFanIn(fan_in_degree));
         }
-        let circuit = build_circuit(fan_in_degree);
-        let qs = poly_proof_core::prover::Prover::new(vec![circuit]);
+        let (constraints, product_constraint) = build_product_constraints::<E>(fan_in_degree);
+        let qs = mpz_poly_proof_core::prover::Prover::new(&constraints);
 
         rvope
             .alloc(1, qs.required_vopes())
@@ -88,6 +89,7 @@ where
             rvole: DerandVOLEReceiver::new(rvole),
             rvope,
             qs,
+            product_constraint,
             total_count: 0,
             rvoles_alloced: 0,
             pending_adjustments: Vec::new(),
@@ -119,13 +121,13 @@ pub struct Preparation<E: Field> {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Proof<E: Field> {
     /// QuickSilver polynomial-proof message.
-    pub qs_proof: poly_proof_core::ProofMessage<E>,
+    pub qs_proof: mpz_poly_proof_core::ProofMessage<E>,
 }
 
 impl<W, E, VL, VP> Backend<W, E> for VoleZkProverBackend<W, E, VL, VP>
 where
-    W: SubfieldOf<E>,
-    E: Field,
+    W: Field,
+    E: ExtensionField<W> + ExtensionField<E>,
     VL: RVOLEReceiver<E, E>,
     VP: RVOPEReceiver<E>,
 {
@@ -136,8 +138,12 @@ where
 
 impl<W, E, VL, VP> ProverBackend<W, E> for VoleZkProverBackend<W, E, VL, VP>
 where
-    W: SubfieldOf<E>,
-    E: Field + Serialize,
+    W: Field,
+    E: ExtensionField<W>
+        + ExtensionField<E>
+        + Serialize
+        + zerocopy::IntoBytes
+        + zerocopy::FromBytes,
     VL: RVOLEReceiver<E, E>,
     VP: RVOPEReceiver<E>,
 {
@@ -150,15 +156,18 @@ where
     fn prove(mut self) -> Result<Self::BackendProof, Self::Error> {
         // Step 1: replay the QS accumulate calls that `product`
         // buffered earlier.
-        for DeferredAccumulate { chi, evaluations } in
+        for DeferredAccumulate { seed, evaluations } in
             std::mem::take(&mut self.pending_qs_accumulate)
         {
-            let refs: Vec<(usize, &[E], &[E])> = evaluations
+            let refs: Vec<(ConstraintId, &[E], &[E])> = evaluations
                 .iter()
                 .map(|(id, m, v)| (*id, m.as_slice(), v.as_slice()))
                 .collect();
+            // W = E here: tree-walk wires are already extension-field
+            // elements (post-`prepare` collapse), so the `accumulate`
+            // generic uses the trivial `E: ExtensionField<E>` impl.
             self.qs
-                .accumulate(&refs, chi)
+                .accumulate::<E>(&refs, seed)
                 .map_err(|e| VoleZkProverError::QsAccumulate(Box::new(e)))?;
         }
 
@@ -173,7 +182,7 @@ where
             .into_iter()
             .next()
             .expect("RVOPE try_recv_vope(1) should return exactly one polynomial");
-        let vope = poly_proof_core::ProverVope { coeffs };
+        let vope = mpz_poly_proof_core::ProverVope { coeffs };
 
         // Step 3: run QS finalize.
         let qs_proof = self
@@ -293,8 +302,8 @@ where
                 // side. Only ever fires for the last chunk — full
                 // chunks have `real_count == ε` and the loop is empty.
                 for _ in real_count..eps {
-                    macs.push(E::zero());
-                    values.push(E::one());
+                    macs.push(<E as Field>::zero());
+                    values.push(<E as Field>::one());
                 }
                 macs.push(prod_macs[i]);
                 values.push(chunk_products[i]);
@@ -302,15 +311,15 @@ where
                 chunk_values_store.push(values);
             }
 
-            // Draw a fresh challenge for this tree-walk level.
-            let chi = crate::draw_field::<E>(transcript, b"permutation-proof::qs-chi");
-            let evaluations: Vec<(usize, Vec<E>, Vec<E>)> = chunk_macs_store
+            // Draw a fresh PRG seed for this tree-walk level.
+            let seed = crate::draw_seed(transcript, b"permutation-proof::qs-seed");
+            let evaluations: Vec<(ConstraintId, Vec<E>, Vec<E>)> = chunk_macs_store
                 .into_iter()
                 .zip(chunk_values_store)
-                .map(|(m, v)| (PRODUCT_POLY_ID, m, v))
+                .map(|(m, v)| (self.product_constraint, m, v))
                 .collect();
             self.pending_qs_accumulate
-                .push(DeferredAccumulate { chi, evaluations });
+                .push(DeferredAccumulate { seed, evaluations });
 
             // Assemble the next level.
             chunk_products.extend(passthroughs.iter().map(|&idx| current_values[idx]));
@@ -324,12 +333,12 @@ where
     }
 }
 
-/// One tre-walk level's deferred QuickSilver accumulate call.
+/// One tree-walk level's deferred QuickSilver accumulate call.
 struct DeferredAccumulate<E: Field> {
-    /// Challenge drawn from the transcript.
-    chi: E,
-    /// Per-chunk `(poly_id, macs, values)` tuples.
-    evaluations: Vec<(usize, Vec<E>, Vec<E>)>,
+    /// PRG seed drawn from the transcript.
+    seed: [u8; 32],
+    /// Per-chunk `(constraint_id, macs, values)` tuples.
+    evaluations: Vec<(ConstraintId, Vec<E>, Vec<E>)>,
 }
 
 /// Errors produced by [`VoleZkProverBackend`].

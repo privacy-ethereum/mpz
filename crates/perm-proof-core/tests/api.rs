@@ -31,13 +31,13 @@ fn run_end_to_end<const L: usize>(mode: Mode) -> Result<(), VerifyError<MockErro
 
     // Input tuples: `n` positions, each an `L`-wide tuple of random
     // field elements. `y` is a random permutation of `x`.
-    let mut x_values: Vec<[Gf2_128; L]> = (0..100)
-        .map(|_| std::array::from_fn(|_| rng.random()))
+    let mut x_values: Vec<Vec<Gf2_128>> = (0..100)
+        .map(|_| (0..L).map(|_| rng.random()).collect())
         .collect();
     // Fisher-Yates permutation on index vector; apply to build y.
     let mut perm_indices: Vec<usize> = (0..x_values.len()).collect();
     perm_indices.shuffle(&mut rng);
-    let y_values: Vec<[Gf2_128; L]> = perm_indices.iter().map(|&i| x_values[i]).collect();
+    let y_values: Vec<Vec<Gf2_128>> = perm_indices.iter().map(|&i| x_values[i].clone()).collect();
 
     // Commit both vectors as authenticated tuple-wires in a single
     // VOLE session.
@@ -60,10 +60,10 @@ fn run_end_to_end<const L: usize>(mode: Mode) -> Result<(), VerifyError<MockErro
 
     // --- Round 1: prover -> verifier ---
     let (preparation, prover) = prover
-        .prepare::<L>(tp, (&x_values, &x_macs), (&y_values, &y_macs))
+        .prepare(tp, (&x_values, &x_macs), (&y_values, &y_macs))
         .expect("prover prepare must succeed");
     let verifier = verifier
-        .prepare::<L>(tv, &x_keys, &y_keys, preparation)
+        .prepare(tv, &x_keys, &y_keys, preparation)
         .expect("verifier prepare must succeed");
 
     // --- Round 2: prover -> verifier ---

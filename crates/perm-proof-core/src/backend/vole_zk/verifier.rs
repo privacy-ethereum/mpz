@@ -2,12 +2,12 @@
 
 use std::{borrow::Cow, collections::VecDeque, marker::PhantomData};
 
-use mpz_fields::Field;
-use poly_proof_core::SubfieldOf;
+use mpz_fields::{ExtensionField, Field};
+use mpz_poly_proof_core::ConstraintId;
 use serde::Serialize;
 
 use super::{
-    PRODUCT_POLY_ID, Preparation, Proof, build_circuit, chunk_ranges_and_leftover,
+    Preparation, Proof, build_product_constraints, chunk_ranges_and_leftover,
     fan_in_tree_internal_nodes,
 };
 use crate::backend::{Backend, VerifierBackend};
@@ -16,8 +16,8 @@ use mpz_vole_core::{RVOLESender, RVOPESender, VoleAdjustment};
 /// VOLE-ZK verifier backend.
 pub struct VoleZkVerifierBackend<W, E, VL, VP>
 where
-    W: SubfieldOf<E>,
-    E: Field,
+    W: Field,
+    E: ExtensionField<W> + ExtensionField<E>,
     VL: RVOLESender<E>,
     VP: RVOPESender<E>,
 {
@@ -37,7 +37,10 @@ where
     rvope: VP,
 
     /// QuickSilver polynomial-proof verifier.
-    qs: poly_proof_core::verifier::Verifier<E>,
+    qs: mpz_poly_proof_core::verifier::Verifier<E>,
+
+    /// Id of the single product constraint registered with `qs`.
+    product_constraint: ConstraintId,
 
     /// Running size of the permutation vector this backend will verify
     /// over.
@@ -55,8 +58,8 @@ where
 
 impl<W, E, VL, VP> VoleZkVerifierBackend<W, E, VL, VP>
 where
-    W: SubfieldOf<E>,
-    E: Field,
+    W: Field,
+    E: ExtensionField<W> + ExtensionField<E>,
     VL: RVOLESender<E>,
     VP: RVOPESender<E>,
 {
@@ -79,8 +82,8 @@ where
         if fan_in_degree < 2 {
             return Err(VoleZkVerifierError::InvalidFanIn(fan_in_degree));
         }
-        let circuit = build_circuit(fan_in_degree);
-        let qs = poly_proof_core::verifier::Verifier::new(delta, vec![circuit]);
+        let (constraints, product_constraint) = build_product_constraints::<E>(fan_in_degree);
+        let qs = mpz_poly_proof_core::verifier::Verifier::new(delta, &constraints);
 
         rvope
             .alloc(1, qs.required_vopes())
@@ -92,6 +95,7 @@ where
             rvole,
             rvope,
             qs,
+            product_constraint,
             total_count: 0,
             rvoles_alloced: 0,
             adjustments: VecDeque::new(),
@@ -118,8 +122,8 @@ where
 
 impl<W, E, VL, VP> Backend<W, E> for VoleZkVerifierBackend<W, E, VL, VP>
 where
-    W: SubfieldOf<E>,
-    E: Field,
+    W: Field,
+    E: ExtensionField<W> + ExtensionField<E>,
     VL: RVOLESender<E>,
     VP: RVOPESender<E>,
 {
@@ -130,8 +134,12 @@ where
 
 impl<W, E, VL, VP> VerifierBackend<W, E> for VoleZkVerifierBackend<W, E, VL, VP>
 where
-    W: SubfieldOf<E>,
-    E: Field + Serialize,
+    W: Field,
+    E: ExtensionField<W>
+        + ExtensionField<E>
+        + Serialize
+        + zerocopy::IntoBytes
+        + zerocopy::FromBytes,
     VL: RVOLESender<E>,
     VP: RVOPESender<E>,
 {
@@ -156,7 +164,7 @@ where
             .into_iter()
             .next()
             .expect("RVOPE try_send_vope(1) should return exactly one evaluation");
-        let vope = poly_proof_core::VerifierVope { sum };
+        let vope = mpz_poly_proof_core::VerifierVope { sum };
 
         // Step 2: run QS finalize.
         self.qs
@@ -263,14 +271,14 @@ where
                 chunk_keys_store.push(keys);
             }
 
-            // Draw a fresh challenge for this tree-walk level.
-            let chi = crate::draw_field::<E>(transcript, b"permutation-proof::qs-chi");
-            let evaluations: Vec<(usize, &[E])> = chunk_keys_store
+            // Draw a fresh PRG seed for this tree-walk level.
+            let seed = crate::draw_seed(transcript, b"permutation-proof::qs-seed");
+            let evaluations: Vec<(ConstraintId, &[E])> = chunk_keys_store
                 .iter()
-                .map(|k| (PRODUCT_POLY_ID, k.as_slice()))
+                .map(|k| (self.product_constraint, k.as_slice()))
                 .collect();
             self.qs
-                .accumulate(&evaluations, chi)
+                .accumulate(&evaluations, seed)
                 .map_err(|e| VoleZkVerifierError::QsAccumulate(Box::new(e)))?;
 
             // Assemble the next level.

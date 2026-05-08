@@ -1,15 +1,14 @@
 //! Backend traits for the permutation proof.
 
 use blake3::Hasher;
-use mpz_fields::Field;
-use poly_proof_core::SubfieldOf;
+use mpz_fields::{ExtensionField, Field};
 
 #[cfg(any(test, feature = "test-utils"))]
 pub mod mock;
 pub mod vole_zk;
 
 /// Types shared by a paired prover/verifier backend.
-pub trait Backend<W: SubfieldOf<E>, E: Field> {
+pub trait Backend<W: Field, E: ExtensionField<W>> {
     /// Error type produced by fallible backend operations.
     type Error: std::error::Error + Send + Sync + 'static;
 
@@ -22,7 +21,7 @@ pub trait Backend<W: SubfieldOf<E>, E: Field> {
 }
 
 /// Prover backend for the permutation proof.
-pub trait ProverBackend<W: SubfieldOf<E>, E: Field>: Backend<W, E> + Sized {
+pub trait ProverBackend<W: Field, E: ExtensionField<W>>: Backend<W, E> + Sized {
     /// Allocate capacity for proving a permutation of size `n`.
     ///
     /// May be called multiple times: each call allocates additional
@@ -63,7 +62,7 @@ pub trait ProverBackend<W: SubfieldOf<E>, E: Field>: Backend<W, E> + Sized {
 }
 
 /// Verifier backend for the permutation proof.
-pub trait VerifierBackend<W: SubfieldOf<E>, E: Field>: Backend<W, E> + Sized {
+pub trait VerifierBackend<W: Field, E: ExtensionField<W>>: Backend<W, E> + Sized {
     /// Verifier's global key `Δ`.
     fn delta(&self) -> E;
 

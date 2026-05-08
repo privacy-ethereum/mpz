@@ -3,8 +3,7 @@
 use std::{collections::VecDeque, marker::PhantomData};
 
 use blake3::Hasher;
-use mpz_fields::Field;
-use poly_proof_core::SubfieldOf;
+use mpz_fields::{ExtensionField, Field};
 
 use super::{MockError, Preparation};
 use crate::backend::{Backend, VerifierBackend};
@@ -32,13 +31,13 @@ impl<W, E: Field> MockVerifierBackend<W, E> {
     }
 }
 
-impl<W: SubfieldOf<E>, E: Field> Backend<W, E> for MockVerifierBackend<W, E> {
+impl<W: Field, E: ExtensionField<W>> Backend<W, E> for MockVerifierBackend<W, E> {
     type Error = MockError;
     type Preparation = Preparation<E>;
     type BackendProof = ();
 }
 
-impl<W: SubfieldOf<E>, E: Field> VerifierBackend<W, E> for MockVerifierBackend<W, E> {
+impl<W: Field, E: ExtensionField<W>> VerifierBackend<W, E> for MockVerifierBackend<W, E> {
     fn delta(&self) -> E {
         self.delta
     }

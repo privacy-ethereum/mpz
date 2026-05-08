@@ -1,17 +1,16 @@
 //! Permutation protocol prover.
 
 use blake3::Hasher;
-use mpz_fields::Field;
-use poly_proof_core::SubfieldOf;
+use mpz_fields::{ExtensionField, Field};
 use serde::Serialize;
 
-use crate::{MacTuple, Proof, ValueTuple, backend::ProverBackend, draw_field, inner_product};
+use crate::{Proof, backend::ProverBackend, draw_field};
 
 /// Permutation protocol prover.
 pub struct Prover<W, E, B, S = prover_state::Initialized>
 where
-    W: SubfieldOf<E>,
-    E: Field,
+    W: Field,
+    E: ExtensionField<W>,
     B: ProverBackend<W, E>,
     S: prover_state::State,
 {
@@ -22,8 +21,8 @@ where
 
 impl<W, E, B> Prover<W, E, B, prover_state::Initialized>
 where
-    W: SubfieldOf<E>,
-    E: Field,
+    W: Field,
+    E: ExtensionField<W>,
     B: ProverBackend<W, E>,
 {
     /// Build a new prover around `backend`.
@@ -56,11 +55,11 @@ where
     /// It is crucial that `transcript` has absorbed the input vectors
     /// `x` and `y` before this method is invoked. The protocol's
     /// soundness depends on this binding.
-    pub fn prepare<const L: usize>(
+    pub fn prepare(
         mut self,
         mut transcript: Hasher,
-        x: (&[ValueTuple<W, L>], &[MacTuple<E, L>]),
-        y: (&[ValueTuple<W, L>], &[MacTuple<E, L>]),
+        x: (&[Vec<W>], &[Vec<E>]),
+        y: (&[Vec<W>], &[Vec<E>]),
     ) -> Result<(B::Preparation, Prover<W, E, B, prover_state::Prepared<E>>), ProveError<B::Error>>
     {
         let (x_values, x_macs) = x;
@@ -74,17 +73,33 @@ where
             return Err(ProveError::LengthMismatch { xv, xm, yv, ym });
         }
         let n = xv;
-        if n == 0 || L == 0 {
+        if n == 0 {
             return Err(ProveError::EmptyInputs);
+        }
+
+        // Tuple width: read from the first input tuple.
+        let tuple_width = x_values[0].len();
+        if tuple_width == 0 {
+            return Err(ProveError::EmptyInputs);
+        }
+
+        // Uniformity: every tuple (across both x and y, values and
+        // macs) must have the same width.
+        let all_uniform = x_values.iter().all(|v| v.len() == tuple_width)
+            && x_macs.iter().all(|m| m.len() == tuple_width)
+            && y_values.iter().all(|v| v.len() == tuple_width)
+            && y_macs.iter().all(|m| m.len() == tuple_width);
+        if !all_uniform {
+            return Err(ProveError::TupleWidthMismatch);
         }
 
         // Draw the random challenge `r`.
         let r = draw_field::<E>(&mut transcript, b"permutation-proof::challenge_r");
 
-        // Draw the tuple-collapse challenge `s ∈ E^L`.
-        let s: [E; L] = std::array::from_fn(|_| {
-            draw_field::<E>(&mut transcript, b"permutation-proof::challenge_s")
-        });
+        // Draw the tuple-collapse challenge `s ∈ E^tuple_width`.
+        let s: Vec<E> = (0..tuple_width)
+            .map(|_| draw_field::<E>(&mut transcript, b"permutation-proof::challenge_s"))
+            .collect();
 
         // Compute per-position collapsed factors.
         //
@@ -140,8 +155,8 @@ where
 
 impl<W, E, B> Prover<W, E, B, prover_state::Prepared<E>>
 where
-    W: SubfieldOf<E>,
-    E: Field,
+    W: Field,
+    E: ExtensionField<W>,
     B: ProverBackend<W, E>,
 {
     /// Return the proof message for phase 2 of the protocol.
@@ -207,24 +222,18 @@ pub mod prover_state {
     impl<E: Field> State for Prepared<E> {}
 }
 
-/// Collapse one `L`-tuple of authenticated wires into a single
-/// `(value, MAC)` pair via the inner product with `s`:
+/// Collapse one tuple of authenticated wires into a single
+/// `(value, MAC)` pair via the inner product with `s`.
 ///
-/// ```text
-/// z_val = Σ_j s[j] · values[j].embed()
-/// z_mac = Σ_j s[j] · macs[j]
-/// ```
-pub(crate) fn collapse_tuple<W, E, const L: usize>(
-    s: &[E; L],
-    values: &[W; L],
-    macs: &[E; L],
-) -> (E, E)
+/// `s.len()`, `values.len()`, and `macs.len()` are expected to be
+/// equal; the inner product extends only as far as the shortest slice.
+pub(crate) fn collapse_tuple<W, E>(s: &[E], values: &[W], macs: &[E]) -> (E, E)
 where
-    W: SubfieldOf<E>,
-    E: Field,
+    W: Field,
+    E: ExtensionField<W>,
 {
-    let embedded: [E; L] = std::array::from_fn(|j| values[j].embed());
-    (inner_product(s, &embedded), inner_product(s, macs))
+    let embedded: Vec<E> = values.iter().map(|v| E::embed(*v)).collect();
+    (E::inner_product(s, &embedded), E::inner_product(s, macs))
 }
 
 /// Error produced by protocol prover.
@@ -243,9 +252,13 @@ pub enum ProveError<E: std::error::Error + Send + Sync + 'static> {
         ym: usize,
     },
 
-    /// Input vectors had length zero.
+    /// Input vectors had length zero, or the tuple width was zero.
     #[error("empty inputs: permutation proof requires at least one wire per side")]
     EmptyInputs,
+
+    /// Not all input tuples had the same width.
+    #[error("tuple width mismatch across input vectors")]
+    TupleWidthMismatch,
 
     /// The backend reported an error.
     #[error("backend error: {0}")]
@@ -268,19 +281,24 @@ mod tests {
         Prover::new(MockProverBackend::<Gf2_128, Gf2_128>::new(delta))
     }
 
+    /// Construct a uniform-width tuple Vec for tests.
+    fn ones(n: usize, width: usize) -> Vec<Vec<Gf2_128>> {
+        (0..n).map(|_| vec![Gf2_128::one(); width]).collect()
+    }
+
     /// Mismatched `x_values.len()` vs `x_macs.len()` must surface as
     /// `LengthMismatch`.
     #[test]
     fn prepare_rejects_x_values_x_macs_length_mismatch() {
         let prover = build_mock_prover();
         let transcript = Hasher::new();
-        let x_values: Vec<[Gf2_128; 1]> = vec![[Gf2_128::one()]; 3];
-        let x_macs: Vec<[Gf2_128; 1]> = vec![[Gf2_128::one()]; 2]; // short by 1
-        let y_values: Vec<[Gf2_128; 1]> = vec![[Gf2_128::one()]; 3];
-        let y_macs: Vec<[Gf2_128; 1]> = vec![[Gf2_128::one()]; 3];
+        let x_values = ones(3, 1);
+        let x_macs = ones(2, 1); // short by 1
+        let y_values = ones(3, 1);
+        let y_macs = ones(3, 1);
 
         let err = prover
-            .prepare::<1>(transcript, (&x_values, &x_macs), (&y_values, &y_macs))
+            .prepare(transcript, (&x_values, &x_macs), (&y_values, &y_macs))
             .err()
             .expect("x-side length mismatch must surface an error");
         match err {
@@ -297,13 +315,13 @@ mod tests {
     fn prepare_rejects_y_values_y_macs_length_mismatch() {
         let prover = build_mock_prover();
         let transcript = Hasher::new();
-        let x_values: Vec<[Gf2_128; 1]> = vec![[Gf2_128::one()]; 4];
-        let x_macs: Vec<[Gf2_128; 1]> = vec![[Gf2_128::one()]; 4];
-        let y_values: Vec<[Gf2_128; 1]> = vec![[Gf2_128::one()]; 4];
-        let y_macs: Vec<[Gf2_128; 1]> = vec![[Gf2_128::one()]; 3]; // short by 1
+        let x_values = ones(4, 1);
+        let x_macs = ones(4, 1);
+        let y_values = ones(4, 1);
+        let y_macs = ones(3, 1); // short by 1
 
         let err = prover
-            .prepare::<1>(transcript, (&x_values, &x_macs), (&y_values, &y_macs))
+            .prepare(transcript, (&x_values, &x_macs), (&y_values, &y_macs))
             .err()
             .expect("y-side length mismatch must surface an error");
         match err {
@@ -320,13 +338,13 @@ mod tests {
     fn prepare_rejects_x_vs_y_length_mismatch() {
         let prover = build_mock_prover();
         let transcript = Hasher::new();
-        let x_values: Vec<[Gf2_128; 1]> = vec![[Gf2_128::one()]; 3];
-        let x_macs: Vec<[Gf2_128; 1]> = vec![[Gf2_128::one()]; 3];
-        let y_values: Vec<[Gf2_128; 1]> = vec![[Gf2_128::one()]; 5];
-        let y_macs: Vec<[Gf2_128; 1]> = vec![[Gf2_128::one()]; 5];
+        let x_values = ones(3, 1);
+        let x_macs = ones(3, 1);
+        let y_values = ones(5, 1);
+        let y_macs = ones(5, 1);
 
         let err = prover
-            .prepare::<1>(transcript, (&x_values, &x_macs), (&y_values, &y_macs))
+            .prepare(transcript, (&x_values, &x_macs), (&y_values, &y_macs))
             .err()
             .expect("x-vs-y length mismatch must surface an error");
         match err {
@@ -342,10 +360,10 @@ mod tests {
     fn prepare_rejects_empty_vectors() {
         let prover = build_mock_prover();
         let transcript = Hasher::new();
-        let empty: Vec<[Gf2_128; 1]> = Vec::new();
+        let empty: Vec<Vec<Gf2_128>> = Vec::new();
 
         let err = prover
-            .prepare::<1>(transcript, (&empty, &empty), (&empty, &empty))
+            .prepare(transcript, (&empty, &empty), (&empty, &empty))
             .err()
             .expect("empty inputs must surface an error");
         assert!(
@@ -354,24 +372,45 @@ mod tests {
         );
     }
 
-    /// Zero-width tuples (`L = 0`) rejected.
+    /// Zero-width tuples rejected.
     #[test]
     fn prepare_rejects_zero_width_tuples() {
         let prover = build_mock_prover();
         let transcript = Hasher::new();
-        // n = 1, L = 0: one position, zero-width tuple.
-        let x_values: Vec<[Gf2_128; 0]> = vec![[]];
-        let x_macs: Vec<[Gf2_128; 0]> = vec![[]];
-        let y_values: Vec<[Gf2_128; 0]> = vec![[]];
-        let y_macs: Vec<[Gf2_128; 0]> = vec![[]];
+        // n = 1, tuple_width = 0.
+        let x_values = ones(1, 0);
+        let x_macs = ones(1, 0);
+        let y_values = ones(1, 0);
+        let y_macs = ones(1, 0);
 
         let err = prover
-            .prepare::<0>(transcript, (&x_values, &x_macs), (&y_values, &y_macs))
+            .prepare(transcript, (&x_values, &x_macs), (&y_values, &y_macs))
             .err()
             .expect("zero-width tuples must surface an error");
         assert!(
             matches!(err, ProveError::EmptyInputs),
             "expected EmptyInputs, got {err:?}"
+        );
+    }
+
+    /// Non-uniform tuple widths rejected.
+    #[test]
+    fn prepare_rejects_tuple_width_mismatch() {
+        let prover = build_mock_prover();
+        let transcript = Hasher::new();
+        // n = 2: first tuple width 2, second tuple width 3.
+        let x_values: Vec<Vec<Gf2_128>> = vec![vec![Gf2_128::one(); 2], vec![Gf2_128::one(); 3]];
+        let x_macs: Vec<Vec<Gf2_128>> = vec![vec![Gf2_128::one(); 2], vec![Gf2_128::one(); 3]];
+        let y_values = x_values.clone();
+        let y_macs = x_macs.clone();
+
+        let err = prover
+            .prepare(transcript, (&x_values, &x_macs), (&y_values, &y_macs))
+            .err()
+            .expect("non-uniform tuple width must surface an error");
+        assert!(
+            matches!(err, ProveError::TupleWidthMismatch),
+            "expected TupleWidthMismatch, got {err:?}"
         );
     }
 

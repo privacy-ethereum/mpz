@@ -14,7 +14,7 @@ use mpz_vole_core::ideal::{
     rvope::{IdealRVOPESender, ideal_rvope},
 };
 use perm_proof_core::{
-    KeyTuple, Proof as Envelope, Prover, Verifier,
+    Proof as Envelope, Prover, Verifier,
     backend::vole_zk::{
         Preparation, Proof as BackendProof, VoleZkProverBackend, VoleZkVerifierBackend,
     },
@@ -45,10 +45,10 @@ type FullProof = Envelope<Gf2_64, BackendProof<Gf2_64>>;
 /// inputs (keys + transcript), the prover-produced DTOs the verifier
 /// consumes, and the RVOLE/RVOPE seeds so per-iter setup can rebuild
 /// matching senders. Generated once per bench point.
-struct Fixture<const L: usize> {
+struct Fixture {
     delta: Gf2_64,
-    x_keys: Vec<KeyTuple<Gf2_64, L>>,
-    y_keys: Vec<KeyTuple<Gf2_64, L>>,
+    x_keys: Vec<Vec<Gf2_64>>,
+    y_keys: Vec<Vec<Gf2_64>>,
     transcript: Hasher,
     preparation: Preparation<Gf2_64>,
     proof: FullProof,
@@ -59,15 +59,15 @@ struct Fixture<const L: usize> {
 /// One-shot: generate inputs, authenticate them via `commit_values`,
 /// then run an honest prover through `prepare` + `prove` to produce the
 /// `preparation` and `Proof` the verifier will consume.
-fn build_fixture<const L: usize>(rng: &mut ChaCha8Rng, n: usize) -> Fixture<L> {
+fn build_fixture<const L: usize>(rng: &mut ChaCha8Rng, n: usize) -> Fixture {
     let delta: Gf2_64 = rng.random();
 
-    let x_values: Vec<[Gf2_64; L]> = (0..n)
-        .map(|_| std::array::from_fn(|_| rng.random()))
+    let x_values: Vec<Vec<Gf2_64>> = (0..n)
+        .map(|_| (0..L).map(|_| rng.random()).collect())
         .collect();
     let mut perm_indices: Vec<usize> = (0..n).collect();
     perm_indices.shuffle(rng);
-    let y_values: Vec<[Gf2_64; L]> = perm_indices.iter().map(|&i| x_values[i]).collect();
+    let y_values: Vec<Vec<Gf2_64>> = perm_indices.iter().map(|&i| x_values[i].clone()).collect();
 
     let Committed {
         macs: [x_macs, y_macs],
@@ -103,8 +103,9 @@ fn build_fixture<const L: usize>(rng: &mut ChaCha8Rng, n: usize) -> Fixture<L> {
         VoleZkProverBackend::<Gf2_64, Gf2_64, _, _>::new(EPS, rvole_r, rvope_r).unwrap(),
     );
     prover.alloc(n).expect("prover alloc must succeed");
+
     let (preparation, prover) = prover
-        .prepare::<L>(
+        .prepare(
             transcript.clone(),
             (&x_values, &x_macs),
             (&y_values, &y_macs),
@@ -192,7 +193,7 @@ fn bench_verify(c: &mut Criterion) {
                 },
                 |(verifier, transcript, preparation, proof)| {
                     let verifier = verifier
-                        .prepare::<L>(transcript, &fixture.x_keys, &fixture.y_keys, preparation)
+                        .prepare(transcript, &fixture.x_keys, &fixture.y_keys, preparation)
                         .expect("verifier prepare must succeed");
                     verifier.verify(proof).expect("verify must succeed");
                     black_box(());

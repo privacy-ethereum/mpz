@@ -3,8 +3,7 @@
 use std::marker::PhantomData;
 
 use blake3::Hasher;
-use mpz_fields::Field;
-use poly_proof_core::SubfieldOf;
+use mpz_fields::{ExtensionField, Field};
 
 use super::{MockError, Preparation};
 use crate::backend::{Backend, ProverBackend};
@@ -32,13 +31,13 @@ impl<W, E: Field> MockProverBackend<W, E> {
     }
 }
 
-impl<W: SubfieldOf<E>, E: Field> Backend<W, E> for MockProverBackend<W, E> {
+impl<W: Field, E: ExtensionField<W>> Backend<W, E> for MockProverBackend<W, E> {
     type Error = MockError;
     type Preparation = Preparation<E>;
     type BackendProof = ();
 }
 
-impl<W: SubfieldOf<E>, E: Field> ProverBackend<W, E> for MockProverBackend<W, E> {
+impl<W: Field, E: ExtensionField<W>> ProverBackend<W, E> for MockProverBackend<W, E> {
     fn drain_preparation(&mut self) -> Result<Self::Preparation, Self::Error> {
         Ok(Preparation {
             prod_keys: std::mem::take(&mut self.prod_keys),
