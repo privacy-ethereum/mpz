@@ -205,6 +205,21 @@ impl ExtensionField<Gf2> for Gf2_64 {
     }
 }
 
+/// Trivial self-extension: degree-1, basis `[1]`, embed is identity.
+impl ExtensionField<Gf2_64> for Gf2_64 {
+    const MONOMIAL_BASIS: &'static [Self] = &[Gf2_64::ONE];
+
+    #[inline]
+    fn embed(base: Gf2_64) -> Self {
+        base
+    }
+
+    #[inline]
+    fn inner_product_subfield(values: &[Gf2_64], challenges: &[Self]) -> Self {
+        Gf2_64::inner_product(values, challenges)
+    }
+}
+
 cfg_select! {
     all(target_arch = "x86_64", target_feature = "pclmulqdq") => {
         mod x86;
