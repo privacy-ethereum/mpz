@@ -28,7 +28,7 @@ use std::fmt::Debug;
 pub use mpz_fields::{ExtensionField, Field};
 use serde::{Deserialize, Serialize};
 
-use crate::circuit::{BuildError, Circuit, CircuitBuilder, NodeId, compile};
+use crate::circuit::{compile, BuildError, Circuit, CircuitBuilder, NodeId};
 
 // ---------------------------------------------------------------------------
 // Protocol types
@@ -101,6 +101,19 @@ impl<E: Field> ConstraintsBuilder<E> {
         Ok(id)
     }
 
+    /// Like [`add`](Self::add), but with a runtime-sized variable count.
+    ///
+    /// Use when the number of input wires is only known at runtime.
+    pub fn add_dynamic<F>(&mut self, num_vars: usize, f: F) -> Result<ConstraintId, BuildError>
+    where
+        F: FnOnce(&mut CircuitBuilder<E>, &[NodeId]) -> Result<(), BuildError>,
+    {
+        let circuit = compile(num_vars, f)?;
+        let id = ConstraintId(self.circuits.len());
+        self.circuits.push(circuit);
+        Ok(id)
+    }
+
     /// Freeze into a [`Constraints`] set.
     pub fn build(self) -> Constraints<E> {
         Constraints {
@@ -114,7 +127,7 @@ mod tests {
     use super::*;
     use mpz_circuits_new::fixtures::{and_gate, linear_add};
     use mpz_fields::{gf2::Gf2, gf2_64::Gf2_64};
-    use rand::{Rng, SeedableRng, rngs::StdRng};
+    use rand::{rngs::StdRng, Rng, SeedableRng};
 
     fn random_gf64(rng: &mut impl Rng) -> Gf2_64 {
         Gf2_64(rng.random::<u64>())
