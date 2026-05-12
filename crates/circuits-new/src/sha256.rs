@@ -25,7 +25,7 @@ pub const H0: [u32; 8] = [
 ];
 
 /// AND-gate count of a single SHA-256 compression block.
-pub const AND_PER_BLOCK: usize = 23_296;
+pub const AND_PER_BLOCK: usize = 22_696;
 
 fn xor_word<C: Context<Field = Gf2>>(
     ctx: &mut C,
@@ -62,7 +62,8 @@ fn shr<C: Context<Field = Gf2>>(ctx: &mut C, a: Word<C::Wire>, n: usize) -> Word
     out
 }
 
-/// Ripple-carry 32-bit add modulo 2^32. One AND gate per bit.
+/// Ripple-carry 32-bit add modulo 2^32. 31 AND gates (the carry-out at bit 31
+/// is unused).
 fn add_word<C: Context<Field = Gf2>>(
     ctx: &mut C,
     a: Word<C::Wire>,
@@ -72,13 +73,17 @@ fn add_word<C: Context<Field = Gf2>>(
     let mut out = [zero; 32];
     let mut carry = zero;
     for i in 0..32 {
-        let ab = ctx.add(a[i], b[i]);
-        out[i] = ctx.add(ab, carry);
+        let axb = ctx.add(a[i], b[i]);
+        out[i] = ctx.add(axb, carry);
 
-        let x = ctx.add(a[i], carry);
-        let y = ctx.add(b[i], carry);
-        let z = ctx.mul(x, y);
-        carry = ctx.add(z, carry);
+        if i == 31 {
+            continue;
+        }
+
+        // carry_out = MAJ(a, b, carry) = ((a ^ b) AND (b ^ carry)) ^ b
+        let bxc = ctx.add(b[i], carry);
+        let m = ctx.mul(axb, bxc);
+        carry = ctx.add(m, b[i]);
     }
     out
 }
