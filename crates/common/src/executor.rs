@@ -179,6 +179,13 @@ impl ExecutorBuilder {
 fn worker_loop(inner: Arc<Inner>, local: Worker<Runnable>, index: usize, parker: Parker) {
     let state = &inner.workers[index];
 
+    let drain_local = |local: &Worker<Runnable>| {
+        // Drop any runnables still sitting in this worker's local queue.
+        // Dropping cancels the corresponding task so awaiters of `Task<T>`
+        // see cancellation instead of hanging on a worker that has exited.
+        while local.pop().is_some() {}
+    };
+
     while !inner.shutdown.load(Ordering::Relaxed) {
         if let Some(runnable) = find_task(&inner, &local, index) {
             // Poll the task once. If it returns Pending, the waker will
@@ -211,6 +218,8 @@ fn worker_loop(inner: Arc<Inner>, local: Worker<Runnable>, index: usize, parker:
         parker.park();
         state.parked.store(false, Ordering::SeqCst);
     }
+
+    drain_local(&local);
 }
 
 /// Finds a task to execute using work-stealing.
@@ -252,8 +261,26 @@ impl Executor {
     }
 
     /// Shuts down the executor.
+    ///
+    /// Sets the shutdown flag, drains the global queue, and unparks every
+    /// worker. After this returns, no further runnables will be accepted by
+    /// the scheduler (newly woken tasks are dropped on arrival), and any
+    /// runnables still queued at the moment of shutdown are dropped. Dropping
+    /// a [`Runnable`] cancels its task, so awaiters of `Task<T>` propagate
+    /// cancellation rather than hanging on a worker that has exited.
     pub fn shutdown(&self) {
         self.inner.shutdown.store(true, Ordering::SeqCst);
+
+        // Drain the injector before unparking workers. Any push that races
+        // with this drain is handled by the shutdown check in the schedule
+        // callback (see `spawn_on`), which drops the runnable.
+        loop {
+            match self.inner.injector.steal() {
+                Steal::Success(_) => continue,
+                Steal::Empty => break,
+                Steal::Retry => continue,
+            }
+        }
 
         for w in self.inner.workers.iter() {
             w.unparker.unpark();
@@ -296,6 +323,15 @@ where
 {
     let inner = Arc::clone(inner);
     let schedule = move |runnable: Runnable| {
+        // After shutdown, no worker will run this. Dropping the runnable
+        // cancels the task so the awaiter doesn't hang. SeqCst pairs with
+        // the SeqCst store in `Executor::shutdown` to ensure that any push
+        // that "loses" the race is then drained by shutdown's pass over
+        // the injector.
+        if inner.shutdown.load(Ordering::SeqCst) {
+            drop(runnable);
+            return;
+        }
         inner.injector.push(runnable);
         // Scan for an idle worker and claim it for this notification. The
         // `load` is a cheap filter; the `compare_exchange` is what makes the
