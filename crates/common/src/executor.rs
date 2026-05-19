@@ -14,7 +14,7 @@ use async_task::{Runnable, Task};
 use crossbeam_deque::{Injector, Steal, Stealer, Worker};
 use crossbeam_utils::sync::{Parker, Unparker};
 
-use crate::{Context, ContextId, io::Io, mux::Mux};
+use crate::{Context, ContextId, mux::Mux};
 
 /// A work-stealing async executor.
 #[derive(Debug)]
@@ -251,20 +251,6 @@ impl Executor {
         ExecutorBuilder::default()
     }
 
-    /// Spawns a new task on the executor.
-    pub fn spawn<F>(&self, future: F) -> Task<F::Output>
-    where
-        F: std::future::Future + Send + 'static,
-        F::Output: Send + 'static,
-    {
-        spawn_on(&self.inner, future)
-    }
-
-    /// Opens an I/O channel for the given context ID.
-    pub fn open_io(&self, id: &[u8]) -> Result<Io, std::io::Error> {
-        self.inner.mux.open(id)
-    }
-
     /// Shuts down the executor.
     pub fn shutdown(&self) {
         self.inner.shutdown.store(true, Ordering::SeqCst);
@@ -342,10 +328,14 @@ mod tests {
         let (mux_a, _mux_b) = test_framed_mux(1024);
         let executor = Executor::builder().num_threads(2).build(mux_a);
 
-        let task = executor.spawn(async { 42 });
-        let result = futures::executor::block_on(task);
+        let mut ctx = executor.new_context().unwrap();
+        let (a, b) = futures::executor::block_on(ctx.join(
+            |_ctx| Box::pin(async move { 21 }),
+            |_ctx| Box::pin(async move { 21 }),
+        ))
+        .unwrap();
 
-        assert_eq!(result, 42);
+        assert_eq!(a + b, 42);
 
         executor.shutdown();
     }
@@ -391,29 +381,20 @@ mod tests {
         let executor_a = Executor::builder().num_threads(2).build(mux_a);
         let executor_b = Executor::builder().num_threads(2).build(mux_b);
 
-        // Party A sends, Party B receives.
-        let task_a = {
-            let id = ContextId::new(1);
-            let mut io = executor_a.open_io(id.as_ref()).unwrap();
+        let mut ctx_a = executor_a.new_context().unwrap();
+        let mut ctx_b = executor_b.new_context().unwrap();
 
-            executor_a.spawn(async move {
-                io.send(42u32).await.unwrap();
-                io.send(123u32).await.unwrap();
-            })
-        };
-
-        let task_b = {
-            let id = ContextId::new(1);
-            let mut io = executor_b.open_io(id.as_ref()).unwrap();
-
-            executor_b.spawn(async move {
-                let val1: u32 = io.next().await.unwrap().unwrap();
-                let val2: u32 = io.next().await.unwrap().unwrap();
+        let (_, (val1, val2)) = futures::executor::block_on(futures::future::join(
+            async {
+                ctx_a.io_mut().send(42u32).await.unwrap();
+                ctx_a.io_mut().send(123u32).await.unwrap();
+            },
+            async {
+                let val1: u32 = ctx_b.io_mut().next().await.unwrap().unwrap();
+                let val2: u32 = ctx_b.io_mut().next().await.unwrap().unwrap();
                 (val1, val2)
-            })
-        };
-
-        let ((), (val1, val2)) = futures::executor::block_on(futures::future::join(task_a, task_b));
+            },
+        ));
 
         assert_eq!(val1, 42);
         assert_eq!(val2, 123);
