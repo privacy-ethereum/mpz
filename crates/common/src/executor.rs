@@ -6,13 +6,13 @@
 //! worker threads while maintaining deterministic execution order for I/O.
 
 use std::sync::{
-    Arc, OnceLock,
+    Arc,
     atomic::{AtomicBool, AtomicU32, Ordering},
 };
-use std::thread::Thread;
 
 use async_task::{Runnable, Task};
 use crossbeam_deque::{Injector, Steal, Stealer, Worker};
+use crossbeam_utils::sync::{Parker, Unparker};
 
 use crate::{Context, ContextId, io::Io, mux::Mux};
 
@@ -24,7 +24,7 @@ pub struct Executor {
 
 /// Per-worker parking state.
 struct WorkerState {
-    handle: OnceLock<Thread>,
+    unparker: Unparker,
     parked: AtomicBool,
 }
 
@@ -145,9 +145,11 @@ impl ExecutorBuilder {
 
         let stealers: Vec<Stealer<Runnable>> = worker_queues.iter().map(|w| w.stealer()).collect();
 
-        let workers: Box<[WorkerState]> = (0..self.num_threads)
-            .map(|_| WorkerState {
-                handle: OnceLock::new(),
+        let parkers: Vec<Parker> = (0..self.num_threads).map(|_| Parker::new()).collect();
+        let workers: Box<[WorkerState]> = parkers
+            .iter()
+            .map(|p| WorkerState {
+                unparker: p.unparker().clone(),
                 parked: AtomicBool::new(false),
             })
             .collect();
@@ -163,9 +165,9 @@ impl ExecutorBuilder {
         });
 
         // Spawn worker threads via the configured spawn callback.
-        for (index, local) in worker_queues.into_iter().enumerate() {
+        for (index, (local, parker)) in worker_queues.into_iter().zip(parkers).enumerate() {
             let inner = inner.clone();
-            (self.spawn)(Box::new(move || worker_loop(inner, local, index)))
+            (self.spawn)(Box::new(move || worker_loop(inner, local, index, parker)))
                 .expect("failed to spawn worker thread");
         }
 
@@ -174,12 +176,8 @@ impl ExecutorBuilder {
 }
 
 /// Worker thread loop.
-fn worker_loop(inner: Arc<Inner>, local: Worker<Runnable>, index: usize) {
+fn worker_loop(inner: Arc<Inner>, local: Worker<Runnable>, index: usize, parker: Parker) {
     let state = &inner.workers[index];
-    state
-        .handle
-        .set(std::thread::current())
-        .expect("worker handle is set exactly once");
 
     while !inner.shutdown.load(Ordering::Relaxed) {
         if let Some(runnable) = find_task(&inner, &local, index) {
@@ -208,9 +206,9 @@ fn worker_loop(inner: Arc<Inner>, local: Worker<Runnable>, index: usize) {
         }
 
         // If a producer fires between the recheck above and `park()`, the
-        // `unpark` is remembered by the per-thread parker and `park()`
-        // returns immediately — no lost wakeup.
-        std::thread::park();
+        // `unpark` token is remembered by the parker and `park()` returns
+        // immediately — no lost wakeup.
+        parker.park();
         state.parked.store(false, Ordering::SeqCst);
     }
 }
@@ -272,9 +270,7 @@ impl Executor {
         self.inner.shutdown.store(true, Ordering::SeqCst);
 
         for w in self.inner.workers.iter() {
-            if let Some(t) = w.handle.get() {
-                t.unpark();
-            }
+            w.unparker.unpark();
         }
     }
 
@@ -325,9 +321,7 @@ where
                     .compare_exchange(true, false, Ordering::SeqCst, Ordering::SeqCst)
                     .is_ok()
             {
-                if let Some(t) = w.handle.get() {
-                    t.unpark();
-                }
+                w.unparker.unpark();
                 break;
             }
         }
