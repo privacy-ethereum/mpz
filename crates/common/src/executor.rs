@@ -6,9 +6,10 @@
 //! worker threads while maintaining deterministic execution order for I/O.
 
 use std::sync::{
-    Arc,
-    atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering},
+    Arc, OnceLock,
+    atomic::{AtomicBool, AtomicU32, Ordering},
 };
+use std::thread::Thread;
 
 use async_task::{Runnable, Task};
 use crossbeam_deque::{Injector, Steal, Stealer, Worker};
@@ -21,6 +22,12 @@ pub struct Executor {
     inner: Arc<Inner>,
 }
 
+/// Per-worker parking state.
+struct WorkerState {
+    handle: OnceLock<Thread>,
+    parked: AtomicBool,
+}
+
 pub(crate) struct Inner {
     /// Global task queue for new tasks and cross-thread wakeups.
     injector: Injector<Runnable>,
@@ -28,8 +35,8 @@ pub(crate) struct Inner {
     /// Stealers for each worker's local queue.
     stealers: Vec<Stealer<Runnable>>,
 
-    /// Number of active workers (for parking/unparking).
-    active: AtomicUsize,
+    /// Per-worker parking state, indexed by worker index.
+    workers: Box<[WorkerState]>,
 
     /// Shutdown flag.
     shutdown: AtomicBool,
@@ -47,7 +54,7 @@ pub(crate) struct Inner {
 impl std::fmt::Debug for Inner {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Inner")
-            .field("stealers", &self.stealers.len())
+            .field("workers", &self.workers.len())
             .field("shutdown", &self.shutdown)
             .finish_non_exhaustive()
     }
@@ -133,15 +140,22 @@ impl ExecutorBuilder {
         let injector = Injector::new();
 
         // Create local worker queues and their stealers.
-        let workers: Vec<Worker<Runnable>> =
+        let worker_queues: Vec<Worker<Runnable>> =
             (0..self.num_threads).map(|_| Worker::new_fifo()).collect();
 
-        let stealers: Vec<Stealer<Runnable>> = workers.iter().map(|w| w.stealer()).collect();
+        let stealers: Vec<Stealer<Runnable>> = worker_queues.iter().map(|w| w.stealer()).collect();
+
+        let workers: Box<[WorkerState]> = (0..self.num_threads)
+            .map(|_| WorkerState {
+                handle: OnceLock::new(),
+                parked: AtomicBool::new(false),
+            })
+            .collect();
 
         let inner = Arc::new(Inner {
             injector,
             stealers,
-            active: AtomicUsize::new(0),
+            workers,
             shutdown: AtomicBool::new(false),
             mux: Arc::new(mux),
             prefix: self.prefix,
@@ -149,7 +163,7 @@ impl ExecutorBuilder {
         });
 
         // Spawn worker threads via the configured spawn callback.
-        for (index, local) in workers.into_iter().enumerate() {
+        for (index, local) in worker_queues.into_iter().enumerate() {
             let inner = inner.clone();
             (self.spawn)(Box::new(move || worker_loop(inner, local, index)))
                 .expect("failed to spawn worker thread");
@@ -161,20 +175,44 @@ impl ExecutorBuilder {
 
 /// Worker thread loop.
 fn worker_loop(inner: Arc<Inner>, local: Worker<Runnable>, index: usize) {
-    inner.active.fetch_add(1, Ordering::SeqCst);
+    let state = &inner.workers[index];
+    state
+        .handle
+        .set(std::thread::current())
+        .expect("worker handle is set exactly once");
 
     while !inner.shutdown.load(Ordering::Relaxed) {
         if let Some(runnable) = find_task(&inner, &local, index) {
             // Poll the task once. If it returns Pending, the waker will
             // reschedule it; if it completes, we're done with the task.
             runnable.run();
-        } else {
-            // No work available - yield to avoid busy-spinning.
-            std::thread::yield_now();
+            continue;
         }
-    }
 
-    inner.active.fetch_sub(1, Ordering::SeqCst);
+        // Slow path: announce we're about to park, then recheck.
+        //
+        // The recheck after setting `parked = true` closes the race against a
+        // producer that pushed before we announced (and therefore didn't see
+        // us as a candidate to unpark).
+        state.parked.store(true, Ordering::SeqCst);
+
+        if let Some(runnable) = find_task(&inner, &local, index) {
+            state.parked.store(false, Ordering::SeqCst);
+            runnable.run();
+            continue;
+        }
+
+        if inner.shutdown.load(Ordering::Relaxed) {
+            state.parked.store(false, Ordering::SeqCst);
+            break;
+        }
+
+        // If a producer fires between the recheck above and `park()`, the
+        // `unpark` is remembered by the per-thread parker and `park()`
+        // returns immediately — no lost wakeup.
+        std::thread::park();
+        state.parked.store(false, Ordering::SeqCst);
+    }
 }
 
 /// Finds a task to execute using work-stealing.
@@ -232,6 +270,12 @@ impl Executor {
     /// Shuts down the executor.
     pub fn shutdown(&self) {
         self.inner.shutdown.store(true, Ordering::SeqCst);
+
+        for w in self.inner.workers.iter() {
+            if let Some(t) = w.handle.get() {
+                t.unpark();
+            }
+        }
     }
 
     /// Returns `true` if the executor has been shut down.
@@ -269,7 +313,25 @@ where
     F::Output: Send + 'static,
 {
     let inner = Arc::clone(inner);
-    let schedule = move |runnable: Runnable| inner.injector.push(runnable);
+    let schedule = move |runnable: Runnable| {
+        inner.injector.push(runnable);
+        // Scan for an idle worker and claim it for this notification. The
+        // `load` is a cheap filter; the `compare_exchange` is what makes the
+        // claim race-free against other concurrent producers. Stops at the
+        // first claimed worker — one push, one wake.
+        for w in inner.workers.iter() {
+            if w.parked.load(Ordering::SeqCst)
+                && w.parked
+                    .compare_exchange(true, false, Ordering::SeqCst, Ordering::SeqCst)
+                    .is_ok()
+            {
+                if let Some(t) = w.handle.get() {
+                    t.unpark();
+                }
+                break;
+            }
+        }
+    };
     let (runnable, task) = async_task::spawn(future, schedule);
     runnable.schedule();
     task
