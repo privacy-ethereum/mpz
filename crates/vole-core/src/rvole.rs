@@ -30,11 +30,12 @@ pub trait RVOLESender<E: Field> {
     /// Returns the global correlation key, `delta`.
     fn delta(&self) -> E;
 
-    /// Returns preprocessed RVOLEs, if available.
+    /// Consumes exactly `count` preprocessed RVOLEs, or errors if fewer
+    /// are available.
     ///
     /// # Arguments
     ///
-    /// * `count` - Number of preprocessed RVOLEs to try to consume.
+    /// * `count` - Number of preprocessed RVOLEs to consume.
     fn try_send_vole(&mut self, count: usize) -> Result<RVOLESenderOutput<E>, Self::Error>;
 
     /// Queues `count` RVOLEs for sending.
@@ -74,11 +75,12 @@ pub trait RVOLEReceiver<W: Field, E: ExtensionField<W>> {
     /// Returns the number of available RVOLEs.
     fn available(&self) -> usize;
 
-    /// Returns preprocessed RVOLEs, if available.
+    /// Consumes exactly `count` preprocessed RVOLEs, or errors if fewer
+    /// are available.
     ///
     /// # Arguments
     ///
-    /// * `count` - Number of preprocessed RVOLEs to try to consume.
+    /// * `count` - Number of preprocessed RVOLEs to consume.
     fn try_recv_vole(
         &mut self,
         count: usize,

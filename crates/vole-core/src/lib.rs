@@ -28,8 +28,8 @@ pub mod vole;
 pub use rvole::{RVOLEReceiver, RVOLEReceiverOutput, RVOLESender, RVOLESenderOutput};
 pub use rvope::{RVOPEReceiver, RVOPEReceiverOutput, RVOPESender, RVOPESenderOutput};
 pub use vole::{
-    DerandVOLEReceiver, DerandVOLEReceiverError, VOLEReceiver, VOLEReceiverOutput, VOLESender,
-    VOLESenderOutput, VoleAdjustment,
+    DerandVOLEReceiver, DerandVOLEReceiverError, DerandVOLESender, DerandVOLESenderError,
+    VOLEReceiver, VOLEReceiverOutput, VOLESender, VOLESenderOutput, VoleAdjustment,
 };
 
 /// A VOLE identifier.

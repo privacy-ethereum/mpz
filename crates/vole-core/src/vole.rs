@@ -2,7 +2,10 @@
 
 mod derandomize;
 
-pub use derandomize::{DerandVOLEReceiver, DerandVOLEReceiverError, VoleAdjustment};
+pub use derandomize::{
+    DerandVOLEReceiver, DerandVOLEReceiverError, DerandVOLESender, DerandVOLESenderError,
+    VoleAdjustment,
+};
 
 use mpz_common::future::Output;
 use mpz_fields::{ExtensionField, Field};
