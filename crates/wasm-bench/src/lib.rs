@@ -128,7 +128,7 @@ pub async fn test_mt_context_only() -> Result<u32, JsValue> {
     use mpz_common::context::test_mt_context_with_spawn;
     use serio::{SinkExt, stream::IoStreamExt};
 
-    let (mut mt1, mut mt2) = test_mt_context_with_spawn(8, |f| {
+    let (mt1, mt2) = test_mt_context_with_spawn(8, |f| {
         let _ = web_spawn::spawn(f);
         Ok(())
     });
