@@ -9,13 +9,13 @@ use std::{
 use futures::{AsyncRead, AsyncWrite};
 
 use crate::{
-    ThreadId,
-    context::{Context, Multithread, SpawnError},
+    context::Context,
+    executor::{Executor, ExecutorBuilder},
     io::Io,
     mux::Mux,
 };
 
-use super::{helpers::new_st_context_with_limit, recording::RecordedMtData};
+use super::recording::RecordedMtData;
 
 /// A duplex stream that replays recorded bytes on read and discards writes.
 ///
@@ -65,6 +65,43 @@ impl AsyncWrite for ReplayDuplex {
     }
 }
 
+/// A simple mux that wraps a single replay stream.
+struct SingleReplayMux {
+    replay: Mutex<Option<ReplayDuplex>>,
+    max_frame_length: Option<usize>,
+}
+
+impl SingleReplayMux {
+    fn new(recorded: Vec<u8>, max_frame_length: Option<usize>) -> Self {
+        Self {
+            replay: Mutex::new(Some(ReplayDuplex::new(recorded))),
+            max_frame_length,
+        }
+    }
+}
+
+impl Mux for SingleReplayMux {
+    fn open(&self, id: &[u8]) -> Result<Io, std::io::Error> {
+        // Only allow opening the root ID
+        if id != [0] {
+            return Err(std::io::Error::other(
+                "single replay mux only supports root ID",
+            ));
+        }
+        let replay = self
+            .replay
+            .lock()
+            .unwrap()
+            .take()
+            .ok_or_else(|| std::io::Error::other("channel already opened"))?;
+        if let Some(limit) = self.max_frame_length {
+            Ok(Io::from_io_with_limit(replay, limit))
+        } else {
+            Ok(Io::from_io(replay))
+        }
+    }
+}
+
 /// Creates a single-threaded context that replays recorded bytes.
 ///
 /// The context will read from the recorded bytes and discard all writes.
@@ -75,8 +112,8 @@ impl AsyncWrite for ReplayDuplex {
 /// * `recorded` - The recorded bytes to replay.
 /// * `max_frame_length` - Maximum frame size in bytes.
 pub fn replay_st_context(recorded: Vec<u8>, max_frame_length: usize) -> Context {
-    let replay = ReplayDuplex::new(recorded);
-    new_st_context_with_limit(replay, max_frame_length)
+    let mux = SingleReplayMux::new(recorded, Some(max_frame_length));
+    Context::new(mux).unwrap()
 }
 
 // ============================================================================
@@ -103,12 +140,12 @@ impl ReplayTestMux {
 }
 
 impl Mux for ReplayTestMux {
-    fn open(&self, id: ThreadId) -> Result<Io, std::io::Error> {
+    fn open(&self, id: &[u8]) -> Result<Io, std::io::Error> {
         let recorded = self.recorded.clone();
         let max_frame_length = self.max_frame_length;
         let data = {
             let mut rec = recorded.lock().unwrap();
-            rec.channels.remove(&id).unwrap_or_default()
+            rec.channels.remove(id).unwrap_or_default()
         };
         let replay = ReplayDuplex::new(data);
         if let Some(limit) = max_frame_length {
@@ -128,11 +165,9 @@ impl Mux for ReplayTestMux {
 /// # Arguments
 ///
 /// * `recorded` - The recorded data to replay (per-channel).
-pub fn replay_mt_context(recorded: RecordedMtData) -> Multithread {
+pub fn replay_mt_context(recorded: RecordedMtData) -> Executor {
     let mux = ReplayTestMux::new(recorded, None);
-    let mux: Box<dyn Mux + Send> = Box::new(mux);
-
-    Multithread::builder().mux(mux).build().unwrap()
+    ExecutorBuilder::default().build(mux)
 }
 
 /// Creates a multi-threaded context that replays recorded data with a custom
@@ -142,63 +177,25 @@ pub fn replay_mt_context(recorded: RecordedMtData) -> Multithread {
 ///
 /// * `recorded` - The recorded data to replay (per-channel).
 /// * `max_frame_length` - Maximum frame size in bytes.
-pub fn replay_mt_context_with_limit(
-    recorded: RecordedMtData,
-    max_frame_length: usize,
-) -> Multithread {
+pub fn replay_mt_context_with_limit(recorded: RecordedMtData, max_frame_length: usize) -> Executor {
     let mux = ReplayTestMux::new(recorded, Some(max_frame_length));
-    let mux: Box<dyn Mux + Send> = Box::new(mux);
-
-    Multithread::builder().mux(mux).build().unwrap()
+    ExecutorBuilder::default().build(mux)
 }
 
-/// Creates a multi-threaded context that replays recorded data with custom
-/// spawn handler.
-///
-/// # Arguments
-///
-/// * `recorded` - The recorded data to replay (per-channel).
-/// * `spawn` - Custom spawn handler for worker threads.
-pub fn replay_mt_context_with_spawn<F>(recorded: RecordedMtData, spawn: F) -> Multithread
-where
-    F: FnMut(Box<dyn FnOnce() + Send>) -> Result<(), SpawnError> + Clone + Send + 'static,
-{
-    let mux = ReplayTestMux::new(recorded, None);
-    let mux: Box<dyn Mux + Send> = Box::new(mux);
-
-    Multithread::builder()
-        .spawn_handler(spawn)
-        .mux(mux)
-        .build()
-        .unwrap()
-}
-
-/// Creates a multi-threaded context that replays recorded data with custom
-/// spawn handler and frame length limit.
-///
-/// # Arguments
-///
-/// * `recorded` - The recorded data to replay (per-channel).
-/// * `max_frame_length` - Maximum frame size in bytes.
-/// * `concurrency` - Maximum parallelism level (max children per parent
-///   thread).
-/// * `spawn` - Custom spawn handler for worker threads.
+/// Like [`replay_mt_context_with_limit`], but uses a custom worker spawn
+/// callback (e.g. `web_spawn::spawn` on wasm) and a fixed concurrency level.
 pub fn replay_mt_context_with_spawn_and_limit<F>(
     recorded: RecordedMtData,
     max_frame_length: usize,
     concurrency: usize,
     spawn: F,
-) -> Multithread
+) -> Executor
 where
-    F: FnMut(Box<dyn FnOnce() + Send>) -> Result<(), SpawnError> + Clone + Send + 'static,
+    F: Fn(Box<dyn FnOnce() + Send + 'static>) -> Result<(), std::io::Error> + Send + Sync + 'static,
 {
     let mux = ReplayTestMux::new(recorded, Some(max_frame_length));
-    let mux: Box<dyn Mux + Send> = Box::new(mux);
-
-    Multithread::builder()
-        .spawn_handler(spawn)
-        .concurrency(concurrency)
-        .mux(mux)
-        .build()
-        .unwrap()
+    ExecutorBuilder::default()
+        .num_threads(concurrency)
+        .spawn(spawn)
+        .build(mux)
 }

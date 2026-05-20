@@ -13,7 +13,7 @@ name = "mpz_ot"
 default = []
 rayon = ["mpz-ot-core/rayon"]
 ideal = ["mpz-common/ideal", "serde"]
-test-utils = ["mpz-ot-core/test-utils"]
+test-utils = ["mpz-ot-core/test-utils", "mpz-common/test-utils"]
 
 [dependencies]
 mpz-core.workspace = true

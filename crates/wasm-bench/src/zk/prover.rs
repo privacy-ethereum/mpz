@@ -7,8 +7,9 @@ use wasm_bindgen::prelude::*;
 
 use mpz_circuits::AES128;
 #[cfg(target_arch = "wasm32")]
+use mpz_common::Executor;
 use mpz_common::context::{
-    Multithread, RecordedMtData, recording_mt_context_with_spawn_and_limit,
+    RecordedMtData, recording_mt_context_with_spawn_and_limit,
     replay_mt_context_with_spawn_and_limit,
 };
 use mpz_memory_core::{Array, binary::U8, correlated::Delta};
@@ -31,8 +32,8 @@ fn max_frame_length(circuit: &mpz_circuits::Circuit, circuit_count: usize) -> us
 /// Records verifier->prover messages.
 #[cfg(target_arch = "wasm32")]
 async fn run_protocol_record_verifier(
-    exec_p: &mut Multithread,
-    exec_v: &mut Multithread,
+    exec_p: &mut Executor,
+    exec_v: &mut Executor,
     seed: u64,
     circuit_count: usize,
 ) {
@@ -133,7 +134,7 @@ async fn record_for_prover(seed: u64, circuit_count: usize, concurrency: usize) 
 
 /// Runs prover only with replay context.
 #[cfg(target_arch = "wasm32")]
-async fn run_prover_with_replay(exec: &mut Multithread, circuit_count: usize) {
+async fn run_prover_with_replay(exec: &mut Executor, circuit_count: usize) {
     let (_, ot_recv) = ideal_rcot([0u8; 16].into(), [0u8; 16].into());
     let prover_config = ProverConfig::builder().build().unwrap();
     let mut prover = Prover::new(prover_config, ot_recv);

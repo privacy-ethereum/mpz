@@ -24,6 +24,9 @@ cfg-if.workspace = true
 tokio = { workspace = true, optional = true }
 tokio-util = { workspace = true }
 crossbeam-channel = { workspace = true }
+crossbeam-deque = { workspace = true }
+crossbeam-utils = { workspace = true }
+async-task = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = [
