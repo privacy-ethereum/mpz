@@ -2,13 +2,13 @@
 //!
 //! Run with: `cargo bench -p mpz-garble-core --bench evaluate`
 
-use std::sync::Arc;
+use std::{hint::black_box, sync::Arc};
 
-use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
+use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use mpz_circuits::{AES128, Circuit};
 use mpz_garble_core::{Evaluator, GarbledCircuit, Garbler, Key, evaluate_garbled_circuits};
 use mpz_memory_core::correlated::Delta;
-use rand::{Rng, SeedableRng, rngs::StdRng};
+use rand::{RngExt, SeedableRng, rngs::StdRng};
 
 // Gate count thresholds
 const THRESHOLDS: &[(u64, &str)] = &[(100_000, "100K"), (1_000_000, "1M"), (10_000_000, "10M")];

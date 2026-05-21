@@ -558,7 +558,7 @@ mod test {
     use mpz_vm_core::prelude::*;
 
     use blake3::{BLOCK_LEN, CHUNK_LEN, hazmat::HasherExt};
-    use rand::{Rng, SeedableRng, rngs::StdRng};
+    use rand::{RngExt, SeedableRng, rngs::StdRng};
     use rstest::rstest;
 
     use super::*;

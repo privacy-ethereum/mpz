@@ -5,7 +5,7 @@ use clmul::Clmul;
 use core::ops::{BitAnd, BitAndAssign, BitXor, BitXorAssign};
 use hybrid_array::{Array, typenum::consts::U16};
 use itybity::{BitIterable, BitLength, FromBitIterator, GetBit, Lsb0, Msb0};
-use rand::{CryptoRng, Rng, distr::StandardUniform, prelude::Distribution};
+use rand::{CryptoRng, Rng, RngExt, distr::StandardUniform, prelude::Distribution};
 use serde::{Deserialize, Serialize};
 use std::{
     fmt::{Debug, Display},
@@ -508,7 +508,7 @@ mod tests {
 
     #[test]
     fn inn_prdt_test() {
-        use rand::{Rng, SeedableRng};
+        use rand::{RngExt, SeedableRng};
         use rand_chacha::ChaCha12Rng;
         let mut rng = ChaCha12Rng::from_seed([0; 32]);
 
@@ -537,7 +537,7 @@ mod tests {
 
     #[test]
     fn sigma_test() {
-        use rand::{Rng, SeedableRng};
+        use rand::{RngExt, SeedableRng};
         use rand_chacha::ChaCha12Rng;
         let mut rng = ChaCha12Rng::from_seed([0; 32]);
         let mut x: [u8; 16] = rng.random();

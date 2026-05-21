@@ -26,8 +26,7 @@ thiserror.workspace = true
 once_cell.workspace = true
 itybity.workspace = true
 opaque-debug.workspace = true
-bcs = "0.1.5"
-rand_core_06 = { workspace = true }
+bcs.workspace = true
 rand_core = { workspace = true }
 bytemuck = { workspace = true, features = ["derive"] }
 hybrid-array.workspace = true

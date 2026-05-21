@@ -5,7 +5,7 @@ use mpz_core::{
     Block,
     bitvec::{BitSlice, BitVec},
 };
-use rand::{distr::StandardUniform, prelude::Distribution};
+use rand::{RngExt, distr::StandardUniform, prelude::Distribution};
 use rangeset::ops::Set;
 
 use crate::{
