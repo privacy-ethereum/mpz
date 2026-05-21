@@ -1,7 +1,7 @@
 //! Test utilities.
 
 use mpz_fields::Field;
-use rand::{Rng, RngExt};
+use rand::Rng;
 
 use crate::OLEShare;
 

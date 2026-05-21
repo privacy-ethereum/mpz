@@ -2,8 +2,10 @@
 //!
 //! Run with: cargo bench -p mpz-zk-core --bench prover
 
+use std::hint::black_box;
+
 use blake3::Hasher;
-use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
+use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use mpz_circuits::AES128;
 use mpz_memory_core::correlated::{Delta, Key, Mac};
 use mpz_ot_core::{

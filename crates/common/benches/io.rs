@@ -1,6 +1,7 @@
+use std::hint::black_box;
 use std::sync::Arc;
 
-use criterion::{Criterion, Throughput, black_box, criterion_group, criterion_main};
+use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use mpz_common::io::Io;
 use pollster::FutureExt;
 use serde::{Deserialize, Serialize};

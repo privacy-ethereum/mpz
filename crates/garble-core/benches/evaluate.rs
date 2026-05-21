@@ -2,9 +2,10 @@
 //!
 //! Run with: `cargo bench -p mpz-garble-core --bench evaluate`
 
+use std::hint::black_box;
 use std::sync::Arc;
 
-use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
+use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use mpz_circuits::{AES128, Circuit};
 use mpz_garble_core::{Evaluator, GarbledCircuit, Garbler, Key, evaluate_garbled_circuits};
 use mpz_memory_core::correlated::Delta;

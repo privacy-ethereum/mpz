@@ -241,7 +241,7 @@ mod tests {
         );
 
         let mut expected = SHA2_INITIAL_STATE;
-        compress256(&mut expected, &[msg.into()]);
+        compress256(&mut expected, &[msg]);
 
         assert_eq!(output, expected);
     }

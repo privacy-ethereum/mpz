@@ -1,4 +1,5 @@
-use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
+use std::hint::black_box;
+use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use mpz_core::{Block, prg::Prg};
 use mpz_fields::{Field, gf2_64::Gf2_64, gf2_128::Gf2_128};
 use rand::{RngExt, SeedableRng};

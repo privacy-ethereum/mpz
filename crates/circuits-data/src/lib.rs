@@ -131,7 +131,7 @@ mod tests {
 
         fn sha256_compress(msg: [u8; 64], state: [u32; 8]) -> [u32; 8] {
             let mut state = state;
-            sha2::block_api::compress256(&mut state, &[msg.into()]);
+            sha2::block_api::compress256(&mut state, &[msg]);
             state
         }
 
