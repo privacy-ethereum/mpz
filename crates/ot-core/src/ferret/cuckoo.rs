@@ -166,7 +166,7 @@ fn hash_to_index(hash: &AesEncryptor, range: usize, value: u32) -> usize {
 mod tests {
     use super::*;
     use mpz_core::aes::AesEncryptor;
-    use rand::{Rng, SeedableRng, rngs::StdRng};
+    use rand::{RngExt, SeedableRng, rngs::StdRng};
 
     #[test]
     fn test_cuckoo_buckets() {

@@ -105,7 +105,7 @@ mod tests {
 
     use mpz_core::Block;
 
-    use rand::Rng;
+    use rand::RngExt;
     use rand_chacha::ChaCha12Rng;
     use rand_core::SeedableRng;
 

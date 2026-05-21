@@ -20,7 +20,7 @@ use mpz_ot::{
     ideal::rcot::{IdealRCOTSender, ideal_rcot},
 };
 use mpz_ot_core::rcot::{RCOTReceiver, RCOTSender};
-use rand::{Rng, SeedableRng, rngs::StdRng};
+use rand::{RngExt, SeedableRng, rngs::StdRng};
 
 const OT_COUNT: usize = 10_000_000;
 

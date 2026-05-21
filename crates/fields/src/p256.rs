@@ -9,10 +9,8 @@ use ark_serialize::{
 };
 use hybrid_array::Array;
 use itybity::{BitLength, FromBitIterator, GetBit, Lsb0, Msb0};
-use mpz_core::rand::Rand0_8CompatExt;
-use num_bigint::ToBigUint;
+use num_bigint::{BigUint, ToBigUint};
 use rand::{distr::StandardUniform, prelude::Distribution};
-use rand_08::Rng as _;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use typenum::{U32, U256};
@@ -71,7 +69,9 @@ impl TryFrom<Array<u8, U32>> for P256 {
 
 impl Distribution<P256> for StandardUniform {
     fn sample<R: rand::Rng + ?Sized>(&self, rng: &mut R) -> P256 {
-        P256(rng.compat().r#gen::<Fq>())
+        let mut bytes = [0u8; 64];
+        rng.fill_bytes(&mut bytes);
+        P256(Fq::from(BigUint::from_bytes_le(&bytes)))
     }
 }
 
@@ -178,7 +178,7 @@ pub struct P256Error(SerializationError);
 mod tests {
     use super::*;
     use mpz_core::{Block, prg::Prg};
-    use rand::{Rng, SeedableRng};
+    use rand::{RngExt, SeedableRng};
 
     use crate::tests::{
         test_field_basic, test_field_bit_ops_lsb0, test_field_bit_ops_msb0,

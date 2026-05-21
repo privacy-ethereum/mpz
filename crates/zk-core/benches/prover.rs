@@ -11,7 +11,7 @@ use mpz_ot_core::{
     rcot::{RCOTReceiverOutput, RCOTSenderOutput},
 };
 use mpz_zk_core::{Prover, Verifier};
-use rand::{Rng, SeedableRng, rngs::StdRng};
+use rand::{RngExt, SeedableRng, rngs::StdRng};
 use std::sync::Arc;
 
 // Gate count thresholds for execute

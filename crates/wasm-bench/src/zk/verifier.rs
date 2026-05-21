@@ -19,7 +19,7 @@ use mpz_memory_core::{Array, binary::U8, correlated::Delta};
 use mpz_ot::ideal::rcot::ideal_rcot;
 use mpz_vm_core::{Call, prelude::*};
 use mpz_zk::{Prover, ProverConfig, Verifier, VerifierConfig};
-use rand::{Rng, SeedableRng, rngs::StdRng};
+use rand::{RngExt, SeedableRng, rngs::StdRng};
 
 use crate::BenchResult;
 

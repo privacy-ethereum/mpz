@@ -24,7 +24,7 @@ mpz-ideal-vm = { workspace = true }
 rand = { workspace = true }
 rstest = { workspace = true }
 sha2 = { workspace = true }
-sha3 = { version = "0.10" }
+sha3 = { workspace = true }
 tokio = { workspace = true, features = [
     "net",
     "macros",

@@ -330,7 +330,7 @@ impl COTReceiver<bool, Block> for IdealCOT {
 #[cfg(test)]
 mod tests {
     use mpz_core::Block;
-    use rand::{Rng, SeedableRng, rngs::StdRng};
+    use rand::{RngExt, SeedableRng, rngs::StdRng};
 
     use crate::test::assert_cot;
 

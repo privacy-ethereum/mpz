@@ -1,6 +1,6 @@
 use std::{collections::VecDeque, sync::Arc};
 
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 use tokio::sync::{Mutex, OwnedMutexGuard};
 
 use mpz_common::future::{MaybeDone, Sender as OutputSender, new_output};

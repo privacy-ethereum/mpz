@@ -17,7 +17,7 @@ use std::{
 
 use mpz_common::future::{MaybeDone, Sender, new_output};
 use mpz_core::Block;
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
 
@@ -462,7 +462,7 @@ impl ROTReceiver<bool, Block> for IdealROT {
 
 #[cfg(test)]
 mod tests {
-    use rand::{Rng, SeedableRng, rngs::StdRng};
+    use rand::{RngExt, SeedableRng, rngs::StdRng};
 
     use crate::test::assert_rot;
 

@@ -9,7 +9,7 @@ use mpz_ot_core::{
     ot::{OTReceiver, OTSender},
     rcot::{RCOTReceiver, RCOTSender},
 };
-use rand::{Rng, SeedableRng};
+use rand::{RngExt, SeedableRng};
 use rand_chacha::ChaCha12Rng;
 
 fn chou_orlandi(c: &mut Criterion) {

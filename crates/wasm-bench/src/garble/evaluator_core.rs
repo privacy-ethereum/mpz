@@ -7,7 +7,7 @@ use wasm_bindgen::prelude::*;
 use mpz_circuits::{AES128, Circuit};
 use mpz_garble_core::{EncryptedGate, Evaluator, GarbledCircuit, Garbler, Key};
 use mpz_memory_core::correlated::{Delta, Mac};
-use rand::{Rng, SeedableRng, rngs::StdRng};
+use rand::{RngExt, SeedableRng, rngs::StdRng};
 use std::sync::Arc;
 
 use crate::BenchResult;

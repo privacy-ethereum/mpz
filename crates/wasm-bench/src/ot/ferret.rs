@@ -21,7 +21,7 @@ use mpz_ot::ideal::rcot::ideal_rcot;
 #[cfg(target_arch = "wasm32")]
 use mpz_ot_core::rcot::{RCOTReceiver, RCOTSender};
 #[cfg(target_arch = "wasm32")]
-use rand::{Rng, SeedableRng, rngs::StdRng};
+use rand::{RngExt, SeedableRng, rngs::StdRng};
 
 #[cfg(target_arch = "wasm32")]
 use crate::BenchResult;

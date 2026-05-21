@@ -71,7 +71,7 @@ mod tests {
     #[cfg(not(clmul_force_soft))]
     // test backends against each other
     fn clmul_test() {
-        use rand::Rng;
+        use rand::RngExt;
         use rand_chacha::{ChaCha12Rng, rand_core::SeedableRng};
 
         // test soft backends
