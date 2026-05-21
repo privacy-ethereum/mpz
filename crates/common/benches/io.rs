@@ -1,5 +1,4 @@
-use std::hint::black_box;
-use std::sync::Arc;
+use std::{hint::black_box, sync::Arc};
 
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use mpz_common::io::Io;

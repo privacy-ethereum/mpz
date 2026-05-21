@@ -1,4 +1,3 @@
-use std::hint::black_box;
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use futures::future::join_all;
 use mpz_common::{Flush, context::test_st_context};
@@ -13,6 +12,7 @@ use mpz_ot::{
 use mpz_ot_core::rcot::{RCOTReceiver, RCOTSender};
 use rand::SeedableRng;
 use rand_chacha::ChaCha12Rng;
+use std::hint::black_box;
 use tokio::runtime::Runtime;
 
 fn shared(c: &mut Criterion) {

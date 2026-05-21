@@ -1,7 +1,6 @@
-use std::hint::black_box;
 use criterion::{Criterion, criterion_group, criterion_main};
 use mpz_core::{Block, lpn::LpnEncoder, prg::Prg};
-use std::time::Duration;
+use std::{hint::black_box, time::Duration};
 
 fn criterion_benchmark(c: &mut Criterion) {
     c.bench_function("lpn-rayon-small", move |bench| {

@@ -1,5 +1,5 @@
-use std::hint::black_box;
 use criterion::{Criterion, criterion_group, criterion_main};
+use std::hint::black_box;
 
 use clmul::Clmul;
 use rand::{RngExt, SeedableRng};

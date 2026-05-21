@@ -1,6 +1,6 @@
-use std::hint::black_box;
 use criterion::{Criterion, criterion_group, criterion_main};
 use mpz_core::{block::Block, ggm::GgmTree};
+use std::hint::black_box;
 
 #[allow(clippy::all)]
 fn criterion_benchmark(c: &mut Criterion) {

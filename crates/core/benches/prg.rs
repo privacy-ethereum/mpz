@@ -1,5 +1,5 @@
-use std::hint::black_box;
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
+use std::hint::black_box;
 
 use mpz_core::{block::Block, prg::Prg};
 use rand_core::Rng;
