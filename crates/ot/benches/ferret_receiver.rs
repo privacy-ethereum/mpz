@@ -8,7 +8,7 @@
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use futures::executor::block_on;
 use mpz_common::{
-    Executor, Flush,
+    Flush, Session,
     context::{
         RecordedMtData, recording_mt_context_with_limit, recording_st_context_with_limit,
         replay_mt_context_with_limit, replay_st_context,
@@ -141,8 +141,8 @@ struct RecordedDataMt {
 /// Runs the full Ferret protocol with MT contexts.
 /// Records sender->receiver messages.
 async fn run_protocol_record_sender_mt(
-    exec_sender: &mut Executor,
-    exec_receiver: &mut Executor,
+    exec_sender: &mut Session,
+    exec_receiver: &mut Session,
     config: FerretConfig,
     delta: Block,
     cot_seed: Block,
@@ -213,7 +213,7 @@ fn record_for_receiver_mt(seed: u64) -> RecordedDataMt {
 }
 
 /// Runs MT receiver only with replay context.
-async fn run_receiver_with_replay_mt(exec: &mut Executor, data: &RecordedDataMt) {
+async fn run_receiver_with_replay_mt(exec: &mut Session, data: &RecordedDataMt) {
     let cot_recv = IdealRCOTReceiver::from_seed(data.cot_recv_seed);
     let config = bench_config();
     let mut receiver = Receiver::new(config, data.receiver_seed, cot_recv);
