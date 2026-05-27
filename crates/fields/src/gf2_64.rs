@@ -187,6 +187,14 @@ impl ExtensionField<Gf2> for Gf2_64 {
         Gf2_64(u64::from(base.0))
     }
 
+    /// Branchless masked AND — drops `self` to zero when `base` is
+    /// false, leaves it unchanged when true.
+    #[inline]
+    fn scale_by_subfield(self, base: Gf2) -> Self {
+        let mask = (base.0 as u64).wrapping_neg();
+        Gf2_64(self.0 & mask)
+    }
+
     /// Constant-time masked XOR — no field multiplications and no
     /// data-dependent branches.
     #[inline]
