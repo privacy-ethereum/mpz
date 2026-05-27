@@ -197,6 +197,14 @@ impl ExtensionField<Gf2> for Gf2_128 {
         Gf2_128::new(u128::from(base.0))
     }
 
+    /// Branchless masked AND — drops `self` to zero when `base` is
+    /// false, leaves it unchanged when true.
+    #[inline]
+    fn scale_by_subfield(self, base: Gf2) -> Self {
+        let mask = (base.0 as u128).wrapping_neg();
+        Gf2_128::new(self.0 & mask)
+    }
+
     /// Constant-time masked XOR: each term reduces to
     /// `acc ^= c & mask_from_bit(v)` — no field multiplications and
     /// no data-dependent branches.

@@ -235,6 +235,17 @@ pub trait ExtensionField<B: Field>: Field {
     /// Embed a base-field element into the extension field.
     fn embed(base: B) -> Self;
 
+    /// Multiply `self` by a base-field scalar.
+    ///
+    /// Algebraically equivalent to `self * Self::embed(base)`, but
+    /// concrete impls can override to avoid the full extension
+    /// multiplier when the operation is intrinsically cheaper at the
+    /// subfield.
+    #[inline]
+    fn scale_by_subfield(self, base: B) -> Self {
+        self * Self::embed(base)
+    }
+
     /// `Σ values[i] · challenges[i]` with base-field values lifted
     /// into `Self` before multiplication. Use
     /// [`Self::MONOMIAL_BASIS`] as `challenges` for the canonical
