@@ -26,6 +26,7 @@ members = [
     "crates/zk-core",
     "crates/zk-core-new",
     "crates/zk",
+    "crates/vole-core",
     "crates/wasm-bench",
 ]
 exclude = ["crates/lpn-estimator"]
@@ -77,6 +78,7 @@ mpz-vm-core = { path = "crates/vm-core" }
 mpz-zk-core = { path = "crates/zk-core" }
 mpz-zk-core-new = { path = "crates/zk-core-new" }
 mpz-zk = { path = "crates/zk" }
+mpz-vole-core = { path = "crates/vole-core" }
 clmul = { path = "crates/clmul" }
 matrix-transpose = { path = "crates/matrix-transpose" }
 rangeset = "0.4"
