@@ -1,0 +1,19 @@
+[package]
+name = "mpz-poly-proof-macros"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn = { version = "2", features = ["full", "extra-traits"] }
+quote = "1"
+proc-macro2 = "1"
+mpz-poly-proof-lifter = { workspace = true }
+
+[dev-dependencies]
+mpz-poly-proof-core = { workspace = true, features = ["fixture"] }
+mpz-circuits-new = { workspace = true, features = ["fixtures"] }
+mpz-fields = { workspace = true }
+rand = { workspace = true }

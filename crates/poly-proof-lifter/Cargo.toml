@@ -1,0 +1,15 @@
+[package]
+name = "mpz-poly-proof-lifter"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "mpz_poly_proof_lifter"
+
+[dependencies]
+mpz-circuits-new = { workspace = true }
+mpz-fields = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+mpz-circuits-new = { workspace = true, features = ["fixtures"] }

@@ -29,6 +29,8 @@ members = [
     "crates/vole-core",
     "crates/wasm-bench",
     "crates/poly-proof-core",
+    "crates/poly-proof-lifter",
+    "crates/poly-proof-macros",
 ]
 exclude = ["crates/lpn-estimator"]
 resolver = "2"
@@ -81,6 +83,8 @@ mpz-zk-core-new = { path = "crates/zk-core-new" }
 mpz-zk = { path = "crates/zk" }
 mpz-vole-core = { path = "crates/vole-core" }
 mpz-poly-proof-core = { path = "crates/poly-proof-core" }
+mpz-poly-proof-lifter = { path = "crates/poly-proof-lifter" }
+mpz-poly-proof-macros = { path = "crates/poly-proof-macros" }
 clmul = { path = "crates/clmul" }
 matrix-transpose = { path = "crates/matrix-transpose" }
 rangeset = "0.4"

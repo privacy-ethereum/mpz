@@ -15,3 +15,7 @@ Cargo.lock
 
 .cargo-ok
 .DS_Store
+
+# Local-only profiling example for the poly-proof prover; kept out of the
+# upstream tree (run locally with `--features fixture`).
+/crates/poly-proof-core/examples/

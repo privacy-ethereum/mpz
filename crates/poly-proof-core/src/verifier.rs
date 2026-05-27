@@ -7,73 +7,83 @@ use rand_chacha::{
 use zerocopy::IntoBytes;
 
 use crate::{
-    ConstraintId, Constraints, Field, ProofMessage, VerifierVope,
-    circuit::{Circuit, CircuitNode},
+    ConstraintId, Field, ProofMessage, VerifierConstraint, VerifierConstraints, VerifierVope,
 };
 
 /// Verifier for the QuickSilver polynomial proof protocol.
 #[derive(Clone)]
 pub struct Verifier<E: Field> {
-    /// The compiled constraint circuits, indexed by `ConstraintId`.
-    circuits: Vec<Circuit<E>>,
-    /// Maximum polynomial degree across all circuits.
+    /// Per-constraint-id body.
+    bodies: Vec<VerifierConstraint<E>>,
+    /// Maximum polynomial degree across all constraints.
     d_max: usize,
     /// Pre-computed powers of Δ: `delta_pow[i]` = Δⁱ.
     delta_pow: Vec<E>,
-    /// Running scalar accumulator (full polynomial evaluated at Δ).
-    accumulator: E,
+    /// Buffered per-evaluation scalars.
+    pending_b: Vec<E>,
 }
 
 impl<E: Field> Verifier<E> {
-    /// Create a new verifier from the MAC key `delta` and a
+    /// Create a new verifier from the global `delta` key and a
     /// constraint set.
-    pub fn new(delta: E, constraints: &Constraints<E>) -> Self {
-        let circuits = constraints.circuits.clone();
-        let d_max = circuits.iter().map(|c| c.degree()).max().unwrap_or(0);
+    pub fn new(delta: E, constraints: &VerifierConstraints<E>) -> Self {
+        let bodies = constraints.bodies.clone();
+        let d_max = bodies
+            .iter()
+            .map(|b| match b {
+                VerifierConstraint::Kernel(k) => k.degree,
+                VerifierConstraint::Circuit(c) => c.degree(),
+            })
+            .max()
+            .unwrap_or(0);
         let mut delta_pow = vec![E::one(); d_max + 1];
         for i in 1..=d_max {
             delta_pow[i] = delta_pow[i - 1] * delta;
         }
         Self {
-            circuits,
+            bodies,
             d_max,
             delta_pow,
-            accumulator: E::zero(),
+            pending_b: Vec::new(),
         }
     }
 
-    /// Accumulate a batch of polynomial evaluations under a `seed`.
+    /// Evaluate a batch of polynomial constraints and buffer the
+    /// resulting scalars for later folding.
     ///
     /// Each evaluation is a `(id, keys)` pair: the constraint to
     /// evaluate and one verifier key per variable.
-    ///
-    /// `seed` must be bound to a Fiat-Shamir transcript covering all
-    /// witness commitments preceding the call.
     pub fn accumulate(
         &mut self,
         evaluations: &[(ConstraintId, &[E])],
+    ) -> Result<(), VerifierError> {
+        self.pending_b.reserve(evaluations.len());
+        for &(id, keys) in evaluations {
+            let b = self.evaluate(id, keys)?;
+            self.pending_b.push(b);
+        }
+        Ok(())
+    }
+
+    /// Verifies the proof.
+    ///
+    /// # Arguments
+    ///
+    /// * `proof` - prover's proof message.
+    /// * `vope` - verifier's VOPE share.
+    /// * `seed` - Fiat-Shamir seed for the χ weights. Must be derived from a
+    ///   transcript that has already absorbed the keys of all calls to
+    ///   [`Verifier::accumulate`]. The protocol's soundness depends on this
+    ///   binding.
+    pub fn finalize(
+        self,
+        proof: &ProofMessage<E>,
+        vope: &VerifierVope<E>,
         seed: [u8; 32],
     ) -> Result<(), VerifierError>
     where
         E: IntoBytes + zerocopy::FromBytes,
     {
-        let mut chis = vec![<E as Field>::zero(); evaluations.len()];
-        let mut rng = ChaCha12Rng::from_seed(seed);
-        rng.fill_bytes(chis.as_mut_slice().as_mut_bytes());
-
-        for (&(id, keys), &chi) in evaluations.iter().zip(chis.iter()) {
-            let b = self.evaluate_circuit(id, keys)?;
-            self.accumulator = self.accumulator + b * chi;
-        }
-        Ok(())
-    }
-
-    /// Check the proof against the accumulated evaluations.
-    pub fn finalize(
-        self,
-        proof: &ProofMessage<E>,
-        vope: &VerifierVope<E>,
-    ) -> Result<(), VerifierError> {
         if proof.coefficients.len() != self.d_max {
             return Err(ErrorRepr::ProofLength {
                 expected: self.d_max,
@@ -82,9 +92,21 @@ impl<E: Field> Verifier<E> {
             .into());
         }
 
-        let w = self.accumulator + vope.sum;
+        // Draw chi values from the seed-fed PRG, one per buffered b.
+        let n = self.pending_b.len();
+        let mut chis = vec![<E as Field>::zero(); n];
+        let mut rng = ChaCha12Rng::from_seed(seed);
+        rng.fill_bytes(chis.as_mut_slice().as_mut_bytes());
 
-        let mut rhs = E::zero();
+        // Fold buffered b's into the accumulator.
+        let mut accumulator = <E as Field>::zero();
+        for (b, chi) in self.pending_b.iter().zip(chis.iter()) {
+            accumulator = accumulator + *b * *chi;
+        }
+
+        let w = accumulator + vope.sum;
+
+        let mut rhs = <E as Field>::zero();
         for h in 0..self.d_max {
             rhs = rhs + proof.coefficients[h] * self.delta_pow[h];
         }
@@ -96,65 +118,47 @@ impl<E: Field> Verifier<E> {
         Ok(())
     }
 
-    /// Walk constraint `id`'s circuit bottom-up, computing a single
-    /// scalar per node (substituting verifier keys for variables,
-    /// with Δ-power alignment for Add nodes of different degrees).
-    fn evaluate_circuit(&self, id: ConstraintId, keys: &[E]) -> Result<E, VerifierError> {
-        if id.0 >= self.circuits.len() {
+    /// Evaluate constraint `id` at the verifier's keys.
+    fn evaluate(&self, id: ConstraintId, keys: &[E]) -> Result<E, VerifierError> {
+        if id.0 >= self.bodies.len() {
             return Err(ErrorRepr::UnknownConstraint {
                 id,
-                count: self.circuits.len(),
+                count: self.bodies.len(),
             }
             .into());
         }
-        let circuit = &self.circuits[id.0];
-        let n_vars = circuit.num_vars();
-        if keys.len() != n_vars {
-            return Err(ErrorRepr::KeyCount {
-                id,
-                expected: n_vars,
-                actual: keys.len(),
-            }
-            .into());
-        }
-        let mut node_vals: Vec<E> = Vec::with_capacity(circuit.nodes.len());
 
-        for node in &circuit.nodes {
-            let val = match *node {
-                CircuitNode::Var(idx) => keys[idx],
-                CircuitNode::Const(c) => c,
-                CircuitNode::Mul(a, b) => node_vals[a] * node_vals[b],
-                // The lower-degree operand is multiplied by Δ^shift to
-                // align with the higher-degree one before adding.
-                CircuitNode::Add(a, b) => {
-                    let da = circuit.node_degrees[a];
-                    let db = circuit.node_degrees[b];
-                    let d = da.max(db);
-                    let shift_a = d - da;
-                    let shift_b = d - db;
-                    let va = if shift_a == 0 {
-                        node_vals[a]
-                    } else {
-                        node_vals[a] * self.delta_pow[shift_a]
-                    };
-                    let vb = if shift_b == 0 {
-                        node_vals[b]
-                    } else {
-                        node_vals[b] * self.delta_pow[shift_b]
-                    };
-                    va + vb
+        let (val, degree) = match &self.bodies[id.0] {
+            VerifierConstraint::Kernel(k) => {
+                if keys.len() != k.num_vars {
+                    return Err(ErrorRepr::KeyCount {
+                        id,
+                        expected: k.num_vars,
+                        actual: keys.len(),
+                    }
+                    .into());
                 }
-                CircuitNode::Neg(a) => -node_vals[a],
-            };
-            node_vals.push(val);
-        }
+                ((k.evaluate)(keys, &self.delta_pow), k.degree)
+            }
+            VerifierConstraint::Circuit(circuit) => {
+                if keys.len() != circuit.num_vars() {
+                    return Err(ErrorRepr::KeyCount {
+                        id,
+                        expected: circuit.num_vars(),
+                        actual: keys.len(),
+                    }
+                    .into());
+                }
+                (circuit.evaluate(keys, &self.delta_pow), circuit.degree())
+            }
+        };
 
-        // Degree-align the output with d_max.
-        let shift = self.d_max - circuit.degree();
+        // Degree-align the own-degree value with d_max.
+        let shift = self.d_max - degree;
         Ok(if shift == 0 {
-            node_vals[circuit.output]
+            val
         } else {
-            node_vals[circuit.output] * self.delta_pow[shift]
+            val * self.delta_pow[shift]
         })
     }
 

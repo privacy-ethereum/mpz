@@ -6,23 +6,29 @@ edition = "2024"
 [lib]
 name = "mpz_poly_proof_core"
 
-[dependencies]
-mpz-circuits-new = { workspace = true }
-mpz-fields = { path = "../fields" }
-rand_chacha = { workspace = true }
-serde = { version = "1.0", features = ["derive"] }
-thiserror = "1"
-zerocopy = { workspace = true }
-
 [features]
 default = []
-fixture = ["mpz-circuits-new/fixtures"]
+fixture = ["mpz-circuits-new/fixtures", "dep:mpz-poly-proof-macros"]
+
+[dependencies]
+mpz-circuits-new = { workspace = true }
+mpz-fields = { workspace = true }
+# Only needed to `#[poly_kernel]` the coverage fixture; pulled in by
+# the `fixture` feature.
+mpz-poly-proof-macros = { workspace = true, optional = true }
+rand_chacha = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+thiserror = { workspace = true }
+zerocopy = { workspace = true }
 
 [dev-dependencies]
-itybity = "0.3"
-hybrid-array = "0.4"
-rand = "0.9"
-criterion = { version = "0.5", default-features = false }
+rand = { workspace = true }
+criterion = { workspace = true }
+
+[build-dependencies]
+mpz-poly-proof-lifter = { workspace = true }
+mpz-circuits-new = { workspace = true, features = ["fixtures"] }
+mpz-fields = { workspace = true }
 
 [[bench]]
 name = "prover"

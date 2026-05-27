@@ -1,10 +1,11 @@
-//! Arithmetic-circuit representation of multivariate constraint
-//! polynomials. Stored as a DAG of operation nodes: `Var`, `Const`,
-//! `Mul`, `Add`, `Neg`.
+//! Quicksilver-specific circuit representation of a multivariate constraint
+//! polynomial.
+//!
+//! Stored as a DAG of operation nodes: `Var`, `Const`, `Mul`, `Add`, `Neg`.
 
 use mpz_circuits_new::Context;
 
-use crate::Field;
+use crate::{ExtensionField, Field};
 
 /// Index into the node arena.
 pub type NodeId = usize;
@@ -63,11 +64,207 @@ impl<E: Field> Circuit<E> {
         self.num_vars
     }
 
+    /// Accumulate this circuit's constraint-polynomial contribution into
+    /// the prover's running coefficient vector.
+    ///
+    /// # Arguments
+    ///
+    /// * `layout` - Scratch-slot layout for this circuit.
+    /// * `scratch` - Caller-owned working buffer.
+    /// * `accumulators` - The prover's running coefficient vector.
+    /// * `d_max` - Maximum degree across the surrounding constraint set.
+    /// * `macs` - Per-variable MACs.
+    /// * `values` - Per-variable witness values.
+    /// * `chi_power` - The Fiat-Shamir-derived weight for this evaluation.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn accumulate<W: Field>(
+        &self,
+        layout: &CircuitLayout,
+        scratch: &mut [E],
+        accumulators: &mut [E],
+        d_max: usize,
+        macs: &[E],
+        values: &[W],
+        chi_power: E,
+    ) where
+        E: ExtensionField<W>,
+    {
+        for ((node, &offset), &out_deg) in self
+            .nodes
+            .iter()
+            .zip(&layout.node_offsets)
+            .zip(&self.node_degrees)
+        {
+            match *node {
+                CircuitNode::Var(idx) => {
+                    scratch[offset] = macs[idx];
+                    scratch[offset + 1] = E::embed(values[idx]);
+                }
+                CircuitNode::Const(c) => {
+                    scratch[offset] = c;
+                }
+                CircuitNode::Mul(a, b) => {
+                    // Var nodes are always degree-1 polynomials with two
+                    // coefficients: [mac, embed(w)]. The arms below exploit
+                    // this structure to keep witness terms in the subfield
+                    // until they have to enter the extension field.
+                    match (self.nodes[a], self.nodes[b]) {
+                        // Variable × variable
+                        (CircuitNode::Var(a_idx), CircuitNode::Var(b_idx)) => {
+                            // (mac_a + w_a·Δ)(mac_b + w_b·Δ) expanded by degree:
+                            //   slot 0 (Δ⁰): mac_a · mac_b
+                            //   slot 1 (Δ¹): w_b · mac_a + w_a · mac_b
+                            //   slot 2 (Δ²): w_a · w_b
+                            let a_mac = macs[a_idx];
+                            let a_w = values[a_idx];
+                            let b_mac = macs[b_idx];
+                            let b_w = values[b_idx];
+                            scratch[offset] = a_mac * b_mac;
+
+                            // Using `scale_by_subfield` here and in all invocations below instead
+                            // of direct multiplication saves ~15% on wasm but loses ~3% on native
+                            // x86 — there the `pclmulqdq` was already pipelined for free.
+                            scratch[offset + 1] =
+                                a_mac.scale_by_subfield(b_w) + b_mac.scale_by_subfield(a_w);
+                            scratch[offset + 2] = E::embed(a_w * b_w);
+                        }
+                        // Variable × coefficient vector (either operand may
+                        // be the Var; we pick out which and use one loop body)
+                        (CircuitNode::Var(v), _) | (_, CircuitNode::Var(v)) => {
+                            let (var_idx, other) = if matches!(self.nodes[a], CircuitNode::Var(_)) {
+                                (v, b)
+                            } else {
+                                (v, a)
+                            };
+                            let out_len = out_deg + 1;
+                            for k in 0..out_len {
+                                scratch[offset + k] = E::zero();
+                            }
+                            let v_mac = macs[var_idx];
+                            let v_w = values[var_idx];
+                            let e_off = layout.node_offsets[other];
+                            let e_len = self.node_degrees[other] + 1;
+                            for i in 0..e_len {
+                                let coeff = scratch[e_off + i];
+                                scratch[offset + i] = scratch[offset + i] + coeff * v_mac;
+                                scratch[offset + i + 1] =
+                                    scratch[offset + i + 1] + coeff.scale_by_subfield(v_w);
+                            }
+                        }
+                        // Coefficient vector × coefficient vector (general convolution)
+                        _ => {
+                            let out_len = out_deg + 1;
+                            for k in 0..out_len {
+                                scratch[offset + k] = E::zero();
+                            }
+                            let a_off = layout.node_offsets[a];
+                            let a_len = self.node_degrees[a] + 1;
+                            let b_off = layout.node_offsets[b];
+                            let b_len = self.node_degrees[b] + 1;
+                            for ai in 0..a_len {
+                                let a_val = scratch[a_off + ai];
+                                for bi in 0..b_len {
+                                    scratch[offset + ai + bi] =
+                                        scratch[offset + ai + bi] + a_val * scratch[b_off + bi];
+                                }
+                            }
+                        }
+                    }
+                }
+                // Negate every coefficient of the operand.
+                CircuitNode::Neg(a) => {
+                    let len = out_deg + 1;
+                    let a_off = layout.node_offsets[a];
+                    for k in 0..len {
+                        scratch[offset + k] = -scratch[a_off + k];
+                    }
+                }
+                // Add two coefficient vectors. The lower-degree operand
+                // is degree-shifted to match the higher-degree one.
+                CircuitNode::Add(a, b) => {
+                    let out_len = out_deg + 1;
+                    let out_end = offset + out_len;
+                    let a_len = self.node_degrees[a] + 1;
+                    let a_end = layout.node_offsets[a] + a_len;
+                    let b_len = self.node_degrees[b] + 1;
+                    let b_end = layout.node_offsets[b] + b_len;
+
+                    for k in 0..out_len {
+                        scratch[offset + k] = E::zero();
+                    }
+                    for k in 0..a_len {
+                        scratch[out_end - 1 - k] = scratch[a_end - 1 - k];
+                    }
+                    for k in 0..b_len {
+                        scratch[out_end - 1 - k] =
+                            scratch[out_end - 1 - k] + scratch[b_end - 1 - k];
+                    }
+                }
+            }
+        }
+
+        // Skip the highest-degree coefficient.
+        let out_end = layout.node_offsets[self.output] + self.degree();
+
+        // Degree-shift the output into the accumulator, aligning
+        // lower-degree outputs to match d_max.
+        for k in 0..self.degree() {
+            accumulators[d_max - 1 - k] =
+                accumulators[d_max - 1 - k] + scratch[out_end - 1 - k] * chi_power;
+        }
+    }
+
+    /// Evaluate this circuit's constraint polynomial at Δ from the
+    /// verifier's `keys`.
+    ///
+    /// # Arguments
+    ///
+    /// * `keys` - One MAC key per input variable.
+    /// * `delta_pow` - Precomputed powers of Δ, with `delta_pow[k] == Δ^k`.
+    ///
+    /// # Returns
+    ///
+    /// The constraint polynomial evaluated at Δ, at the circuit's *own*
+    /// degree.
+    pub(crate) fn evaluate(&self, keys: &[E], delta_pow: &[E]) -> E {
+        let mut node_vals: Vec<E> = Vec::with_capacity(self.nodes.len());
+        for node in &self.nodes {
+            let val = match *node {
+                CircuitNode::Var(idx) => keys[idx],
+                CircuitNode::Const(c) => c,
+                CircuitNode::Mul(a, b) => node_vals[a] * node_vals[b],
+                // The lower-degree operand is multiplied by Δ^shift to
+                // align with the higher-degree one before adding.
+                CircuitNode::Add(a, b) => {
+                    let da = self.node_degrees[a];
+                    let db = self.node_degrees[b];
+                    let d = da.max(db);
+                    let shift_a = d - da;
+                    let shift_b = d - db;
+                    let va = if shift_a == 0 {
+                        node_vals[a]
+                    } else {
+                        node_vals[a] * delta_pow[shift_a]
+                    };
+                    let vb = if shift_b == 0 {
+                        node_vals[b]
+                    } else {
+                        node_vals[b] * delta_pow[shift_b]
+                    };
+                    va + vb
+                }
+                CircuitNode::Neg(a) => -node_vals[a],
+            };
+            node_vals.push(val);
+        }
+        node_vals[self.output]
+    }
+
     /// Evaluate the circuit on the given input values.
     ///
     /// Returns the output node's value.
     #[cfg(test)]
-    pub(crate) fn evaluate(&self, values: &[E]) -> E {
+    pub(crate) fn evaluate_cleartext(&self, values: &[E]) -> E {
         let mut node_vals: Vec<E> = Vec::with_capacity(self.nodes.len());
         for node in &self.nodes {
             let val = match *node {
@@ -80,6 +277,36 @@ impl<E: Field> Circuit<E> {
             node_vals.push(val);
         }
         node_vals[self.output]
+    }
+}
+
+/// Scratch-buffer layout for one circuit.
+///
+/// Each node produces an intermediate polynomial in Δ; this layout assigns
+/// each node a contiguous range of slots (one slot per coefficient) in a flat
+/// scratch array. Precomputed once per circuit and reused across evaluations
+/// by [`Circuit::accumulate`].
+#[derive(Clone)]
+pub(crate) struct CircuitLayout {
+    /// Scratch offset for each node, indexed by `NodeId` (parallel to
+    /// [`Circuit::nodes`]).
+    node_offsets: Vec<usize>,
+    /// Total scratch slots needed for this circuit.
+    pub(crate) scratch_size: usize,
+}
+
+impl CircuitLayout {
+    pub(crate) fn from_circuit<E: Field>(circuit: &Circuit<E>) -> Self {
+        let mut node_offsets = vec![0usize; circuit.nodes.len()];
+        let mut offset = 0;
+        for (i, &deg) in circuit.node_degrees.iter().enumerate() {
+            node_offsets[i] = offset;
+            offset += deg + 1;
+        }
+        Self {
+            node_offsets,
+            scratch_size: offset,
+        }
     }
 }
 
@@ -178,18 +405,6 @@ impl<E: Field> CircuitBuilder<E> {
     }
 }
 
-/// Errors raised while compiling a constraint closure.
-#[derive(Debug, thiserror::Error)]
-pub enum BuildError {
-    /// The closure returned without calling any `assert_*` method —
-    /// no constraint polynomial was produced.
-    #[error("constraint closure emitted no assertion")]
-    NoConstraint,
-    /// The closure called `assert_*` more than once.
-    #[error("constraint closure emitted multiple assertions; split into separate circuits")]
-    MultipleConstraints,
-}
-
 impl<E: Field> Context for CircuitBuilder<E> {
     type Error = BuildError;
     type Wire = NodeId;
@@ -244,416 +459,182 @@ where
     Ok(builder.build(output))
 }
 
+/// Errors raised while compiling a constraint closure or attaching a kernel.
+#[derive(Debug, thiserror::Error)]
+pub enum BuildError {
+    /// The closure returned without calling any `assert_*` method —
+    /// no constraint polynomial was produced.
+    #[error("constraint closure emitted no assertion")]
+    NoConstraint,
+    /// The closure called `assert_*` more than once.
+    #[error("constraint closure emitted multiple assertions; split into separate circuits")]
+    MultipleConstraints,
+    /// `add_kernel` was called with an `id` that has no registered constraint.
+    #[error("kernel attached to unknown constraint id {id}")]
+    UnknownConstraint { id: usize },
+    /// `add_kernel`'s kernel disagrees with the registered circuit on
+    /// `num_vars` or `degree`.
+    #[error(
+        "kernel shape mismatch for constraint {id}: \
+         expected (num_vars={expected_num_vars}, degree={expected_degree}), \
+         got (num_vars={actual_num_vars}, degree={actual_degree})"
+    )]
+    KernelShape {
+        id: usize,
+        expected_num_vars: usize,
+        actual_num_vars: usize,
+        expected_degree: usize,
+        actual_degree: usize,
+    },
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use hybrid_array::{
-        Array,
-        typenum::{U1, U8},
+    use crate::{
+        Field,
+        fixture::coverage,
+        test_utils::{EvalCtx, PolyOracle, eval_at},
     };
-    use itybity::{BitLength, FromBitIterator, GetBit, Lsb0, Msb0};
-    use mpz_fields::FieldError;
-    use rand::distr::{Distribution, StandardUniform};
-    use std::ops::{Add, Mul, Neg, Sub};
+    use mpz_fields::{ExtensionField, gf2::Gf2, gf2_64::Gf2_64, p256::P256};
+    use rand::{Rng, SeedableRng, rngs::StdRng};
 
-    /// Prime field F_17.
-    #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-    struct F17(u32);
-
-    impl Add for F17 {
-        type Output = Self;
-        fn add(self, rhs: Self) -> Self {
-            F17((self.0 + rhs.0) % 17)
-        }
-    }
-
-    impl Sub for F17 {
-        type Output = Self;
-        fn sub(self, rhs: Self) -> Self {
-            F17((self.0 + 17 - rhs.0) % 17)
-        }
-    }
-
-    impl Mul for F17 {
-        type Output = Self;
-        fn mul(self, rhs: Self) -> Self {
-            F17((self.0 * rhs.0) % 17)
-        }
-    }
-
-    impl Neg for F17 {
-        type Output = Self;
-        fn neg(self) -> Self {
-            if self.0 == 0 { self } else { F17(17 - self.0) }
-        }
-    }
-
-    impl Distribution<F17> for StandardUniform {
-        fn sample<R: rand::Rng + ?Sized>(&self, rng: &mut R) -> F17 {
-            F17(rng.random::<u32>() % 17)
-        }
-    }
-
-    impl TryFrom<Array<u8, U1>> for F17 {
-        type Error = FieldError;
-        fn try_from(value: Array<u8, U1>) -> Result<Self, Self::Error> {
-            let byte: [u8; 1] = value.into();
-            Ok(F17(byte[0] as u32 % 17))
-        }
-    }
-
-    impl BitLength for F17 {
-        // Byte-aligned for simplicity; the top 3 bits are always zero.
-        const BITS: usize = 8;
-    }
-
-    impl GetBit<Lsb0> for F17 {
-        fn get_bit(&self, index: usize) -> bool {
-            GetBit::<Lsb0>::get_bit(&(self.0 as u8), index)
-        }
-    }
-
-    impl GetBit<Msb0> for F17 {
-        fn get_bit(&self, index: usize) -> bool {
-            GetBit::<Msb0>::get_bit(&(self.0 as u8), index)
-        }
-    }
-
-    impl FromBitIterator for F17 {
-        fn from_lsb0_iter(iter: impl IntoIterator<Item = bool>) -> Self {
-            F17(u8::from_lsb0_iter(iter) as u32 % 17)
-        }
-        fn from_msb0_iter(iter: impl IntoIterator<Item = bool>) -> Self {
-            F17(u8::from_msb0_iter(iter) as u32 % 17)
-        }
-    }
-
-    impl crate::Field for F17 {
-        type BitSize = U8;
-        type ByteSize = U1;
-
-        fn zero() -> Self {
-            F17(0)
-        }
-        fn one() -> Self {
-            F17(1)
-        }
-        fn two_pow(rhs: u32) -> Self {
-            F17((1u32 << rhs) % 17)
-        }
-
-        fn inverse(self) -> Option<Self> {
-            if self.0 == 0 {
-                return None;
-            }
-            // Fermat in F_17: x⁻¹ = x^(17-2) = x^15 = x^8 · x^4 · x^2 · x.
-            let x2 = self * self;
-            let x4 = x2 * x2;
-            let x8 = x4 * x4;
-            Some(x8 * x4 * x2 * self)
-        }
-
-        fn to_le_bytes(&self) -> Vec<u8> {
-            vec![self.0 as u8]
-        }
-        fn to_be_bytes(&self) -> Vec<u8> {
-            vec![self.0 as u8]
-        }
-    }
-
-    /// Sanity-check the F17 fixture's arithmetic.
+    /// Compilation faithfulness: `compile`-ing the [`coverage`] fixture.
     #[test]
-    fn test_f17_inv_round_trip() {
-        use crate::Field;
-        for i in 1..17u32 {
-            let x = F17(i);
-            assert_eq!(x * x.inverse().unwrap(), F17(1), "inv of {i} is wrong");
-        }
-    }
-
-    #[test]
-    fn test_circuit_evaluate_mul_operands() {
-        // Circuit exercises all ten combinations of operand types a Mul
-        // node can have (each operand is one of Var, Const, Mul, Add):
-        //
-        //   k1  = Const · Const   (c_two · c_three)
-        //   k2  = Const · Var     (c_two · v0)
-        //   k3  = Var   · Var     (v1 · v2)
-        //   k4  = Const · Mul     (c_three · k3)
-        //   k5  = Var   · Mul     (v3 · k3)
-        //   k6  = Mul   · Mul     (k2 · k3)
-        //   k7  = Const · Add     (c_two · a1)
-        //   k8  = Var   · Add     (v2 · a1)
-        //   k9  = Mul   · Add     (k3 · a1)
-        //   k10 = Add   · Add     (a1 · a2)
-        //
-        // Helper Add nodes:  a1 = v0 + v1,  a2 = v2 + c_two.
-        //
-        // Output = k1 + k2 + … + k10.
-        //
-        // Max degree = 3 (from k5, k6, k9).
-        let mut cb = CircuitBuilder::<F17>::new();
-        let c_two = cb.constant(F17(2));
-        let c_three = cb.constant(F17(3));
-        let v0 = cb.var(0);
-        let v1 = cb.var(1);
-        let v2 = cb.var(2);
-        let v3 = cb.var(3);
-
-        // Add nodes that feed into Muls.
-        let a1 = cb.add(v0, v1);
-        let a2 = cb.add(v2, c_two);
-
-        let k1 = cb.mul(c_two, c_three);
-        let k2 = cb.mul(c_two, v0);
-        let k3 = cb.mul(v1, v2);
-        let k4 = cb.mul(c_three, k3);
-        let k5 = cb.mul(v3, k3);
-        let k6 = cb.mul(k2, k3);
-        let k7 = cb.mul(c_two, a1);
-        let k8 = cb.mul(v2, a1);
-        let k9 = cb.mul(k3, a1);
-        let k10 = cb.mul(a1, a2);
-
-        // Sum all ten Muls.
-        let s1 = cb.add(k1, k2);
-        let s2 = cb.add(s1, k3);
-        let s3 = cb.add(s2, k4);
-        let s4 = cb.add(s3, k5);
-        let s5 = cb.add(s4, k6);
-        let s6 = cb.add(s5, k7);
-        let s7 = cb.add(s6, k8);
-        let s8 = cb.add(s7, k9);
-        let out = cb.add(s8, k10);
-        let circuit = cb.build(out);
-
-        assert_eq!(circuit.degree(), 3);
-        assert_eq!(circuit.mul_count(), 10);
-        assert_eq!(circuit.num_vars(), 4);
-
-        // Per-evaluation k_i values are computed in the comments below.
-        // All sums and reductions done mod 17 by hand.
-
-        // v = (0, 0, 0, 0): a1=0, a2=2. Only k1 contributes non-zero.
-        //   k1..k10 = 6, 0, 0, 0, 0, 0, 0, 0, 0, 0 → sum = 6.
-        assert_eq!(circuit.evaluate(&[F17(0); 4]), F17(6));
-
-        // v = (1, 1, 1, 1): a1=2, a2=3.
-        //   k = 6, 2, 1, 3, 1, 2, 4, 2, 2, 6 → sum = 29 mod 17 = 12.
-        assert_eq!(circuit.evaluate(&[F17(1); 4]), F17(12));
-
-        // v = (1, 2, 3, 4): a1=3, a2=5.
-        //   k1=6, k2=2, k3=6, k4=18%17=1, k5=24%17=7, k6=12,
-        //   k7=6, k8=9, k9=18%17=1, k10=15
-        //   sum = 6+2+6+1+7+12+6+9+1+15 = 65 mod 17 = 14.
-        assert_eq!(circuit.evaluate(&[F17(1), F17(2), F17(3), F17(4)]), F17(14),);
-
-        // v = (0, 5, 5, 5): a1=5, a2=7.
-        //   k1=6, k2=0, k3=25%17=8, k4=24%17=7, k5=40%17=6, k6=0,
-        //   k7=10, k8=25%17=8, k9=40%17=6, k10=35%17=1
-        //   sum = 6+0+8+7+6+0+10+8+6+1 = 52 mod 17 = 1.
-        assert_eq!(circuit.evaluate(&[F17(0), F17(5), F17(5), F17(5)]), F17(1),);
-
-        // v = (16, 1, 1, 16): a1 = 16+1 = 17 ≡ 0 (mod 17), a2=3.
-        //   With a1=0, every k involving a1 (k7..k10) is zero.
-        //   k1=6, k2=32%17=15, k3=1, k4=3, k5=16, k6=15, k7..k10=0
-        //   sum = 6+15+1+3+16+15 = 56 mod 17 = 5.
-        assert_eq!(
-            circuit.evaluate(&[F17(16), F17(1), F17(1), F17(16)]),
-            F17(5),
-        );
-    }
-
-    #[test]
-    fn test_circuit_evaluate_add_operands() {
-        // Mirror test for Add: exercise all ten combinations of operand
-        // types an Add node can have (each operand ∈ {Var, Const, Mul, Add}).
-        //
-        //   e1  = Const + Const  (c_one + c_two)           = 3
-        //   e2  = Const + Var    (c_one + v0)              = 1 + v0
-        //   e3  = Var   + Var    (v0 + v1)                 = v0 + v1
-        //   e4  = Const + Mul    (c_two + m1)              = 2 + v0·v1
-        //   e5  = Var   + Mul    (v2 + m1)                 = v2 + v0·v1
-        //   e6  = Mul   + Mul    (m1 + m2)                 = v0·v1 + v2·v3
-        //   e7  = Const + Add    (c_three + a_seed)        = 3 + (v0+v1)
-        //   e8  = Var   + Add    (v2 + a_seed)             = v2 + (v0+v1)
-        //   e9  = Mul   + Add    (m2 + a_seed)             = v2·v3 + (v0+v1)
-        //   e10 = Add   + Add    (a_seed + a_seed2)        = (v0+v1) + (v2+2)
-        //
-        // Helpers:
-        //   m1 = v0·v1,  m2 = v2·v3
-        //   a_seed = v0 + v1,  a_seed2 = v2 + c_two
-        //
-        // Output = Σ e_i.
-        // Collecting by monomial:
-        //   out = 11 + 6·v0 + 5·v1 + 3·v2 + 3·v0·v1 + 2·v2·v3   (mod 17)
-        let mut cb = CircuitBuilder::<F17>::new();
-        let c_one = cb.constant(F17(1));
-        let c_two = cb.constant(F17(2));
-        let c_three = cb.constant(F17(3));
-        let v0 = cb.var(0);
-        let v1 = cb.var(1);
-        let v2 = cb.var(2);
-        let v3 = cb.var(3);
-
-        let m1 = cb.mul(v0, v1);
-        let m2 = cb.mul(v2, v3);
-
-        let a_seed = cb.add(v0, v1);
-        let a_seed2 = cb.add(v2, c_two);
-
-        let e1 = cb.add(c_one, c_two);
-        let e2 = cb.add(c_one, v0);
-        let e3 = cb.add(v0, v1);
-        let e4 = cb.add(c_two, m1);
-        let e5 = cb.add(v2, m1);
-        let e6 = cb.add(m1, m2);
-        let e7 = cb.add(c_three, a_seed);
-        let e8 = cb.add(v2, a_seed);
-        let e9 = cb.add(m2, a_seed);
-        let e10 = cb.add(a_seed, a_seed2);
-
-        // Sum all ten.
-        let s1 = cb.add(e1, e2);
-        let s2 = cb.add(s1, e3);
-        let s3 = cb.add(s2, e4);
-        let s4 = cb.add(s3, e5);
-        let s5 = cb.add(s4, e6);
-        let s6 = cb.add(s5, e7);
-        let s7 = cb.add(s6, e8);
-        let s8 = cb.add(s7, e9);
-        let out = cb.add(s8, e10);
-        let circuit = cb.build(out);
-
-        assert_eq!(circuit.degree(), 2);
-        assert_eq!(circuit.mul_count(), 2);
-        assert_eq!(circuit.num_vars(), 4);
-
-        // v = (0, 0, 0, 0): out = 11.
-        assert_eq!(circuit.evaluate(&[F17(0); 4]), F17(11));
-
-        // v = (1, 1, 1, 1): 11 + 6 + 5 + 3 + 3 + 2 = 30 mod 17 = 13.
-        assert_eq!(circuit.evaluate(&[F17(1); 4]), F17(13));
-
-        // v = (1, 2, 3, 4): 11 + 6 + 10 + 9 + 3·2 + 2·12 = 66 mod 17 = 15.
-        assert_eq!(circuit.evaluate(&[F17(1), F17(2), F17(3), F17(4)]), F17(15),);
-
-        // v = (0, 5, 5, 5): 11 + 0 + 25 + 15 + 0 + 50 = 101 mod 17 = 16.
-        assert_eq!(circuit.evaluate(&[F17(0), F17(5), F17(5), F17(5)]), F17(16),);
-
-        // v = (16, 1, 1, 16): 11 + 96 + 5 + 3 + 48 + 32 = (all mod 17)
-        //   11 + 11 + 5 + 3 + 14 + 15 = 59 mod 17 = 8.
-        assert_eq!(
-            circuit.evaluate(&[F17(16), F17(1), F17(1), F17(16)]),
-            F17(8),
-        );
-    }
-
-    /// `cb.sub(a, b)` must compute `a − b` honestly over a field where
-    /// `+` and `−` differ.
-    #[test]
-    fn test_circuit_evaluate_sub_over_prime_field() {
-        let mut cb = CircuitBuilder::<F17>::new();
-        let a = cb.var(0);
-        let b = cb.var(1);
-        let out = cb.sub(a, b);
-        let circuit = cb.build(out);
-
-        // 5 − 3 = 2.
-        assert_eq!(circuit.evaluate(&[F17(5), F17(3)]), F17(2));
-        // 3 − 5 = −2 ≡ 15 (mod 17).
-        assert_eq!(circuit.evaluate(&[F17(3), F17(5)]), F17(15));
-        // 0 − 0 = 0.
-        assert_eq!(circuit.evaluate(&[F17(0), F17(0)]), F17(0));
-
-        // `cb.add(a, b)` would have given `5 + 3 = 8` for the first case
-        // — confirms `sub` is materially different from `add` here.
-        let mut cb2 = CircuitBuilder::<F17>::new();
-        let a2 = cb2.var(0);
-        let b2 = cb2.var(1);
-        let add_out = cb2.add(a2, b2);
-        let add_circuit = cb2.build(add_out);
-        assert_ne!(
-            circuit.evaluate(&[F17(5), F17(3)]),
-            add_circuit.evaluate(&[F17(5), F17(3)]),
-            "sub and add must give different results over a non-char-2 field"
-        );
-    }
-
-    /// Build the AND-gate constraint `w0·w1 - w2 = 0` via the Context
-    /// API and verify the compiled circuit matches the imperative one.
-    #[test]
-    fn test_compile_via_fixture() {
-        use mpz_circuits_new::fixtures::and_gate;
-
-        // Compile the upstream `and_gate` constraint (`w0·w1 + w2 = 0`)
-        // through our Context impl. The fixture ends with
-        // `assert_const(_, zero)` so we exercise the zero-expected
-        // branch of `assert_const`.
-        let circuit = compile::<F17, _>(3, |cb, vars| {
-            let arr: [_; 3] = vars.try_into().unwrap();
-            and_gate::<CircuitBuilder<F17>, F17>(cb, arr)
+    fn coverage_compile_matches_cleartext() {
+        let circuit = compile::<P256, _>(6, |cb, vars| {
+            let arr: [_; 6] = vars.try_into().unwrap();
+            coverage(cb, arr)
         })
-        .expect("compile must succeed");
+        .expect("coverage must compile");
 
-        assert_eq!(circuit.num_vars(), 3);
-        assert_eq!(circuit.degree(), 2);
-        assert_eq!(circuit.mul_count(), 1);
+        // Structural properties a value-differential can't see.
+        assert_eq!(circuit.num_vars(), 6);
+        assert_eq!(circuit.degree(), 4);
+        assert_eq!(circuit.mul_count(), 5);
 
-        // Output evaluates to `w0·w1 + w2`. Sample at satisfying and
-        // unsatisfying assignments.
-        // 1·1 + 16 = 17 ≡ 0 (mod 17)  → satisfying
-        assert_eq!(circuit.evaluate(&[F17(1), F17(1), F17(16)]), F17(0));
-        // 2·3 + 5 = 11 ≢ 0  → unsatisfying
-        assert_eq!(circuit.evaluate(&[F17(2), F17(3), F17(5)]), F17(11));
+        let mut rng = StdRng::seed_from_u64(0xC0FFEE);
+        for _ in 0..64 {
+            let vals: [P256; 6] = std::array::from_fn(|_| rng.random());
+
+            // Closure side: run the fn directly through the cleartext ctx.
+            let mut ctx = EvalCtx::<P256>::new();
+            coverage(&mut ctx, vals).expect("cleartext eval");
+            let expected = ctx.into_output();
+
+            // DAG side: walk the compiled circuit; must agree.
+            assert_eq!(
+                circuit.evaluate_cleartext(&vals),
+                expected,
+                "compiled DAG diverges from cleartext closure at {vals:?}"
+            );
+        }
     }
 
-    /// `assert_const(v, c)` with `c != zero` should produce an AST
-    /// rooted at `v - c` (extra `Const` + `Neg + Add` nodes vs the
-    /// zero-expected branch).
+    /// DAG-walker faithfulness: the prover/verifier *lift* walks on a
+    /// compiled circuit must match the independent
+    /// [`PolyOracle`](crate::test_utils::PolyOracle).
+    #[test]
+    fn coverage_dag_walkers_match_poly_oracle() {
+        let circuit = compile::<Gf2_64, _>(6, |cb, vars| {
+            let arr: [_; 6] = vars.try_into().unwrap();
+            coverage(cb, arr)
+        })
+        .expect("coverage must compile");
+        let layout = CircuitLayout::from_circuit(&circuit);
+        let d = circuit.degree();
+
+        let mut rng = StdRng::seed_from_u64(0xDA9_C0FFEE);
+        let delta = Gf2_64(rng.random::<u64>());
+        let mut delta_pow = vec![Gf2_64::one(); d + 1];
+        for k in 1..=d {
+            delta_pow[k] = delta_pow[k - 1] * delta;
+        }
+
+        for _ in 0..16 {
+            let values: Vec<Gf2> = (0..6).map(|_| Gf2(rng.random::<bool>())).collect();
+            let macs: Vec<Gf2_64> = (0..6).map(|_| Gf2_64(rng.random::<u64>())).collect();
+            let keys: Vec<Gf2_64> = (0..6)
+                .map(|i| macs[i] + Gf2_64::embed(values[i]) * delta)
+                .collect();
+
+            // Oracle Q(X).
+            let mut oracle = PolyOracle::<Gf2_64>::new();
+            let wires: [usize; 6] =
+                std::array::from_fn(|i| oracle.push_var(macs[i], Gf2_64::embed(values[i])));
+            coverage(&mut oracle, wires).expect("oracle constraint run");
+            let q = oracle.into_output();
+
+            // Verifier DAG walk → Q(Δ).
+            assert_eq!(
+                circuit.evaluate(&keys, &delta_pow),
+                eval_at(&q, delta),
+                "evaluate disagrees with oracle at Δ"
+            );
+
+            // Prover DAG walk → Q's bottom-`d` coefficients (χ=1).
+            let mut scratch = vec![Gf2_64::zero(); layout.scratch_size];
+            let mut acc = vec![Gf2_64::zero(); d];
+            circuit.accumulate(
+                &layout,
+                &mut scratch,
+                &mut acc,
+                d,
+                &macs,
+                &values,
+                Gf2_64::one(),
+            );
+            for k in 0..d {
+                assert_eq!(
+                    acc[k], q[k],
+                    "accumulate coefficient {k} disagrees with oracle"
+                );
+            }
+        }
+    }
+
+    /// `assert_const(v, c)` with `c ≠ 0` builds output `v − c`.
     #[test]
     fn test_compile_assert_const_nonzero() {
-        // assert: w0 · w1 = 7. Compile produces output = w0·w1 - 7.
-        let circuit = compile::<F17, _>(2, |cb, vars| {
+        // assert w0·w1 = 1 → output = w0·w1 − 1.
+        let circuit = compile::<P256, _>(2, |cb, vars| {
             let prod = Context::mul(cb, vars[0], vars[1]);
-            Context::assert_const(cb, prod, F17(7))
+            Context::assert_const(cb, prod, P256::one())
         })
         .expect("compile must succeed");
 
         assert_eq!(circuit.num_vars(), 2);
-        // 1 · 7 − 7 = 0  → satisfying
-        assert_eq!(circuit.evaluate(&[F17(1), F17(7)]), F17(0));
-        // 2 · 3 − 7 = −1 ≡ 16 (mod 17)  → unsatisfying
-        assert_eq!(circuit.evaluate(&[F17(2), F17(3)]), F17(16));
+        // 1·1 − 1 = 0 → satisfying.
+        assert_eq!(
+            circuit.evaluate_cleartext(&[P256::one(), P256::one()]),
+            P256::zero()
+        );
+        // 2·2 − 1 = 3 ≠ 0 → unsatisfying.
+        let two = P256::one() + P256::one();
+        assert_ne!(circuit.evaluate_cleartext(&[two, two]), P256::zero());
     }
 
-    /// An error returned from the constraint closure must propagate
-    /// out of `compile` unchanged (the post-closure
-    /// `NoConstraint`/`MultipleConstraints` checks must not run).
+    /// An error from the constraint closure must propagate out of
+    /// `compile` unchanged.
     #[test]
     fn test_compile_propagates_closure_error() {
-        let result = compile::<F17, _>(2, |_cb, _vars| {
-            // Closure errors out before any assert_* call. The error
-            // must reach the caller as-is, even though the post-check
-            // would otherwise produce `NoConstraint`.
-            Err(BuildError::MultipleConstraints)
-        });
+        let result = compile::<P256, _>(2, |_cb, _vars| Err(BuildError::MultipleConstraints));
         assert!(matches!(result, Err(BuildError::MultipleConstraints)));
     }
 
     /// `compile` rejects closures that emit zero assertions.
     #[test]
     fn test_compile_rejects_no_constraint() {
-        let result = compile::<F17, _>(1, |_cb, _vars| Ok(()));
+        let result = compile::<P256, _>(1, |_cb, _vars| Ok(()));
         assert!(matches!(result, Err(BuildError::NoConstraint)));
     }
 
     /// `compile` rejects closures that emit multiple assertions.
     #[test]
     fn test_compile_rejects_multiple_constraints() {
-        let result = compile::<F17, _>(1, |cb, vars| {
-            Context::assert_const(cb, vars[0], F17(0))?;
-            Context::assert_const(cb, vars[0], F17(0))?; // second assert errors
+        let result = compile::<P256, _>(1, |cb, vars| {
+            Context::assert_const(cb, vars[0], P256::zero())?;
+            Context::assert_const(cb, vars[0], P256::zero())?; // second assert errors
             Ok(())
         });
         assert!(matches!(result, Err(BuildError::MultipleConstraints)));

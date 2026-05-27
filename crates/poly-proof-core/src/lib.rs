@@ -20,19 +20,34 @@
 pub mod circuit;
 #[cfg(any(test, feature = "fixture"))]
 pub mod fixture;
+pub mod kernel;
+#[cfg(any(test, feature = "fixture"))]
+pub mod gen_kernels {
+    //! Lifter-generated kernels.
+    //!
+    //! Built by `build.rs` at compile time via `mpz-poly-proof-lifter`.
+    //! `fixture::*` references these through `ConstraintDef` impls,
+    //! and `test_fixture_end_to_end` exercises them through the full
+    //! prover↔verifier protocol.
+    include!(concat!(env!("OUT_DIR"), "/gen_kernels.rs"));
+}
 pub mod prover;
 pub mod verifier;
+
+#[cfg(test)]
+mod test_utils;
 
 use std::fmt::Debug;
 
 pub use mpz_fields::{ExtensionField, Field};
 use serde::{Deserialize, Serialize};
 
-use crate::circuit::{compile, BuildError, Circuit, CircuitBuilder, NodeId};
-
-// ---------------------------------------------------------------------------
-// Protocol types
-// ---------------------------------------------------------------------------
+mod constraint;
+pub use constraint::{
+    ConstraintId, ConstraintsBuilder, ProverConstraints, ProverKernelEntry, VerifierConstraints,
+    VerifierKernelEntry,
+};
+pub(crate) use constraint::{ProverConstraint, VerifierConstraint};
 
 /// The proof message sent from prover to verifier.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -56,147 +71,140 @@ pub struct VerifierVope<E> {
     pub sum: E,
 }
 
-/// Identifier for a constraint.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ConstraintId(pub(crate) usize);
-
-/// A set of constraints.
-#[derive(Clone)]
-pub struct Constraints<E: Field> {
-    pub(crate) circuits: Vec<Circuit<E>>,
-}
-
-impl<E: Field> Constraints<E> {
-    /// Start building a constraint set.
-    pub fn builder() -> ConstraintsBuilder<E> {
-        ConstraintsBuilder {
-            circuits: Vec::new(),
-        }
-    }
-}
-
-/// Builder for [`Constraints`].
-pub struct ConstraintsBuilder<E: Field> {
-    circuits: Vec<Circuit<E>>,
-}
-
-impl<E: Field> ConstraintsBuilder<E> {
-    /// Add a constraint and return its [`ConstraintId`].
-    ///
-    /// The constraint is a `Context`-generic fn or closure with a
-    /// fixed-size array parameter `[C::Wire; N]`; `N` is inferred from
-    /// the signature. The closure must end with exactly one `assert_*`
-    /// call, which becomes the constraint root.
-    pub fn add<F, const N: usize>(&mut self, f: F) -> Result<ConstraintId, BuildError>
-    where
-        F: FnOnce(&mut CircuitBuilder<E>, [NodeId; N]) -> Result<(), BuildError>,
-    {
-        let circuit = compile(N, |cb, vars| {
-            // `compile(N, …)` allocates exactly N input wires, so
-            // `vars[i]` for `i < N` is always in bounds.
-            f(cb, std::array::from_fn(|i| vars[i]))
-        })?;
-        let id = ConstraintId(self.circuits.len());
-        self.circuits.push(circuit);
-        Ok(id)
-    }
-
-    /// Like [`add`](Self::add), but with a runtime-sized variable count.
-    ///
-    /// Use when the number of input wires is only known at runtime.
-    pub fn add_dynamic<F>(&mut self, num_vars: usize, f: F) -> Result<ConstraintId, BuildError>
-    where
-        F: FnOnce(&mut CircuitBuilder<E>, &[NodeId]) -> Result<(), BuildError>,
-    {
-        let circuit = compile(num_vars, f)?;
-        let id = ConstraintId(self.circuits.len());
-        self.circuits.push(circuit);
-        Ok(id)
-    }
-
-    /// Freeze into a [`Constraints`] set.
-    pub fn build(self) -> Constraints<E> {
-        Constraints {
-            circuits: self.circuits,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mpz_circuits_new::fixtures::{and_gate, linear_add};
+    use crate::{
+        fixture::{
+            AccMux, AddrBaseMux, AddrIndexMux, CarryChain, CarryGenerate, FpMux, MulBitExtraction,
+            MulForce, PcMux, SpMux, WriteBack, WriteBackBit0, add_step_constraints,
+        },
+        kernel::ConstraintDef,
+        test_utils::EvalCtx,
+    };
+    use mpz_circuits_new::fixtures::{
+        acc_mux, addr_base_mux, addr_index_mux, and_gate, carry_chain, carry_generate, fp_mux,
+        linear_add, mul_bit_extraction, mul_force, pc_mux, sp_mux, write_back, write_back_bit0,
+    };
     use mpz_fields::{gf2::Gf2, gf2_64::Gf2_64};
-    use rand::{rngs::StdRng, Rng, SeedableRng};
+    use rand::{Rng, SeedableRng, rngs::StdRng};
 
-    fn random_gf64(rng: &mut impl Rng) -> Gf2_64 {
-        Gf2_64(rng.random::<u64>())
-    }
+    use crate::test_utils::{and_gate_constraints, auth_all, mock_vope, random_gf64};
 
-    fn auth_all<W: Field>(
-        values: &[W],
-        delta: Gf2_64,
-        rng: &mut impl Rng,
-    ) -> (Vec<Gf2_64>, Vec<Gf2_64>)
-    where
-        Gf2_64: ExtensionField<W>,
-    {
-        let mut macs = Vec::new();
-        let mut keys = Vec::new();
-        for &v in values {
-            let mac = random_gf64(rng);
-            let key = mac + Gf2_64::embed(v) * delta;
-            macs.push(mac);
-            keys.push(key);
-        }
-        (macs, keys)
-    }
-
-    fn mock_vope(
-        count: usize,
-        delta: Gf2_64,
-        rng: &mut impl Rng,
-    ) -> (ProverVope<Gf2_64>, VerifierVope<Gf2_64>) {
-        let coeffs: Vec<Gf2_64> = (0..count).map(|_| random_gf64(rng)).collect();
-        let mut sum = Gf2_64::ZERO;
-        let mut delta_power = Gf2_64::ONE;
-        for &c in &coeffs {
-            sum = sum + c * delta_power;
-            delta_power = delta_power * delta;
-        }
-        (ProverVope { coeffs }, VerifierVope { sum })
-    }
-
-    /// Build a Constraints set with a single AND-gate constraint.
-    fn and_gate_constraints() -> (Constraints<Gf2_64>, ConstraintId) {
-        let mut b = Constraints::<Gf2_64>::builder();
-        let id = b.add(and_gate).unwrap();
-        (b.build(), id)
-    }
-
-    /// Honest AND gate: w0=1, w1=1, w2=1 → 1·1+1=0 in F_2.
+    /// End-to-end correctness test.
     #[test]
-    fn test_and_gate_bool() {
-        let mut rng = StdRng::seed_from_u64(42);
+    fn test_fixture_end_to_end() {
+        let mut rng = StdRng::seed_from_u64(0xE2E);
         let delta = random_gf64(&mut rng);
         let seed: [u8; 32] = rng.random();
 
-        let values: Vec<Gf2> = vec![Gf2::ONE, Gf2::ONE, Gf2::ONE];
-        let (macs, vk) = auth_all(&values, delta, &mut rng);
+        // Register all constraints: the 12 step fixtures as kernels,
+        // then the same 12 upstream fns again as runtime DAG bodies, so
+        // the protocol exercises the circuit-walk path alongside the
+        // kernels.
+        let mut b = ConstraintsBuilder::<Gf2_64, Gf2>::new();
+        let step = add_step_constraints(&mut b).unwrap();
 
-        let (constraints, id) = and_gate_constraints();
-        let mut p = prover::Prover::new(&constraints);
-        let mut v = verifier::Verifier::new(delta, &constraints);
+        macro_rules! add_dyn {
+            ($C:ty, $f:path) => {
+                b.add_dynamic(<$C as ConstraintDef<Gf2_64, Gf2>>::NUM_VARS, |cb, v| {
+                    $f(cb, v.try_into().unwrap())
+                })
+                .unwrap()
+            };
+        }
+        let dyn_ids: Vec<ConstraintId> = vec![
+            add_dyn!(CarryGenerate, carry_generate),
+            add_dyn!(CarryChain, carry_chain),
+            add_dyn!(WriteBack, write_back),
+            add_dyn!(WriteBackBit0, write_back_bit0),
+            add_dyn!(AddrBaseMux, addr_base_mux),
+            add_dyn!(AddrIndexMux, addr_index_mux),
+            add_dyn!(MulBitExtraction, mul_bit_extraction),
+            add_dyn!(MulForce, mul_force),
+            add_dyn!(AccMux, acc_mux),
+            add_dyn!(PcMux, pc_mux),
+            add_dyn!(SpMux, sp_mux),
+            add_dyn!(FpMux, fp_mux),
+        ];
+
+        let (pcs, vcs) = b.build();
+
+        let mut all_macs: Vec<Vec<Gf2_64>> = Vec::new();
+        let mut all_vals: Vec<Vec<Gf2>> = Vec::new();
+        let mut all_keys: Vec<Vec<Gf2_64>> = Vec::new();
+
+        // Solve a satisfying witness for one constraint: run its fn over
+        // cleartext candidates (var0 = 0) to get the residual, then set
+        // var0 to cancel it. Returns the authenticated (macs, vals, keys).
+        type ConstraintRun = dyn Fn(&mut EvalCtx<Gf2_64>, &[Gf2_64]) -> Result<(), ()>;
+        let mut solve =
+            |num_vars: usize, run: &ConstraintRun| -> (Vec<Gf2_64>, Vec<Gf2>, Vec<Gf2_64>) {
+                let mut vals: Vec<Gf2> = (0..num_vars).map(|_| Gf2(rng.random::<bool>())).collect();
+                vals[0] = Gf2::ZERO;
+                let embedded: Vec<Gf2_64> = vals.iter().map(|&v| Gf2_64::embed(v)).collect();
+                let mut ctx = EvalCtx::new();
+                run(&mut ctx, &embedded).expect("cleartext eval must succeed");
+                let residual = ctx.into_output();
+                vals[0] = if residual == Gf2_64::ONE {
+                    Gf2::ONE
+                } else {
+                    Gf2::ZERO
+                };
+                let (macs, keys) = auth_all(&vals, delta, &mut rng);
+                (macs, vals, keys)
+            };
+
+        // Order must match `add_step_constraints` (→ `step.ids`).
+        macro_rules! solve {
+            ($C:ty, $f:path) => {{
+                let (m, v, k) = solve(<$C as ConstraintDef<Gf2_64, Gf2>>::NUM_VARS, &|c, vs| {
+                    $f(c, vs.try_into().unwrap())
+                });
+                all_macs.push(m);
+                all_vals.push(v);
+                all_keys.push(k);
+            }};
+        }
+        solve!(CarryGenerate, carry_generate);
+        solve!(CarryChain, carry_chain);
+        solve!(WriteBack, write_back);
+        solve!(WriteBackBit0, write_back_bit0);
+        solve!(AddrBaseMux, addr_base_mux);
+        solve!(AddrIndexMux, addr_index_mux);
+        solve!(MulBitExtraction, mul_bit_extraction);
+        solve!(MulForce, mul_force);
+        solve!(AccMux, acc_mux);
+        solve!(PcMux, pc_mux);
+        solve!(SpMux, sp_mux);
+        solve!(FpMux, fp_mux);
+
+        // Feed each solved witness to both its kernel id and its dynamic
+        // twin, so both bodies are evaluated in the protocol.
+        let p_evals: Vec<(ConstraintId, &[Gf2_64], &[Gf2])> = (0..all_macs.len())
+            .flat_map(|i| {
+                let (m, v) = (all_macs[i].as_slice(), all_vals[i].as_slice());
+                [(step.ids[i], m, v), (dyn_ids[i], m, v)]
+            })
+            .collect();
+        let v_evals: Vec<(ConstraintId, &[Gf2_64])> = (0..all_keys.len())
+            .flat_map(|i| {
+                let k = all_keys[i].as_slice();
+                [(step.ids[i], k), (dyn_ids[i], k)]
+            })
+            .collect();
+
+        let mut p = prover::Prover::new(&pcs);
+        let mut v = verifier::Verifier::new(delta, &vcs);
         let (pv, vv) = mock_vope(p.required_vopes(), delta, &mut rng);
 
-        p.accumulate(&[(id, macs.as_slice(), values.as_slice())], seed)
-            .unwrap();
+        p.accumulate(&p_evals, seed).unwrap();
         let proof = p.finalize(&pv).unwrap();
 
-        v.accumulate(&[(id, vk.as_slice())], seed).unwrap();
+        v.accumulate(&v_evals).unwrap();
         assert!(
-            v.finalize(&proof, &vv).is_ok(),
-            "honest AND gate must verify"
+            v.finalize(&proof, &vv, seed).is_ok(),
+            "all 12 fixtures (kernel + DAG bodies) must verify"
         );
     }
 
@@ -210,18 +218,18 @@ mod tests {
         let values: Vec<Gf2> = vec![Gf2::ONE, Gf2::ONE, Gf2::ZERO];
         let (macs, vk) = auth_all(&values, delta, &mut rng);
 
-        let (constraints, id) = and_gate_constraints();
-        let mut p = prover::Prover::new(&constraints);
-        let mut v = verifier::Verifier::new(delta, &constraints);
+        let (pcs, vcs, id) = and_gate_constraints();
+        let mut p = prover::Prover::new(&pcs);
+        let mut v = verifier::Verifier::new(delta, &vcs);
         let (pv, vv) = mock_vope(p.required_vopes(), delta, &mut rng);
 
         p.accumulate(&[(id, macs.as_slice(), values.as_slice())], seed)
             .unwrap();
         let proof = p.finalize(&pv).unwrap();
 
-        v.accumulate(&[(id, vk.as_slice())], seed).unwrap();
+        v.accumulate(&[(id, vk.as_slice())]).unwrap();
         assert!(
-            v.finalize(&proof, &vv).is_err(),
+            v.finalize(&proof, &vv, seed).is_err(),
             "dishonest must be rejected"
         );
     }
@@ -238,9 +246,9 @@ mod tests {
         let (macs1, vk1) = auth_all(&vals1, delta, &mut rng);
         let (macs2, vk2) = auth_all(&vals2, delta, &mut rng);
 
-        let (constraints, id) = and_gate_constraints();
-        let mut p = prover::Prover::new(&constraints);
-        let mut v = verifier::Verifier::new(delta, &constraints);
+        let (pcs, vcs, id) = and_gate_constraints();
+        let mut p = prover::Prover::new(&pcs);
+        let mut v = verifier::Verifier::new(delta, &vcs);
         let (pv, vv) = mock_vope(p.required_vopes(), delta, &mut rng);
 
         p.accumulate(
@@ -253,38 +261,48 @@ mod tests {
         .unwrap();
         let proof = p.finalize(&pv).unwrap();
 
-        v.accumulate(&[(id, vk1.as_slice()), (id, vk2.as_slice())], seed)
+        v.accumulate(&[(id, vk1.as_slice()), (id, vk2.as_slice())])
             .unwrap();
-        assert!(v.finalize(&proof, &vv).is_ok(), "batched must verify");
+        assert!(v.finalize(&proof, &vv, seed).is_ok(), "batched must verify");
     }
 
-    /// Streaming: two separate accumulate calls with different seeds.
+    /// Verifier-side streaming: multiple `accumulate` calls share a
+    /// single end-of-protocol seed at `finalize`.
     #[test]
     fn test_streaming_batches() {
         let mut rng = StdRng::seed_from_u64(777);
         let delta = random_gf64(&mut rng);
-        let seed_1: [u8; 32] = rng.random();
-        let seed_2: [u8; 32] = rng.random();
+        let seed: [u8; 32] = rng.random();
 
         let vals1: Vec<Gf2> = vec![Gf2::ONE, Gf2::ONE, Gf2::ONE];
         let vals2: Vec<Gf2> = vec![Gf2::ZERO, Gf2::ZERO, Gf2::ZERO];
         let (macs1, vk1) = auth_all(&vals1, delta, &mut rng);
         let (macs2, vk2) = auth_all(&vals2, delta, &mut rng);
 
-        let (constraints, id) = and_gate_constraints();
-        let mut p = prover::Prover::new(&constraints);
-        let mut v = verifier::Verifier::new(delta, &constraints);
+        let (pcs, vcs, id) = and_gate_constraints();
+        let mut p = prover::Prover::new(&pcs);
+        let mut v = verifier::Verifier::new(delta, &vcs);
         let (pv, vv) = mock_vope(p.required_vopes(), delta, &mut rng);
 
-        p.accumulate(&[(id, macs1.as_slice(), vals1.as_slice())], seed_1)
-            .unwrap();
-        p.accumulate(&[(id, macs2.as_slice(), vals2.as_slice())], seed_2)
-            .unwrap();
+        // Prover: one batch combining both evaluations, single seed.
+        p.accumulate(
+            &[
+                (id, macs1.as_slice(), vals1.as_slice()),
+                (id, macs2.as_slice(), vals2.as_slice()),
+            ],
+            seed,
+        )
+        .unwrap();
         let proof = p.finalize(&pv).unwrap();
 
-        v.accumulate(&[(id, vk1.as_slice())], seed_1).unwrap();
-        v.accumulate(&[(id, vk2.as_slice())], seed_2).unwrap();
-        assert!(v.finalize(&proof, &vv).is_ok(), "streaming must verify");
+        // Verifier: streams across multiple accumulate calls in the
+        // same order, then folds at finalize with the same seed.
+        v.accumulate(&[(id, vk1.as_slice())]).unwrap();
+        v.accumulate(&[(id, vk2.as_slice())]).unwrap();
+        assert!(
+            v.finalize(&proof, &vv, seed).is_ok(),
+            "verifier-side streaming must verify"
+        );
     }
 
     /// Mixed degrees: one degree-2 and one degree-1 circuit.
@@ -299,13 +317,23 @@ mod tests {
         let (macs0, vk0) = auth_all(&vals0, delta, &mut rng);
         let (macs1, vk1) = auth_all(&vals1, delta, &mut rng);
 
-        let mut b = Constraints::<Gf2_64>::builder();
-        let id_and = b.add(and_gate).unwrap(); // degree 2, 1 mult
-        let id_linear = b.add(linear_add).unwrap(); // degree 1, no mults
-        let constraints = b.build();
+        let mut b = ConstraintsBuilder::<Gf2_64, Gf2>::new();
+        let id_and = b
+            .add_dynamic(3, |cb, vars| {
+                let arr: [_; 3] = vars.try_into().unwrap();
+                and_gate(cb, arr)
+            })
+            .unwrap(); // degree 2, 1 mult
+        let id_linear = b
+            .add_dynamic(2, |cb, vars| {
+                let arr: [_; 2] = vars.try_into().unwrap();
+                linear_add(cb, arr)
+            })
+            .unwrap(); // degree 1, no mults
+        let (pcs, vcs) = b.build();
 
-        let mut p = prover::Prover::new(&constraints);
-        let mut v = verifier::Verifier::new(delta, &constraints);
+        let mut p = prover::Prover::new(&pcs);
+        let mut v = verifier::Verifier::new(delta, &vcs);
         let (pv, vv) = mock_vope(p.required_vopes(), delta, &mut rng);
 
         p.accumulate(
@@ -318,82 +346,11 @@ mod tests {
         .unwrap();
         let proof = p.finalize(&pv).unwrap();
 
-        v.accumulate(
-            &[(id_and, vk0.as_slice()), (id_linear, vk1.as_slice())],
-            seed,
-        )
-        .unwrap();
-        assert!(v.finalize(&proof, &vv).is_ok(), "mixed degrees must verify");
-    }
-
-    /// End-to-end correctness test on all 12 step-circuit fixtures.
-    ///
-    /// For each circuit: pick random witness bits, set Y (var 0) so the
-    /// constraint evaluates to zero, authenticate, then run the full
-    /// prover/verifier flow.
-    #[test]
-    fn test_fixture_end_to_end() {
-        use crate::fixture::add_step_constraints;
-
-        let mut rng = StdRng::seed_from_u64(0xE2E);
-        let delta = random_gf64(&mut rng);
-        let seed: [u8; 32] = rng.random();
-
-        let mut b = Constraints::<Gf2_64>::builder();
-        let step = add_step_constraints(&mut b).unwrap();
-        let constraints = b.build();
-
-        let mut all_macs: Vec<Vec<Gf2_64>> = Vec::new();
-        let mut all_vals: Vec<Vec<Gf2>> = Vec::new();
-        let mut all_keys: Vec<Vec<Gf2_64>> = Vec::new();
-
-        for circ in &constraints.circuits {
-            let nv = circ.num_vars();
-
-            // Random bits for all vars; Y (var 0) = ZERO initially.
-            let mut vals: Vec<Gf2> = (0..nv).map(|_| Gf2(rng.random::<bool>())).collect();
-            vals[0] = Gf2::ZERO;
-
-            // Evaluate in cleartext to get the residual, then set Y so
-            // the output is zero.
-            let embedded: Vec<Gf2_64> = vals.iter().map(|&v| Gf2_64::embed(v)).collect();
-            let residual = circ.evaluate(&embedded);
-            vals[0] = if residual == Gf2_64::ONE {
-                Gf2::ONE
-            } else {
-                Gf2::ZERO
-            };
-
-            // Authenticate.
-            let (macs, keys) = auth_all(&vals, delta, &mut rng);
-            all_macs.push(macs);
-            all_vals.push(vals);
-            all_keys.push(keys);
-        }
-
-        let p_evals: Vec<(ConstraintId, &[Gf2_64], &[Gf2])> = all_macs
-            .iter()
-            .zip(&all_vals)
-            .enumerate()
-            .map(|(i, (m, v))| (step.ids[i], m.as_slice(), v.as_slice()))
-            .collect();
-        let v_evals: Vec<(ConstraintId, &[Gf2_64])> = all_keys
-            .iter()
-            .enumerate()
-            .map(|(i, k)| (step.ids[i], k.as_slice()))
-            .collect();
-
-        let mut p = prover::Prover::new(&constraints);
-        let mut v = verifier::Verifier::new(delta, &constraints);
-        let (pv, vv) = mock_vope(p.required_vopes(), delta, &mut rng);
-
-        p.accumulate(&p_evals, seed).unwrap();
-        let proof = p.finalize(&pv).unwrap();
-
-        v.accumulate(&v_evals, seed).unwrap();
+        v.accumulate(&[(id_and, vk0.as_slice()), (id_linear, vk1.as_slice())])
+            .unwrap();
         assert!(
-            v.finalize(&proof, &vv).is_ok(),
-            "all 12 fixture circuits must verify"
+            v.finalize(&proof, &vv, seed).is_ok(),
+            "mixed degrees must verify"
         );
     }
 }
