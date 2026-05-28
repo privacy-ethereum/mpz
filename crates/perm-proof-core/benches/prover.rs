@@ -5,36 +5,29 @@
 //! isolation from any concrete VOLE construction.
 
 use blake3::Hasher;
-use criterion::{
-    BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main,
-};
+use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
 use mpz_fields::gf2_64::Gf2_64;
+use mpz_perm_proof_core::{
+    Prover,
+    backend::vole_zk::VoleZkProverBackend,
+    test_utils::{
+        Committed, commit_values, vole_zk_rvole_pregenerate_count, vole_zk_rvope_pregenerate_degree,
+    },
+};
 use mpz_vole_core::ideal::{
     rvole::{IdealRVOLEReceiver, IdealRVOLESender, ideal_rvole},
     rvope::{IdealRVOPEReceiver, IdealRVOPESender, ideal_rvope},
 };
-use perm_proof_core::{
-    Prover,
-    backend::vole_zk::VoleZkProverBackend,
-    test_utils::{
-        Committed, commit_values, vole_zk_rvole_pregenerate_count,
-        vole_zk_rvope_pregenerate_degree,
-    },
-};
 use rand::{Rng, SeedableRng, seq::SliceRandom};
 use rand_chacha::ChaCha8Rng;
 
-/// Fan-in of the product circuit. 
-const EPS: usize = 16;
+const EPS: usize = 8;
 
-/// Criterion reports per-element throughput via `Throughput::Elements(n)`.
-const INPUT_SIZES: &[usize] = &[10_000, 100_000, 200_000];
+const INPUT_SIZES: &[usize] = &[100_000, 200_000];
 
-/// Seed for the driver RNG. Fixed so input distributions and ideal
-/// correlations are reproducible run-to-run.
 const BENCH_SEED: u64 = 0x5E1F_B0FB_1F15_D00D;
 
-type ProverBackend = VoleZkProverBackend<
+type ProverBackendT = VoleZkProverBackend<
     Gf2_64,
     Gf2_64,
     IdealRVOLEReceiver<Gf2_64, Gf2_64>,
@@ -89,7 +82,7 @@ fn build_correlations_and_prover(
     rng: &mut ChaCha8Rng,
     delta: Gf2_64,
     n: usize,
-) -> Prover<Gf2_64, Gf2_64, ProverBackend> {
+) -> Prover<Gf2_64, Gf2_64, ProverBackendT> {
     let rvole_seed: u64 = rng.random();
     let rvope_seed: u64 = rng.random();
 
@@ -107,8 +100,6 @@ fn build_correlations_and_prover(
     rvope_s.pregenerate(1, rvope_degree);
     rvope_r.pregenerate(1, rvope_degree);
 
-    // Keep the senders alive to the end of setup so they materialize
-    // the receiver-side pool via shared seed; drop once done.
     drop(rvole_s);
     drop(rvope_s);
 
@@ -134,15 +125,15 @@ fn bench_prove(c: &mut Criterion) {
                     let prover = build_correlations_and_prover(&mut rng, fixture.delta, n);
                     (prover, fixture.transcript.clone())
                 },
-                |(prover, transcript)| {
-                    let (_preparation, prover) = prover
+                |(mut prover, mut transcript)| {
+                    let _preparation = prover
                         .prepare(
-                            transcript,
+                            &mut transcript,
                             (&fixture.x_values, &fixture.x_macs),
                             (&fixture.y_values, &fixture.y_macs),
                         )
                         .expect("prepare must succeed");
-                    let proof = prover.prove().expect("prove must succeed");
+                    let proof = prover.prove(&mut transcript).expect("prove must succeed");
                     black_box(proof);
                 },
                 criterion::BatchSize::PerIteration,
@@ -150,7 +141,7 @@ fn bench_prove(c: &mut Criterion) {
         });
     }
 
-    let mut group = c.benchmark_group("prove");
+    let mut group = c.benchmark_group("prover");
     group.sample_size(10);
     for &n in INPUT_SIZES {
         group.throughput(Throughput::Elements(n as u64));

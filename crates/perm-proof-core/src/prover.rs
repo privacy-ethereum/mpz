@@ -7,19 +7,18 @@ use serde::Serialize;
 use crate::{Proof, backend::ProverBackend, draw_field};
 
 /// Permutation protocol prover.
-pub struct Prover<W, E, B, S = prover_state::Initialized>
+pub struct Prover<W, E, B>
 where
     W: Field,
     E: ExtensionField<W>,
     B: ProverBackend<W, E>,
-    S: prover_state::State,
 {
     backend: B,
-    state: S,
+    state: ProverState<E>,
     _phantom: std::marker::PhantomData<(W, E)>,
 }
 
-impl<W, E, B> Prover<W, E, B, prover_state::Initialized>
+impl<W, E, B> Prover<W, E, B>
 where
     W: Field,
     E: ExtensionField<W>,
@@ -29,7 +28,7 @@ where
     pub fn new(backend: B) -> Self {
         Self {
             backend,
-            state: prover_state::Initialized,
+            state: ProverState::Initialized,
             _phantom: std::marker::PhantomData,
         }
     }
@@ -38,15 +37,18 @@ where
     /// this prover.
     ///
     /// Multiple calls accumulate.
-    pub fn alloc(&mut self, n: usize) -> Result<(), B::Error> {
-        self.backend.alloc(n)
+    pub fn alloc(&mut self, n: usize) -> Result<(), ProveError<B::Error>> {
+        match &self.state {
+            ProverState::Initialized => self.backend.alloc(n).map_err(ProveError::Backend),
+            _ => Err(ProveError::WrongPhase),
+        }
     }
 
     /// Compute the preparation message for phase 1 of the protocol.
     ///
     /// # Arguments
     ///
-    /// * `transcript` - Shared session transcript.
+    /// * `transcript` - Fiat-Shamir transcript.
     /// * `x` - Pair `(values, macs)` for the first input vector.
     /// * `y` - Pair `(values, macs)` for the second input vector.
     ///
@@ -56,12 +58,16 @@ where
     /// `x` and `y` before this method is invoked. The protocol's
     /// soundness depends on this binding.
     pub fn prepare(
-        mut self,
-        mut transcript: Hasher,
+        &mut self,
+        transcript: &mut Hasher,
         x: (&[Vec<W>], &[Vec<E>]),
         y: (&[Vec<W>], &[Vec<E>]),
-    ) -> Result<(B::Preparation, Prover<W, E, B, prover_state::Prepared<E>>), ProveError<B::Error>>
-    {
+    ) -> Result<B::Preparation, ProveError<B::Error>> {
+        match &self.state {
+            ProverState::Initialized => {}
+            _ => return Err(ProveError::WrongPhase),
+        }
+
         let (x_values, x_macs) = x;
         let (y_values, y_macs) = y;
 
@@ -94,11 +100,11 @@ where
         }
 
         // Draw the random challenge `r`.
-        let r = draw_field::<E>(&mut transcript, b"permutation-proof::challenge_r");
+        let r = draw_field::<E>(transcript, b"permutation-proof::challenge_r");
 
         // Draw the tuple-collapse challenge `s ∈ E^tuple_width`.
         let s: Vec<E> = (0..tuple_width)
-            .map(|_| draw_field::<E>(&mut transcript, b"permutation-proof::challenge_s"))
+            .map(|_| draw_field::<E>(transcript, b"permutation-proof::challenge_s"))
             .collect();
 
         // Compute per-position collapsed factors.
@@ -121,14 +127,14 @@ where
             fy_macs.push(-zy_mac);
         }
 
-        // Commit the authenticated product of each vectors's factors.
+        // Commit the authenticated product of each vector's factors.
         let (_, px_m) = self
             .backend
-            .product(&mut transcript, &fx_values, &fx_macs)
+            .product(&fx_values, &fx_macs)
             .map_err(ProveError::Backend)?;
         let (_, py_m) = self
             .backend
-            .product(&mut transcript, &fy_values, &fy_macs)
+            .product(&fy_values, &fy_macs)
             .map_err(ProveError::Backend)?;
 
         // Drain the preparation message now so the caller can ship it
@@ -138,88 +144,54 @@ where
             .drain_preparation()
             .map_err(ProveError::Backend)?;
 
-        Ok((
-            preparation,
-            Prover {
-                backend: self.backend,
-                state: prover_state::Prepared {
-                    transcript,
-                    px_m,
-                    py_m,
-                },
-                _phantom: std::marker::PhantomData,
-            },
-        ))
-    }
-}
+        self.state = ProverState::Prepared { px_m, py_m };
 
-impl<W, E, B> Prover<W, E, B, prover_state::Prepared<E>>
-where
-    W: Field,
-    E: ExtensionField<W>,
-    B: ProverBackend<W, E>,
-{
+        Ok(preparation)
+    }
+
     /// Return the proof message for phase 2 of the protocol.
-    pub fn prove(self) -> Result<Proof<E, B::BackendProof>, ProveError<B::Error>>
+    ///
+    /// # Arguments
+    ///
+    /// * `transcript` - Fiat-Shamir transcript. Must be the same instance as in
+    ///   [`prepare`](Self::prepare).
+    pub fn prove(
+        self,
+        transcript: &mut Hasher,
+    ) -> Result<Proof<E, B::BackendProof>, ProveError<B::Error>>
     where
         E: Serialize,
         B::BackendProof: Serialize,
     {
         let Prover { backend, state, .. } = self;
-        let prover_state::Prepared {
-            mut transcript,
-            px_m,
-            py_m,
-        } = state;
+        let (px_m, py_m) = match state {
+            ProverState::Prepared { px_m, py_m } => (px_m, py_m),
+            _ => return Err(ProveError::WrongPhase),
+        };
 
         // Materialize the zero-check: the difference MAC is what the
         // verifier checks against its own diff_k. Under an honest
         // permutation, the underlying value diff is zero.
         let zero_proof = px_m - py_m;
 
-        // Absorb the proof into the transcript so any subsequent proof
-        // sharing this transcript stays bound to this one.
-        let backend_proof = backend.prove().map_err(ProveError::Backend)?;
+        let backend_proof = backend.prove(transcript).map_err(ProveError::Backend)?;
         let proof = Proof {
             zero_proof,
             backend_proof,
         };
-        transcript.update(b"permutation-proof::proof");
+
+        // Absorb the proof into the transcript so any subsequent proof
+        // sharing this transcript stays bound to this one.
         transcript.update(&bcs::to_bytes(&proof).expect("serialize"));
 
         Ok(proof)
     }
 }
 
-/// Type-state markers for [`Prover`]'s phase.
-pub mod prover_state {
-    use mpz_fields::Field;
-
-    mod sealed {
-        pub trait Sealed {}
-    }
-
-    /// Marker trait implemented by every legal [`Prover`](super::Prover)
-    /// phase. Sealed: external crates cannot add new phases.
-    pub trait State: sealed::Sealed {}
-
-    /// Phase right after [`Prover::new`](super::Prover::new): `alloc`
-    /// and `prepare` are callable; `prove` is not.
-    pub struct Initialized;
-
-    /// Phase right after a successful
-    /// [`prepare`](super::Prover::<_, _, _, Initialized>::prepare):
-    /// `prove` is callable.
-    pub struct Prepared<E: Field> {
-        pub(super) transcript: blake3::Hasher,
-        pub(super) px_m: E,
-        pub(super) py_m: E,
-    }
-
-    impl sealed::Sealed for Initialized {}
-    impl State for Initialized {}
-    impl<E: Field> sealed::Sealed for Prepared<E> {}
-    impl<E: Field> State for Prepared<E> {}
+/// Internal state machine for [`Prover`].
+enum ProverState<E> {
+    Initialized,
+    Prepared { px_m: E, py_m: E },
 }
 
 /// Collapse one tuple of authenticated wires into a single
@@ -239,6 +211,10 @@ where
 /// Error produced by protocol prover.
 #[derive(Debug, thiserror::Error)]
 pub enum ProveError<E: std::error::Error + Send + Sync + 'static> {
+    /// A method was called while the prover was in the wrong phase.
+    #[error("prover called in the wrong phase")]
+    WrongPhase,
+
     /// The four input slices did not all have the same length.
     #[error("length mismatch: x_values={xv}, x_macs={xm}, y_values={yv}, y_macs={ym}")]
     LengthMismatch {
@@ -290,15 +266,15 @@ mod tests {
     /// `LengthMismatch`.
     #[test]
     fn prepare_rejects_x_values_x_macs_length_mismatch() {
-        let prover = build_mock_prover();
-        let transcript = Hasher::new();
+        let mut prover = build_mock_prover();
+        let mut transcript = Hasher::new();
         let x_values = ones(3, 1);
         let x_macs = ones(2, 1); // short by 1
         let y_values = ones(3, 1);
         let y_macs = ones(3, 1);
 
         let err = prover
-            .prepare(transcript, (&x_values, &x_macs), (&y_values, &y_macs))
+            .prepare(&mut transcript, (&x_values, &x_macs), (&y_values, &y_macs))
             .err()
             .expect("x-side length mismatch must surface an error");
         match err {
@@ -313,15 +289,15 @@ mod tests {
     /// disjunct of the length check.
     #[test]
     fn prepare_rejects_y_values_y_macs_length_mismatch() {
-        let prover = build_mock_prover();
-        let transcript = Hasher::new();
+        let mut prover = build_mock_prover();
+        let mut transcript = Hasher::new();
         let x_values = ones(4, 1);
         let x_macs = ones(4, 1);
         let y_values = ones(4, 1);
         let y_macs = ones(3, 1); // short by 1
 
         let err = prover
-            .prepare(transcript, (&x_values, &x_macs), (&y_values, &y_macs))
+            .prepare(&mut transcript, (&x_values, &x_macs), (&y_values, &y_macs))
             .err()
             .expect("y-side length mismatch must surface an error");
         match err {
@@ -336,15 +312,15 @@ mod tests {
     /// the third disjunct of the length check trips.
     #[test]
     fn prepare_rejects_x_vs_y_length_mismatch() {
-        let prover = build_mock_prover();
-        let transcript = Hasher::new();
+        let mut prover = build_mock_prover();
+        let mut transcript = Hasher::new();
         let x_values = ones(3, 1);
         let x_macs = ones(3, 1);
         let y_values = ones(5, 1);
         let y_macs = ones(5, 1);
 
         let err = prover
-            .prepare(transcript, (&x_values, &x_macs), (&y_values, &y_macs))
+            .prepare(&mut transcript, (&x_values, &x_macs), (&y_values, &y_macs))
             .err()
             .expect("x-vs-y length mismatch must surface an error");
         match err {
@@ -358,12 +334,12 @@ mod tests {
     /// A permutation proof over zero positions is vacuous.
     #[test]
     fn prepare_rejects_empty_vectors() {
-        let prover = build_mock_prover();
-        let transcript = Hasher::new();
+        let mut prover = build_mock_prover();
+        let mut transcript = Hasher::new();
         let empty: Vec<Vec<Gf2_128>> = Vec::new();
 
         let err = prover
-            .prepare(transcript, (&empty, &empty), (&empty, &empty))
+            .prepare(&mut transcript, (&empty, &empty), (&empty, &empty))
             .err()
             .expect("empty inputs must surface an error");
         assert!(
@@ -375,8 +351,8 @@ mod tests {
     /// Zero-width tuples rejected.
     #[test]
     fn prepare_rejects_zero_width_tuples() {
-        let prover = build_mock_prover();
-        let transcript = Hasher::new();
+        let mut prover = build_mock_prover();
+        let mut transcript = Hasher::new();
         // n = 1, tuple_width = 0.
         let x_values = ones(1, 0);
         let x_macs = ones(1, 0);
@@ -384,7 +360,7 @@ mod tests {
         let y_macs = ones(1, 0);
 
         let err = prover
-            .prepare(transcript, (&x_values, &x_macs), (&y_values, &y_macs))
+            .prepare(&mut transcript, (&x_values, &x_macs), (&y_values, &y_macs))
             .err()
             .expect("zero-width tuples must surface an error");
         assert!(
@@ -396,8 +372,8 @@ mod tests {
     /// Non-uniform tuple widths rejected.
     #[test]
     fn prepare_rejects_tuple_width_mismatch() {
-        let prover = build_mock_prover();
-        let transcript = Hasher::new();
+        let mut prover = build_mock_prover();
+        let mut transcript = Hasher::new();
         // n = 2: first tuple width 2, second tuple width 3.
         let x_values: Vec<Vec<Gf2_128>> = vec![vec![Gf2_128::one(); 2], vec![Gf2_128::one(); 3]];
         let x_macs: Vec<Vec<Gf2_128>> = vec![vec![Gf2_128::one(); 2], vec![Gf2_128::one(); 3]];
@@ -405,7 +381,7 @@ mod tests {
         let y_macs = x_macs.clone();
 
         let err = prover
-            .prepare(transcript, (&x_values, &x_macs), (&y_values, &y_macs))
+            .prepare(&mut transcript, (&x_values, &x_macs), (&y_values, &y_macs))
             .err()
             .expect("non-uniform tuple width must surface an error");
         assert!(
@@ -425,20 +401,31 @@ mod tests {
 
         // Construct the Prepared state directly — bypasses `prepare`
         // so this test pins `prove` in isolation from the rest of the
-        // lifecycle. `pub(super)` fields on `Prepared` make this
-        // accessible from inside `prover.rs`'s test submodule.
+        // lifecycle.
         let prover = Prover {
             backend: MockProverBackend::<Gf2_128, Gf2_128>::new(delta),
-            state: prover_state::Prepared {
-                transcript: Hasher::new(),
-                px_m,
-                py_m,
-            },
+            state: ProverState::Prepared { px_m, py_m },
             _phantom: std::marker::PhantomData,
         };
 
-        let proof = prover.prove().expect("mock prove must succeed");
+        let mut transcript = Hasher::new();
+        let proof = prover
+            .prove(&mut transcript)
+            .expect("mock prove must succeed");
         assert_eq!(proof.zero_proof, px_m - py_m);
         assert_eq!(proof.backend_proof, ());
+    }
+
+    /// `prove` errors with `WrongPhase` if `prepare` hasn't been
+    /// called.
+    #[test]
+    fn prove_rejects_initialized_phase() {
+        let prover = build_mock_prover();
+        let mut transcript = Hasher::new();
+        let err = prover
+            .prove(&mut transcript)
+            .err()
+            .expect("prove without prepare must fail");
+        assert!(matches!(err, ProveError::WrongPhase));
     }
 }

@@ -86,6 +86,7 @@ mpz-vole-core = { path = "crates/vole-core" }
 mpz-poly-proof-core = { path = "crates/poly-proof-core" }
 mpz-poly-proof-lifter = { path = "crates/poly-proof-lifter" }
 mpz-poly-proof-macros = { path = "crates/poly-proof-macros" }
+mpz-perm-proof-core = { path = "crates/perm-proof-core" }
 clmul = { path = "crates/clmul" }
 matrix-transpose = { path = "crates/matrix-transpose" }
 rangeset = "0.4"

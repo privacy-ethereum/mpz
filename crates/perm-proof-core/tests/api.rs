@@ -1,11 +1,11 @@
 //! End-to-end tests for the permutation proof protocol public API.
 //!
 //! These tests drive the full `Prover` → `Verifier` lifecycle against
-//! the non-cryptographic [`mock`](perm_proof_core::backend::mock)
+//! the non-cryptographic [`mock`](mpz_perm_proof_core::backend::mock)
 //! backend.
 
 use mpz_fields::{Field, gf2_128::Gf2_128};
-use perm_proof_core::{
+use mpz_perm_proof_core::{
     Prover, Verifier,
     backend::mock::{MockError, mock_pair},
     test_utils::{Committed, commit_values},
@@ -46,8 +46,8 @@ fn run_end_to_end<const L: usize>(mode: Mode) -> Result<(), VerifyError<MockErro
         keys: [x_keys, y_keys],
         transcript,
     } = commit_values([&x_values[..], &y_values[..]], delta, &mut rng);
-    let tp = transcript.clone();
-    let tv = transcript;
+    let mut tp = transcript.clone();
+    let mut tv = transcript;
 
     if matches!(mode, Mode::Dishonest) {
         // Tamper AFTER authentication.
@@ -55,20 +55,22 @@ fn run_end_to_end<const L: usize>(mode: Mode) -> Result<(), VerifyError<MockErro
     }
 
     let (pb, vb) = mock_pair::<Gf2_128, Gf2_128>(delta);
-    let prover = Prover::new(pb);
-    let verifier = Verifier::new(vb);
+    let mut prover = Prover::new(pb);
+    let mut verifier = Verifier::new(vb);
 
     // --- Round 1: prover -> verifier ---
-    let (preparation, prover) = prover
-        .prepare(tp, (&x_values, &x_macs), (&y_values, &y_macs))
+    let preparation = prover
+        .prepare(&mut tp, (&x_values, &x_macs), (&y_values, &y_macs))
         .expect("prover prepare must succeed");
-    let verifier = verifier
-        .prepare(tv, &x_keys, &y_keys, preparation)
+    verifier
+        .prepare(&mut tv, &x_keys, &y_keys, preparation)
         .expect("verifier prepare must succeed");
 
     // --- Round 2: prover -> verifier ---
-    let proof = prover.prove().expect("prover prove must succeed");
-    verifier.verify(proof)
+    let proof = prover
+        .prove(&mut tp)
+        .expect("prover prove must succeed");
+    verifier.verify(proof, &mut tv)
 }
 
 /// Honest end-to-end with scalar inputs (`L = 1`).

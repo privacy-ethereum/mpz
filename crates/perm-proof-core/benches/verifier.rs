@@ -5,39 +5,32 @@
 //! isolation from any concrete VOLE construction.
 
 use blake3::Hasher;
-use criterion::{
-    BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main,
-};
+use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
 use mpz_fields::gf2_64::Gf2_64;
-use mpz_vole_core::ideal::{
-    rvole::{IdealRVOLESender, ideal_rvole},
-    rvope::{IdealRVOPESender, ideal_rvope},
-};
-use perm_proof_core::{
+use mpz_perm_proof_core::{
     Proof as Envelope, Prover, Verifier,
     backend::vole_zk::{
         Preparation, Proof as BackendProof, VoleZkProverBackend, VoleZkVerifierBackend,
     },
     test_utils::{
-        Committed, commit_values, vole_zk_rvole_pregenerate_count,
-        vole_zk_rvope_pregenerate_degree,
+        Committed, commit_values, vole_zk_rvole_pregenerate_count, vole_zk_rvope_pregenerate_degree,
     },
+};
+use mpz_vole_core::ideal::{
+    rvole::{IdealRVOLESender, ideal_rvole},
+    rvope::{IdealRVOPESender, ideal_rvope},
 };
 use rand::{Rng, SeedableRng, seq::SliceRandom};
 use rand_chacha::ChaCha8Rng;
 
-const EPS: usize = 16;
+const EPS: usize = 8;
 
-const INPUT_SIZES: &[usize] = &[10_000, 100_000, 200_000];
+const INPUT_SIZES: &[usize] = &[100_000, 200_000];
 
 const BENCH_SEED: u64 = 0x5E1F_B0FB_1F15_D00D;
 
-type VerifierBackendT = VoleZkVerifierBackend<
-    Gf2_64,
-    Gf2_64,
-    IdealRVOLESender<Gf2_64>,
-    IdealRVOPESender<Gf2_64>,
->;
+type VerifierBackendT =
+    VoleZkVerifierBackend<Gf2_64, Gf2_64, IdealRVOLESender<Gf2_64>, IdealRVOPESender<Gf2_64>>;
 
 type FullProof = Envelope<Gf2_64, BackendProof<Gf2_64>>;
 
@@ -104,14 +97,11 @@ fn build_fixture<const L: usize>(rng: &mut ChaCha8Rng, n: usize) -> Fixture {
     );
     prover.alloc(n).expect("prover alloc must succeed");
 
-    let (preparation, prover) = prover
-        .prepare(
-            transcript.clone(),
-            (&x_values, &x_macs),
-            (&y_values, &y_macs),
-        )
+    let mut tp = transcript.clone();
+    let preparation = prover
+        .prepare(&mut tp, (&x_values, &x_macs), (&y_values, &y_macs))
         .expect("prover prepare must succeed");
-    let proof = prover.prove().expect("prover prove must succeed");
+    let proof = prover.prove(&mut tp).expect("prover prove must succeed");
 
     Fixture {
         delta,
@@ -159,8 +149,7 @@ fn build_verifier(
     drop(rvope_r);
 
     let mut verifier = Verifier::new(
-        VoleZkVerifierBackend::<Gf2_64, Gf2_64, _, _>::new(EPS, delta, rvole_s, rvope_s)
-            .unwrap(),
+        VoleZkVerifierBackend::<Gf2_64, Gf2_64, _, _>::new(EPS, delta, rvole_s, rvope_s).unwrap(),
     );
     verifier.alloc(n).expect("verifier alloc must succeed");
     verifier
@@ -178,12 +167,8 @@ fn bench_verify(c: &mut Criterion) {
             let fixture = build_fixture::<L>(&mut rng, n);
             b.iter_batched(
                 || {
-                    let verifier = build_verifier(
-                        fixture.delta,
-                        fixture.rvole_seed,
-                        fixture.rvope_seed,
-                        n,
-                    );
+                    let verifier =
+                        build_verifier(fixture.delta, fixture.rvole_seed, fixture.rvope_seed, n);
                     (
                         verifier,
                         fixture.transcript.clone(),
@@ -191,11 +176,18 @@ fn bench_verify(c: &mut Criterion) {
                         fixture.proof.clone(),
                     )
                 },
-                |(verifier, transcript, preparation, proof)| {
-                    let verifier = verifier
-                        .prepare(transcript, &fixture.x_keys, &fixture.y_keys, preparation)
+                |(mut verifier, mut transcript, preparation, proof)| {
+                    verifier
+                        .prepare(
+                            &mut transcript,
+                            &fixture.x_keys,
+                            &fixture.y_keys,
+                            preparation,
+                        )
                         .expect("verifier prepare must succeed");
-                    verifier.verify(proof).expect("verify must succeed");
+                    verifier
+                        .verify(proof, &mut transcript)
+                        .expect("verify must succeed");
                     black_box(());
                 },
                 criterion::BatchSize::PerIteration,
@@ -203,7 +195,7 @@ fn bench_verify(c: &mut Criterion) {
         });
     }
 
-    let mut group = c.benchmark_group("verify");
+    let mut group = c.benchmark_group("verifier");
     group.sample_size(10);
     for &n in INPUT_SIZES {
         group.throughput(Throughput::Elements(n as u64));

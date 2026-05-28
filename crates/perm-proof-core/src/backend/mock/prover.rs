@@ -44,17 +44,12 @@ impl<W: Field, E: ExtensionField<W>> ProverBackend<W, E> for MockProverBackend<W
         })
     }
 
-    fn prove(self) -> Result<Self::BackendProof, Self::Error> {
+    fn prove(self, _transcript: &mut Hasher) -> Result<Self::BackendProof, Self::Error> {
         // Mock contributes no supplementary proof.
         Ok(())
     }
 
-    fn product(
-        &mut self,
-        _transcript: &mut Hasher,
-        factor_values: &[E],
-        factor_macs: &[E],
-    ) -> Result<(E, E), Self::Error> {
+    fn product(&mut self, factor_values: &[E], factor_macs: &[E]) -> Result<(E, E), Self::Error> {
         assert_eq!(
             factor_values.len(),
             factor_macs.len(),

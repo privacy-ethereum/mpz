@@ -53,6 +53,9 @@ where
     /// VoleAdjustments loaded from the prover's [`Preparation`].
     adjustments: VecDeque<VoleAdjustment<E>>,
 
+    /// Fiat-Shamir transcript: absorbs every VoleAdjustment received.
+    internal_transcript: blake3::Hasher,
+
     _phantom: PhantomData<W>,
 }
 
@@ -69,20 +72,18 @@ where
     ///
     /// * `fan_in_degree` - Fan-in of the product tree (must be ≥ 1).
     /// * `delta` - Verifier's global key.
-    /// * `rvole` - Random VOLE sender for committing intermediate
-    ///   product wires.
-    /// * `rvope` - Random VOPE sender for the mask consumed at QS
-    ///   finalize time.
+    /// * `rvole` - Random VOLE sender for committing intermediate product
+    ///   wires.
+    /// * `rvope` - Random VOPE sender for the mask consumed at QS finalize
+    ///   time.
     pub fn new(
         fan_in_degree: usize,
         delta: E,
         rvole: VL,
         mut rvope: VP,
     ) -> Result<Self, VoleZkVerifierError> {
-        if fan_in_degree < 2 {
-            return Err(VoleZkVerifierError::InvalidFanIn(fan_in_degree));
-        }
-        let (constraints, product_constraint) = build_product_constraints::<E>(fan_in_degree);
+        let (_, constraints, product_constraint) = build_product_constraints::<E>(fan_in_degree)
+            .map_err(|_| VoleZkVerifierError::InvalidFanIn(fan_in_degree))?;
         let qs = mpz_poly_proof_core::verifier::Verifier::new(delta, &constraints);
 
         rvope
@@ -99,6 +100,7 @@ where
             total_count: 0,
             rvoles_alloced: 0,
             adjustments: VecDeque::new(),
+            internal_transcript: blake3::Hasher::new(),
             _phantom: PhantomData,
         })
     }
@@ -151,10 +153,19 @@ where
         self.adjustments = preparation.adjustments.into();
     }
 
-    fn verify(mut self, proof: Self::BackendProof) -> Result<(), Self::Error> {
+    fn verify(
+        mut self,
+        proof: Self::BackendProof,
+        transcript: &mut blake3::Hasher,
+    ) -> Result<(), Self::Error> {
         let Proof { qs_proof } = proof;
 
-        // Step 1: consume the single pre-alloc'd RVOPE correlation.
+        // Absorb internal transcript.
+        let internal_hash = std::mem::take(&mut self.internal_transcript).finalize();
+        transcript.update(internal_hash.as_bytes());
+        let qs_seed = crate::draw_seed(transcript, b"permutation-proof::qs-end-seed");
+
+        // Consume the single pre-alloc'd RVOPE correlation.
         let rvope_out = self
             .rvope
             .try_send_vope(1)
@@ -166,9 +177,9 @@ where
             .expect("RVOPE try_send_vope(1) should return exactly one evaluation");
         let vope = mpz_poly_proof_core::VerifierVope { sum };
 
-        // Step 2: run QS finalize.
+        // Run QS finalize.
         self.qs
-            .finalize(&qs_proof, &vope)
+            .finalize(&qs_proof, &vope, qs_seed)
             .map_err(|e| VoleZkVerifierError::QsVerify(Box::new(e)))
     }
 
@@ -187,11 +198,7 @@ where
         Ok(())
     }
 
-    fn product(
-        &mut self,
-        transcript: &mut blake3::Hasher,
-        factor_keys: &[E],
-    ) -> Result<E, Self::Error> {
+    fn product(&mut self, factor_keys: &[E]) -> Result<E, Self::Error> {
         let n = factor_keys.len();
         if n == 0 {
             return Err(VoleZkVerifierError::EmptyInput);
@@ -205,6 +212,9 @@ where
         // every iter — so no upfront copy of the leaves.
         let mut current_keys: Cow<'_, [E]> = Cow::Borrowed(factor_keys);
         let eps = self.fan_in_degree;
+
+        // Collected this-call adjustments.
+        let mut call_adjustments: Vec<VoleAdjustment<E>> = Vec::new();
 
         while current_keys.len() > 1 {
             let level_size = current_keys.len();
@@ -229,10 +239,6 @@ where
                     actual: adjustment.diffs.len(),
                 });
             }
-
-            // Absorb into the transcript.
-            transcript.update(b"permutation-proof::vole-adjustment");
-            transcript.update(&bcs::to_bytes(&adjustment).expect("serialize"));
 
             // Consume and derandomize random VOLEs.
             let rvole_out = self
@@ -271,21 +277,27 @@ where
                 chunk_keys_store.push(keys);
             }
 
-            // Draw a fresh PRG seed for this tree-walk level.
-            let seed = crate::draw_seed(transcript, b"permutation-proof::qs-seed");
+            // Stream this level's evaluations into the QS verifier's
+            // pending-b buffer.
             let evaluations: Vec<(ConstraintId, &[E])> = chunk_keys_store
                 .iter()
                 .map(|k| (self.product_constraint, k.as_slice()))
                 .collect();
             self.qs
-                .accumulate(&evaluations, seed)
+                .accumulate(&evaluations)
                 .map_err(|e| VoleZkVerifierError::QsAccumulate(Box::new(e)))?;
 
             // Assemble the next level.
             prod_keys.extend(passthroughs.iter().map(|&idx| current_keys[idx]));
 
             current_keys = Cow::Owned(prod_keys);
+
+            call_adjustments.push(adjustment);
         }
+
+        // Bulk-absorb every adjustment into transcript.
+        self.internal_transcript
+            .update(&bcs::to_bytes(&call_adjustments).expect("serialize"));
 
         Ok(current_keys[0])
     }
@@ -337,8 +349,9 @@ pub enum VoleZkVerifierError {
         actual: usize,
     },
 
-    /// `fan_in_degree` was less than the minimum supported value (2).
-    #[error("fan_in_degree must be at least 2; got {0}")]
+    /// `fan_in_degree` was outside the kernel-supported range
+    /// (see [`super::SUPPORTED_FAN_IN`]).
+    #[error("unsupported fan_in_degree: {0}")]
     InvalidFanIn(usize),
 
     /// `product` was called with an empty factor-keys slice.
@@ -399,9 +412,8 @@ mod tests {
     #[test]
     fn product_rejects_empty_input() {
         let mut verifier = build_verifier_only(0xE6, 8);
-        let mut transcript = blake3::Hasher::new();
         let err = verifier
-            .product(&mut transcript, &[])
+            .product(&[])
             .expect_err("empty input must surface an error");
         assert!(
             matches!(err, VoleZkVerifierError::EmptyInput),
@@ -422,9 +434,8 @@ mod tests {
             adjustments: vec![],
         });
 
-        let mut transcript = blake3::Hasher::new();
         let ret_k = verifier
-            .product(&mut transcript, &[k])
+            .product(&[k])
             .expect("singleton passthrough must succeed");
         assert_eq!(ret_k, k);
     }
@@ -432,8 +443,8 @@ mod tests {
     /// Test `VoleAdjustment` underflow.
     #[test]
     fn product_underflow_on_short_preparation() {
-        let mut verifier = build_verifier_only(0xE8, 4);
-        // `n = 4, eps = 4`: tree walks exactly one level (one chunk).
+        let mut verifier = build_verifier_only(0xE8, 6);
+        // `n = 6, eps = 6`: tree walks exactly one level (one chunk).
         // Loading an empty Preparation means the first `pop_front` at
         // level 0 returns `None` → AdjustmentUnderflow.
         verifier.load_preparation(Preparation {
@@ -441,11 +452,10 @@ mod tests {
         });
 
         let mut rng = ChaCha8Rng::seed_from_u64(0xE8_1234);
-        let keys: Vec<Gf2_128> = (0..4).map(|_| rng.random()).collect();
+        let keys: Vec<Gf2_128> = (0..6).map(|_| rng.random()).collect();
 
-        let mut transcript = blake3::Hasher::new();
         let err = verifier
-            .product(&mut transcript, &keys)
+            .product(&keys)
             .expect_err("short Preparation must surface an error");
         assert!(
             matches!(err, VoleZkVerifierError::AdjustmentUnderflow),
@@ -456,8 +466,8 @@ mod tests {
     /// Per-level shape check.
     #[test]
     fn product_shape_mismatch_on_wrong_diffs_length() {
-        let mut verifier = build_verifier_only(0xE9, 4);
-        // `n = 4, eps = 4`: level 0 has exactly one chunk, so the
+        let mut verifier = build_verifier_only(0xE9, 6);
+        // `n = 6, eps = 6`: level 0 has exactly one chunk, so the
         // matching adjustment must carry `diffs.len() == 1`. Load one
         // with 2 diffs to trip the shape check.
         verifier.load_preparation(Preparation {
@@ -467,11 +477,10 @@ mod tests {
         });
 
         let mut rng = ChaCha8Rng::seed_from_u64(0xE9_1234);
-        let keys: Vec<Gf2_128> = (0..4).map(|_| rng.random()).collect();
+        let keys: Vec<Gf2_128> = (0..6).map(|_| rng.random()).collect();
 
-        let mut transcript = blake3::Hasher::new();
         let err = verifier
-            .product(&mut transcript, &keys)
+            .product(&keys)
             .expect_err("wrong-shape adjustment must surface an error");
         match err {
             VoleZkVerifierError::AdjustmentShapeMismatch { expected, actual } => {

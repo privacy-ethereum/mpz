@@ -2,15 +2,22 @@
 //! authentication with a QuickSilver polynomial proof for fan-in
 //! multiplications.
 
-use mpz_circuits_new::Context;
-use mpz_fields::Field;
-use mpz_poly_proof_core::{ConstraintId, Constraints};
+use std::ops::RangeInclusive;
 
+use mpz_fields::{ExtensionField, Field};
+use mpz_poly_proof_core::{
+    ConstraintId, ConstraintsBuilder, ProverConstraints, VerifierConstraints,
+};
+
+mod kernels;
 pub mod prover;
 pub mod verifier;
 
 pub use prover::{Preparation, Proof, VoleZkProverBackend, VoleZkProverError};
 pub use verifier::{VoleZkVerifierBackend, VoleZkVerifierError};
+
+/// Fan-in degrees the VOLE-ZK backend supports.
+pub const SUPPORTED_FAN_IN: RangeInclusive<usize> = 4..=32;
 
 /// Internal-node count of a fan-in-`d` tree over `n` leaves —
 /// `⌈(n−1)/(d−1)⌉`, since each merge takes `d` items into 1 and
@@ -27,28 +34,19 @@ pub(crate) fn chunk_ranges_and_leftover(n: usize, d: usize) -> (Vec<(usize, usiz
     (chunks, leftover)
 }
 
-/// Build a `Constraints` set holding the single fan-in-product
+/// Build the constraint set holding the single fan-in-product
 /// constraint `(x_0 · x_1 · … · x_{n-1}) − prod = 0`.
 ///
 /// Variable layout: `var(0)…var(n−1)` are the factors, `var(n)` is
-/// `prod`. Returns the set alongside the constraint's id.
-pub(crate) fn build_product_constraints<E: Field>(
+/// `prod`.
+pub(crate) fn build_product_constraints<E: Field + ExtensionField<E>>(
     factor_count: usize,
-) -> (Constraints<E>, ConstraintId) {
-    assert!(factor_count >= 1);
-    let mut b = Constraints::<E>::builder();
-    let id = b
-        .add_dynamic(factor_count + 1, |ctx, vars| {
-            // `add_dynamic(factor_count + 1, …)` allocates exactly that
-            // many wires, so the indices below are always in bounds.
-            let mut product = vars[0];
-            for &f in &vars[1..factor_count] {
-                product = ctx.mul(product, f);
-            }
-            ctx.assert_eq(product, vars[factor_count])
-        })
-        .expect("product constraint shape is well-formed");
-    (b.build(), id)
+) -> Result<(ProverConstraints<E>, VerifierConstraints<E>, ConstraintId), kernels::UnsupportedFanIn>
+{
+    let mut b = ConstraintsBuilder::<E>::new();
+    let id = kernels::add_product_kernel(&mut b, factor_count)?;
+    let (pc, vc) = b.build();
+    Ok((pc, vc, id))
 }
 
 #[cfg(test)]
@@ -107,8 +105,8 @@ mod tests {
         }
 
         // Pre-fill RVOPE — query a throwaway QS prover.
-        let (constraints, _) = build_product_constraints::<Gf2_128>(eps);
-        let tmp_qs = mpz_poly_proof_core::prover::Prover::<Gf2_128>::new(&constraints);
+        let (pc, _, _) = build_product_constraints::<Gf2_128>(eps).unwrap();
+        let tmp_qs = mpz_poly_proof_core::prover::Prover::<Gf2_128>::new(&pc);
         let required_vopes = tmp_qs.required_vopes();
 
         let (mut rvope_s, mut rvope_r) = ideal_rvope::<Gf2_128>(rvope_seed, delta);
@@ -172,10 +170,10 @@ mod tests {
         let flat_macs: Vec<Gf2_128> = macs.iter().flatten().copied().collect();
         let flat_keys: Vec<Gf2_128> = keys.iter().flatten().copied().collect();
 
-        let (prod_value, prod_mac) = prover.product(&mut tp, &flat_values, &flat_macs).unwrap();
+        let (prod_value, prod_mac) = prover.product(&flat_values, &flat_macs).unwrap();
         let prep = prover.drain_preparation().unwrap();
         verifier.load_preparation(prep);
-        let prod_key = verifier.product(&mut tv, &flat_keys).unwrap();
+        let prod_key = verifier.product(&flat_keys).unwrap();
 
         if matches!(mode, Mode::Honest) {
             assert_eq!(
@@ -185,8 +183,8 @@ mod tests {
             );
         }
 
-        let proof = prover.prove().unwrap();
-        verifier.verify(proof)
+        let proof = prover.prove(&mut tp).unwrap();
+        verifier.verify(proof, &mut tv)
     }
 
     /// Honest prover: each shape exercises a different path through the
@@ -195,10 +193,10 @@ mod tests {
     fn accepts() {
         // Multi-level walk with leftover passthroughs and a terminal short chunk.
         run_pair(0xA1, 100, 8, Mode::Honest).expect("honest must accept");
-        // ε=2: tightest tree, many small levels.
-        run_pair(0xC3, 9, 2, Mode::Honest).expect("honest must accept");
+        // Smallest supported ε, multi-level walk with leftover.
+        run_pair(0xC3, 9, 6, Mode::Honest).expect("honest must accept");
         // n == ε: one-level tree, single chunk, no leftover.
-        run_pair(0xD4, 4, 4, Mode::Honest).expect("honest must accept");
+        run_pair(0xD4, 6, 6, Mode::Honest).expect("honest must accept");
     }
 
     /// Dishonest prover: tampered input is rejected.

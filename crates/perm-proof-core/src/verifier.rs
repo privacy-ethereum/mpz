@@ -7,19 +7,18 @@ use serde::Serialize;
 use crate::{Proof, backend::VerifierBackend, draw_field};
 
 /// Permutation protocol verifier.
-pub struct Verifier<W, E, B, S = verifier_state::Initialized>
+pub struct Verifier<W, E, B>
 where
     W: Field,
     E: ExtensionField<W>,
     B: VerifierBackend<W, E>,
-    S: verifier_state::State,
 {
     backend: B,
-    state: S,
+    state: VerifierState<E>,
     _phantom: std::marker::PhantomData<(W, E)>,
 }
 
-impl<W, E, B> Verifier<W, E, B, verifier_state::Initialized>
+impl<W, E, B> Verifier<W, E, B>
 where
     W: Field,
     E: ExtensionField<W>,
@@ -29,7 +28,7 @@ where
     pub fn new(backend: B) -> Self {
         Self {
             backend,
-            state: verifier_state::Initialized,
+            state: VerifierState::Initialized,
             _phantom: std::marker::PhantomData,
         }
     }
@@ -38,15 +37,18 @@ where
     /// this verifier.
     ///
     /// Multiple calls accumulate.
-    pub fn alloc(&mut self, n: usize) -> Result<(), B::Error> {
-        self.backend.alloc(n)
+    pub fn alloc(&mut self, n: usize) -> Result<(), VerifyError<B::Error>> {
+        match &self.state {
+            VerifierState::Initialized => self.backend.alloc(n).map_err(VerifyError::Backend),
+            _ => Err(VerifyError::WrongPhase),
+        }
     }
 
     /// Compute the preparation phase of the protocol.
     ///
     /// # Arguments
     ///
-    /// * `transcript` - Shared session transcript.
+    /// * `transcript` -  Fiat-Shamir transcript..
     /// * `x_keys` - Verifier-side keys for the first input vector.
     /// * `y_keys` - Verifier-side keys for the second input vector.
     /// * `preparation` - The prover-emitted preparation DTO.
@@ -57,12 +59,17 @@ where
     /// `y_keys` before this method is invoked. The protocol's soundness
     /// depends on this binding.
     pub fn prepare(
-        mut self,
-        mut transcript: Hasher,
+        &mut self,
+        transcript: &mut Hasher,
         x_keys: &[Vec<E>],
         y_keys: &[Vec<E>],
         preparation: B::Preparation,
-    ) -> Result<Verifier<W, E, B, verifier_state::Prepared<E>>, VerifyError<B::Error>> {
+    ) -> Result<(), VerifyError<B::Error>> {
+        match &self.state {
+            VerifierState::Initialized => {}
+            _ => return Err(VerifyError::WrongPhase),
+        }
+
         let xn = x_keys.len();
         let yn = y_keys.len();
         if xn != yn {
@@ -87,11 +94,11 @@ where
         }
 
         // Draw the random challenge `r`.
-        let r = draw_field::<E>(&mut transcript, b"permutation-proof::challenge_r");
+        let r = draw_field::<E>(transcript, b"permutation-proof::challenge_r");
 
         // Draw the tuple-collapse challenge `s ∈ E^tuple_width`.
         let s: Vec<E> = (0..tuple_width)
-            .map(|_| draw_field::<E>(&mut transcript, b"permutation-proof::challenge_s"))
+            .map(|_| draw_field::<E>(transcript, b"permutation-proof::challenge_s"))
             .collect();
 
         // Compute per-position collapsed factors.
@@ -114,50 +121,41 @@ where
 
         let px_k = self
             .backend
-            .product(&mut transcript, &fx_keys)
+            .product(&fx_keys)
             .map_err(VerifyError::Backend)?;
         let py_k = self
             .backend
-            .product(&mut transcript, &fy_keys)
+            .product(&fy_keys)
             .map_err(VerifyError::Backend)?;
 
-        Ok(Verifier {
-            backend: self.backend,
-            state: verifier_state::Prepared {
-                transcript,
-                px_k,
-                py_k,
-            },
-            _phantom: std::marker::PhantomData,
-        })
-    }
-}
+        self.state = VerifierState::Prepared { px_k, py_k };
 
-impl<W, E, B> Verifier<W, E, B, verifier_state::Prepared<E>>
-where
-    W: Field,
-    E: ExtensionField<W>,
-    B: VerifierBackend<W, E>,
-{
+        Ok(())
+    }
+
     /// Verify the proof.
     ///
     /// # Arguments
     ///
     /// * `proof` - The prover-emitted proof.
-    pub fn verify(self, proof: Proof<E, B::BackendProof>) -> Result<(), VerifyError<B::Error>>
+    /// * `transcript` - Fiat-Shamir transcript. Must be the same instance as in
+    ///   [`prepare`](Self::prepare).
+    pub fn verify(
+        self,
+        proof: Proof<E, B::BackendProof>,
+        transcript: &mut Hasher,
+    ) -> Result<(), VerifyError<B::Error>>
     where
         E: Serialize,
         B::BackendProof: Serialize,
     {
         let Verifier { backend, state, .. } = self;
-        let verifier_state::Prepared {
-            mut transcript,
-            px_k,
-            py_k,
-        } = state;
+        let (px_k, py_k) = match state {
+            VerifierState::Prepared { px_k, py_k } => (px_k, py_k),
+            _ => return Err(VerifyError::WrongPhase),
+        };
 
-        transcript.update(b"permutation-proof::proof");
-        transcript.update(&bcs::to_bytes(&proof).expect("serialize"));
+        let proof_bytes = bcs::to_bytes(&proof).expect("serialize");
 
         let Proof {
             zero_proof,
@@ -173,14 +171,31 @@ where
             return Err(VerifyError::ZeroCheckFailed);
         }
 
-        // Backend's supplementary check.
-        backend.verify(backend_proof).map_err(VerifyError::Backend)
+        backend
+            .verify(backend_proof, transcript)
+            .map_err(VerifyError::Backend)?;
+
+        // Absorb the proof into the transcript so any subsequent proof
+        // sharing this transcript stays bound to this one.
+        transcript.update(&proof_bytes);
+
+        Ok(())
     }
+}
+
+/// Internal state machine for [`Verifier`].
+enum VerifierState<E> {
+    Initialized,
+    Prepared { px_k: E, py_k: E },
 }
 
 /// Error produced by protocol verifier.
 #[derive(Debug, thiserror::Error)]
 pub enum VerifyError<E: std::error::Error + Send + Sync + 'static> {
+    /// A method was called while the verifier was in the wrong phase.
+    #[error("verifier called in the wrong phase")]
+    WrongPhase,
+
     /// The two key slices did not have the same length.
     #[error("length mismatch: x_keys={xn}, y_keys={yn}")]
     LengthMismatch {
@@ -208,38 +223,6 @@ pub enum VerifyError<E: std::error::Error + Send + Sync + 'static> {
     Backend(#[source] E),
 }
 
-/// Type-state markers for [`Verifier`]'s phase.
-pub mod verifier_state {
-    use mpz_fields::Field;
-
-    mod sealed {
-        pub trait Sealed {}
-    }
-
-    /// Marker trait implemented by every legal
-    /// [`Verifier`](super::Verifier) phase. Sealed: external crates
-    /// cannot add new phases.
-    pub trait State: sealed::Sealed {}
-
-    /// Phase right after [`Verifier::new`](super::Verifier::new):
-    /// `alloc` and `prepare` are callable; `verify` is not.
-    pub struct Initialized;
-
-    /// Phase right after a successful
-    /// [`prepare`](super::Verifier::<_, _, _, Initialized>::prepare):
-    /// `verify` is callable.
-    pub struct Prepared<E: Field> {
-        pub(super) transcript: blake3::Hasher,
-        pub(super) px_k: E,
-        pub(super) py_k: E,
-    }
-
-    impl sealed::Sealed for Initialized {}
-    impl State for Initialized {}
-    impl<E: Field> sealed::Sealed for Prepared<E> {}
-    impl<E: Field> State for Prepared<E> {}
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -265,14 +248,14 @@ mod tests {
     /// `LengthMismatch`.
     #[test]
     fn prepare_rejects_length_mismatch() {
-        let verifier = build_mock_verifier();
-        let transcript = Hasher::new();
+        let mut verifier = build_mock_verifier();
+        let mut transcript = Hasher::new();
         let x_keys = key_ones(3, 1);
         let y_keys = key_ones(5, 1);
         let preparation = Preparation { prod_keys: vec![] };
 
         let err = verifier
-            .prepare(transcript, &x_keys, &y_keys, preparation)
+            .prepare(&mut transcript, &x_keys, &y_keys, preparation)
             .err()
             .expect("length mismatch must surface an error");
         match err {
@@ -286,13 +269,13 @@ mod tests {
     /// A permutation proof over zero positions is vacuous.
     #[test]
     fn prepare_rejects_empty_vectors() {
-        let verifier = build_mock_verifier();
-        let transcript = Hasher::new();
+        let mut verifier = build_mock_verifier();
+        let mut transcript = Hasher::new();
         let empty: Vec<Vec<Gf2_128>> = Vec::new();
         let preparation = Preparation { prod_keys: vec![] };
 
         let err = verifier
-            .prepare(transcript, &empty, &empty, preparation)
+            .prepare(&mut transcript, &empty, &empty, preparation)
             .err()
             .expect("empty inputs must surface an error");
         assert!(
@@ -304,14 +287,14 @@ mod tests {
     /// Zero-width tuples are rejected.
     #[test]
     fn prepare_rejects_zero_width_tuples() {
-        let verifier = build_mock_verifier();
-        let transcript = Hasher::new();
+        let mut verifier = build_mock_verifier();
+        let mut transcript = Hasher::new();
         let x_keys = key_ones(1, 0);
         let y_keys = key_ones(1, 0);
         let preparation = Preparation { prod_keys: vec![] };
 
         let err = verifier
-            .prepare(transcript, &x_keys, &y_keys, preparation)
+            .prepare(&mut transcript, &x_keys, &y_keys, preparation)
             .err()
             .expect("zero-width tuples must surface an error");
         assert!(
@@ -323,17 +306,14 @@ mod tests {
     /// Non-uniform tuple widths rejected.
     #[test]
     fn prepare_rejects_tuple_width_mismatch() {
-        let verifier = build_mock_verifier();
-        let transcript = Hasher::new();
-        let x_keys: Vec<Vec<Gf2_128>> = vec![
-            vec![Gf2_128::one(); 2],
-            vec![Gf2_128::one(); 3],
-        ];
+        let mut verifier = build_mock_verifier();
+        let mut transcript = Hasher::new();
+        let x_keys: Vec<Vec<Gf2_128>> = vec![vec![Gf2_128::one(); 2], vec![Gf2_128::one(); 3]];
         let y_keys = x_keys.clone();
         let preparation = Preparation { prod_keys: vec![] };
 
         let err = verifier
-            .prepare(transcript, &x_keys, &y_keys, preparation)
+            .prepare(&mut transcript, &x_keys, &y_keys, preparation)
             .err()
             .expect("non-uniform tuple width must surface an error");
         assert!(
@@ -352,11 +332,7 @@ mod tests {
 
         let verifier = Verifier {
             backend: MockVerifierBackend::<Gf2_128, Gf2_128>::new(delta),
-            state: verifier_state::Prepared {
-                transcript: Hasher::new(),
-                px_k,
-                py_k,
-            },
+            state: VerifierState::Prepared { px_k, py_k },
             _phantom: std::marker::PhantomData,
         };
 
@@ -365,8 +341,9 @@ mod tests {
             backend_proof: (),
         };
 
+        let mut transcript = Hasher::new();
         verifier
-            .verify(proof)
+            .verify(proof, &mut transcript)
             .expect("matching zero_proof must be accepted");
     }
 
@@ -380,11 +357,7 @@ mod tests {
 
         let verifier = Verifier {
             backend: MockVerifierBackend::<Gf2_128, Gf2_128>::new(delta),
-            state: verifier_state::Prepared {
-                transcript: Hasher::new(),
-                px_k,
-                py_k,
-            },
+            state: VerifierState::Prepared { px_k, py_k },
             _phantom: std::marker::PhantomData,
         };
 
@@ -393,13 +366,31 @@ mod tests {
             backend_proof: (),
         };
 
+        let mut transcript = Hasher::new();
         let err = verifier
-            .verify(tampered)
+            .verify(tampered, &mut transcript)
             .err()
             .expect("tampered zero_proof must be rejected");
         assert!(
             matches!(err, VerifyError::ZeroCheckFailed),
             "expected ZeroCheckFailed, got {err:?}"
         );
+    }
+
+    /// `verify` errors with `WrongPhase` if `prepare` hasn't been
+    /// called.
+    #[test]
+    fn verify_rejects_initialized_phase() {
+        let verifier = build_mock_verifier();
+        let proof = Proof {
+            zero_proof: Gf2_128::one(),
+            backend_proof: (),
+        };
+        let mut transcript = Hasher::new();
+        let err = verifier
+            .verify(proof, &mut transcript)
+            .err()
+            .expect("verify without prepare must fail");
+        assert!(matches!(err, VerifyError::WrongPhase));
     }
 }

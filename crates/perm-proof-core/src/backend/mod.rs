@@ -36,29 +36,26 @@ pub trait ProverBackend<W: Field, E: ExtensionField<W>>: Backend<W, E> + Sized {
 
     /// Authenticated product of `n` factors. Returns the
     /// `(value, MAC)` of the product wire.
-    ///
-    /// On entry, `transcript` is guaranteed to have absorbed
-    /// `factor_values` and `factor_macs`. On return, the
-    /// implementation must have absorbed any on-wire bytes it
-    /// emitted during the call into `transcript`.
+
     ///
     /// # Arguments
     ///
-    /// * `transcript` - Shared session transcript.
     /// * `factor_values` - Cleartext values of the factor wires.
     /// * `factor_macs` - Per-position MACs matching `factor_values`.
-    fn product(
-        &mut self,
-        transcript: &mut Hasher,
-        factor_values: &[E],
-        factor_macs: &[E],
-    ) -> Result<(E, E), Self::Error>;
+    fn product(&mut self, factor_values: &[E], factor_macs: &[E]) -> Result<(E, E), Self::Error>;
 
     /// Drain the buffered preparation DTO.
     fn drain_preparation(&mut self) -> Result<Self::Preparation, Self::Error>;
 
     /// Produce the backend-specific proof.
-    fn prove(self) -> Result<Self::BackendProof, Self::Error>;
+    ///
+    /// # Arguments
+    ///
+    /// * `transcript` - the caller's transcript. The caller is
+    /// responsible for having already absorbed every wire that was
+    /// fed as an input to [`product`](Self::product) before this call —
+    /// otherwise the protocol's soundness guarantee no longer holds.
+    fn prove(self, transcript: &mut Hasher) -> Result<Self::BackendProof, Self::Error>;
 }
 
 /// Verifier backend for the permutation proof.
@@ -81,16 +78,17 @@ pub trait VerifierBackend<W: Field, E: ExtensionField<W>>: Backend<W, E> + Sized
     /// Consumes the keys for `n` authenticated factors and returns
     /// the key for the product wire.
     ///
-    /// On entry, `transcript` is guaranteed to have absorbed
-    /// `factor_keys`. On return, the implementation must have
-    /// absorbed any on-wire bytes it received during the call into
-    /// `transcript`.
+    /// Any on-wire bytes the backend processes during the call are
+    /// absorbed into the backend's own internal transcript, not into
+    /// the caller's external transcript. [`verify`](Self::verify)
+    /// folds that internal transcript into the caller's external
+    /// transcript before drawing any challenges. Mirrors the
+    /// prover-side [`ProverBackend::product`].
     ///
     /// # Arguments
     ///
-    /// * `transcript` - Shared session transcript.
     /// * `factor_keys` - Per-position keys for the factor wires.
-    fn product(&mut self, transcript: &mut Hasher, factor_keys: &[E]) -> Result<E, Self::Error>;
+    fn product(&mut self, factor_keys: &[E]) -> Result<E, Self::Error>;
 
     /// Install the preparation DTO.
     ///
@@ -100,9 +98,14 @@ pub trait VerifierBackend<W: Field, E: ExtensionField<W>>: Backend<W, E> + Sized
     fn load_preparation(&mut self, preparation: Self::Preparation);
 
     /// Verify the backend-specific proof.
+
     ///
     /// # Arguments
     ///
     /// * `proof` - The prover-emitted backend proof DTO.
-    fn verify(self, proof: Self::BackendProof) -> Result<(), Self::Error>;
+    /// * `transcript` - the caller's transcript. The caller is
+    /// responsible for having already absorbed every wire that was
+    /// fed as an input to [`product`](Self::product) before this call —
+    /// otherwise the protocol's soundness guarantee no longer holds.
+    fn verify(self, proof: Self::BackendProof, transcript: &mut Hasher) -> Result<(), Self::Error>;
 }

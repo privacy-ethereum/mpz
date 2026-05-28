@@ -46,16 +46,16 @@ impl<W: Field, E: ExtensionField<W>> VerifierBackend<W, E> for MockVerifierBacke
         self.prod_keys = preparation.prod_keys.into();
     }
 
-    fn verify(self, _proof: Self::BackendProof) -> Result<(), Self::Error> {
+    fn verify(
+        self,
+        _proof: Self::BackendProof,
+        _transcript: &mut Hasher,
+    ) -> Result<(), Self::Error> {
         // Mock contributes no supplementary check.
         Ok(())
     }
 
-    fn product(
-        &mut self,
-        _transcript: &mut Hasher,
-        _factor_keys: &[E],
-    ) -> Result<E, Self::Error> {
+    fn product(&mut self, _factor_keys: &[E]) -> Result<E, Self::Error> {
         self.prod_keys
             .pop_front()
             .ok_or(MockError::ProdKeyUnderflow)

@@ -50,9 +50,13 @@ where
     /// the order the verifier expects.
     pending_adjustments: Vec<VoleAdjustment<E>>,
 
-    /// QuickSilver `accumulate` arguments, one per tree level,
-    /// replayed at finalize.
-    pending_qs_accumulate: Vec<DeferredAccumulate<E>>,
+    /// QuickSilver evaluations accumulated across every tree level
+    /// of every `product` call.
+    pending_qs_evaluations: Vec<(ConstraintId, Vec<E>, Vec<E>)>,
+
+    /// Fiat-Shamir transcript: absorbs every VoleAdjustment emitted as it's
+    /// produced.
+    transcript: blake3::Hasher,
 
     _phantom: PhantomData<W>,
 }
@@ -69,15 +73,13 @@ where
     /// # Arguments
     ///
     /// * `fan_in_degree` - Fan-in of the product tree (must be ≥ 1).
-    /// * `rvole` - Random VOLE receiver for committing intermediate
-    ///   product wires.
-    /// * `rvope` - Random VOPE receiver for the mask consumed at QS
-    ///   finalize time.
+    /// * `rvole` - Random VOLE receiver for committing intermediate product
+    ///   wires.
+    /// * `rvope` - Random VOPE receiver for the mask consumed at QS finalize
+    ///   time.
     pub fn new(fan_in_degree: usize, rvole: VL, mut rvope: VP) -> Result<Self, VoleZkProverError> {
-        if fan_in_degree < 2 {
-            return Err(VoleZkProverError::InvalidFanIn(fan_in_degree));
-        }
-        let (constraints, product_constraint) = build_product_constraints::<E>(fan_in_degree);
+        let (constraints, _, product_constraint) = build_product_constraints::<E>(fan_in_degree)
+            .map_err(|_| VoleZkProverError::InvalidFanIn(fan_in_degree))?;
         let qs = mpz_poly_proof_core::prover::Prover::new(&constraints);
 
         rvope
@@ -93,7 +95,8 @@ where
             total_count: 0,
             rvoles_alloced: 0,
             pending_adjustments: Vec::new(),
-            pending_qs_accumulate: Vec::new(),
+            pending_qs_evaluations: Vec::new(),
+            transcript: blake3::Hasher::new(),
             _phantom: PhantomData,
         })
     }
@@ -153,25 +156,24 @@ where
         })
     }
 
-    fn prove(mut self) -> Result<Self::BackendProof, Self::Error> {
-        // Step 1: replay the QS accumulate calls that `product`
-        // buffered earlier.
-        for DeferredAccumulate { seed, evaluations } in
-            std::mem::take(&mut self.pending_qs_accumulate)
-        {
-            let refs: Vec<(ConstraintId, &[E], &[E])> = evaluations
-                .iter()
-                .map(|(id, m, v)| (*id, m.as_slice(), v.as_slice()))
-                .collect();
-            // W = E here: tree-walk wires are already extension-field
-            // elements (post-`prepare` collapse), so the `accumulate`
-            // generic uses the trivial `E: ExtensionField<E>` impl.
-            self.qs
-                .accumulate::<E>(&refs, seed)
-                .map_err(|e| VoleZkProverError::QsAccumulate(Box::new(e)))?;
-        }
+    fn prove(mut self, transcript: &mut blake3::Hasher) -> Result<Self::BackendProof, Self::Error> {
+        // Absorb internal transcript.
+        let internal_hash = std::mem::take(&mut self.transcript).finalize();
+        transcript.update(internal_hash.as_bytes());
+        let qs_seed = crate::draw_seed(transcript, b"permutation-proof::qs-end-seed");
 
-        // Step 2: consume the single RVOPE correlation.
+        // Drain every buffered evaluation product.
+        let evaluations = std::mem::take(&mut self.pending_qs_evaluations);
+        let refs: Vec<(ConstraintId, &[E], &[E])> = evaluations
+            .iter()
+            .map(|(id, m, v)| (*id, m.as_slice(), v.as_slice()))
+            .collect();
+
+        self.qs
+            .accumulate(&refs, qs_seed)
+            .map_err(|e| VoleZkProverError::QsAccumulate(Box::new(e)))?;
+
+        // Consume the single RVOPE correlation.
         let rvope_out = self
             .rvope
             .try_recv_vope(1)
@@ -208,12 +210,7 @@ where
         Ok(())
     }
 
-    fn product(
-        &mut self,
-        transcript: &mut blake3::Hasher,
-        factor_values: &[E],
-        factor_macs: &[E],
-    ) -> Result<(E, E), Self::Error> {
+    fn product(&mut self, factor_values: &[E], factor_macs: &[E]) -> Result<(E, E), Self::Error> {
         if factor_values.len() != factor_macs.len() {
             return Err(VoleZkProverError::FactorLengthMismatch {
                 values: factor_values.len(),
@@ -236,6 +233,9 @@ where
         let mut current_values: Cow<'_, [E]> = Cow::Borrowed(factor_values);
         let mut current_macs: Cow<'_, [E]> = Cow::Borrowed(factor_macs);
         let eps = self.fan_in_degree;
+
+        // Collected this-call adjustments.
+        let mut call_adjustments: Vec<VoleAdjustment<E>> = Vec::new();
 
         // Walk the tree bottom-up until a single root wire remains.
         while current_values.len() > 1 {
@@ -278,11 +278,7 @@ where
                 .expect("VOLE future should resolve after adjust() returns")
                 .macs;
 
-            transcript.update(b"permutation-proof::vole-adjustment");
-            transcript.update(&bcs::to_bytes(&adjustment).expect("serialize"));
-
-            // Buffer the DTO for transport.
-            self.pending_adjustments.push(adjustment);
+            call_adjustments.push(adjustment);
 
             // Build the QS accumulate inputs. For each chunk, assemble
             // one evaluation with `ε + 1` variables: ε factor slots
@@ -311,15 +307,12 @@ where
                 chunk_values_store.push(values);
             }
 
-            // Draw a fresh PRG seed for this tree-walk level.
-            let seed = crate::draw_seed(transcript, b"permutation-proof::qs-seed");
-            let evaluations: Vec<(ConstraintId, Vec<E>, Vec<E>)> = chunk_macs_store
-                .into_iter()
-                .zip(chunk_values_store)
-                .map(|(m, v)| (self.product_constraint, m, v))
-                .collect();
-            self.pending_qs_accumulate
-                .push(DeferredAccumulate { seed, evaluations });
+            self.pending_qs_evaluations.extend(
+                chunk_macs_store
+                    .into_iter()
+                    .zip(chunk_values_store)
+                    .map(|(m, v)| (self.product_constraint, m, v)),
+            );
 
             // Assemble the next level.
             chunk_products.extend(passthroughs.iter().map(|&idx| current_values[idx]));
@@ -329,16 +322,14 @@ where
             current_macs = Cow::Owned(prod_macs);
         }
 
+        // Bulk-absorb every adjustment into the transcript.
+        self.transcript
+            .update(&bcs::to_bytes(&call_adjustments).expect("serialize"));
+
+        self.pending_adjustments.extend(call_adjustments);
+
         Ok((current_values[0], current_macs[0]))
     }
-}
-
-/// One tree-walk level's deferred QuickSilver accumulate call.
-struct DeferredAccumulate<E: Field> {
-    /// PRG seed drawn from the transcript.
-    seed: [u8; 32],
-    /// Per-chunk `(constraint_id, macs, values)` tuples.
-    evaluations: Vec<(ConstraintId, Vec<E>, Vec<E>)>,
 }
 
 /// Errors produced by [`VoleZkProverBackend`].
@@ -365,8 +356,9 @@ pub enum VoleZkProverError {
     #[error("QuickSilver finalize failed: {0}")]
     QsFinalize(#[source] Box<dyn std::error::Error + Send + Sync + 'static>),
 
-    /// `fan_in_degree` was less than the minimum supported value (2).
-    #[error("fan_in_degree must be at least 2; got {0}")]
+    /// `fan_in_degree` was outside the kernel-supported range
+    /// (see [`super::SUPPORTED_FAN_IN`]).
+    #[error("unsupported fan_in_degree: {0}")]
     InvalidFanIn(usize),
 
     /// `factor_values` and `factor_macs` lengths disagree at `product`.
@@ -471,9 +463,8 @@ mod tests {
     #[test]
     fn product_rejects_empty_input() {
         let mut prover = build_prover_only(0xE6, 8);
-        let mut transcript = blake3::Hasher::new();
         let err = prover
-            .product(&mut transcript, &[], &[])
+            .product(&[], &[])
             .expect_err("empty input must surface an error");
         assert!(
             matches!(err, VoleZkProverError::EmptyInput),
@@ -489,9 +480,8 @@ mod tests {
         let v: Gf2_128 = rng.random();
         let m: Gf2_128 = rng.random();
 
-        let mut transcript = blake3::Hasher::new();
         let (ret_v, ret_m) = prover
-            .product(&mut transcript, &[v], &[m])
+            .product(&[v], &[m])
             .expect("singleton passthrough must succeed");
         assert_eq!(ret_v, v);
         assert_eq!(ret_m, m);
@@ -508,11 +498,11 @@ mod tests {
     #[test]
     fn product_computes_correct_root() {
         let cases = [
-            (2, 2),   // minimal tree
-            (10, 2),  // multi-level tight tree
-            (10, 3),  // leftover=1 at leaves
-            (10, 4),  // leftover=2 at leaves, padded
-            (27, 3),  // clean power-of-3 tree, every level splits exactly
+            (6, 6),   // minimal tree (n == ε)
+            (60, 6),  // multi-level tight tree (clean ε² factor)
+            (10, 6),  // leftover=4 at leaves
+            (10, 7),  // leftover=3 at leaves
+            (49, 7),  // clean power-of-7 tree, every level splits exactly
             (100, 8), // moderate size matching a pair-test shape
         ];
 
@@ -529,9 +519,8 @@ mod tests {
             let macs: Vec<Gf2_128> = (0..n).map(|_| rng.random()).collect();
 
             prover.alloc(n).unwrap();
-            let mut transcript = blake3::Hasher::new();
             let (prod_value, _prod_mac) = prover
-                .product(&mut transcript, &values, &macs)
+                .product(&values, &macs)
                 .unwrap_or_else(|e| panic!("(n={n}, eps={eps}): {e:?}"));
 
             let expected = values
