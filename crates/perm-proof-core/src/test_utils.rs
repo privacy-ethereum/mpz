@@ -28,6 +28,55 @@ pub type IdealVoleZkPermProver<E> =
 pub type IdealVoleZkPermVerifier<E> =
     Verifier<E, E, VoleZkVerifierBackend<E, E, IdealRVOLESender<E>, IdealRVOPESender<E>>>;
 
+/// Build an ideal RVOLE `(sender, receiver)` pair, allocated and
+/// flushed for exactly one perm-proof prover run over `n_perm` rows at
+/// the given `fan_in`. The returned halves are ready to be passed to
+/// [`VoleZkProverBackend::new`] / [`VoleZkVerifierBackend::new`].
+pub fn ideal_perm_proof_rvole_pair<E>(
+    rng: &mut impl Rng,
+    delta: E,
+    n_perm: usize,
+    fan_in: usize,
+) -> (IdealRVOLESender<E>, IdealRVOLEReceiver<E, E>)
+where
+    E: Field + ExtensionField<E>,
+    rand::distr::StandardUniform: rand::distr::Distribution<E>,
+{
+    let seed = rand::Rng::random::<u64>(rng);
+    let count = vole_zk_rvole_pregenerate_count(n_perm, fan_in);
+    let (mut sender, mut receiver) = ideal_rvole::<E, E>(seed, delta);
+    <_ as RVOLESender<E>>::alloc(&mut sender, count).expect("rvole sender alloc");
+    <_ as RVOLEReceiver<E, E>>::alloc(&mut receiver, count).expect("rvole receiver alloc");
+    if let Some(msg) = sender.flush() {
+        receiver.flush(msg).expect("rvole flush");
+    }
+    (sender, receiver)
+}
+
+/// Build an ideal RVOPE `(sender, receiver)` pair, allocated and
+/// flushed for exactly one perm-proof prover run at the given `fan_in`.
+/// One polynomial; degree is derived from `fan_in` via
+/// [`vole_zk_rvope_pregenerate_degree`].
+pub fn ideal_perm_proof_rvope_pair<E>(
+    rng: &mut impl Rng,
+    delta: E,
+    fan_in: usize,
+) -> (IdealRVOPESender<E>, IdealRVOPEReceiver<E>)
+where
+    E: Field + ExtensionField<E>,
+    rand::distr::StandardUniform: rand::distr::Distribution<E>,
+{
+    let seed = rand::Rng::random::<u64>(rng);
+    let degree = vole_zk_rvope_pregenerate_degree::<E>(fan_in);
+    let (mut sender, mut receiver) = ideal_rvope::<E>(seed, delta);
+    <_ as RVOPESender<E>>::alloc(&mut sender, 1, degree).expect("rvope sender alloc");
+    <_ as RVOPEReceiver<E>>::alloc(&mut receiver, 1, degree).expect("rvope receiver alloc");
+    for msg in sender.flush() {
+        receiver.flush(msg).expect("rvope flush");
+    }
+    (sender, receiver)
+}
+
 /// Build a `vole_zk` perm-proof `(Prover, Verifier)` pair backed by
 /// ideal RVOLE / RVOPE correlations sized for `n_perm` rows with the
 /// given `fan_in`.
@@ -46,26 +95,8 @@ where
         + zerocopy::FromBytes,
     rand::distr::StandardUniform: rand::distr::Distribution<E>,
 {
-    let rvole_seed = rand::Rng::random::<u64>(rng);
-    let rvope_seed = rand::Rng::random::<u64>(rng);
-
-    // ---- full-field RVOLE ----
-    let rvole_count = vole_zk_rvole_pregenerate_count(n_perm, fan_in);
-    let (mut rvole_s, mut rvole_r) = ideal_rvole::<E, E>(rvole_seed, delta);
-    <_ as RVOLESender<E>>::alloc(&mut rvole_s, rvole_count).expect("rvole sender alloc");
-    <_ as RVOLEReceiver<E, E>>::alloc(&mut rvole_r, rvole_count).expect("rvole receiver alloc");
-    if let Some(msg) = rvole_s.flush() {
-        rvole_r.flush(msg).expect("rvole flush");
-    }
-
-    // ---- lifted-VOPE RVOPE ----
-    let required_vopes = vole_zk_rvope_pregenerate_degree::<E>(fan_in);
-    let (mut rvope_s, mut rvope_r) = ideal_rvope::<E>(rvope_seed, delta);
-    <_ as RVOPESender<E>>::alloc(&mut rvope_s, 1, required_vopes).expect("rvope sender alloc");
-    <_ as RVOPEReceiver<E>>::alloc(&mut rvope_r, 1, required_vopes).expect("rvope receiver alloc");
-    for msg in rvope_s.flush() {
-        rvope_r.flush(msg).expect("rvope flush");
-    }
+    let (rvole_s, rvole_r) = ideal_perm_proof_rvole_pair::<E>(rng, delta, n_perm, fan_in);
+    let (rvope_s, rvope_r) = ideal_perm_proof_rvope_pair::<E>(rng, delta, fan_in);
 
     let prover_backend = VoleZkProverBackend::<E, E, _, _>::new(fan_in, rvole_r, rvope_r)
         .expect("vole-zk prover backend");
