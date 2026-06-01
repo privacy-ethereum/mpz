@@ -1,0 +1,71 @@
+[package]
+name = "mpz-two-shuffles"
+version = "0.1.0"
+edition = "2024"
+# Examples are local-only profiling scaffolding, not part of the crate.
+autoexamples = false
+
+[lib]
+name = "mpz_two_shuffles"
+
+[lints]
+workspace = true
+
+[features]
+test-utils = ["mpz-perm-proof-core/test-utils"]
+
+[dependencies]
+mpz-circuits-new = { workspace = true }
+mpz-common = { workspace = true, features = ["future"] }
+mpz-fields = { workspace = true }
+mpz-perm-proof-core = { workspace = true }
+mpz-poly-proof-core = { workspace = true }
+mpz-poly-proof-macros = { workspace = true }
+mpz-vole-core = { workspace = true }
+
+bcs = { workspace = true }
+blake3 = { workspace = true }
+hybrid-array = { workspace = true }
+itybity = { workspace = true }
+rand = { workspace = true }
+rangeset = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+thiserror = { workspace = true }
+zerocopy = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true, features = ["cargo_bench_support"] }
+rand_chacha = { workspace = true }
+
+[[test]]
+name = "ro_kvs_api"
+path = "tests/ro_kvs_api.rs"
+required-features = ["test-utils"]
+
+[[test]]
+name = "set_api"
+path = "tests/set_api.rs"
+required-features = ["test-utils"]
+
+[[test]]
+name = "ram_api"
+path = "tests/ram_api.rs"
+required-features = ["test-utils"]
+
+[[bench]]
+name = "set"
+path = "benches/set.rs"
+harness = false
+required-features = ["test-utils"]
+
+[[bench]]
+name = "ro_kvs"
+path = "benches/ro_kvs.rs"
+harness = false
+required-features = ["test-utils"]
+
+[[bench]]
+name = "ram"
+path = "benches/ram.rs"
+harness = false
+required-features = ["test-utils"]
