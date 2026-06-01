@@ -445,3 +445,55 @@ async fn test_recording_mt_nested_try_join() {
         recorded_data.channels.len()
     );
 }
+
+#[tokio::test]
+async fn test_map_respects_concurrency_limit() {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+
+    const LIMIT: usize = 3;
+
+    let (mux, _peer) = crate::mux::test_framed_mux(1024);
+    let session = crate::session::SessionBuilder::default()
+        .cooperative()
+        .concurrency_limit(LIMIT)
+        .build(mux)
+        .unwrap();
+    let mut ctx = session.new_context().unwrap();
+
+    // Tracks how many item futures are running at once and the peak observed.
+    let active = Arc::new(AtomicUsize::new(0));
+    let max_seen = Arc::new(AtomicUsize::new(0));
+
+    let items: Vec<u32> = (0..12).collect();
+    let results = ctx
+        .map(items, {
+            let active = active.clone();
+            let max_seen = max_seen.clone();
+            move |_ctx: &mut Context, item: u32| {
+                let active = active.clone();
+                let max_seen = max_seen.clone();
+                Box::pin(async move {
+                    let now = active.fetch_add(1, Ordering::SeqCst) + 1;
+                    max_seen.fetch_max(now, Ordering::SeqCst);
+                    // Yield repeatedly so concurrently-buffered futures overlap
+                    // before any of them completes.
+                    for _ in 0..8 {
+                        tokio::task::yield_now().await;
+                    }
+                    active.fetch_sub(1, Ordering::SeqCst);
+                    item
+                })
+            }
+        })
+        .await
+        .unwrap();
+
+    // Results are returned in input order regardless of the bound.
+    assert_eq!(results, (0..12).collect::<Vec<_>>());
+    // Concurrency never exceeded the limit, and reached it (more items than the
+    // limit, so the window is fully utilized).
+    assert_eq!(max_seen.load(Ordering::SeqCst), LIMIT);
+}

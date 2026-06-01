@@ -13,6 +13,7 @@ use std::sync::{
 
 use crate::{
     Context, ContextId,
+    context::DEFAULT_CONCURRENCY_LIMIT,
     mux::Mux,
     thread_pool::{ThreadPool, ThreadPoolBuildError},
 };
@@ -24,6 +25,8 @@ pub struct Session {
     mux: Arc<dyn Mux + Send + Sync>,
     prefix: ContextId,
     next_context: AtomicU32,
+    /// Maximum number of [`Context::map`] items processed concurrently.
+    concurrency_limit: usize,
 }
 
 impl std::fmt::Debug for Session {
@@ -57,10 +60,21 @@ impl std::fmt::Debug for PoolMode {
 }
 
 /// Builder for [`Session`].
-#[derive(Default, Debug)]
+#[derive(Debug)]
 pub struct SessionBuilder {
     pool: PoolMode,
     prefix: ContextId,
+    concurrency_limit: usize,
+}
+
+impl Default for SessionBuilder {
+    fn default() -> Self {
+        Self {
+            pool: PoolMode::default(),
+            prefix: ContextId::default(),
+            concurrency_limit: DEFAULT_CONCURRENCY_LIMIT,
+        }
+    }
 }
 
 impl SessionBuilder {
@@ -93,6 +107,17 @@ impl SessionBuilder {
         self
     }
 
+    /// Sets the maximum number of [`Context::map`] items processed
+    /// concurrently, bounding how many sub-channels are open at once.
+    ///
+    /// Both parties **must** configure the same limit so they open the same
+    /// sliding window of channels and stay in lockstep. The limit is clamped
+    /// to a minimum of `1`. Defaults to [`DEFAULT_CONCURRENCY_LIMIT`].
+    pub fn concurrency_limit(mut self, limit: usize) -> Self {
+        self.concurrency_limit = limit.max(1);
+        self
+    }
+
     /// Builds the session with the given multiplexer.
     ///
     /// Returns an error if the builder is configured to use the global pool
@@ -114,6 +139,7 @@ impl SessionBuilder {
             mux: Arc::new(mux),
             prefix: self.prefix,
             next_context: AtomicU32::new(0),
+            concurrency_limit: self.concurrency_limit,
         })
     }
 }
@@ -143,6 +169,7 @@ impl Session {
             io,
             self.mux.clone(),
             self.pool.clone(),
+            self.concurrency_limit,
         ))
     }
 }

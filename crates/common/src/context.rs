@@ -8,6 +8,7 @@ use std::sync::Arc;
 use futures::{
     AsyncRead, AsyncWrite,
     future::{self, BoxFuture, Either},
+    stream::{self, StreamExt, TryStreamExt},
 };
 
 #[cfg(any(test, feature = "test-utils"))]
@@ -20,6 +21,11 @@ pub use test::{
 };
 
 use crate::{ContextId, io::Io, mux::Mux, thread_pool::ThreadPool};
+
+/// Default maximum number of [`map`](Context::map) items processed
+/// concurrently. Both parties must agree on this value, so it is a fixed
+/// constant rather than data- or timing-dependent.
+pub const DEFAULT_CONCURRENCY_LIMIT: usize = 32;
 
 /// A task execution context.
 ///
@@ -45,6 +51,9 @@ enum Mode {
         /// Pool for parallel execution; `None` runs sub-tasks cooperatively
         /// on the caller's future.
         pool: Option<ThreadPool>,
+        /// Maximum number of [`map`](Context::map) items processed
+        /// concurrently.
+        concurrency_limit: usize,
     },
 }
 
@@ -89,17 +98,27 @@ impl Context {
         io: Io,
         mux: Arc<dyn Mux + Send + Sync>,
         pool: Option<ThreadPool>,
+        concurrency_limit: usize,
     ) -> Self {
         Self {
             id,
             io,
-            mode: Mode::Multi { mux, pool },
+            mode: Mode::Multi {
+                mux,
+                pool,
+                concurrency_limit,
+            },
             fork_counter: 0,
         }
     }
 
     fn child(&self, id: ContextId) -> Result<Self, ContextError> {
-        let Mode::Multi { mux, pool } = &self.mode else {
+        let Mode::Multi {
+            mux,
+            pool,
+            concurrency_limit,
+        } = &self.mode
+        else {
             unreachable!("child() called on a single-channel context");
         };
         let io = mux.open(id.as_ref()).map_err(ContextError::mux)?;
@@ -109,6 +128,7 @@ impl Context {
             mode: Mode::Multi {
                 mux: mux.clone(),
                 pool: pool.clone(),
+                concurrency_limit: *concurrency_limit,
             },
             fork_counter: 0,
         })
@@ -143,24 +163,50 @@ impl Context {
         T: Send + 'static,
         R: Send + 'static,
     {
-        if matches!(self.mode, Mode::Single) {
-            let mut results = Vec::with_capacity(items.len());
-            for item in items {
-                results.push(f(self, item).await);
+        let (mux, pool, concurrency_limit) = match &self.mode {
+            Mode::Single => {
+                let mut results = Vec::with_capacity(items.len());
+                for item in items {
+                    results.push(f(self, item).await);
+                }
+                return Ok(results);
             }
-            return Ok(results);
-        }
+            Mode::Multi {
+                mux,
+                pool,
+                concurrency_limit,
+            } => (mux.clone(), pool.clone(), *concurrency_limit),
+        };
 
         let parent_id = self.next_fork();
-        let pool = self.pool().cloned();
-        let mut tasks = Vec::with_capacity(items.len());
-        for (i, item) in items.into_iter().enumerate() {
-            let i = u32::try_from(i).expect("more than u32::MAX items");
-            let mut ctx = self.child(parent_id.child(i))?;
-            let f = f.clone();
-            tasks.push(run(pool.as_ref(), async move { f(&mut ctx, item).await }));
-        }
-        Ok(future::join_all(tasks).await)
+
+        // Each item lazily opens its own channel only once `buffered` polls it,
+        // so at most `limit` channels are open at any time. Channel IDs stay
+        // keyed by item index and results are yielded in input order, so the
+        // bound changes neither the wire protocol nor the output ordering.
+        stream::iter(items.into_iter().enumerate())
+            .map(move |(i, item)| {
+                let i = u32::try_from(i).expect("more than u32::MAX items");
+                let id = parent_id.child(i);
+                let (mux, pool, f) = (mux.clone(), pool.clone(), f.clone());
+                async move {
+                    let io = mux.open(id.as_ref()).map_err(ContextError::mux)?;
+                    let mut ctx = Context {
+                        id,
+                        io,
+                        mode: Mode::Multi {
+                            mux,
+                            pool: pool.clone(),
+                            concurrency_limit,
+                        },
+                        fork_counter: 0,
+                    };
+                    Ok(run(pool.as_ref(), async move { f(&mut ctx, item).await }).await)
+                }
+            })
+            .buffered(concurrency_limit)
+            .try_collect()
+            .await
     }
 
     /// Runs `a` and `b` concurrently and returns both results.
