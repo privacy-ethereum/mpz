@@ -9,7 +9,7 @@ use wasm_bindgen::prelude::*;
 #[cfg(target_arch = "wasm32")]
 use mpz_circuits::AES128;
 #[cfg(target_arch = "wasm32")]
-use mpz_common::Executor;
+use mpz_common::Session;
 use mpz_common::context::{
     RecordedMtData, recording_mt_context_with_spawn_and_limit,
     replay_mt_context_with_spawn_and_limit,
@@ -45,8 +45,8 @@ fn max_frame_length(circuit: &mpz_circuits::Circuit, circuit_count: usize) -> us
 
 #[cfg(target_arch = "wasm32")]
 async fn run_protocol_record_evaluator(
-    exec_gb: &mut Executor,
-    exec_ev: &mut Executor,
+    exec_gb: &mut Session,
+    exec_ev: &mut Session,
     circuit_count: usize,
     seed: u64,
 ) {
@@ -137,7 +137,7 @@ async fn record_for_garbler(circuit_count: usize, seed: u64, concurrency: usize)
 }
 
 #[cfg(target_arch = "wasm32")]
-async fn run_garbler_with_replay(exec: &mut Executor, circuit_count: usize, delta: Delta) {
+async fn run_garbler_with_replay(exec: &mut Session, circuit_count: usize, delta: Delta) {
     let (cot_send, _) = ideal_cot(delta.into_inner());
     let mut gb = Garbler::new(cot_send, [0u8; 16], delta);
 

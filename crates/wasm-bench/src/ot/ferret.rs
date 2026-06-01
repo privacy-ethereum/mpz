@@ -49,7 +49,7 @@ fn bench_config() -> FerretConfig {
 // ============================================================================
 
 #[cfg(target_arch = "wasm32")]
-use mpz_common::Executor;
+use mpz_common::Session;
 use mpz_common::context::{
     RecordedMtData, recording_mt_context_with_spawn_and_limit,
     replay_mt_context_with_spawn_and_limit,
@@ -73,8 +73,8 @@ struct RecordedDataMt {
 #[cfg(target_arch = "wasm32")]
 #[allow(clippy::too_many_arguments)]
 async fn run_protocol_record_receiver_mt(
-    exec_sender: &mut Executor,
-    exec_receiver: &mut Executor,
+    exec_sender: &mut Session,
+    exec_receiver: &mut Session,
     config: FerretConfig,
     delta: Block,
     cot_seed: Block,
@@ -150,7 +150,7 @@ async fn record_for_sender_mt(seed: u64, concurrency: usize, ot_count: usize) ->
 
 /// Runs MT sender only with replay context.
 #[cfg(target_arch = "wasm32")]
-async fn run_sender_with_replay_mt(exec: &mut Executor, data: &RecordedDataMt, ot_count: usize) {
+async fn run_sender_with_replay_mt(exec: &mut Session, data: &RecordedDataMt, ot_count: usize) {
     let (cot_send, _) = ideal_rcot(data.cot_seed, data.delta);
     let config = bench_config();
     let mut sender = Sender::new(config, data.sender_seed, cot_send);
