@@ -1,28 +1,26 @@
-//! SHA-256 prover/verifier benchmarks: measures the full
-//! `new + commit + execute(chain) + flush/verify` flow across
-//! message sizes from one block (64 B) up to 128 KiB.
+//! SHA-256 prover/verifier benchmarks over message sizes from one
+//! block (64 B) up to 128 KiB.
 //!
-//! Run with: `cargo bench -p zk-core-new --bench sha256`
+//! Run with: `cargo bench -p mpz-zk-core-new --bench sha256`
 
 use std::time::Duration;
 
-use blake3::Hasher;
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use itybity::ToBits;
 use mpz_circuits_new::{
     Context,
     sha256::{AND_PER_BLOCK, H0, compress as sha256_compress},
 };
-use mpz_core::{Block, bitvec::BitVec};
+use mpz_core::Block;
 use mpz_fields::gf2_128::Gf2_128;
 use mpz_ot_core::ideal::rcot::IdealRCOT;
-use mpz_zk_core_new::{MaskedWitness, Proof, Prover, Verifier};
+use mpz_zk_core_new::{Proof, Prover, Verifier};
 use rand::{Rng, SeedableRng, rngs::StdRng};
 
 const VOPE_COST: usize = 128;
 
-/// Samples `total` RCOT correlations from `IdealRCOT` as
-/// `(delta, raw_keys, choices, macs)`. `delta.lsb = 1`.
+/// Samples `total` RCOT correlations as `(delta, keys, choices, macs)`
+/// with `delta.lsb = 1`.
 fn sample_rcot<R: Rng>(
     rng: &mut R,
     total: usize,
@@ -44,7 +42,7 @@ fn sample_rcot<R: Rng>(
     )
 }
 
-/// Set the LSB of `g` to `bit` (pointer-bit convention).
+/// Sets the LSB of `g` to `bit`.
 fn set_lsb(g: Gf2_128, bit: bool) -> Gf2_128 {
     Gf2_128::new((g.to_inner() & !1) | u128::from(bit))
 }
@@ -74,15 +72,19 @@ struct BenchInputs {
     delta: Gf2_128,
     input_mac_wires: Vec<Gf2_128>,
     input_key_wires: Vec<Gf2_128>,
-    gate_masks: BitVec,
+    /// Gate masks as committed (cloned per prover iteration, since
+    /// `execute` overwrites them with the adjust bits in place).
+    gate_masks: Vec<bool>,
     gate_macs: Vec<Gf2_128>,
     gate_keys: Vec<Gf2_128>,
+    /// Gate adjust bits the prover produced, fed to the verifier.
+    gate_adjust: Vec<bool>,
     vope_choices: [bool; VOPE_COST],
     vope_ev: [Gf2_128; VOPE_COST],
     vope_keys: [Gf2_128; VOPE_COST],
-    /// Precomputed prover masked-witness for the verifier benchmark.
-    masked_witness: MaskedWitness,
-    /// Precomputed prover proof for the verifier benchmark.
+    /// Verifier's consistency-check challenge.
+    chi: [u8; 32],
+    /// Proof produced by the prover, consumed in the verifier benchmark.
     proof: Proof,
 }
 
@@ -101,9 +103,7 @@ fn setup_inputs(num_blocks: usize) -> BenchInputs {
 
     let (delta, raw_keys, choices, macs) = sample_rcot(&mut rng, total);
 
-    let input_adjust: BitVec = (0..input_count)
-        .map(|i| input_bits[i] ^ choices[i])
-        .collect();
+    let input_adjust: Vec<bool> = (0..input_count).map(|i| input_bits[i] ^ choices[i]).collect();
     let input_mac_wires: Vec<Gf2_128> = (0..input_count)
         .map(|i| set_lsb(macs[i], input_bits[i]))
         .collect();
@@ -116,29 +116,30 @@ fn setup_inputs(num_blocks: usize) -> BenchInputs {
         .collect();
 
     let main_cost = input_count + gate_count;
-    let gate_masks: BitVec = choices[input_count..main_cost].iter().copied().collect();
+    let gate_masks: Vec<bool> = choices[input_count..main_cost].to_vec();
     let gate_macs: Vec<Gf2_128> = macs[input_count..main_cost].to_vec();
     let gate_keys: Vec<Gf2_128> = raw_keys[input_count..main_cost].to_vec();
 
     let vope_choices: [bool; VOPE_COST] = core::array::from_fn(|i| choices[main_cost + i]);
     let vope_ev: [Gf2_128; VOPE_COST] = core::array::from_fn(|i| macs[main_cost + i]);
     let vope_keys: [Gf2_128; VOPE_COST] = core::array::from_fn(|i| raw_keys[main_cost + i]);
+    let chi: [u8; 32] = rng.random();
 
-    // Run the prover once to produce a valid proof for the verifier
-    // to consume during the timed region.
+    // Run the prover once to produce a valid proof and the gate adjust
+    // bits for the verifier benchmark.
     let state_p: [Gf2_128; 256] = core::array::from_fn(|i| input_mac_wires[i]);
     let msg_p: Vec<[Gf2_128; 512]> = (0..num_blocks)
         .map(|b| core::array::from_fn(|i| input_mac_wires[256 + b * 512 + i]))
         .collect();
 
+    let mut gate_adjust = gate_masks.clone();
     let mut prover = Prover::new();
-    let mut prover_transcript = Hasher::default();
-    let masked_witness = {
-        let mut exec = prover.execute(&gate_masks, &gate_macs).expect("execute");
+    {
+        let mut exec = prover.execute(&mut gate_adjust, &gate_macs).expect("execute");
         let _ = sha256_chain(&mut exec, state_p, &msg_p);
-        exec.finish(&mut prover_transcript).expect("finish")
-    };
-    let proof = prover.prove(&mut prover_transcript, &vope_choices, &vope_ev);
+        exec.finish().expect("finish");
+    }
+    let proof = prover.prove(chi, &vope_choices, &vope_ev);
 
     BenchInputs {
         delta,
@@ -147,10 +148,11 @@ fn setup_inputs(num_blocks: usize) -> BenchInputs {
         gate_masks,
         gate_macs,
         gate_keys,
+        gate_adjust,
         vope_choices,
         vope_ev,
         vope_keys,
-        masked_witness,
+        chi,
         proof,
     }
 }
@@ -161,17 +163,14 @@ fn run_prover(inputs: &BenchInputs, num_blocks: usize) {
         .map(|b| core::array::from_fn(|i| inputs.input_mac_wires[256 + b * 512 + i]))
         .collect();
 
+    let mut masks = inputs.gate_masks.clone();
     let mut prover = Prover::new();
-    let mut transcript = Hasher::default();
     {
-        let mut exec = prover
-            .execute(&inputs.gate_masks, &inputs.gate_macs)
-            .expect("execute");
+        let mut exec = prover.execute(&mut masks, &inputs.gate_macs).expect("execute");
         let _ = sha256_chain(&mut exec, state, &msg_blocks);
-        let _ = exec.finish(&mut transcript).expect("finish");
+        exec.finish().expect("finish");
     }
-
-    let _proof = prover.prove(&mut transcript, &inputs.vope_choices, &inputs.vope_ev);
+    let _proof = prover.prove(inputs.chi, &inputs.vope_choices, &inputs.vope_ev);
 }
 
 fn run_verifier(inputs: &BenchInputs, num_blocks: usize) {
@@ -181,25 +180,23 @@ fn run_verifier(inputs: &BenchInputs, num_blocks: usize) {
         .collect();
 
     let mut verifier = Verifier::new(inputs.delta);
-    let mut transcript = Hasher::default();
     {
         let mut exec = verifier
-            .execute(&inputs.gate_keys, inputs.masked_witness.clone())
+            .execute(&inputs.gate_keys, &inputs.gate_adjust)
             .expect("execute");
         let _ = sha256_chain(&mut exec, state, &msg_blocks);
-        exec.finish(&mut transcript).expect("finish");
+        exec.finish().expect("finish");
     }
-
     verifier
-        .verify(&mut transcript, &inputs.vope_keys, inputs.proof.clone())
+        .verify(inputs.chi, &inputs.vope_keys, inputs.proof.clone())
         .expect("verify");
 }
 
 fn bench_sha256(c: &mut Criterion) {
     // Build, bench, and drop one `BenchInputs` per size before
-    // constructing the next — the gate tape + triple buffer for the
-    // largest size pushes ~2 GiB on its own, so keeping all sizes
-    // resident at once OOMs on wasm32 (32-bit address space).
+    // constructing the next: the gate tape plus triple buffer for the
+    // largest size is multiple GiB, so keeping every size resident at
+    // once OOMs on 32-bit targets.
     for &(bytes, name) in SIZES {
         let num_blocks = bytes / 64;
         let inputs = setup_inputs(num_blocks);

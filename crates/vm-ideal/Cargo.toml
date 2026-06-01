@@ -1,0 +1,23 @@
+[package]
+name = "mpz-vm-ideal"
+version = "0.1.0"
+edition = "2024"
+rust-version.workspace = true
+
+[dependencies]
+mpz-vm-core-new = { workspace = true }
+mpz-vm-ir = { workspace = true }
+mpz-common = { workspace = true, features = ["future"] }
+rangeset = { workspace = true }
+serio = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+mpz-vm-test-harness = { workspace = true }
+mpz-common = { workspace = true, features = ["test-utils"] }
+mpz-vm-ir = { workspace = true }
+futures = { workspace = true }
+wat = { workspace = true }
+
+[lints]
+workspace = true

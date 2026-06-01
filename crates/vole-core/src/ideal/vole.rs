@@ -359,10 +359,7 @@ where
                     let _ = mem::take(&mut self.values);
                     mem::take(&mut self.macs)
                 } else {
-                    let _ = self
-                        .values
-                        .drain(..queued_count)
-                        .collect::<Vec<_>>();
+                    let _ = self.values.drain(..queued_count).collect::<Vec<_>>();
                     self.macs.drain(..queued_count).collect()
                 };
                 qsender.send(VOLEReceiverOutput {

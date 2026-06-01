@@ -1,19 +1,3 @@
-//! QuickSilver consistency check (Fig 5, step 7).
-//!
-//! Prover and verifier accumulate one [`Triple`] per AND gate during the
-//! replay pass, then collapse them via Fiat–Shamir into a single linear
-//! relation `B = A_0 + A_1·Δ` protected by a VOPE(1) mask.
-//!
-//! Both sides compute an inner product against a PRG-derived challenge
-//! vector `χ`:
-//! - Prover:  `U = <x·y, χ> + a_0`, `V = <(lsb(x)·y + lsb(y)·x + z), χ> + a_1`.
-//! - Verifier: `W = <(x·y + Δ·z), χ> + b`.
-//!
-//! To keep memory bounded (for runs with ~10⁷+ triples) and to enable
-//! SIMD/rayon acceleration, triples are processed in ~L1-sized
-//! segments. When the `rayon` feature is enabled each segment runs on
-//! its own worker thread; deterministic `χ` generation across workers
-//! is preserved via [`ChaCha12Rng::set_stream`].
 
 use itybity::{GetBit, Lsb0};
 use mpz_fields::{Field, gf2_128::Gf2_128};
@@ -27,37 +11,20 @@ use zerocopy::IntoBytes;
 
 use crate::{Error, Result};
 
-/// Segment size for the chunked inner-product loop. Sized so the
-/// per-segment on-stack SoA buffers (up to 4 × 16 B × SEGMENT_SIZE) plus
-/// the source triples stay comfortably inside L1-D on modern cores.
 const SEGMENT_SIZE: usize = 256;
 
-/// Bit-0 accessor for the LSB-of-MAC "pointer bit" trick.
 #[inline]
 fn lsb(g: Gf2_128) -> bool {
     GetBit::<Lsb0>::get_bit(&g, 0)
 }
 
-/// Per-AND-gate tuple. On the prover side: `(m_α, m_β, m_γ)`. On the
-/// verifier side: `(k_α, k_β, k_γ)` with `k_γ` already adjusted.
 #[derive(Debug, Default, Clone, Copy)]
 pub(crate) struct Triple {
-    pub x: Gf2_128,
-    pub y: Gf2_128,
-    pub z: Gf2_128,
+    pub(crate) x: Gf2_128,
+    pub(crate) y: Gf2_128,
+    pub(crate) z: Gf2_128,
 }
 
-/// Accumulates `(u, v)` over one segment of triples using its own
-/// (stream-separated) `χ` generator.
-///
-/// Per segment:
-/// - Transpose the AoS `segment` slice into on-stack SoA `xs`, `ys` plus a
-///   precomputed `body_v[i] = a_10 + a_11 + z` (masked XORs only, no muls).
-/// - Bulk-fill `χ` with one `ChaCha12Rng::fill_bytes` call, which amortises
-///   ChaCha12's block-generation setup across the whole segment.
-/// - `u = Σ xᵢ·yᵢ·χᵢ` via [`Gf2_128::double_inner_product`] (one reduction per
-///   iter for `xᵢ·yᵢ`, then raw-accumulated `·χᵢ`).
-/// - `v = Σ body_vᵢ·χᵢ` via [`Gf2_128::inner_product`] (raw-accumulated).
 #[inline]
 fn prover_segment(
     base_rng: &ChaCha12Rng,
@@ -92,8 +59,6 @@ fn prover_segment(
     (u, v)
 }
 
-/// Accumulates `w` over one segment of triples via the distributivity
-/// split `Σ (xᵢyᵢ + δzᵢ)·χᵢ = Σ xᵢyᵢχᵢ + δ·Σ zᵢχᵢ`.
 #[inline]
 fn verifier_segment(
     base_rng: &ChaCha12Rng,
@@ -123,9 +88,6 @@ fn verifier_segment(
     xy_chi + delta * z_chi
 }
 
-/// Prover-side batch check. Consumes the per-gate triples and the
-/// already-packed VOPE(1) mask `(a_0, a_1)` (receiver side), returns
-/// `(U, V)` to send.
 pub(crate) fn check_prover(
     triples: &[Triple],
     chi: [u8; 32],
@@ -159,9 +121,6 @@ pub(crate) fn check_prover(
     (u_acc, v_acc)
 }
 
-/// Verifier-side batch check. Consumes the per-gate triples and the
-/// already-packed VOPE(1) mask `b` (sender side). Returns `Err` on
-/// mismatch.
 pub(crate) fn check_verifier(
     triples: &[Triple],
     delta: Gf2_128,

@@ -79,10 +79,7 @@ pub trait RVOLEReceiver<W: Field, E: ExtensionField<W>> {
     /// # Arguments
     ///
     /// * `count` - Number of preprocessed RVOLEs to try to consume.
-    fn try_recv_vole(
-        &mut self,
-        count: usize,
-    ) -> Result<RVOLEReceiverOutput<W, E>, Self::Error>;
+    fn try_recv_vole(&mut self, count: usize) -> Result<RVOLEReceiverOutput<W, E>, Self::Error>;
 
     /// Queues `count` RVOLEs for receiving.
     ///

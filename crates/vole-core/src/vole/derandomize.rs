@@ -152,9 +152,7 @@ pub enum DerandVOLEReceiverError {
     Inner(#[source] Box<dyn std::error::Error + Send + Sync + 'static>),
 
     /// Target buffer and queue count disagreed.
-    #[error(
-        "internal inconsistency: {targets} targets buffered but queue sums to {queued} items"
-    )]
+    #[error("internal inconsistency: {targets} targets buffered but queue sums to {queued} items")]
     InternalInconsistency {
         /// Number of buffered targets.
         targets: usize,

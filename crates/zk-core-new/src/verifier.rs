@@ -1,26 +1,23 @@
-//! Verifier-side accumulator + per-execution handle.
-//!
-//! [`Verifier`] mirrors [`crate::Prover`]: persistent state holding
-//! per-AND-gate triples and the assertions hash. [`Verifier::execute`]
-//! returns a [`VerifierExecute`] that implements [`Context`] over
-//! pre-adjusted keys (the per-gate adjustment bit comes from the
-//! prover's [`MaskedWitness`]).
 
 use blake3::Hasher;
 use mpz_circuits_new::Context;
-use mpz_core::bitvec::BitVec;
 use mpz_fields::{gf2::Gf2, gf2_128::Gf2_128};
-use zerocopy::IntoBytes;
 
 use crate::{
-    Error, MAC_ONE, MAC_ZERO, MaskedWitness, Proof, Result,
+    Error, MAC_ONE, MAC_ZERO, Proof, Result,
     check::{Triple, check_verifier},
     util::set_lsb,
 };
 
-/// Persistent verifier state. Outlives individual executions; the
-/// final [`verify`](Self::verify) consumes the accumulated triples
-/// and assertions together with the prover's [`Proof`].
+/// The verifier in the VOLE-based zero-knowledge proof protocol.
+///
+/// A `Verifier` holds the global MAC key `delta` and accumulates the state
+/// produced while evaluating a circuit. Evaluation is performed against a
+/// [`VerifierExecute`] obtained from [`execute`](Self::execute), after which
+/// [`verify`](Self::verify) checks the prover's [`Proof`].
+///
+/// A single `Verifier` may be reused across proofs: [`verify`](Self::verify)
+/// clears the accumulated state on completion.
 #[derive(Debug)]
 pub struct Verifier {
     triples: Vec<Triple>,
@@ -31,7 +28,7 @@ pub struct Verifier {
 }
 
 impl Verifier {
-    /// Creates a new verifier with the global `delta`.
+    /// Creates a new `Verifier` with the global MAC key `delta`.
     pub fn new(delta: Gf2_128) -> Self {
         let key_one = MAC_ONE + delta;
         Self {
@@ -43,41 +40,61 @@ impl Verifier {
         }
     }
 
-    /// Begins one circuit execution. `gate_keys` is the per-AND-gate
-    /// raw-key tape and `masked_witness` is the prover's per-gate
-    /// adjustment bits — both must have the same length, equal to
-    /// the number of AND gates the circuit will execute.
+    /// Key of a public bit: `key_one` (`MAC_ONE + delta`) for `true`,
+    /// `key_zero` ([`MAC_ZERO`]) for `false`.
+    pub fn public_bit(&self, bit: bool) -> Gf2_128 {
+        if bit {
+            self.key_one
+        } else {
+            self.key_zero
+        }
+    }
+
+    /// Begins evaluating a circuit, returning a [`VerifierExecute`] that records
+    /// evaluation state into this verifier.
+    ///
+    /// `keys` is the tape of verifier keys, one entry per input bit and per AND
+    /// gate, consumed in evaluation order. `adjust` is the corresponding tape of
+    /// adjustment bits received from the prover; each entry selects whether the
+    /// matching key is offset by `delta`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] if `keys` and `adjust` differ in length.
     pub fn execute<'a>(
         &'a mut self,
-        gate_keys: &'a [Gf2_128],
-        masked_witness: MaskedWitness,
+        keys: &'a [Gf2_128],
+        adjust: &'a [bool],
     ) -> Result<VerifierExecute<'a>> {
-        if gate_keys.len() != masked_witness.len() {
-            return Err(Error::witness_len(gate_keys.len(), masked_witness.len()));
+        if keys.len() != adjust.len() {
+            return Err(Error::tape_len("adjust", keys.len(), adjust.len()));
         }
-
         Ok(VerifierExecute {
             triples: &mut self.triples,
             assertions: &mut self.assertions,
-            gate_keys,
-            masked_witness: masked_witness.bits,
-            public_bits: BitVec::new(),
+            keys,
+            adjust,
             delta: &self.delta,
             key_zero: &self.key_zero,
             key_one: &self.key_one,
-            counter: 0,
+            cursor: 0,
         })
     }
 
-    /// Consumes the prover's [`Proof`] and runs the Fig-5 step-7
-    /// batch check. Folds the locally-recomputed assertions hash
-    /// into `transcript` *before* deriving χ — so χ binds to the
-    /// public statement and any prover lie about it shows up as a
-    /// failed consistency check (in addition to the explicit
-    /// assertions-hash equality check).
+    /// Verifies `proof` against the state accumulated during evaluation.
+    ///
+    /// `chi` is the random challenge used to batch the check, and `vope_keys`
+    /// are the verifier's keys used to mask it. On success, the accumulated
+    /// state is cleared so this verifier can be reused.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] if the assertions in `proof` do not match the
+    /// assertions recorded during evaluation, or if the consistency check
+    /// fails.
     pub fn verify(
         &mut self,
-        transcript: &mut Hasher,
+        chi: [u8; 32],
         vope_keys: &[Gf2_128; 128],
         proof: Proof,
     ) -> Result<()> {
@@ -87,12 +104,6 @@ impl Verifier {
         if assertions != expected_assertions {
             return Err(Error::assert());
         }
-        transcript.update(&expected_assertions);
-
-        let chi: [u8; 32] = *transcript.finalize().as_bytes();
-
-        transcript.update(u.as_bytes());
-        transcript.update(v.as_bytes());
 
         let b = crate::vope::vope_sender(vope_keys);
         check_verifier(&self.triples, self.delta, chi, b, u, v)?;
@@ -104,38 +115,70 @@ impl Verifier {
     }
 }
 
-/// Per-execution verifier handle. Implements [`Context`] over
-/// pre-adjusted keys.
+/// An in-progress circuit evaluation on the verifier side.
+///
+/// Returned by [`Verifier::execute`], a `VerifierExecute` implements
+/// [`Context`] so a circuit can be evaluated over verifier keys. It consumes
+/// the key and adjustment tapes as input and AND gates are encountered,
+/// recording the state needed to check the proof. Call
+/// [`finish`](Self::finish) once evaluation completes to confirm the tapes were
+/// fully consumed.
 #[derive(Debug)]
 pub struct VerifierExecute<'a> {
     triples: &'a mut Vec<Triple>,
     assertions: &'a mut Hasher,
-    gate_keys: &'a [Gf2_128],
-    masked_witness: BitVec,
-    /// Public bits accumulated from `assert` calls (one bit per
-    /// assertion encoding the `expected` value). Flushed into the
-    /// main transcript by `finish`, matching the prover's order.
-    public_bits: BitVec,
+    keys: &'a [Gf2_128],
+    adjust: &'a [bool],
     delta: &'a Gf2_128,
     key_zero: &'a Gf2_128,
     key_one: &'a Gf2_128,
-    counter: usize,
+    cursor: usize,
 }
 
 impl VerifierExecute<'_> {
-    /// Finishes the execution: asserts that the circuit consumed the
-    /// full gate / masked-witness tape and updates `transcript` with
-    /// the masked-witness bytes followed by the per-`assert` public
-    /// bits (packed, matching the prover's `finish`).
-    pub fn finish(self, transcript: &mut Hasher) -> Result<()> {
-        if self.counter != self.gate_keys.len() {
-            return Err(Error::tape_unconsumed(self.counter, self.gate_keys.len()));
+    /// Consumes the next input from the tapes and returns its verifier key.
+    ///
+    /// The key is offset by `delta` when the corresponding adjustment bit is
+    /// set.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the key or adjustment tape has been exhausted.
+    pub fn input(&mut self) -> Gf2_128 {
+        let i = self.cursor;
+        let raw = *self
+            .keys
+            .get(i)
+            .expect("key tape exhausted during input");
+        let adj = *self
+            .adjust
+            .get(i)
+            .expect("adjust tape exhausted during input");
+        let mut key = if adj { raw + *self.delta } else { raw };
+        set_lsb(&mut key, false);
+        self.cursor = i + 1;
+        key
+    }
+
+    /// Returns the verifier key for a public input wire carrying `bit`.
+    ///
+    /// Public inputs consume no tape entries, since their value is known to both
+    /// parties.
+    pub fn input_public(&self, bit: bool) -> Gf2_128 {
+        if bit { *self.key_one } else { *self.key_zero }
+    }
+
+    /// Completes evaluation, confirming that the adjustment tape was fully
+    /// consumed.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] if the circuit consumed fewer tape entries than were
+    /// provided, indicating a mismatch between the circuit and the tapes.
+    pub fn finish(self) -> Result<()> {
+        if self.cursor != self.adjust.len() {
+            return Err(Error::tape_unconsumed(self.cursor, self.adjust.len()));
         }
-        let bits = &self.masked_witness;
-        transcript.update(&bits.as_raw_slice().as_bytes()[..bits.len().div_ceil(8)]);
-        transcript.update(
-            &self.public_bits.as_raw_slice().as_bytes()[..self.public_bits.len().div_ceil(8)],
-        );
         Ok(())
     }
 }
@@ -154,27 +197,23 @@ impl Context for VerifierExecute<'_> {
     }
 
     fn mul(&mut self, a: Gf2_128, b: Gf2_128) -> Gf2_128 {
-        let i = self.counter;
+        let i = self.cursor;
         let mut key = *self
-            .gate_keys
+            .keys
             .get(i)
-            .expect("gate_keys tape exhausted: circuit has more AND gates than the tape");
-        let adjust = *self
-            .masked_witness
+            .expect("key tape exhausted: circuit has more AND gates than the tape");
+        let adj = *self
+            .adjust
             .get(i)
-            .as_deref()
-            .expect("masked_witness exhausted: circuit has more AND gates than the witness");
+            .expect("adjust tape exhausted: circuit has more AND gates than the witness");
 
-        if adjust {
+        if adj {
             key = key + *self.delta;
         }
-        // Force LSB to 0 to match the prover's pointer-bit
-        // convention (prover sets mac LSB = z; with delta.lsb = 1
-        // the IT-MAC mac = key + b·delta then requires key.lsb = 0).
         set_lsb(&mut key, false);
 
         self.triples.push(Triple { x: a, y: b, z: key });
-        self.counter = i + 1;
+        self.cursor = i + 1;
 
         key
     }
@@ -186,7 +225,6 @@ impl Context for VerifierExecute<'_> {
     fn assert_const(&mut self, v: Gf2_128, expected: Gf2) -> Result<()> {
         let mac = if expected.0 { v + *self.delta } else { v };
         self.assertions.update(&mac.to_inner().to_le_bytes());
-        self.public_bits.push(expected.0);
 
         Ok(())
     }

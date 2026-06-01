@@ -8,7 +8,7 @@ use hybrid_array::{
     Array,
     typenum::{U8, U64},
 };
-use itybity::{BitLength, FromBitIterator, GetBit, Lsb0, Msb0};
+use itybity::{BitLength, FromBitIterator, GetBit, Lsb0, Msb0, SetBit};
 use rand::distr::{Distribution, StandardUniform};
 use serde::{Deserialize, Serialize};
 
@@ -108,6 +108,18 @@ impl GetBit<Lsb0> for Gf2_64 {
 impl GetBit<Msb0> for Gf2_64 {
     fn get_bit(&self, index: usize) -> bool {
         GetBit::<Msb0>::get_bit(&self.0, index)
+    }
+}
+
+impl SetBit<Lsb0> for Gf2_64 {
+    fn set_bit(&mut self, index: usize, value: bool) {
+        SetBit::<Lsb0>::set_bit(&mut self.0, index, value)
+    }
+}
+
+impl SetBit<Msb0> for Gf2_64 {
+    fn set_bit(&mut self, index: usize, value: bool) {
+        SetBit::<Msb0>::set_bit(&mut self.0, index, value)
     }
 }
 
@@ -273,8 +285,18 @@ mod tests {
     use super::*;
     use crate::tests::{
         test_extension_field_subfield_inner_product, test_field_axioms_random,
-        test_field_double_inner_product, test_field_inner_product, test_field_square,
+        test_field_bit_ops_lsb0, test_field_bit_ops_msb0, test_field_double_inner_product,
+        test_field_inner_product, test_field_set_bit_lsb0, test_field_set_bit_msb0,
+        test_field_square,
     };
+
+    #[test]
+    fn test_bit_ops() {
+        test_field_bit_ops_lsb0::<Gf2_64>();
+        test_field_bit_ops_msb0::<Gf2_64>();
+        test_field_set_bit_lsb0::<Gf2_64>();
+        test_field_set_bit_msb0::<Gf2_64>();
+    }
 
     #[test]
     fn test_inner_product() {
