@@ -32,6 +32,7 @@ members = [
     "crates/poly-proof-lifter",
     "crates/poly-proof-macros",
     "crates/perm-proof-core",
+    "crates/two-shuffles",
 ]
 exclude = ["crates/lpn-estimator"]
 resolver = "2"
