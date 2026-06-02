@@ -526,14 +526,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Start HTTP server
     let server_addr = start_server(crate_dir).await?;
 
-    // Configure browser (headless)
+    // Configure headless browser.
     let builder = BrowserConfig::builder()
-        .arg("--no-sandbox")
-        .arg("--disable-dev-shm-usage")
-        .arg("--disable-gpu")
-        .arg("--disable-cache")
-        .arg("--disable-application-cache")
-        .arg("--headless")
+        .no_sandbox() // CI runners block the unprivileged user namespaces the sandbox needs
+        .arg("disable-dev-shm-usage")
+        .arg("disable-gpu")
+        .arg("disable-cache")
+        .arg("disable-application-cache")
         .window_size(1200, 800);
 
     let config = builder.build()?;
