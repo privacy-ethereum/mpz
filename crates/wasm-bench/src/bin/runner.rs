@@ -526,14 +526,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Start HTTP server
     let server_addr = start_server(crate_dir).await?;
 
-    // Configure browser (headless)
-    // Chromiumoxide's `Arg` parser treats the whole string as the flag key and
-    // prepends `--` itself, so passing `--no-sandbox` yields the invalid flag
-    // `----no-sandbox`, which Chrome silently ignores. Pass bare keys, and use
-    // the dedicated `no_sandbox` builder so the sandbox is actually disabled
-    // (required on CI runners where unprivileged user namespaces are blocked).
+    // Configure headless browser.
     let builder = BrowserConfig::builder()
-        .no_sandbox()
+        .no_sandbox() // CI runners block the unprivileged user namespaces the sandbox needs
         .arg("disable-dev-shm-usage")
         .arg("disable-gpu")
         .arg("disable-cache")
