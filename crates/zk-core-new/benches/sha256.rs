@@ -14,7 +14,7 @@ use mpz_circuits_new::{
 use mpz_core::Block;
 use mpz_fields::gf2_128::Gf2_128;
 use mpz_ot_core::ideal::rcot::IdealRCOT;
-use mpz_zk_core_new::{Proof, Prover, Verifier};
+use mpz_zk_core_new::{Proof, Prover, ProverVope, Verifier, VerifierVope};
 use rand::{Rng, SeedableRng, rngs::StdRng};
 
 const VOPE_COST: usize = 128;
@@ -139,7 +139,7 @@ fn setup_inputs(num_blocks: usize) -> BenchInputs {
         let _ = sha256_chain(&mut exec, state_p, &msg_p);
         exec.finish().expect("finish");
     }
-    let proof = prover.prove(chi, &vope_choices, &vope_ev);
+    let proof = prover.prove(chi, &vope_choices, &vope_ev, &ProverVope { coeffs: Vec::new() });
 
     BenchInputs {
         delta,
@@ -170,7 +170,7 @@ fn run_prover(inputs: &BenchInputs, num_blocks: usize) {
         let _ = sha256_chain(&mut exec, state, &msg_blocks);
         exec.finish().expect("finish");
     }
-    let _proof = prover.prove(inputs.chi, &inputs.vope_choices, &inputs.vope_ev);
+    let _proof = prover.prove(inputs.chi, &inputs.vope_choices, &inputs.vope_ev, &ProverVope { coeffs: Vec::new() });
 }
 
 fn run_verifier(inputs: &BenchInputs, num_blocks: usize) {
@@ -188,7 +188,7 @@ fn run_verifier(inputs: &BenchInputs, num_blocks: usize) {
         exec.finish().expect("finish");
     }
     verifier
-        .verify(inputs.chi, &inputs.vope_keys, inputs.proof.clone())
+        .verify(inputs.chi, &inputs.vope_keys, &VerifierVope { sum: mpz_fields::gf2_128::Gf2_128::ZERO }, inputs.proof.clone())
         .expect("verify");
 }
 

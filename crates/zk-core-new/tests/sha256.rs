@@ -15,7 +15,7 @@ use mpz_fields::{gf2::Gf2, gf2_128::Gf2_128};
 use mpz_ot_core::ideal::rcot::IdealRCOT;
 use rand::{Rng, SeedableRng, rngs::StdRng};
 
-use mpz_zk_core_new::{Prover, Verifier};
+use mpz_zk_core_new::{Prover, ProverVope, Verifier, VerifierVope};
 
 const VOPE_COST: usize = 128;
 
@@ -150,7 +150,7 @@ fn sha256_quicksilver_batch_check_accepts() {
         exec.finish().expect("finish");
         out
     };
-    let proof = prover.prove(chi, &vope_choices, &vope_ev);
+    let proof = prover.prove(chi, &vope_choices, &vope_ev, &ProverVope { coeffs: Vec::new() });
 
     // ---- VERIFIER side ----
     // Caller pre-adjusts input keys off-band.
@@ -188,7 +188,14 @@ fn sha256_quicksilver_batch_check_accepts() {
     }
 
     verifier
-        .verify(chi, &vope_keys, proof)
+        .verify(
+            chi,
+            &vope_keys,
+            &VerifierVope {
+                sum: Gf2_128::ZERO,
+            },
+            proof,
+        )
         .expect("batch check should accept a consistent execution");
 }
 

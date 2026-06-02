@@ -5,8 +5,10 @@ use mpz_circuits_new::Context;
 use mpz_fields::{gf2::Gf2, gf2_128::Gf2_128};
 
 use crate::{
-    Error, MAC_ONE, MAC_ZERO, Proof, Result,
+    Error, MAC_ONE, MAC_ZERO, Proof, ProverVope, Result,
     check::{Triple, check_prover},
+    poly::{PolyContext, ProverExpr, lsb},
+    poly_check,
     util::set_lsb,
 };
 
@@ -24,6 +26,7 @@ use crate::{
 pub struct Prover {
     triples: Vec<Triple>,
     assertions: Hasher,
+    poly: Vec<ProverExpr>,
 }
 
 impl Prover {
@@ -62,6 +65,7 @@ impl Prover {
         Ok(ProverExecute {
             triples: &mut self.triples,
             assertions: &mut self.assertions,
+            poly: &mut self.poly,
             masks,
             macs,
             cursor: 0,
@@ -78,17 +82,25 @@ impl Prover {
         chi: [u8; 32],
         vope_choices: &[bool; 128],
         vope_ev: &[Gf2_128; 128],
+        poly_vope: &ProverVope,
     ) -> Proof {
         let (a_0, a_1) = crate::vope::vope_receiver(vope_choices, vope_ev);
 
         let assertions = *self.assertions.finalize().as_bytes();
 
         let (u, v) = check_prover(&self.triples, chi, a_0, a_1);
+        let coefficients = poly_check::check_prover(&self.poly, chi, &poly_vope.coeffs);
 
         self.assertions.reset();
         self.triples.clear();
+        self.poly.clear();
 
-        Proof { assertions, u, v }
+        Proof {
+            assertions,
+            u,
+            v,
+            coefficients,
+        }
     }
 }
 
@@ -103,12 +115,36 @@ impl Prover {
 pub struct ProverExecute<'a> {
     triples: &'a mut Vec<Triple>,
     assertions: &'a mut Hasher,
+    poly: &'a mut Vec<ProverExpr>,
     masks: &'a mut [bool],
     macs: &'a [Gf2_128],
     cursor: usize,
 }
 
 impl ProverExecute<'_> {
+    /// Consumes the next tape entry to commit `bit`, adjusting the `masks` tape
+    /// in place and returning the authenticated wire (MAC with `lsb = bit`).
+    ///
+    /// Shared by [`input`](Self::input), AND gates, and [`materialize`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if the mask or MAC tape has been exhausted.
+    ///
+    /// [`materialize`]: PolyContext::materialize
+    fn commit(&mut self, bit: bool) -> Gf2_128 {
+        let i = self.cursor;
+        let slot = self
+            .masks
+            .get_mut(i)
+            .expect("mask tape exhausted during commit");
+        let mut mac = *self.macs.get(i).expect("mac tape exhausted during commit");
+        *slot ^= bit;
+        set_lsb(&mut mac, bit);
+        self.cursor = i + 1;
+        mac
+    }
+
     /// Consumes the next tape entry to commit a private input `bit` and returns
     /// its authenticated wire.
     ///
@@ -119,19 +155,7 @@ impl ProverExecute<'_> {
     ///
     /// Panics if the mask or MAC tape has been exhausted.
     pub fn input(&mut self, bit: bool) -> Gf2_128 {
-        let i = self.cursor;
-        let slot = self
-            .masks
-            .get_mut(i)
-            .expect("mask tape exhausted during input");
-        let mut mac = *self
-            .macs
-            .get(i)
-            .expect("mac tape exhausted during input");
-        *slot ^= bit;
-        set_lsb(&mut mac, bit);
-        self.cursor = i + 1;
-        mac
+        self.commit(bit)
     }
 
     /// Returns the authenticated wire for a public input `bit`.
@@ -172,19 +196,8 @@ impl Context for ProverExecute<'_> {
 
     fn mul(&mut self, a: Gf2_128, b: Gf2_128) -> Gf2_128 {
         let z = GetBit::<Lsb0>::get_bit(&a, 0) & GetBit::<Lsb0>::get_bit(&b, 0);
-        let i = self.cursor;
-        let slot = self
-            .masks
-            .get_mut(i)
-            .expect("mask tape exhausted: circuit has more AND gates than the tape");
-        let mut mac = *self
-            .macs
-            .get(i)
-            .expect("mac tape exhausted: circuit has more AND gates than the tape");
-        *slot ^= z;
-        set_lsb(&mut mac, z);
+        let mac = self.commit(z);
         self.triples.push(Triple { x: a, y: b, z: mac });
-        self.cursor = i + 1;
         mac
     }
 
@@ -200,6 +213,35 @@ impl Context for ProverExecute<'_> {
 
         self.assertions.update(&v.to_inner().to_le_bytes());
 
+        Ok(())
+    }
+}
+
+impl PolyContext for ProverExecute<'_> {
+    type Expr = ProverExpr;
+
+    fn lift(&self, wire: Gf2_128) -> ProverExpr {
+        ProverExpr::lift(wire, lsb(wire))
+    }
+
+    fn constant(&self, value: Gf2) -> ProverExpr {
+        ProverExpr::constant(value)
+    }
+
+    fn materialize(&mut self, expr: ProverExpr) -> Gf2_128 {
+        let value = expr.value();
+        let mac = self.commit(value.0);
+        // Pin the committed output to the expression: `expr - out == 0`.
+        let constraint = expr - ProverExpr::lift(mac, value);
+        self.poly.push(constraint);
+        mac
+    }
+
+    fn assert_zero(&mut self, expr: ProverExpr) -> Result<()> {
+        if expr.value() != Gf2::ZERO {
+            return Err(Error::assert());
+        }
+        self.poly.push(expr);
         Ok(())
     }
 }

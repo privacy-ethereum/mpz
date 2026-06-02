@@ -4,8 +4,10 @@ use mpz_circuits_new::Context;
 use mpz_fields::{gf2::Gf2, gf2_128::Gf2_128};
 
 use crate::{
-    Error, MAC_ONE, MAC_ZERO, Proof, Result,
+    Error, MAC_ONE, MAC_ZERO, Proof, Result, VerifierVope,
     check::{Triple, check_verifier},
+    poly::{MAX_DEGREE, PolyContext, VerifierExpr, VerifierTerm},
+    poly_check,
     util::set_lsb,
 };
 
@@ -22,7 +24,10 @@ use crate::{
 pub struct Verifier {
     triples: Vec<Triple>,
     assertions: Hasher,
+    poly: Vec<VerifierTerm>,
     delta: Gf2_128,
+    /// Powers of `delta`: `delta_pow[k] = Δ^k`, precomputed to `MAX_DEGREE`.
+    delta_pow: Vec<Gf2_128>,
     key_zero: Gf2_128,
     key_one: Gf2_128,
 }
@@ -31,10 +36,16 @@ impl Verifier {
     /// Creates a new `Verifier` with the global MAC key `delta`.
     pub fn new(delta: Gf2_128) -> Self {
         let key_one = MAC_ONE + delta;
+        let mut delta_pow = vec![Gf2_128::ONE; MAX_DEGREE + 1];
+        for i in 1..=MAX_DEGREE {
+            delta_pow[i] = delta_pow[i - 1] * delta;
+        }
         Self {
             triples: Vec::new(),
             assertions: Hasher::default(),
+            poly: Vec::new(),
             delta,
+            delta_pow,
             key_zero: MAC_ZERO,
             key_one,
         }
@@ -72,9 +83,11 @@ impl Verifier {
         Ok(VerifierExecute {
             triples: &mut self.triples,
             assertions: &mut self.assertions,
+            poly: &mut self.poly,
             keys,
             adjust,
             delta: &self.delta,
+            delta_pow: &self.delta_pow,
             key_zero: &self.key_zero,
             key_one: &self.key_one,
             cursor: 0,
@@ -96,9 +109,15 @@ impl Verifier {
         &mut self,
         chi: [u8; 32],
         vope_keys: &[Gf2_128; 128],
+        poly_vope: &VerifierVope,
         proof: Proof,
     ) -> Result<()> {
-        let Proof { assertions, u, v } = proof;
+        let Proof {
+            assertions,
+            u,
+            v,
+            coefficients,
+        } = proof;
 
         let expected_assertions = *self.assertions.finalize().as_bytes();
         if assertions != expected_assertions {
@@ -107,9 +126,17 @@ impl Verifier {
 
         let b = crate::vope::vope_sender(vope_keys);
         check_verifier(&self.triples, self.delta, chi, b, u, v)?;
+        poly_check::check_verifier(
+            &self.poly,
+            &self.delta_pow,
+            chi,
+            poly_vope.sum,
+            &coefficients,
+        )?;
 
         self.assertions.reset();
         self.triples.clear();
+        self.poly.clear();
 
         Ok(())
     }
@@ -127,15 +154,40 @@ impl Verifier {
 pub struct VerifierExecute<'a> {
     triples: &'a mut Vec<Triple>,
     assertions: &'a mut Hasher,
+    poly: &'a mut Vec<VerifierTerm>,
     keys: &'a [Gf2_128],
     adjust: &'a [bool],
     delta: &'a Gf2_128,
+    delta_pow: &'a [Gf2_128],
     key_zero: &'a Gf2_128,
     key_one: &'a Gf2_128,
     cursor: usize,
 }
 
 impl VerifierExecute<'_> {
+    /// Consumes the next tape entry, applying the prover's adjustment bit, and
+    /// returns the verifier key (with `lsb = 0`).
+    ///
+    /// Shared by [`input`](Self::input), AND gates, and [`materialize`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if the key or adjustment tape has been exhausted.
+    ///
+    /// [`materialize`]: PolyContext::materialize
+    fn commit(&mut self) -> Gf2_128 {
+        let i = self.cursor;
+        let raw = *self.keys.get(i).expect("key tape exhausted during commit");
+        let adj = *self
+            .adjust
+            .get(i)
+            .expect("adjust tape exhausted during commit");
+        let mut key = if adj { raw + *self.delta } else { raw };
+        set_lsb(&mut key, false);
+        self.cursor = i + 1;
+        key
+    }
+
     /// Consumes the next input from the tapes and returns its verifier key.
     ///
     /// The key is offset by `delta` when the corresponding adjustment bit is
@@ -145,19 +197,7 @@ impl VerifierExecute<'_> {
     ///
     /// Panics if the key or adjustment tape has been exhausted.
     pub fn input(&mut self) -> Gf2_128 {
-        let i = self.cursor;
-        let raw = *self
-            .keys
-            .get(i)
-            .expect("key tape exhausted during input");
-        let adj = *self
-            .adjust
-            .get(i)
-            .expect("adjust tape exhausted during input");
-        let mut key = if adj { raw + *self.delta } else { raw };
-        set_lsb(&mut key, false);
-        self.cursor = i + 1;
-        key
+        self.commit()
     }
 
     /// Returns the verifier key for a public input wire carrying `bit`.
@@ -197,24 +237,8 @@ impl Context for VerifierExecute<'_> {
     }
 
     fn mul(&mut self, a: Gf2_128, b: Gf2_128) -> Gf2_128 {
-        let i = self.cursor;
-        let mut key = *self
-            .keys
-            .get(i)
-            .expect("key tape exhausted: circuit has more AND gates than the tape");
-        let adj = *self
-            .adjust
-            .get(i)
-            .expect("adjust tape exhausted: circuit has more AND gates than the witness");
-
-        if adj {
-            key = key + *self.delta;
-        }
-        set_lsb(&mut key, false);
-
+        let key = self.commit();
         self.triples.push(Triple { x: a, y: b, z: key });
-        self.cursor = i + 1;
-
         key
     }
 
@@ -226,6 +250,31 @@ impl Context for VerifierExecute<'_> {
         let mac = if expected.0 { v + *self.delta } else { v };
         self.assertions.update(&mac.to_inner().to_le_bytes());
 
+        Ok(())
+    }
+}
+
+impl<'a> PolyContext for VerifierExecute<'a> {
+    type Expr = VerifierExpr<'a>;
+
+    fn lift(&self, wire: Gf2_128) -> VerifierExpr<'a> {
+        VerifierExpr::lift(wire, self.delta_pow)
+    }
+
+    fn constant(&self, value: Gf2) -> VerifierExpr<'a> {
+        VerifierExpr::constant(value, self.delta_pow)
+    }
+
+    fn materialize(&mut self, expr: VerifierExpr<'a>) -> Gf2_128 {
+        let key = self.commit();
+        // Pin the committed output to the expression: `expr - out == 0`.
+        let constraint = expr - VerifierExpr::lift(key, self.delta_pow);
+        self.poly.push(constraint.term());
+        key
+    }
+
+    fn assert_zero(&mut self, expr: VerifierExpr<'a>) -> Result<()> {
+        self.poly.push(expr.term());
         Ok(())
     }
 }
