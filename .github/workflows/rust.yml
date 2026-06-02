@@ -109,6 +109,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # The `alloca` crate (a dev-dependency pulled in via criterion) has a
+      # build script that cross-compiles C, which needs an aarch64 C compiler
+      # for the aarch64 Miri target.
+      - name: Install aarch64 cross compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+
       - name: Install Miri
         run: |
           rustup toolchain install nightly --component miri
