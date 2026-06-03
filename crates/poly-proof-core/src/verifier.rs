@@ -7,7 +7,7 @@ use rand_chacha::{
 use zerocopy::IntoBytes;
 
 use crate::{
-    ConstraintId, Field, ProofMessage, VerifierConstraint, VerifierConstraints, VerifierVope,
+    CSP, ConstraintId, Field, ProofMessage, VerifierConstraint, VerifierConstraints, VerifierVope,
 };
 
 /// Verifier for the QuickSilver polynomial proof protocol.
@@ -26,7 +26,15 @@ pub struct Verifier<E: Field> {
 impl<E: Field> Verifier<E> {
     /// Create a new verifier from the global `delta` key and a
     /// constraint set.
-    pub fn new(delta: E, constraints: &VerifierConstraints<E>) -> Self {
+    pub fn new(delta: E, constraints: &VerifierConstraints<E>) -> Result<Self, VerifierError> {
+        if E::BIT_SIZE < CSP {
+            return Err(ErrorRepr::FieldTooSmall {
+                bits: E::BIT_SIZE,
+                required: CSP,
+            }
+            .into());
+        }
+
         let bodies = constraints.bodies.clone();
         let d_max = bodies
             .iter()
@@ -40,12 +48,12 @@ impl<E: Field> Verifier<E> {
         for i in 1..=d_max {
             delta_pow[i] = delta_pow[i - 1] * delta;
         }
-        Self {
+        Ok(Self {
             bodies,
             d_max,
             delta_pow,
             pending_b: Vec::new(),
-        }
+        })
     }
 
     /// Evaluate a batch of polynomial constraints and buffer the
@@ -189,4 +197,6 @@ enum ErrorRepr {
         expected: usize,
         actual: usize,
     },
+    #[error("extension field is too small for security: {bits}-bit, need at least {required}-bit")]
+    FieldTooSmall { bits: usize, required: usize },
 }

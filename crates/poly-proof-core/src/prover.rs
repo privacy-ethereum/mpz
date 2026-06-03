@@ -7,7 +7,7 @@ use rand_chacha::{
 use zerocopy::IntoBytes;
 
 use crate::{
-    ConstraintId, ExtensionField, Field, ProofMessage, ProverConstraint, ProverConstraints,
+    CSP, ConstraintId, ExtensionField, Field, ProofMessage, ProverConstraint, ProverConstraints,
     ProverVope, circuit::CircuitLayout,
 };
 
@@ -52,7 +52,15 @@ where
     E: ExtensionField<W>,
 {
     /// Create a new prover from a constraint set.
-    pub fn new(constraints: &ProverConstraints<E, W>) -> Self {
+    pub fn new(constraints: &ProverConstraints<E, W>) -> Result<Self, ProverError> {
+        if E::BIT_SIZE < CSP {
+            return Err(ErrorRepr::FieldTooSmall {
+                bits: E::BIT_SIZE,
+                required: CSP,
+            }
+            .into());
+        }
+
         let bodies = constraints.bodies.clone();
         let mut layouts: Vec<Option<CircuitLayout>> = Vec::with_capacity(bodies.len());
         let mut d_max = 0usize;
@@ -72,13 +80,13 @@ where
             }
         }
 
-        Self {
+        Ok(Self {
             bodies,
             layouts,
             scratch: vec![E::zero(); max_scratch],
             d_max,
             accumulators: vec![E::zero(); d_max],
-        }
+        })
     }
 
     /// Accumulate a batch of polynomial evaluations under a `seed`.
@@ -272,4 +280,6 @@ enum ErrorRepr {
         "constraint {id:?} has no kernel attached; kernel-only path requires every constraint to have one"
     )]
     MissingKernel { id: ConstraintId },
+    #[error("extension field is too small for security: {bits}-bit, need at least {required}-bit")]
+    FieldTooSmall { bits: usize, required: usize },
 }

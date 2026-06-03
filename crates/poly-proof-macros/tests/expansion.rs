@@ -13,7 +13,7 @@
 //! protocol.
 
 use mpz_circuits_new::Context;
-use mpz_fields::{ExtensionField, Field, gf2::Gf2, gf2_64::Gf2_64};
+use mpz_fields::{ExtensionField, Field, gf2::Gf2, gf2_128::Gf2_128};
 use mpz_poly_proof_core::{
     ConstraintsBuilder, ProverVope, VerifierVope, kernel::ConstraintDef, prover, verifier,
 };
@@ -39,11 +39,11 @@ fn macro_bundle_verifies_end_to_end() {
     // Compile-time / const-value checks on the emitted ConstraintDef
     // bundle. If `extract_num_vars` or the degree derivation regress,
     // these fire.
-    assert_eq!(<Minimal as ConstraintDef<Gf2_64, Gf2>>::NUM_VARS, 2);
-    assert_eq!(<Minimal as ConstraintDef<Gf2_64, Gf2>>::DEGREE, 1);
+    assert_eq!(<Minimal as ConstraintDef<Gf2_128, Gf2>>::NUM_VARS, 2);
+    assert_eq!(<Minimal as ConstraintDef<Gf2_128, Gf2>>::DEGREE, 1);
 
     let mut rng = StdRng::seed_from_u64(0xC0DE);
-    let delta = Gf2_64(rng.random::<u64>());
+    let delta = Gf2_128::new(rng.random::<u128>());
     let seed: [u8; 32] = rng.random();
 
     // Satisfying witness in GF(2): vars[0] + vars[1] = 0 iff they're
@@ -52,26 +52,26 @@ fn macro_bundle_verifies_end_to_end() {
     let values = vec![bit, bit];
 
     // Authenticate.
-    let mac0 = Gf2_64(rng.random::<u64>());
-    let mac1 = Gf2_64(rng.random::<u64>());
+    let mac0 = Gf2_128::new(rng.random::<u128>());
+    let mac1 = Gf2_128::new(rng.random::<u128>());
     let macs = vec![mac0, mac1];
     let keys = vec![
-        mac0 + Gf2_64::embed(bit) * delta,
-        mac1 + Gf2_64::embed(bit) * delta,
+        mac0 + Gf2_128::embed(bit) * delta,
+        mac1 + Gf2_128::embed(bit) * delta,
     ];
 
     // Build through the macro-emitted ConstraintDef: forces the
     // ProverKernel / VerifierKernel type aliases to resolve, the
     // `build_dag` impl method to compile, and the consts on the
     // bundle to round-trip into the builder's kernel entries.
-    let mut b = ConstraintsBuilder::<Gf2_64, Gf2>::new();
+    let mut b = ConstraintsBuilder::<Gf2_128, Gf2>::new();
     let id = b.add::<Minimal>().expect("ConstraintDef registration");
     let (pcs, vcs) = b.build();
 
     // Mock VOPE so we can call `finalize` honestly.
-    let coeffs: Vec<Gf2_64> = (0..1).map(|_| Gf2_64(rng.random::<u64>())).collect();
-    let mut sum = Gf2_64::ZERO;
-    let mut dp = Gf2_64::ONE;
+    let coeffs: Vec<Gf2_128> = (0..1).map(|_| Gf2_128::new(rng.random::<u128>())).collect();
+    let mut sum = Gf2_128::ZERO;
+    let mut dp = Gf2_128::ONE;
     for &c in &coeffs {
         sum = sum + c * dp;
         dp = dp * delta;
@@ -80,14 +80,14 @@ fn macro_bundle_verifies_end_to_end() {
     let vv = VerifierVope { sum };
 
     // Prover: runs `<Minimal as ConstraintDef>::ProverKernel::accumulate`.
-    let mut p = prover::Prover::new(&pcs);
+    let mut p = prover::Prover::new(&pcs).expect("prover new");
     p.accumulate(&[(id, macs.as_slice(), values.as_slice())], seed)
         .expect("prover accumulate");
     let proof = p.finalize(&pv).expect("prover finalize");
 
     // Verifier: runs `<Minimal as ConstraintDef>::VerifierKernel::evaluate`.
     // Honest proof must be accepted.
-    let mut v = verifier::Verifier::new(delta, &vcs);
+    let mut v = verifier::Verifier::new(delta, &vcs).expect("verifier new");
     v.accumulate(&[(id, keys.as_slice())])
         .expect("verifier accumulate");
     assert!(

@@ -5,17 +5,27 @@
 //!
 //! ## Soundness
 //!
-//! The protocol operates in the random oracle model. Error is bounded
-//! by
+//! Operates in the random oracle model with independent RO-derived
+//! coefficients. Soundness error:
 //!
 //! ```text
-//! q / 2^256 + (d_max + 2) / |E|
+//! (q + d_max + 2) / |E|
 //! ```
 //!
-//! where `d_max` is the maximum degree across the constraints and
-//! `q` bounds the adversary's RO-query budget. Independent of the
-//! number of evaluations. Both terms are negligible for any
-//! cryptographically sized `E` and seed.
+//! where `d_max` is the maximum constraint degree, `q` is the adversary's
+//! RO-query budget, and `|E|` is the extension-field size. Independent of
+//! the number of evaluations. `q` is bounded only by the adversary, so the
+//! field sets the security level: a cryptographically sized field
+//! (|E| ≳ 2¹²⁸) is required.
+
+// The |E| ≳ 2¹²⁸ requirement comes from running in the random-oracle
+// mode. This requirement may potentially be lifted by switching to the
+// interactive protocol instead: there the verifier samples challenges
+// live.
+//
+// The live challenge must arrive right after wire commitment, but that
+// commitment is owned by an upper-level protocol — requiring cross-protocol
+// synchronization. Left as future work.
 
 pub mod circuit;
 #[cfg(any(test, feature = "fixture"))]
@@ -41,6 +51,9 @@ use std::fmt::Debug;
 
 pub use mpz_fields::{ExtensionField, Field};
 use serde::{Deserialize, Serialize};
+
+/// Computational security parameter, in bits.
+pub const CSP: usize = 128;
 
 mod constraint;
 pub use constraint::{
@@ -86,28 +99,28 @@ mod tests {
         acc_mux, addr_base_mux, addr_index_mux, and_gate, carry_chain, carry_generate, fp_mux,
         linear_add, mul_bit_extraction, mul_force, pc_mux, sp_mux, write_back, write_back_bit0,
     };
-    use mpz_fields::{gf2::Gf2, gf2_64::Gf2_64};
+    use mpz_fields::{gf2::Gf2, gf2_128::Gf2_128};
     use rand::{Rng, SeedableRng, rngs::StdRng};
 
-    use crate::test_utils::{and_gate_constraints, auth_all, mock_vope, random_gf64};
+    use crate::test_utils::{and_gate_constraints, auth_all, mock_vope, random_gf128};
 
     /// End-to-end correctness test.
     #[test]
     fn test_fixture_end_to_end() {
         let mut rng = StdRng::seed_from_u64(0xE2E);
-        let delta = random_gf64(&mut rng);
+        let delta = random_gf128(&mut rng);
         let seed: [u8; 32] = rng.random();
 
         // Register all constraints: the 12 step fixtures as kernels,
         // then the same 12 upstream fns again as runtime DAG bodies, so
         // the protocol exercises the circuit-walk path alongside the
         // kernels.
-        let mut b = ConstraintsBuilder::<Gf2_64, Gf2>::new();
+        let mut b = ConstraintsBuilder::<Gf2_128, Gf2>::new();
         let step = add_step_constraints(&mut b).unwrap();
 
         macro_rules! add_dyn {
             ($C:ty, $f:path) => {
-                b.add_dynamic(<$C as ConstraintDef<Gf2_64, Gf2>>::NUM_VARS, |cb, v| {
+                b.add_dynamic(<$C as ConstraintDef<Gf2_128, Gf2>>::NUM_VARS, |cb, v| {
                     $f(cb, v.try_into().unwrap())
                 })
                 .unwrap()
@@ -130,23 +143,23 @@ mod tests {
 
         let (pcs, vcs) = b.build();
 
-        let mut all_macs: Vec<Vec<Gf2_64>> = Vec::new();
+        let mut all_macs: Vec<Vec<Gf2_128>> = Vec::new();
         let mut all_vals: Vec<Vec<Gf2>> = Vec::new();
-        let mut all_keys: Vec<Vec<Gf2_64>> = Vec::new();
+        let mut all_keys: Vec<Vec<Gf2_128>> = Vec::new();
 
         // Solve a satisfying witness for one constraint: run its fn over
         // cleartext candidates (var0 = 0) to get the residual, then set
         // var0 to cancel it. Returns the authenticated (macs, vals, keys).
-        type ConstraintRun = dyn Fn(&mut EvalCtx<Gf2_64>, &[Gf2_64]) -> Result<(), ()>;
+        type ConstraintRun = dyn Fn(&mut EvalCtx<Gf2_128>, &[Gf2_128]) -> Result<(), ()>;
         let mut solve =
-            |num_vars: usize, run: &ConstraintRun| -> (Vec<Gf2_64>, Vec<Gf2>, Vec<Gf2_64>) {
+            |num_vars: usize, run: &ConstraintRun| -> (Vec<Gf2_128>, Vec<Gf2>, Vec<Gf2_128>) {
                 let mut vals: Vec<Gf2> = (0..num_vars).map(|_| Gf2(rng.random::<bool>())).collect();
                 vals[0] = Gf2::ZERO;
-                let embedded: Vec<Gf2_64> = vals.iter().map(|&v| Gf2_64::embed(v)).collect();
+                let embedded: Vec<Gf2_128> = vals.iter().map(|&v| Gf2_128::embed(v)).collect();
                 let mut ctx = EvalCtx::new();
                 run(&mut ctx, &embedded).expect("cleartext eval must succeed");
                 let residual = ctx.into_output();
-                vals[0] = if residual == Gf2_64::ONE {
+                vals[0] = if residual == Gf2_128::ONE {
                     Gf2::ONE
                 } else {
                     Gf2::ZERO
@@ -158,7 +171,7 @@ mod tests {
         // Order must match `add_step_constraints` (→ `step.ids`).
         macro_rules! solve {
             ($C:ty, $f:path) => {{
-                let (m, v, k) = solve(<$C as ConstraintDef<Gf2_64, Gf2>>::NUM_VARS, &|c, vs| {
+                let (m, v, k) = solve(<$C as ConstraintDef<Gf2_128, Gf2>>::NUM_VARS, &|c, vs| {
                     $f(c, vs.try_into().unwrap())
                 });
                 all_macs.push(m);
@@ -181,21 +194,21 @@ mod tests {
 
         // Feed each solved witness to both its kernel id and its dynamic
         // twin, so both bodies are evaluated in the protocol.
-        let p_evals: Vec<(ConstraintId, &[Gf2_64], &[Gf2])> = (0..all_macs.len())
+        let p_evals: Vec<(ConstraintId, &[Gf2_128], &[Gf2])> = (0..all_macs.len())
             .flat_map(|i| {
                 let (m, v) = (all_macs[i].as_slice(), all_vals[i].as_slice());
                 [(step.ids[i], m, v), (dyn_ids[i], m, v)]
             })
             .collect();
-        let v_evals: Vec<(ConstraintId, &[Gf2_64])> = (0..all_keys.len())
+        let v_evals: Vec<(ConstraintId, &[Gf2_128])> = (0..all_keys.len())
             .flat_map(|i| {
                 let k = all_keys[i].as_slice();
                 [(step.ids[i], k), (dyn_ids[i], k)]
             })
             .collect();
 
-        let mut p = prover::Prover::new(&pcs);
-        let mut v = verifier::Verifier::new(delta, &vcs);
+        let mut p = prover::Prover::new(&pcs).unwrap();
+        let mut v = verifier::Verifier::new(delta, &vcs).unwrap();
         let (pv, vv) = mock_vope(p.required_vopes(), delta, &mut rng);
 
         p.accumulate(&p_evals, seed).unwrap();
@@ -212,15 +225,15 @@ mod tests {
     #[test]
     fn test_and_gate_dishonest() {
         let mut rng = StdRng::seed_from_u64(99);
-        let delta = random_gf64(&mut rng);
+        let delta = random_gf128(&mut rng);
         let seed: [u8; 32] = rng.random();
 
         let values: Vec<Gf2> = vec![Gf2::ONE, Gf2::ONE, Gf2::ZERO];
         let (macs, vk) = auth_all(&values, delta, &mut rng);
 
         let (pcs, vcs, id) = and_gate_constraints();
-        let mut p = prover::Prover::new(&pcs);
-        let mut v = verifier::Verifier::new(delta, &vcs);
+        let mut p = prover::Prover::new(&pcs).unwrap();
+        let mut v = verifier::Verifier::new(delta, &vcs).unwrap();
         let (pv, vv) = mock_vope(p.required_vopes(), delta, &mut rng);
 
         p.accumulate(&[(id, macs.as_slice(), values.as_slice())], seed)
@@ -238,7 +251,7 @@ mod tests {
     #[test]
     fn test_multiple_evaluations_batched() {
         let mut rng = StdRng::seed_from_u64(555);
-        let delta = random_gf64(&mut rng);
+        let delta = random_gf128(&mut rng);
         let seed: [u8; 32] = rng.random();
 
         let vals1: Vec<Gf2> = vec![Gf2::ONE, Gf2::ONE, Gf2::ONE];
@@ -247,8 +260,8 @@ mod tests {
         let (macs2, vk2) = auth_all(&vals2, delta, &mut rng);
 
         let (pcs, vcs, id) = and_gate_constraints();
-        let mut p = prover::Prover::new(&pcs);
-        let mut v = verifier::Verifier::new(delta, &vcs);
+        let mut p = prover::Prover::new(&pcs).unwrap();
+        let mut v = verifier::Verifier::new(delta, &vcs).unwrap();
         let (pv, vv) = mock_vope(p.required_vopes(), delta, &mut rng);
 
         p.accumulate(
@@ -271,7 +284,7 @@ mod tests {
     #[test]
     fn test_streaming_batches() {
         let mut rng = StdRng::seed_from_u64(777);
-        let delta = random_gf64(&mut rng);
+        let delta = random_gf128(&mut rng);
         let seed: [u8; 32] = rng.random();
 
         let vals1: Vec<Gf2> = vec![Gf2::ONE, Gf2::ONE, Gf2::ONE];
@@ -280,8 +293,8 @@ mod tests {
         let (macs2, vk2) = auth_all(&vals2, delta, &mut rng);
 
         let (pcs, vcs, id) = and_gate_constraints();
-        let mut p = prover::Prover::new(&pcs);
-        let mut v = verifier::Verifier::new(delta, &vcs);
+        let mut p = prover::Prover::new(&pcs).unwrap();
+        let mut v = verifier::Verifier::new(delta, &vcs).unwrap();
         let (pv, vv) = mock_vope(p.required_vopes(), delta, &mut rng);
 
         // Prover: one batch combining both evaluations, single seed.
@@ -309,7 +322,7 @@ mod tests {
     #[test]
     fn test_mixed_degrees() {
         let mut rng = StdRng::seed_from_u64(333);
-        let delta = random_gf64(&mut rng);
+        let delta = random_gf128(&mut rng);
         let seed: [u8; 32] = rng.random();
 
         let vals0: Vec<Gf2> = vec![Gf2::ONE, Gf2::ONE, Gf2::ONE];
@@ -317,7 +330,7 @@ mod tests {
         let (macs0, vk0) = auth_all(&vals0, delta, &mut rng);
         let (macs1, vk1) = auth_all(&vals1, delta, &mut rng);
 
-        let mut b = ConstraintsBuilder::<Gf2_64, Gf2>::new();
+        let mut b = ConstraintsBuilder::<Gf2_128, Gf2>::new();
         let id_and = b
             .add_dynamic(3, |cb, vars| {
                 let arr: [_; 3] = vars.try_into().unwrap();
@@ -332,8 +345,8 @@ mod tests {
             .unwrap(); // degree 1, no mults
         let (pcs, vcs) = b.build();
 
-        let mut p = prover::Prover::new(&pcs);
-        let mut v = verifier::Verifier::new(delta, &vcs);
+        let mut p = prover::Prover::new(&pcs).unwrap();
+        let mut v = verifier::Verifier::new(delta, &vcs).unwrap();
         let (pv, vv) = mock_vope(p.required_vopes(), delta, &mut rng);
 
         p.accumulate(

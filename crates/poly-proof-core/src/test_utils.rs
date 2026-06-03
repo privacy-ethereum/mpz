@@ -3,7 +3,7 @@ use crate::{
     VerifierConstraints, VerifierVope,
 };
 use mpz_circuits_new::{Context, fixtures::and_gate};
-use mpz_fields::{gf2::Gf2, gf2_64::Gf2_64};
+use mpz_fields::{gf2::Gf2, gf2_128::Gf2_128};
 use rand::Rng;
 
 /// Naive QuickSilver polynomial-lift oracle. Wires are indices into `polys`;
@@ -163,26 +163,26 @@ impl<E: Field> Context for EvalCtx<E> {
     }
 }
 
-/// Draw a uniformly random `Gf2_64`.
-pub(crate) fn random_gf64(rng: &mut impl Rng) -> Gf2_64 {
-    Gf2_64(rng.random::<u64>())
+/// Draw a uniformly random `Gf2_128`.
+pub(crate) fn random_gf128(rng: &mut impl Rng) -> Gf2_128 {
+    Gf2_128::new(rng.random::<u128>())
 }
 
 /// Authenticate each value under MAC key `delta`, returning the prover's
 /// MACs and the verifier's keys with `key = mac + value·Δ`.
 pub(crate) fn auth_all<W: Field>(
     values: &[W],
-    delta: Gf2_64,
+    delta: Gf2_128,
     rng: &mut impl Rng,
-) -> (Vec<Gf2_64>, Vec<Gf2_64>)
+) -> (Vec<Gf2_128>, Vec<Gf2_128>)
 where
-    Gf2_64: ExtensionField<W>,
+    Gf2_128: ExtensionField<W>,
 {
     let mut macs = Vec::new();
     let mut keys = Vec::new();
     for &v in values {
-        let mac = random_gf64(rng);
-        let key = mac + Gf2_64::embed(v) * delta;
+        let mac = random_gf128(rng);
+        let key = mac + Gf2_128::embed(v) * delta;
         macs.push(mac);
         keys.push(key);
     }
@@ -193,12 +193,12 @@ where
 /// coefficients: `sum = Σ cᵢ·Δⁱ`.
 pub(crate) fn mock_vope(
     count: usize,
-    delta: Gf2_64,
+    delta: Gf2_128,
     rng: &mut impl Rng,
-) -> (ProverVope<Gf2_64>, VerifierVope<Gf2_64>) {
-    let coeffs: Vec<Gf2_64> = (0..count).map(|_| random_gf64(rng)).collect();
-    let mut sum = Gf2_64::ZERO;
-    let mut delta_power = Gf2_64::ONE;
+) -> (ProverVope<Gf2_128>, VerifierVope<Gf2_128>) {
+    let coeffs: Vec<Gf2_128> = (0..count).map(|_| random_gf128(rng)).collect();
+    let mut sum = Gf2_128::ZERO;
+    let mut delta_power = Gf2_128::ONE;
     for &c in &coeffs {
         sum = sum + c * delta_power;
         delta_power = delta_power * delta;
@@ -210,11 +210,11 @@ pub(crate) fn mock_vope(
 /// runtime-defined `add_dynamic` path (the upstream `and_gate` fn isn't
 /// a `ConstraintDef`).
 pub(crate) fn and_gate_constraints() -> (
-    ProverConstraints<Gf2_64, Gf2>,
-    VerifierConstraints<Gf2_64>,
+    ProverConstraints<Gf2_128, Gf2>,
+    VerifierConstraints<Gf2_128>,
     ConstraintId,
 ) {
-    let mut b = ConstraintsBuilder::<Gf2_64, Gf2>::new();
+    let mut b = ConstraintsBuilder::<Gf2_128, Gf2>::new();
     let id = b
         .add_dynamic(3, |cb, vars| {
             let arr: [_; 3] = vars.try_into().unwrap();
