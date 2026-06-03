@@ -11,11 +11,11 @@ use futures::{AsyncRead, AsyncWrite};
 use tokio_util::compat::{Compat, TokioAsyncReadCompatExt};
 
 use crate::{
-    ContextId,
     context::Context,
-    executor::{Executor, ExecutorBuilder},
     io::Io,
     mux::Mux,
+    session::{Session, SessionBuilder},
+    thread_pool::ThreadPool,
 };
 
 /// A duplex stream that records all bytes written.
@@ -68,46 +68,6 @@ impl AsyncWrite for RecordingDuplex {
     }
 }
 
-/// A simple mux that wraps a single I/O stream for recording tests.
-struct SingleChannelMux<I> {
-    io: Mutex<Option<I>>,
-    max_frame_length: Option<usize>,
-}
-
-impl<I> SingleChannelMux<I> {
-    fn new(io: I, max_frame_length: Option<usize>) -> Self {
-        Self {
-            io: Mutex::new(Some(io)),
-            max_frame_length,
-        }
-    }
-}
-
-impl<I> Mux for SingleChannelMux<I>
-where
-    I: AsyncRead + AsyncWrite + Send + Sync + Unpin + 'static,
-{
-    fn open(&self, id: &[u8]) -> Result<Io, std::io::Error> {
-        // Only allow opening the root ID
-        if id != ContextId::default().as_bytes() {
-            return Err(std::io::Error::other(
-                "single channel mux only supports root ID",
-            ));
-        }
-        let io = self
-            .io
-            .lock()
-            .unwrap()
-            .take()
-            .ok_or_else(|| std::io::Error::other("channel already opened"))?;
-        if let Some(limit) = self.max_frame_length {
-            Ok(Io::from_io_with_limit(io, limit))
-        } else {
-            Ok(Io::from_io(io))
-        }
-    }
-}
-
 /// Creates a pair of single-threaded contexts where writes from ctx_1 to ctx_0
 /// are recorded.
 ///
@@ -124,12 +84,9 @@ pub fn recording_st_context(io_buffer: usize) -> (Context, Context, Arc<Mutex<Ve
     let recorded = Arc::new(Mutex::new(Vec::new()));
     let recording_io_1 = RecordingDuplex::new(io_1, recorded.clone());
 
-    let mux_0 = SingleChannelMux::new(io_0.compat(), None);
-    let mux_1 = SingleChannelMux::new(recording_io_1, None);
-
     (
-        Context::new(mux_0).unwrap(),
-        Context::new(mux_1).unwrap(),
+        Context::new_single_threaded(io_0.compat()),
+        Context::new_single_threaded(recording_io_1),
         recorded,
     )
 }
@@ -153,12 +110,9 @@ pub fn recording_st_context_with_limit(
     let recorded = Arc::new(Mutex::new(Vec::new()));
     let recording_io_1 = RecordingDuplex::new(io_1, recorded.clone());
 
-    let mux_0 = SingleChannelMux::new(io_0.compat(), Some(max_frame_length));
-    let mux_1 = SingleChannelMux::new(recording_io_1, Some(max_frame_length));
-
     (
-        Context::new(mux_0).unwrap(),
-        Context::new(mux_1).unwrap(),
+        Context::from_io(Io::from_io_with_limit(io_0.compat(), max_frame_length)),
+        Context::from_io(Io::from_io_with_limit(recording_io_1, max_frame_length)),
         recorded,
     )
 }
@@ -405,12 +359,12 @@ fn recording_test_mux(
 /// # Arguments
 ///
 /// * `io_buffer` - Size of the I/O buffer per channel.
-pub fn recording_mt_context(io_buffer: usize) -> (Executor, Executor, Arc<Mutex<RecordedMtData>>) {
+pub fn recording_mt_context(io_buffer: usize) -> (Session, Session, Arc<Mutex<RecordedMtData>>) {
     let (mux_0, mux_1, recorded) = recording_test_mux(io_buffer, None);
 
     (
-        ExecutorBuilder::default().build(mux_0),
-        ExecutorBuilder::default().build(mux_1),
+        SessionBuilder::default().build(mux_0).unwrap(),
+        SessionBuilder::default().build(mux_1).unwrap(),
         recorded,
     )
 }
@@ -425,12 +379,12 @@ pub fn recording_mt_context(io_buffer: usize) -> (Executor, Executor, Arc<Mutex<
 pub fn recording_mt_context_with_limit(
     io_buffer: usize,
     max_frame_length: usize,
-) -> (Executor, Executor, Arc<Mutex<RecordedMtData>>) {
+) -> (Session, Session, Arc<Mutex<RecordedMtData>>) {
     let (mux_0, mux_1, recorded) = recording_test_mux(io_buffer, Some(max_frame_length));
 
     (
-        ExecutorBuilder::default().build(mux_0),
-        ExecutorBuilder::default().build(mux_1),
+        SessionBuilder::default().build(mux_0).unwrap(),
+        SessionBuilder::default().build(mux_1).unwrap(),
         recorded,
     )
 }
@@ -438,13 +392,13 @@ pub fn recording_mt_context_with_limit(
 /// Like [`recording_mt_context_with_limit`], but uses a custom worker spawn
 /// callback (e.g. `web_spawn::spawn` on wasm) and a fixed concurrency level.
 ///
-/// The same `spawn` callback is used for both executors.
+/// The same `spawn` callback is used for both sessions.
 pub fn recording_mt_context_with_spawn_and_limit<F>(
     io_buffer: usize,
     max_frame_length: usize,
     concurrency: usize,
     spawn: F,
-) -> (Executor, Executor, Arc<Mutex<RecordedMtData>>)
+) -> (Session, Session, Arc<Mutex<RecordedMtData>>)
 where
     F: Fn(Box<dyn FnOnce() + Send + 'static>) -> Result<(), std::io::Error>
         + Clone
@@ -453,13 +407,17 @@ where
         + 'static,
 {
     let (mux_0, mux_1, recorded) = recording_test_mux(io_buffer, Some(max_frame_length));
-    let exec_0 = ExecutorBuilder::default()
+    let pool_0 = ThreadPool::builder()
         .num_threads(concurrency)
         .spawn(spawn.clone())
-        .build(mux_0);
-    let exec_1 = ExecutorBuilder::default()
+        .build()
+        .unwrap();
+    let pool_1 = ThreadPool::builder()
         .num_threads(concurrency)
         .spawn(spawn)
-        .build(mux_1);
+        .build()
+        .unwrap();
+    let exec_0 = SessionBuilder::default().pool(pool_0).build(mux_0).unwrap();
+    let exec_1 = SessionBuilder::default().pool(pool_1).build(mux_1).unwrap();
     (exec_0, exec_1, recorded)
 }

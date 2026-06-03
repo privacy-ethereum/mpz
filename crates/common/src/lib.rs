@@ -16,7 +16,6 @@
 )]
 
 pub mod context;
-pub mod executor;
 #[cfg(any(test, feature = "future"))]
 pub mod future;
 mod id;
@@ -24,14 +23,17 @@ mod id;
 pub mod ideal;
 pub mod io;
 pub mod mux;
+pub mod session;
 #[cfg(feature = "sync")]
 pub mod sync;
 mod task;
+pub mod thread_pool;
 
 pub use context::{Context, ContextError};
-pub use executor::{Executor, ExecutorBuilder};
 pub use id::ContextId;
+pub use session::{Session, SessionBuilder};
 pub use task::Task;
+pub use thread_pool::{ThreadPool, ThreadPoolBuildError, ThreadPoolBuilder};
 
 use async_trait::async_trait;
 

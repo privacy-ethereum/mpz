@@ -9,7 +9,7 @@ use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_m
 use futures::executor::block_on;
 use mpz_circuits::AES128;
 use mpz_common::{
-    Executor,
+    Session,
     context::{
         RecordedMtData, recording_mt_context_with_limit, recording_st_context_with_limit,
         replay_mt_context_with_limit, replay_st_context,
@@ -176,8 +176,8 @@ async fn run_verifier_with_replay(
 
 /// Runs the full ZK protocol with MT contexts.
 async fn run_protocol_record_prover_mt(
-    exec_p: &mut Executor,
-    exec_v: &mut Executor,
+    exec_p: &mut Session,
+    exec_v: &mut Session,
     circuit_count: usize,
     seed: u64,
 ) {
@@ -273,7 +273,7 @@ fn record_for_verifier_mt(circuit_count: usize, seed: u64) -> (RecordedMtData, B
 
 /// Runs MT verifier only with replay context.
 async fn run_verifier_with_replay_mt(
-    exec: &mut Executor,
+    exec: &mut Session,
     circuit_count: usize,
     delta: Delta,
     ot_seed: Block,

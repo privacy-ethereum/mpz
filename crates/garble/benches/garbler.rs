@@ -10,7 +10,7 @@ use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_m
 use futures::executor::block_on;
 use mpz_circuits::{AES128, Circuit};
 use mpz_common::{
-    Executor,
+    Session,
     context::{
         RecordedMtData, recording_mt_context_with_limit, recording_st_context_with_limit,
         replay_mt_context_with_limit, replay_st_context,
@@ -170,8 +170,8 @@ async fn run_garbler_with_replay(
 /// Runs the full garble protocol with MT contexts.
 /// Records evaluator->garbler messages.
 async fn run_protocol_record_evaluator_mt(
-    exec_gb: &mut Executor,
-    exec_ev: &mut Executor,
+    exec_gb: &mut Session,
+    exec_ev: &mut Session,
     circuit: Arc<Circuit>,
     circuit_count: usize,
     seed: u64,
@@ -268,7 +268,7 @@ fn record_for_garbler_mt(
 
 /// Runs MT garbler only with replay context.
 async fn run_garbler_with_replay_mt(
-    exec: &mut Executor,
+    exec: &mut Session,
     circuit: Arc<Circuit>,
     circuit_count: usize,
     delta: Delta,
