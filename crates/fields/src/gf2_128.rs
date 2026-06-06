@@ -11,7 +11,7 @@ use std::ops::{Add, Mul, Neg, Sub};
 
 use mpz_core::Block;
 
-use crate::{ExtensionField, Field, FieldError, gf2::Gf2};
+use crate::{Accumulate, Accumulator, ExtensionField, Field, FieldError, gf2::Gf2};
 
 /// A type for holding field elements of Gf(2^128).
 #[derive(
@@ -162,18 +162,44 @@ impl Field for Gf2_128 {
     }
 
     #[inline]
-    fn inner_product_chunk(a: &[Self], b: &[Self]) -> Self {
-        Gf2_128(gf128_inner_product(a, b))
-    }
-
-    #[inline]
-    fn double_inner_product_chunk(a: &[Self], b: &[Self], c: &[Self]) -> Self {
-        Gf2_128(gf128_double_inner_product(a, b, c))
-    }
-
-    #[inline]
     fn square(self) -> Self {
         Gf2_128(gf128_square(self.0))
+    }
+}
+
+impl Accumulate for Gf2_128 {
+    type Accumulator = Gf2_128Accumulator;
+}
+
+/// Deferred-reduction [`Accumulator`] for [`Gf2_128`]: sums carry-less
+/// products in the backend's denormalized form and reduces once in
+/// [`finish`](Accumulator::finish).
+#[derive(Clone, Copy)]
+pub struct Gf2_128Accumulator(backend::Acc);
+
+impl std::fmt::Debug for Gf2_128Accumulator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("Gf2_128Accumulator")
+            .field(&Gf2_128(backend::finish(self.0)))
+            .finish()
+    }
+}
+
+impl Default for Gf2_128Accumulator {
+    fn default() -> Self {
+        Self(backend::acc_zero())
+    }
+}
+
+impl Accumulator<Gf2_128> for Gf2_128Accumulator {
+    #[inline]
+    fn fma(&mut self, a: Gf2_128, b: Gf2_128) {
+        backend::fma(&mut self.0, a.0, b.0);
+    }
+
+    #[inline]
+    fn finish(self) -> Gf2_128 {
+        Gf2_128(backend::finish(self.0))
     }
 }
 
@@ -260,16 +286,6 @@ cfg_select! {
 #[inline(always)]
 fn gf128_mul(a: u128, b: u128) -> u128 {
     backend::mul(a, b)
-}
-
-#[inline(always)]
-fn gf128_inner_product(a: &[Gf2_128], b: &[Gf2_128]) -> u128 {
-    backend::inner_product(a, b)
-}
-
-#[inline(always)]
-fn gf128_double_inner_product(a: &[Gf2_128], b: &[Gf2_128], c: &[Gf2_128]) -> u128 {
-    backend::double_inner_product(a, b, c)
 }
 
 #[inline(always)]

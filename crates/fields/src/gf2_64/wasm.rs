@@ -10,8 +10,6 @@ use std::arch::wasm32::*;
 
 use crate::bmul_simd::{bit_spread_v128, bmul64_full, bmul64_lo_v128, rev64};
 
-use super::Gf2_64;
-
 #[inline]
 pub(super) fn mul(a: u64, b: u64) -> u64 {
     let (lo, hi) = bmul64_full(a, b);
@@ -30,40 +28,28 @@ pub(super) fn square(a: u64) -> u64 {
     reduce64(lo, hi)
 }
 
+/// Deferred accumulator: the raw v128 partial of the 128-bit carry-less
+/// sum (lane 0 = lo, lane 1 = bit-reversed hi-raw). The lane 1 → hi
+/// conversion (rev64 + shift) is linear, so it commutes with XOR
+/// accumulation; recovery and reduction both defer to `finish`.
+pub(super) type Acc = v128;
+
 #[inline]
-pub(super) fn inner_product(a: &[Gf2_64], b: &[Gf2_64]) -> u64 {
-    // Accumulate raw v128 partials (lane 0 = lo, lane 1 = bit-reversed hi-raw).
-    // The lane 1 → hi conversion (rev64 + shift) is linear, so it commutes
-    // with XOR accumulation and can be deferred to the end.
-    let mut acc = u64x2_splat(0);
-    for (x, y) in a.iter().zip(b.iter()) {
-        let v = bmul64_lo_v128(
-            u64x2(x.0, rev64(x.0)),
-            u64x2(y.0, rev64(y.0)),
-        );
-        acc = v128_xor(acc, v);
-    }
-    let lo = u64x2_extract_lane::<0>(acc);
-    let hi = rev64(u64x2_extract_lane::<1>(acc)) >> 1;
-    reduce64(lo, hi)
+pub(super) fn acc_zero() -> Acc {
+    u64x2_splat(0)
 }
 
-/// `Σ aᵢ · bᵢ · cᵢ`. Per iteration: one full `mul(aᵢ, bᵢ)` to get the
-/// 64-bit `xy` intermediate, then accumulate the raw v128 partial for
-/// `(xy · cᵢ)` — deferring the rev64+shift recovery and the final
-/// reduction to one post-loop pass.
+/// Accumulates the raw v128 partial of `a · b` without recovery or
+/// reduction.
 #[inline]
-pub(super) fn double_inner_product(a: &[Gf2_64], b: &[Gf2_64], c: &[Gf2_64]) -> u64 {
-    let mut acc = u64x2_splat(0);
-    for ((x, y), z) in a.iter().zip(b.iter()).zip(c.iter()) {
-        let (xy_lo, xy_hi) = bmul64_full(x.0, y.0);
-        let xy = reduce64(xy_lo, xy_hi);
-        let v = bmul64_lo_v128(
-            u64x2(xy, rev64(xy)),
-            u64x2(z.0, rev64(z.0)),
-        );
-        acc = v128_xor(acc, v);
-    }
+pub(super) fn fma(acc: &mut Acc, a: u64, b: u64) {
+    let v = bmul64_lo_v128(u64x2(a, rev64(a)), u64x2(b, rev64(b)));
+    *acc = v128_xor(*acc, v);
+}
+
+/// One-time recovery + reduction of the accumulated sum.
+#[inline]
+pub(super) fn finish(acc: Acc) -> u64 {
     let lo = u64x2_extract_lane::<0>(acc);
     let hi = rev64(u64x2_extract_lane::<1>(acc)) >> 1;
     reduce64(lo, hi)

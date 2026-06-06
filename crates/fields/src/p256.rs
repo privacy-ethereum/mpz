@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use typenum::{U32, U256};
 
-use crate::{Field, FieldError};
+use crate::{Accumulate, Field, FieldError, NaiveAccumulator};
 
 /// A type for holding field elements of P256.
 #[derive(Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Serialize, Deserialize)]
@@ -105,6 +105,10 @@ impl Neg for P256 {
     fn neg(self) -> Self::Output {
         Self(-self.0)
     }
+}
+
+impl Accumulate for P256 {
+    type Accumulator = NaiveAccumulator<P256>;
 }
 
 impl Field for P256 {

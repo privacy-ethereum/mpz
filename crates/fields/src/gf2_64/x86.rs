@@ -4,8 +4,6 @@
 
 use std::arch::x86_64::*;
 
-use super::Gf2_64;
-
 #[inline(always)]
 pub(super) fn mul(a: u64, b: u64) -> u64 {
     // SAFETY: gated on `target_feature = "pclmulqdq"`, SSE2 + PCLMULQDQ
@@ -63,45 +61,33 @@ unsafe fn square_xmm(a: __m128i) -> __m128i {
     unsafe { mul_xmm(a, a) }
 }
 
+/// Deferred-reduction accumulator: the unreduced 128-bit carry-less sum,
+/// XMM-resident.
+pub(super) type Acc = __m128i;
+
 #[inline(always)]
-pub(super) fn inner_product(a: &[Gf2_64], b: &[Gf2_64]) -> u64 {
+pub(super) fn acc_zero() -> Acc {
+    // SAFETY: SSE2 is guaranteed available on x86_64.
+    unsafe { _mm_setzero_si128() }
+}
+
+/// Accumulates the 128-bit carry-less product `a · b` without reducing.
+#[inline(always)]
+pub(super) fn fma(acc: &mut Acc, a: u64, b: u64) {
     // SAFETY: see `mul`.
     unsafe {
-        let mut acc = _mm_setzero_si128();
-
-        // Accumulate 128-bit carry-less products; reduce once at the end.
-        for (x, y) in a.iter().zip(b.iter()) {
-            let a_vec = _mm_set_epi64x(0, x.0 as i64);
-            let b_vec = _mm_set_epi64x(0, y.0 as i64);
-            let prod = _mm_clmulepi64_si128(a_vec, b_vec, 0x00);
-            acc = _mm_xor_si128(acc, prod);
-        }
-
-        _mm_cvtsi128_si64(reduce64(acc)) as u64
+        let a_vec = _mm_set_epi64x(0, a as i64);
+        let b_vec = _mm_set_epi64x(0, b as i64);
+        let prod = _mm_clmulepi64_si128(a_vec, b_vec, 0x00);
+        *acc = _mm_xor_si128(*acc, prod);
     }
 }
 
-/// `Σ aᵢ · bᵢ · cᵢ`. One reduction per iteration for the `aᵢ·bᵢ`
-/// intermediate, one post-loop reduction on the accumulated
-/// `(aᵢbᵢ)·cᵢ` carry-less products.
+/// Reduces the accumulated sum.
 #[inline(always)]
-pub(super) fn double_inner_product(a: &[Gf2_64], b: &[Gf2_64], c: &[Gf2_64]) -> u64 {
+pub(super) fn finish(acc: Acc) -> u64 {
     // SAFETY: see `mul`.
-    unsafe {
-        let mut acc = _mm_setzero_si128();
-
-        for ((x, y), z) in a.iter().zip(b.iter()).zip(c.iter()) {
-            let a_vec = _mm_set_epi64x(0, x.0 as i64);
-            let b_vec = _mm_set_epi64x(0, y.0 as i64);
-            let xy_raw = _mm_clmulepi64_si128(a_vec, b_vec, 0x00);
-            let xy = reduce64(xy_raw);
-            let c_vec = _mm_set_epi64x(0, z.0 as i64);
-            let prod = _mm_clmulepi64_si128(xy, c_vec, 0x00);
-            acc = _mm_xor_si128(acc, prod);
-        }
-
-        _mm_cvtsi128_si64(reduce64(acc)) as u64
-    }
+    unsafe { _mm_cvtsi128_si64(reduce64(acc)) as u64 }
 }
 
 /// Reduce a 128-bit polynomial (in the low/high halves of `prod`) modulo

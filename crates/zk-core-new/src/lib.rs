@@ -1,42 +1,56 @@
 //! Core building blocks for the designated-verifier zero-knowledge proof system.
 //!
 //! The protocol runs a boolean circuit between a [`Prover`] and a [`Verifier`].
-//! Evaluating the circuit on each side records the information needed to prove
-//! and check the computation. The prover then produces a [`Proof`] with
-//! [`Prover::prove`], which the verifier checks with [`Verifier::verify`].
 //!
-//! The two parties drive circuit evaluation through the [`ProverExecute`] and
-//! [`VerifierExecute`] handles obtained from [`Prover::execute`] and
-//! [`Verifier::execute`]. A [`Commit`] carries the adjustment bits the prover
-//! sends to the verifier so both sides agree on the values consumed during
-//! evaluation.
+//! The prover walks the circuits twice. The commit pass ([`prover::Commit`])
+//! adjusts the mask tape in place; the adjustment bits are sent to the
+//! verifier (see [`Commitment`]). Once committed ([`prover::Committed`]), the
+//! caller installs the challenge stream and the accumulate pass
+//! ([`prover::Accumulate`]) folds every multiplication and assertion into the
+//! proof, yielding `(u, v, assertions)`, which the caller masks with the VOPE
+//! correlation ([`vope_receiver`]) to form a [`Proof`].
+//!
+//! The verifier starts from the received commitment
+//! ([`verifier::Committed`]), installs the challenge stream it sampled, and
+//! performs a single accumulate pass ([`verifier::Accumulate`]) over the same
+//! circuits, yielding `(w, assertions)`. The caller masks `w` with the VOPE
+//! correlation ([`vope_sender`]) and accepts iff `w == u + delta * v` and the
+//! assertion hashes match.
 //!
 //! Errors surfaced by these operations are reported via [`Error`] and the
 //! crate-wide [`Result`] alias.
 
-mod check;
-mod prover;
+pub mod prover;
 mod util;
-mod verifier;
+pub mod verifier;
 mod vope;
 
-pub use prover::{Prover, ProverExecute};
-pub use verifier::{Verifier, VerifierExecute};
+pub use prover::Prover;
+pub use verifier::Verifier;
+pub use vope::{vope_receiver, vope_sender};
 
 use mpz_core::bitvec::BitVec;
-use mpz_fields::gf2_128::Gf2_128;
+use mpz_fields::gf2_64::Gf2_64;
 
 /// A specialized [`Result`](core::result::Result) type for this crate's operations.
 ///
 /// Defaults the error type to [`Error`].
 pub type Result<T, E = Error> = core::result::Result<T, E>;
 
-pub(crate) const MAC_ZERO: Gf2_128 = Gf2_128::new(u128::from_le_bytes([
-    146, 239, 91, 41, 80, 62, 197, 196, 204, 121, 176, 38, 171, 216, 63, 120,
+/// The authenticated wire carrying a public `false` bit.
+///
+/// A fixed protocol constant: both the prover's MAC and the verifier's key
+/// for a public zero wire.
+pub const MAC_ZERO: Gf2_64 = Gf2_64::new(u64::from_le_bytes([
+    146, 239, 91, 41, 80, 62, 197, 196,
 ]));
 
-pub(crate) const MAC_ONE: Gf2_128 = Gf2_128::new(u128::from_le_bytes([
-    219, 104, 26, 50, 91, 130, 201, 178, 144, 31, 95, 155, 206, 113, 5, 103,
+/// The authenticated wire carrying a public `true` bit on the prover side.
+///
+/// A fixed protocol constant; the verifier's key for a public one wire is
+/// `MAC_ONE + delta`.
+pub const MAC_ONE: Gf2_64 = Gf2_64::new(u64::from_le_bytes([
+    219, 104, 26, 50, 91, 130, 201, 178,
 ]));
 
 /// The prover's commitment to the values consumed during circuit evaluation.
@@ -44,19 +58,23 @@ pub(crate) const MAC_ONE: Gf2_128 = Gf2_128::new(u128::from_le_bytes([
 /// Sent from the prover to the verifier so both sides agree on the adjustments
 /// applied during evaluation.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct Commit {
+pub struct Commitment {
     /// The adjustment bits, one per entry consumed in evaluation order.
     pub adjust: BitVec,
 }
 
 /// A zero-knowledge proof produced by the prover over an evaluated circuit.
 ///
-/// Produced by [`Prover::prove`] and consumed by [`Verifier::verify`].
+/// Assembled from the output of the prover's accumulate pass, masked with the
+/// VOPE correlation ([`vope_receiver`]), and consumed by [`Verifier::verify`].
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Proof {
-    pub(crate) assertions: [u8; 32],
-    pub(crate) u: Gf2_128,
-    pub(crate) v: Gf2_128,
+    /// Hash of the wires asserted during evaluation.
+    pub assertions: [u8; 32],
+    /// The masked `u` proof accumulator.
+    pub u: Gf2_64,
+    /// The masked `v` proof accumulator.
+    pub v: Gf2_64,
 }
 
 /// An error returned by the prover or verifier.
@@ -71,10 +89,6 @@ pub struct Error(#[from] ErrorRepr);
 impl Error {
     pub(crate) fn assert() -> Self {
         Self(ErrorRepr::Assert)
-    }
-
-    pub(crate) fn check() -> Self {
-        Self(ErrorRepr::Check)
     }
 
     pub(crate) fn tape_len(name: &'static str, expected: usize, actual: usize) -> Self {
@@ -92,8 +106,6 @@ impl Error {
 
 #[derive(Debug, thiserror::Error)]
 enum ErrorRepr {
-    #[error("consistency check failed")]
-    Check,
     #[error("witness assertion failed")]
     Assert,
     #[error("tape `{name}` length mismatch: expected {expected}, got {actual}")]
@@ -113,43 +125,47 @@ mod tests {
         Context,
         sha256::{AND_PER_BLOCK, H0, compress},
     };
-    use mpz_fields::gf2_128::Gf2_128;
+    use mpz_fields::gf2_64::Gf2_64;
     use rand::{Rng, SeedableRng, rngs::StdRng};
 
-    use super::{Error, ErrorRepr, Prover, Verifier, util::set_lsb};
+    use rand_chacha::ChaCha12Rng;
 
-    fn random_delta(rng: &mut StdRng) -> Gf2_128 {
-        let mut d = Gf2_128::new(rng.random());
+    use super::{
+        Error, ErrorRepr, Proof, Prover, Verifier, util::set_lsb, vope_receiver, vope_sender,
+    };
+
+    fn random_delta(rng: &mut StdRng) -> Gf2_64 {
+        let mut d = Gf2_64::new(rng.random());
         set_lsb(&mut d, true);
         d
     }
 
-    fn corr(rng: &mut StdRng, delta: Gf2_128) -> (bool, Gf2_128, Gf2_128) {
+    fn corr(rng: &mut StdRng, delta: Gf2_64) -> (bool, Gf2_64, Gf2_64) {
         let choice: bool = rng.random();
-        let key = Gf2_128::new(rng.random());
+        let key = Gf2_64::new(rng.random());
         let mac = if choice { key + delta } else { key };
         (choice, mac, key)
     }
 
-    fn input(rng: &mut StdRng, b: bool, delta: Gf2_128) -> (Gf2_128, Gf2_128) {
-        let mut key = Gf2_128::new(rng.random());
+    fn input(rng: &mut StdRng, b: bool, delta: Gf2_64) -> (Gf2_64, Gf2_64) {
+        let mut key = Gf2_64::new(rng.random());
         set_lsb(&mut key, false);
         let mac = if b { key + delta } else { key };
         (mac, key)
     }
 
     struct Inputs {
-        delta: Gf2_128,
-        msg_macs: [Gf2_128; 512],
-        msg_keys: [Gf2_128; 512],
-        state_macs: [Gf2_128; 256],
-        state_keys: [Gf2_128; 256],
+        delta: Gf2_64,
+        msg_macs: [Gf2_64; 512],
+        msg_keys: [Gf2_64; 512],
+        state_macs: [Gf2_64; 256],
+        state_keys: [Gf2_64; 256],
         gate_masks: Vec<bool>,
-        gate_macs: Vec<Gf2_128>,
-        gate_keys: Vec<Gf2_128>,
-        vope_choices: [bool; 128],
-        vope_ev: [Gf2_128; 128],
-        vope_keys: [Gf2_128; 128],
+        gate_macs: Vec<Gf2_64>,
+        gate_keys: Vec<Gf2_64>,
+        vope_choices: [bool; 64],
+        vope_ev: [Gf2_64; 64],
+        vope_keys: [Gf2_64; 64],
         chi: [u8; 32],
     }
 
@@ -162,28 +178,28 @@ mod tests {
         let msg_bits: Vec<bool> = msg_words.iter_lsb0().collect();
         let state_bits: Vec<bool> = H0.iter_lsb0().collect();
 
-        let msg_pairs: Vec<(Gf2_128, Gf2_128)> = msg_bits
+        let msg_pairs: Vec<(Gf2_64, Gf2_64)> = msg_bits
             .iter()
             .map(|&b| input(&mut rng, b, delta))
             .collect();
-        let state_pairs: Vec<(Gf2_128, Gf2_128)> = state_bits
+        let state_pairs: Vec<(Gf2_64, Gf2_64)> = state_bits
             .iter()
             .map(|&b| input(&mut rng, b, delta))
             .collect();
-        let msg_macs: [Gf2_128; 512] = core::array::from_fn(|i| msg_pairs[i].0);
-        let msg_keys: [Gf2_128; 512] = core::array::from_fn(|i| msg_pairs[i].1);
-        let state_macs: [Gf2_128; 256] = core::array::from_fn(|i| state_pairs[i].0);
-        let state_keys: [Gf2_128; 256] = core::array::from_fn(|i| state_pairs[i].1);
+        let msg_macs: [Gf2_64; 512] = core::array::from_fn(|i| msg_pairs[i].0);
+        let msg_keys: [Gf2_64; 512] = core::array::from_fn(|i| msg_pairs[i].1);
+        let state_macs: [Gf2_64; 256] = core::array::from_fn(|i| state_pairs[i].0);
+        let state_keys: [Gf2_64; 256] = core::array::from_fn(|i| state_pairs[i].1);
 
         let gates: Vec<_> = (0..AND_PER_BLOCK).map(|_| corr(&mut rng, delta)).collect();
         let gate_masks: Vec<bool> = gates.iter().map(|(c, _, _)| *c).collect();
-        let gate_macs: Vec<Gf2_128> = gates.iter().map(|(_, m, _)| *m).collect();
-        let gate_keys: Vec<Gf2_128> = gates.iter().map(|(_, _, k)| *k).collect();
+        let gate_macs: Vec<Gf2_64> = gates.iter().map(|(_, m, _)| *m).collect();
+        let gate_keys: Vec<Gf2_64> = gates.iter().map(|(_, _, k)| *k).collect();
 
-        let vope: [(bool, Gf2_128, Gf2_128); 128] = core::array::from_fn(|_| corr(&mut rng, delta));
-        let vope_choices: [bool; 128] = core::array::from_fn(|i| vope[i].0);
-        let vope_ev: [Gf2_128; 128] = core::array::from_fn(|i| vope[i].1);
-        let vope_keys: [Gf2_128; 128] = core::array::from_fn(|i| vope[i].2);
+        let vope: [(bool, Gf2_64, Gf2_64); 64] = core::array::from_fn(|_| corr(&mut rng, delta));
+        let vope_choices: [bool; 64] = core::array::from_fn(|i| vope[i].0);
+        let vope_ev: [Gf2_64; 64] = core::array::from_fn(|i| vope[i].1);
+        let vope_keys: [Gf2_64; 64] = core::array::from_fn(|i| vope[i].2);
 
         Inputs {
             delta,
@@ -201,53 +217,63 @@ mod tests {
         }
     }
 
+    /// Runs the prover's two passes over a single sha256 compression and
+    /// returns the masked proof.
+    fn prove_compress(i: &Inputs, masks: &mut [bool]) -> Proof {
+        let mut prover = Prover::new(masks, &i.gate_macs).unwrap();
+        let _ = compress(&mut prover, i.msg_macs, i.state_macs);
+        let prover = prover.finish().unwrap();
+        let mut prover = prover.accumulate(ChaCha12Rng::from_seed(i.chi));
+        let _ = compress(&mut prover, i.msg_macs, i.state_macs);
+        let (u, v, assertions) = prover.finish().unwrap();
+
+        let (a_0, a_1) = vope_receiver(&i.vope_choices, &i.vope_ev);
+        Proof {
+            assertions,
+            u: u + a_0,
+            v: v + a_1,
+        }
+    }
+
+    /// Runs the verifier's accumulate pass over a single sha256 compression
+    /// and returns `(w, assertions)`.
+    fn verify_compress(i: &Inputs, masks: &[bool], gate_keys: &[Gf2_64]) -> (Gf2_64, [u8; 32]) {
+        let verifier = Verifier::new(i.delta, gate_keys, masks).unwrap();
+        let mut verifier = verifier.accumulate(ChaCha12Rng::from_seed(i.chi));
+        let _ = compress(&mut verifier, i.msg_keys, i.state_keys);
+        verifier.finish().unwrap()
+    }
+
     #[test]
     fn happy_path() {
         let i = inputs(1);
 
-        let mut prover = Prover::new();
         let mut masks = i.gate_masks.clone();
-        {
-            let mut exec = prover.execute(&mut masks, &i.gate_macs).unwrap();
-            let _ = compress(&mut exec, i.msg_macs, i.state_macs);
-            exec.finish().unwrap();
-        }
-        let proof = prover.prove(i.chi, &i.vope_choices, &i.vope_ev);
+        let proof = prove_compress(&i, &mut masks);
 
-        let mut verifier = Verifier::new(i.delta);
-        {
-            let mut exec = verifier.execute(&i.gate_keys, &masks).unwrap();
-            let _ = compress(&mut exec, i.msg_keys, i.state_keys);
-            exec.finish().unwrap();
-        }
-        verifier.verify(i.chi, &i.vope_keys, proof).unwrap();
+        let (w, assertions) = verify_compress(&i, &masks, &i.gate_keys);
+        let b = vope_sender(&i.vope_keys);
+
+        assert_eq!(assertions, proof.assertions);
+        assert_eq!(w + b, proof.u + i.delta * proof.v);
     }
 
     #[test]
     fn corrupted_triple_rejected() {
         // Run an honest prover; corrupt a verifier gate key before
-        // its execute pass so its triple's z doesn't match.
+        // its accumulate pass so its triple's z doesn't match.
         let mut i = inputs(2);
 
-        let mut prover = Prover::new();
         let mut masks = i.gate_masks.clone();
-        {
-            let mut exec = prover.execute(&mut masks, &i.gate_macs).unwrap();
-            let _ = compress(&mut exec, i.msg_macs, i.state_macs);
-            exec.finish().unwrap();
-        }
-        let proof = prover.prove(i.chi, &i.vope_choices, &i.vope_ev);
+        let proof = prove_compress(&i, &mut masks);
 
-        i.gate_keys[0] = i.gate_keys[0] + Gf2_128::new(0xdead_beef_dead_beef_dead_beef_dead_beef);
+        i.gate_keys[0] = i.gate_keys[0] + Gf2_64::new(0xdead_beef_dead_beef);
 
-        let mut verifier = Verifier::new(i.delta);
-        {
-            let mut exec = verifier.execute(&i.gate_keys, &masks).unwrap();
-            let _ = compress(&mut exec, i.msg_keys, i.state_keys);
-            exec.finish().unwrap();
-        }
-        let Error(repr) = verifier.verify(i.chi, &i.vope_keys, proof).unwrap_err();
-        assert!(matches!(repr, ErrorRepr::Check));
+        let (w, assertions) = verify_compress(&i, &masks, &i.gate_keys);
+        let b = vope_sender(&i.vope_keys);
+
+        assert_eq!(assertions, proof.assertions);
+        assert_ne!(w + b, proof.u + i.delta * proof.v);
     }
 
     #[test]
@@ -257,24 +283,15 @@ mod tests {
         // verifier's expected (empty) hash.
         let i = inputs(3);
 
-        let mut prover = Prover::new();
         let mut masks = i.gate_masks.clone();
-        {
-            let mut exec = prover.execute(&mut masks, &i.gate_macs).unwrap();
-            let _ = compress(&mut exec, i.msg_macs, i.state_macs);
-            exec.finish().unwrap();
-        }
-        let mut proof = prover.prove(i.chi, &i.vope_choices, &i.vope_ev);
+        let mut proof = prove_compress(&i, &mut masks);
         proof.assertions[0] ^= 1;
 
-        let mut verifier = Verifier::new(i.delta);
-        {
-            let mut exec = verifier.execute(&i.gate_keys, &masks).unwrap();
-            let _ = compress(&mut exec, i.msg_keys, i.state_keys);
-            exec.finish().unwrap();
-        }
-        let Error(repr) = verifier.verify(i.chi, &i.vope_keys, proof).unwrap_err();
-        assert!(matches!(repr, ErrorRepr::Assert));
+        let (w, assertions) = verify_compress(&i, &masks, &i.gate_keys);
+        let b = vope_sender(&i.vope_keys);
+
+        assert_ne!(assertions, proof.assertions);
+        assert_eq!(w + b, proof.u + i.delta * proof.v);
     }
 
     #[test]
@@ -284,10 +301,7 @@ mod tests {
         // Adjust slice one bit shorter than the key tape.
         let bad_adjust = vec![false; i.gate_keys.len() - 1];
 
-        let mut verifier = Verifier::new(i.delta);
-        let Error(repr) = verifier
-            .execute(&i.gate_keys, &bad_adjust)
-            .unwrap_err();
+        let Error(repr) = Verifier::new(i.delta, &i.gate_keys, &bad_adjust).unwrap_err();
         assert!(matches!(repr, ErrorRepr::TapeLength { .. }));
     }
 
@@ -295,32 +309,23 @@ mod tests {
     fn wrong_vope_keys_rejected() {
         let mut i = inputs(5);
 
-        let mut prover = Prover::new();
         let mut masks = i.gate_masks.clone();
-        {
-            let mut exec = prover.execute(&mut masks, &i.gate_macs).unwrap();
-            let _ = compress(&mut exec, i.msg_macs, i.state_macs);
-            exec.finish().unwrap();
-        }
-        let proof = prover.prove(i.chi, &i.vope_choices, &i.vope_ev);
+        let proof = prove_compress(&i, &mut masks);
 
-        let mut verifier = Verifier::new(i.delta);
-        {
-            let mut exec = verifier.execute(&i.gate_keys, &masks).unwrap();
-            let _ = compress(&mut exec, i.msg_keys, i.state_keys);
-            exec.finish().unwrap();
-        }
-        i.vope_keys[0] = i.vope_keys[0] + Gf2_128::new(0xfeed_face_feed_face_feed_face_feed_face);
-        let Error(repr) = verifier.verify(i.chi, &i.vope_keys, proof).unwrap_err();
-        assert!(matches!(repr, ErrorRepr::Check));
+        let (w, assertions) = verify_compress(&i, &masks, &i.gate_keys);
+
+        i.vope_keys[0] = i.vope_keys[0] + Gf2_64::new(0xfeed_face_feed_face);
+        let b = vope_sender(&i.vope_keys);
+
+        assert_eq!(assertions, proof.assertions);
+        assert_ne!(w + b, proof.u + i.delta * proof.v);
     }
 
     #[test]
     fn prover_tape_length_mismatch_rejected() {
-        let mut prover = Prover::new();
         let mut masks: Vec<bool> = Vec::new();
-        let macs = [Gf2_128::new(0)];
-        let Error(repr) = prover.execute(&mut masks, &macs).unwrap_err();
+        let macs = [Gf2_64::new(0)];
+        let Error(repr) = Prover::new(&mut masks, &macs).unwrap_err();
         assert!(matches!(repr, ErrorRepr::TapeLength { .. }));
     }
 
@@ -331,19 +336,19 @@ mod tests {
         let i = inputs(7);
 
         let run = |chi: [u8; 32]| {
-            let mut prover = Prover::new();
             let mut masks = i.gate_masks.clone();
-            {
-                let mut exec = prover.execute(&mut masks, &i.gate_macs).unwrap();
-                let _ = compress(&mut exec, i.msg_macs, i.state_macs);
-                exec.finish().unwrap();
-            }
-            prover.prove(chi, &i.vope_choices, &i.vope_ev)
+            let mut prover = Prover::new(&mut masks, &i.gate_macs).unwrap();
+            let _ = compress(&mut prover, i.msg_macs, i.state_macs);
+            let prover = prover.finish().unwrap();
+            let mut prover = prover.accumulate(ChaCha12Rng::from_seed(chi));
+            let _ = compress(&mut prover, i.msg_macs, i.state_macs);
+            let (u, v, _) = prover.finish().unwrap();
+            (u, v)
         };
 
         let a = run([1u8; 32]);
         let b = run([2u8; 32]);
-        assert_ne!((a.u, a.v), (b.u, b.v));
+        assert_ne!(a, b);
     }
 
     #[test]
@@ -356,47 +361,56 @@ mod tests {
         let (mac_b, key_b) = input(&mut rng, true, delta);
 
         let mut gate_masks: Vec<bool> = Vec::new();
-        let gate_macs: Vec<Gf2_128> = Vec::new();
-        let gate_keys: Vec<Gf2_128> = Vec::new();
-        let vope: [(bool, Gf2_128, Gf2_128); 128] = core::array::from_fn(|_| corr(&mut rng, delta));
-        let vope_choices: [bool; 128] = core::array::from_fn(|i| vope[i].0);
-        let vope_ev: [Gf2_128; 128] = core::array::from_fn(|i| vope[i].1);
-        let vope_keys: [Gf2_128; 128] = core::array::from_fn(|i| vope[i].2);
+        let gate_macs: Vec<Gf2_64> = Vec::new();
+        let gate_keys: Vec<Gf2_64> = Vec::new();
+        let vope: [(bool, Gf2_64, Gf2_64); 64] = core::array::from_fn(|_| corr(&mut rng, delta));
+        let vope_choices: [bool; 64] = core::array::from_fn(|i| vope[i].0);
+        let vope_ev: [Gf2_64; 64] = core::array::from_fn(|i| vope[i].1);
+        let vope_keys: [Gf2_64; 64] = core::array::from_fn(|i| vope[i].2);
         let chi: [u8; 32] = rng.random();
 
-        let mut prover = Prover::new();
-        {
-            let mut exec = prover.execute(&mut gate_masks, &gate_macs).unwrap();
-            exec.assert_eq(mac_a, mac_b).unwrap();
-            exec.finish().unwrap();
-        }
-        let proof = prover.prove(chi, &vope_choices, &vope_ev);
+        let mut prover = Prover::new(&mut gate_masks, &gate_macs).unwrap();
+        prover.assert_eq(mac_a, mac_b).unwrap();
+        let prover = prover.finish().unwrap();
+        let mut prover = prover.accumulate(ChaCha12Rng::from_seed(chi));
+        prover.assert_eq(mac_a, mac_b).unwrap();
+        let (u, v, assertions) = prover.finish().unwrap();
 
-        let mut verifier = Verifier::new(delta);
-        {
-            let mut exec = verifier.execute(&gate_keys, &gate_masks).unwrap();
-            exec.assert_eq(key_a, key_b).unwrap();
-            exec.finish().unwrap();
-        }
-        verifier.verify(chi, &vope_keys, proof).unwrap();
+        let (a_0, a_1) = vope_receiver(&vope_choices, &vope_ev);
+        let proof = Proof {
+            assertions,
+            u: u + a_0,
+            v: v + a_1,
+        };
+
+        let verifier = Verifier::new(delta, &gate_keys, &gate_masks).unwrap();
+        let mut verifier = verifier.accumulate(ChaCha12Rng::from_seed(chi));
+        verifier.assert_eq(key_a, key_b).unwrap();
+        let (w, v_assertions) = verifier.finish().unwrap();
+        let b = vope_sender(&vope_keys);
+
+        assert_eq!(v_assertions, proof.assertions);
+        assert_eq!(w + b, proof.u + delta * proof.v);
     }
 
     #[test]
     fn assert_eq_unequal_returns_err_on_prover() {
-        // Prover-side `assert_eq` on two wires committed to
-        // different bits short-circuits with `Error::Assert` (the
-        // `got != expected` check inside `assert_const`).
+        // Prover-side `assert_eq` on two wires committed to different
+        // bits short-circuits with `Error::Assert` during the
+        // accumulate pass (the `got != expected` check inside
+        // `assert_const`).
         let mut rng = StdRng::seed_from_u64(9);
         let delta = random_delta(&mut rng);
         let (mac_a, _) = input(&mut rng, true, delta);
         let (mac_b, _) = input(&mut rng, false, delta);
 
         let mut gate_masks: Vec<bool> = Vec::new();
-        let gate_macs: Vec<Gf2_128> = Vec::new();
+        let gate_macs: Vec<Gf2_64> = Vec::new();
 
-        let mut prover = Prover::new();
-        let mut exec = prover.execute(&mut gate_masks, &gate_macs).unwrap();
-        let Error(repr) = exec.assert_eq(mac_a, mac_b).unwrap_err();
+        let prover = Prover::new(&mut gate_masks, &gate_macs).unwrap();
+        let prover = prover.finish().unwrap();
+        let mut prover = prover.accumulate(ChaCha12Rng::from_seed([0u8; 32]));
+        let Error(repr) = prover.assert_eq(mac_a, mac_b).unwrap_err();
         assert!(matches!(repr, ErrorRepr::Assert));
     }
 
@@ -412,31 +426,37 @@ mod tests {
         let (_mac_b, key_b) = input(&mut rng, false, delta);
 
         let mut gate_masks: Vec<bool> = Vec::new();
-        let gate_macs: Vec<Gf2_128> = Vec::new();
-        let gate_keys: Vec<Gf2_128> = Vec::new();
-        let vope: [(bool, Gf2_128, Gf2_128); 128] = core::array::from_fn(|_| corr(&mut rng, delta));
-        let vope_choices: [bool; 128] = core::array::from_fn(|i| vope[i].0);
-        let vope_ev: [Gf2_128; 128] = core::array::from_fn(|i| vope[i].1);
-        let vope_keys: [Gf2_128; 128] = core::array::from_fn(|i| vope[i].2);
+        let gate_macs: Vec<Gf2_64> = Vec::new();
+        let gate_keys: Vec<Gf2_64> = Vec::new();
+        let vope: [(bool, Gf2_64, Gf2_64); 64] = core::array::from_fn(|_| corr(&mut rng, delta));
+        let vope_choices: [bool; 64] = core::array::from_fn(|i| vope[i].0);
+        let vope_ev: [Gf2_64; 64] = core::array::from_fn(|i| vope[i].1);
+        let vope_keys: [Gf2_64; 64] = core::array::from_fn(|i| vope[i].2);
         let chi: [u8; 32] = rng.random();
 
         // Prover skips the assertion (simulating a malicious party).
-        let mut prover = Prover::new();
-        {
-            let exec = prover.execute(&mut gate_masks, &gate_macs).unwrap();
-            // No assert_eq call here.
-            exec.finish().unwrap();
-        }
-        let proof = prover.prove(chi, &vope_choices, &vope_ev);
+        let prover = Prover::new(&mut gate_masks, &gate_macs).unwrap();
+        // No assert_eq call here.
+        let prover = prover.finish().unwrap();
+        let mut prover = prover.accumulate(ChaCha12Rng::from_seed(chi));
+        // No assert_eq call here either.
+        let (u, v, assertions) = prover.finish().unwrap();
+
+        let (a_0, a_1) = vope_receiver(&vope_choices, &vope_ev);
+        let proof = Proof {
+            assertions,
+            u: u + a_0,
+            v: v + a_1,
+        };
 
         // Verifier honestly performs the assertion.
-        let mut verifier = Verifier::new(delta);
-        {
-            let mut exec = verifier.execute(&gate_keys, &gate_masks).unwrap();
-            exec.assert_eq(key_a, key_b).unwrap();
-            exec.finish().unwrap();
-        }
-        let Error(repr) = verifier.verify(chi, &vope_keys, proof).unwrap_err();
-        assert!(matches!(repr, ErrorRepr::Assert));
+        let verifier = Verifier::new(delta, &gate_keys, &gate_masks).unwrap();
+        let mut verifier = verifier.accumulate(ChaCha12Rng::from_seed(chi));
+        verifier.assert_eq(key_a, key_b).unwrap();
+        let (w, v_assertions) = verifier.finish().unwrap();
+        let b = vope_sender(&vope_keys);
+
+        assert_ne!(v_assertions, proof.assertions);
+        assert_eq!(w + b, proof.u + delta * proof.v);
     }
 }

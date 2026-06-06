@@ -12,7 +12,7 @@ use itybity::{BitLength, FromBitIterator, GetBit, Lsb0, Msb0, SetBit};
 use rand::distr::{Distribution, StandardUniform};
 use serde::{Deserialize, Serialize};
 
-use crate::{ExtensionField, Field, FieldError, gf2::Gf2};
+use crate::{Accumulate, Accumulator, ExtensionField, Field, FieldError, gf2::Gf2};
 
 /// An element of GF(2^64), represented as a `u64`.
 ///
@@ -41,6 +41,16 @@ impl Gf2_64 {
     pub const ZERO: Self = Gf2_64(0);
     /// The multiplicative identity (one).
     pub const ONE: Self = Gf2_64(1);
+
+    /// Creates a new field element from its inner representation.
+    pub const fn new(v: u64) -> Self {
+        Gf2_64(v)
+    }
+
+    /// Returns the inner representation of the field element.
+    pub const fn to_inner(self) -> u64 {
+        self.0
+    }
 }
 
 impl Add for Gf2_64 {
@@ -165,18 +175,44 @@ impl Field for Gf2_64 {
     }
 
     #[inline]
-    fn inner_product_chunk(a: &[Self], b: &[Self]) -> Self {
-        Gf2_64(gf64_inner_product(a, b))
-    }
-
-    #[inline]
-    fn double_inner_product_chunk(a: &[Self], b: &[Self], c: &[Self]) -> Self {
-        Gf2_64(gf64_double_inner_product(a, b, c))
-    }
-
-    #[inline]
     fn square(self) -> Self {
         Gf2_64(gf64_square(self.0))
+    }
+}
+
+impl Accumulate for Gf2_64 {
+    type Accumulator = Gf2_64Accumulator;
+}
+
+/// Deferred-reduction [`Accumulator`] for [`Gf2_64`]: sums carry-less
+/// products in the backend's denormalized form and reduces once in
+/// [`finish`](Accumulator::finish).
+#[derive(Clone, Copy)]
+pub struct Gf2_64Accumulator(backend::Acc);
+
+impl std::fmt::Debug for Gf2_64Accumulator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("Gf2_64Accumulator")
+            .field(&Gf2_64(backend::finish(self.0)))
+            .finish()
+    }
+}
+
+impl Default for Gf2_64Accumulator {
+    fn default() -> Self {
+        Self(backend::acc_zero())
+    }
+}
+
+impl Accumulator<Gf2_64> for Gf2_64Accumulator {
+    #[inline]
+    fn fma(&mut self, a: Gf2_64, b: Gf2_64) {
+        backend::fma(&mut self.0, a.0, b.0);
+    }
+
+    #[inline]
+    fn finish(self) -> Gf2_64 {
+        Gf2_64(backend::finish(self.0))
     }
 }
 
@@ -258,16 +294,6 @@ cfg_select! {
 #[inline(always)]
 fn gf64_mul(a: u64, b: u64) -> u64 {
     backend::mul(a, b)
-}
-
-#[inline(always)]
-fn gf64_inner_product(a: &[Gf2_64], b: &[Gf2_64]) -> u64 {
-    backend::inner_product(a, b)
-}
-
-#[inline(always)]
-fn gf64_double_inner_product(a: &[Gf2_64], b: &[Gf2_64], c: &[Gf2_64]) -> u64 {
-    backend::double_inner_product(a, b, c)
 }
 
 #[inline(always)]

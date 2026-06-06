@@ -6,8 +6,6 @@ use std::arch::x86_64::*;
 
 use crate::spread::bit_spread_u32;
 
-use super::Gf2_128;
-
 #[inline(always)]
 pub(super) fn mul(a: u128, b: u128) -> u128 {
     // SAFETY: gated on `target_feature = "pclmulqdq"`, SSE2 + PCLMULQDQ
@@ -92,45 +90,32 @@ unsafe fn square_xmm(a: __m128i) -> __m128i {
     }
 }
 
+/// Deferred-reduction accumulator: the unreduced 256-bit carry-less sum
+/// as XMM-resident `(lo, hi)` halves.
+pub(super) type Acc = (__m128i, __m128i);
+
 #[inline(always)]
-pub(super) fn inner_product(a: &[Gf2_128], b: &[Gf2_128]) -> u128 {
+pub(super) fn acc_zero() -> Acc {
+    // SAFETY: SSE2 is guaranteed available on x86_64.
+    unsafe { (_mm_setzero_si128(), _mm_setzero_si128()) }
+}
+
+/// Accumulates the 256-bit carry-less product `a · b` without reducing.
+#[inline(always)]
+pub(super) fn fma(acc: &mut Acc, a: u128, b: u128) {
     // SAFETY: see `mul`.
     unsafe {
-        let mut acc_lo = _mm_setzero_si128();
-        let mut acc_hi = _mm_setzero_si128();
-
-        // Accumulate 256-bit carry-less products; reduce once at the end.
-        for (x, y) in a.iter().zip(b.iter()) {
-            let (lo, hi) = clmul128(load(x.0), load(y.0));
-            acc_lo = _mm_xor_si128(acc_lo, lo);
-            acc_hi = _mm_xor_si128(acc_hi, hi);
-        }
-
-        extract(reduce128(acc_lo, acc_hi))
+        let (lo, hi) = clmul128(load(a), load(b));
+        acc.0 = _mm_xor_si128(acc.0, lo);
+        acc.1 = _mm_xor_si128(acc.1, hi);
     }
 }
 
-/// `Σ aᵢ · bᵢ · cᵢ`. One reduction per iteration for the `aᵢ·bᵢ`
-/// intermediate (needed as a 128-bit operand for the second CLMUL), then
-/// a single post-loop reduction on the accumulated `(aᵢbᵢ)·cᵢ` carry-less
-/// products — vs. the naive fold which pays two reductions per iteration.
+/// Reduces the accumulated sum.
 #[inline(always)]
-pub(super) fn double_inner_product(a: &[Gf2_128], b: &[Gf2_128], c: &[Gf2_128]) -> u128 {
+pub(super) fn finish(acc: Acc) -> u128 {
     // SAFETY: see `mul`.
-    unsafe {
-        let mut acc_lo = _mm_setzero_si128();
-        let mut acc_hi = _mm_setzero_si128();
-
-        for ((x, y), z) in a.iter().zip(b.iter()).zip(c.iter()) {
-            let (xy_lo, xy_hi) = clmul128(load(x.0), load(y.0));
-            let xy = reduce128(xy_lo, xy_hi);
-            let (p_lo, p_hi) = clmul128(xy, load(z.0));
-            acc_lo = _mm_xor_si128(acc_lo, p_lo);
-            acc_hi = _mm_xor_si128(acc_hi, p_hi);
-        }
-
-        extract(reduce128(acc_lo, acc_hi))
-    }
+    unsafe { extract(reduce128(acc.0, acc.1)) }
 }
 
 /// 256-bit carry-less square of a 128-bit input (two 64×64 CLMULs). In

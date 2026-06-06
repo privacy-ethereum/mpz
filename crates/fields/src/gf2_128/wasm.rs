@@ -9,8 +9,6 @@ use std::arch::wasm32::*;
 
 use crate::bmul_simd::{bit_spread_v128, bmul128_full, bmul64_raw, recover_raw};
 
-use super::Gf2_128;
-
 #[inline]
 pub(super) fn mul(a: u128, b: u128) -> u128 {
     let (lo, hi) = bmul128_full(a, b);
@@ -39,78 +37,43 @@ pub(super) fn square(a: u128) -> u128 {
     reduce128(lo, hi)
 }
 
+/// Deferred accumulator: the three Karatsuba partials (p00, p11, p01^p10)
+/// of the 256-bit carry-less sum in BearSSL "raw" v128 form — lane 0 = lo,
+/// lane 1 = reversed hi-form. Both parts are linear in GF(2) under XOR, so
+/// the per-product Karatsuba merge, the rev64+shift recovery, and the
+/// reduction all defer to `finish`.
+pub(super) type Acc = (v128, v128, v128);
+
 #[inline]
-pub(super) fn inner_product(a: &[Gf2_128], b: &[Gf2_128]) -> u128 {
-    // Accumulate the three Karatsuba partials (p00, p11, p01^p10) in v128
-    // "raw" form — lane 0 = lo, lane 1 = BearSSL-reversed hi-form. Both
-    // parts are linear in GF(2) under XOR, so the per-iteration Karatsuba
-    // merge and the rev64+shift recovery can be deferred to the end.
-    let mut acc00 = u64x2_splat(0);
-    let mut acc11 = u64x2_splat(0);
-    let mut acc_mid = u64x2_splat(0);
-
-    for (x, y) in a.iter().zip(b.iter()) {
-        let a_lo = x.0 as u64;
-        let a_hi = (x.0 >> 64) as u64;
-        let b_lo = y.0 as u64;
-        let b_hi = (y.0 >> 64) as u64;
-
-        let p00 = bmul64_raw(a_lo, b_lo);
-        let p11 = bmul64_raw(a_hi, b_hi);
-        let p01 = bmul64_raw(a_lo, b_hi);
-        let p10 = bmul64_raw(a_hi, b_lo);
-
-        acc00 = v128_xor(acc00, p00);
-        acc11 = v128_xor(acc11, p11);
-        acc_mid = v128_xor(acc_mid, v128_xor(p01, p10));
-    }
-
-    // One-time recovery + Karatsuba merge.
-    let (p00_lo, p00_hi) = recover_raw(acc00);
-    let (p11_lo, p11_hi) = recover_raw(acc11);
-    let (mid_lo, mid_hi) = recover_raw(acc_mid);
-
-    let p00 = ((p00_hi as u128) << 64) | (p00_lo as u128);
-    let p11 = ((p11_hi as u128) << 64) | (p11_lo as u128);
-
-    let lo = p00 ^ ((mid_lo as u128) << 64);
-    let hi = p11 ^ (mid_hi as u128);
-
-    reduce128(lo, hi)
+pub(super) fn acc_zero() -> Acc {
+    (u64x2_splat(0), u64x2_splat(0), u64x2_splat(0))
 }
 
-/// `Σ aᵢ · bᵢ · cᵢ`. Per iteration: one full `mul(aᵢ, bᵢ)` (bmul128_full +
-/// reduce) to get the 128-bit `xy` intermediate, then accumulate the three
-/// `(xy · cᵢ)` Karatsuba partials in raw v128 form — deferring the
-/// rev64+shift recovery and the final reduction to one post-loop pass.
+/// Accumulates the raw Karatsuba partials of `a · b` without recovery or
+/// reduction.
 #[inline]
-pub(super) fn double_inner_product(a: &[Gf2_128], b: &[Gf2_128], c: &[Gf2_128]) -> u128 {
-    let mut acc00 = u64x2_splat(0);
-    let mut acc11 = u64x2_splat(0);
-    let mut acc_mid = u64x2_splat(0);
+pub(super) fn fma(acc: &mut Acc, a: u128, b: u128) {
+    let a_lo = a as u64;
+    let a_hi = (a >> 64) as u64;
+    let b_lo = b as u64;
+    let b_hi = (b >> 64) as u64;
 
-    for ((x, y), z) in a.iter().zip(b.iter()).zip(c.iter()) {
-        let (xy_lo, xy_hi) = bmul128_full(x.0, y.0);
-        let xy = reduce128(xy_lo, xy_hi);
+    let p00 = bmul64_raw(a_lo, b_lo);
+    let p11 = bmul64_raw(a_hi, b_hi);
+    let p01 = bmul64_raw(a_lo, b_hi);
+    let p10 = bmul64_raw(a_hi, b_lo);
 
-        let a_lo = xy as u64;
-        let a_hi = (xy >> 64) as u64;
-        let b_lo = z.0 as u64;
-        let b_hi = (z.0 >> 64) as u64;
+    acc.0 = v128_xor(acc.0, p00);
+    acc.1 = v128_xor(acc.1, p11);
+    acc.2 = v128_xor(acc.2, v128_xor(p01, p10));
+}
 
-        let p00 = bmul64_raw(a_lo, b_lo);
-        let p11 = bmul64_raw(a_hi, b_hi);
-        let p01 = bmul64_raw(a_lo, b_hi);
-        let p10 = bmul64_raw(a_hi, b_lo);
-
-        acc00 = v128_xor(acc00, p00);
-        acc11 = v128_xor(acc11, p11);
-        acc_mid = v128_xor(acc_mid, v128_xor(p01, p10));
-    }
-
-    let (p00_lo, p00_hi) = recover_raw(acc00);
-    let (p11_lo, p11_hi) = recover_raw(acc11);
-    let (mid_lo, mid_hi) = recover_raw(acc_mid);
+/// One-time recovery + Karatsuba merge + reduction of the accumulated sum.
+#[inline]
+pub(super) fn finish(acc: Acc) -> u128 {
+    let (p00_lo, p00_hi) = recover_raw(acc.0);
+    let (p11_lo, p11_hi) = recover_raw(acc.1);
+    let (mid_lo, mid_hi) = recover_raw(acc.2);
 
     let p00 = ((p00_hi as u128) << 64) | (p00_lo as u128);
     let p11 = ((p11_hi as u128) << 64) | (p11_lo as u128);

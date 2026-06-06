@@ -35,9 +35,56 @@ use rand::{Rng, distr::StandardUniform, prelude::Distribution};
 use thiserror::Error;
 use typenum::Unsigned;
 
+/// Sum-of-products accumulation with deferred normalization.
+///
+/// A supertrait of [`Field`] that selects the [`Accumulator`] used for sums
+/// of products. Implementations may hold products in a denormalized form
+/// (e.g. unreduced carry-less limbs) and amortize normalization across the
+/// whole sum in [`Accumulator::finish`]. Fields without a specialized form
+/// use [`NaiveAccumulator`].
+pub trait Accumulate: Sized {
+    /// The accumulator for sums of products of `Self`.
+    type Accumulator: Accumulator<Self>;
+}
+
+/// A running sum of products `Σ aᵢ · bᵢ` over elements of `F`.
+///
+/// The default value is the empty sum.
+pub trait Accumulator<F>: Debug + Default + Clone + Send {
+    /// Accumulates the product `a · b`.
+    fn fma(&mut self, a: F, b: F);
+
+    /// Returns the accumulated sum, applying any deferred normalization.
+    fn finish(self) -> F;
+}
+
+/// [`Accumulator`] for fields without a specialized accumulation form: a
+/// plain running sum of normalized products.
+#[derive(Debug, Clone, Copy)]
+pub struct NaiveAccumulator<F>(F);
+
+impl<F: Field> Default for NaiveAccumulator<F> {
+    fn default() -> Self {
+        Self(F::zero())
+    }
+}
+
+impl<F: Field> Accumulator<F> for NaiveAccumulator<F> {
+    #[inline]
+    fn fma(&mut self, a: F, b: F) {
+        self.0 = self.0 + a * b;
+    }
+
+    #[inline]
+    fn finish(self) -> F {
+        self.0
+    }
+}
+
 /// A trait for finite fields.
 pub trait Field:
-    Add<Output = Self>
+    Accumulate
+    + Add<Output = Self>
     + Sub<Output = Self>
     + Mul<Output = Self>
     + Neg<Output = Self>
@@ -112,10 +159,9 @@ pub trait Field:
     /// threshold the sequential chunk path runs directly — thread
     /// spawning overhead would dominate the gain.
     ///
-    /// Concrete types override [`Self::inner_product_chunk`] (not this
-    /// method) to provide an accelerated single-chunk implementation;
-    /// the parallel path calls the override once per chunk and
-    /// XOR/+-combines the partial results.
+    /// Concrete types specialize accumulation via
+    /// [`Accumulate::Accumulator`]; the parallel path runs the chunk
+    /// kernel once per chunk and +-combines the partial results.
     ///
     /// # Panics
     ///
@@ -147,29 +193,28 @@ pub trait Field:
         }
     }
 
-    /// Sequential inner-product kernel. Concrete types override this with
-    /// their optimised single-threaded SIMD implementation;
+    /// Sequential inner-product kernel: accumulates products through
+    /// [`Accumulate::Accumulator`], normalizing once at the end.
     /// [`Self::inner_product`] calls it once (sequential) or once per chunk
     /// (parallel).
     #[doc(hidden)]
     #[inline]
     fn inner_product_chunk(a: &[Self], b: &[Self]) -> Self {
-        a.iter()
-            .zip(b.iter())
-            .fold(Self::zero(), |acc, (x, y)| acc + *x * *y)
+        let mut acc = Self::Accumulator::default();
+        for (x, y) in a.iter().zip(b.iter()) {
+            acc.fma(*x, *y);
+        }
+        acc.finish()
     }
 
     /// Compute the triple inner product `Σ aᵢ · bᵢ · cᵢ` of three slices
     /// of field elements.
     ///
     /// Same chunking/parallel dispatch as [`Self::inner_product`] — the
-    /// kernel does a single reduction per chunk (vs. one per iteration
-    /// for a naive fold through `Mul`), amortising reduction cost across
+    /// kernel normalizes the `aᵢ·bᵢ` intermediate per iteration but
+    /// accumulates the `(aᵢbᵢ)·cᵢ` products through
+    /// [`Accumulate::Accumulator`], amortising their normalization across
     /// the whole chunk.
-    ///
-    /// Concrete types override [`Self::double_inner_product_chunk`] (not
-    /// this method) to provide an accelerated single-chunk
-    /// implementation.
     ///
     /// # Panics
     ///
@@ -206,17 +251,18 @@ pub trait Field:
         }
     }
 
-    /// Sequential triple-inner-product kernel. Concrete types override
-    /// this with their optimised single-threaded implementation;
-    /// [`Self::double_inner_product`] calls it once (sequential) or once
-    /// per chunk (parallel).
+    /// Sequential triple-inner-product kernel: accumulates `(aᵢbᵢ)·cᵢ`
+    /// products through [`Accumulate::Accumulator`], normalizing once at
+    /// the end. [`Self::double_inner_product`] calls it once (sequential)
+    /// or once per chunk (parallel).
     #[doc(hidden)]
     #[inline]
     fn double_inner_product_chunk(a: &[Self], b: &[Self], c: &[Self]) -> Self {
-        a.iter()
-            .zip(b.iter())
-            .zip(c.iter())
-            .fold(Self::zero(), |acc, ((x, y), z)| acc + *x * *y * *z)
+        let mut acc = Self::Accumulator::default();
+        for ((x, y), z) in a.iter().zip(b.iter()).zip(c.iter()) {
+            acc.fma(*x * *y, *z);
+        }
+        acc.finish()
     }
 }
 

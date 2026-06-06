@@ -11,13 +11,14 @@ use mpz_circuits_new::{
     sha256::{H0, compress as sha256_compress},
 };
 use mpz_core::{Block, bitvec::BitVec};
-use mpz_fields::{gf2::Gf2, gf2_128::Gf2_128};
+use mpz_fields::{gf2::Gf2, gf2_64::Gf2_64};
 use mpz_ot_core::ideal::rcot::IdealRCOT;
 use rand::{Rng, SeedableRng, rngs::StdRng};
 
-use mpz_zk_core_new::{Prover, Verifier};
+use mpz_zk_core_new::{Proof, Prover, Verifier, vope_receiver, vope_sender};
+use rand_chacha::ChaCha12Rng;
 
-const VOPE_COST: usize = 128;
+const VOPE_COST: usize = 64;
 
 /// Pack 64 message bytes into 16 u32 words using big-endian byte
 /// order (the SHA-256 message-schedule convention).
@@ -35,17 +36,25 @@ fn sha2_crate_compress(msg: &[u8; 64], state: [u32; 8]) -> [u32; 8] {
 
 // -------- sVOLE simulation helpers --------
 
-fn set_lsb(g: Gf2_128, bit: bool) -> Gf2_128 {
-    Gf2_128::new((g.to_inner() & !1) | u128::from(bit))
+fn set_lsb(g: Gf2_64, bit: bool) -> Gf2_64 {
+    Gf2_64::new((g.to_inner() & !1) | u64::from(bit))
+}
+
+/// Truncates a 128-bit RCOT block to a `Gf2_64` element (its low 64 bits).
+///
+/// XOR correlations are bitwise, so `mac = key ^ choice·delta` survives the
+/// truncation, as does delta's forced LSB.
+fn gf2_64(b: Block) -> Gf2_64 {
+    Gf2_64::new(u128::from_le_bytes(b.to_bytes()) as u64)
 }
 
 /// Draws `total` RCOT correlations from `IdealRCOT` and returns
-/// `(delta, raw_keys, choices, macs)` as `Gf2_128` / `bool`. Delta's
+/// `(delta, raw_keys, choices, macs)` as `Gf2_64` / `bool`. Delta's
 /// LSB is forced to 1 (pointer-bit convention).
 fn sample_rcot<R: Rng>(
     rng: &mut R,
     total: usize,
-) -> (Gf2_128, Vec<Gf2_128>, Vec<bool>, Vec<Gf2_128>) {
+) -> (Gf2_64, Vec<Gf2_64>, Vec<bool>, Vec<Gf2_64>) {
     let mut delta_block: Block = rng.random();
     delta_block.set_lsb(true);
     let seed: Block = rng.random();
@@ -56,10 +65,10 @@ fn sample_rcot<R: Rng>(
     let (sender_out, receiver_out) = rcot.transfer(total).expect("ideal rcot transfer");
 
     (
-        delta_block.into(),
-        sender_out.keys.into_iter().map(Into::into).collect(),
+        gf2_64(delta_block),
+        sender_out.keys.into_iter().map(gf2_64).collect(),
         receiver_out.choices,
-        receiver_out.msgs.into_iter().map(Into::into).collect(),
+        receiver_out.msgs.into_iter().map(gf2_64).collect(),
     )
 }
 
@@ -116,8 +125,8 @@ fn sha256_quicksilver_batch_check_accepts() {
     );
     let (delta, raw_keys, choices, macs) = sample_rcot(&mut rng, total_svole);
     let vope_choices: [bool; VOPE_COST] = core::array::from_fn(|i| choices[main_cost + i]);
-    let vope_ev: [Gf2_128; VOPE_COST] = core::array::from_fn(|i| macs[main_cost + i]);
-    let vope_keys: [Gf2_128; VOPE_COST] = core::array::from_fn(|i| raw_keys[main_cost + i]);
+    let vope_ev: [Gf2_64; VOPE_COST] = core::array::from_fn(|i| macs[main_cost + i]);
+    let vope_keys: [Gf2_64; VOPE_COST] = core::array::from_fn(|i| raw_keys[main_cost + i]);
 
     // Verifier samples the consistency-check challenge after the prover
     // commits (here both sides simply share the same value).
@@ -128,7 +137,7 @@ fn sha256_quicksilver_batch_check_accepts() {
     let input_adjust: BitVec = (0..input_count)
         .map(|i| input_bits[i] ^ choices[i])
         .collect();
-    let input_mac_wires: Vec<Gf2_128> = (0..input_count)
+    let input_mac_wires: Vec<Gf2_64> = (0..input_count)
         .map(|i| set_lsb(macs[i], input_bits[i]))
         .collect();
 
@@ -136,25 +145,33 @@ fn sha256_quicksilver_batch_check_accepts() {
     // place by `prover.execute`: after `finish` it holds the masked
     // witness adjust bits.
     let mut gate_masks: Vec<bool> = choices[input_count..main_cost].to_vec();
-    let gate_macs: Vec<Gf2_128> = macs[input_count..main_cost].to_vec();
+    let gate_macs: Vec<Gf2_64> = macs[input_count..main_cost].to_vec();
 
     // ---- PROVER side ----
-    let mut prover = Prover::new();
-    let prover_out = {
-        let mut exec = prover
-            .execute(&mut gate_masks, &gate_macs)
-            .expect("execute");
-        let msg_p: [Gf2_128; 512] = core::array::from_fn(|i| input_mac_wires[i]);
-        let state_p: [Gf2_128; 256] = core::array::from_fn(|i| input_mac_wires[512 + i]);
-        let out = sha256_compress(&mut exec, msg_p, state_p);
-        exec.finish().expect("finish");
-        out
+    let msg_p: [Gf2_64; 512] = core::array::from_fn(|i| input_mac_wires[i]);
+    let state_p: [Gf2_64; 256] = core::array::from_fn(|i| input_mac_wires[512 + i]);
+
+    let mut prover = Prover::new(&mut gate_masks, &gate_macs).expect("tape lengths should match");
+    let prover_out = sha256_compress(&mut prover, msg_p, state_p);
+    let prover = prover
+        .finish()
+        .expect("commit pass should consume the tape");
+    let mut prover = prover.accumulate(ChaCha12Rng::from_seed(chi));
+    let _ = sha256_compress(&mut prover, msg_p, state_p);
+    let (u, v, assertions) = prover
+        .finish()
+        .expect("accumulate pass should consume the tape");
+
+    let (a_0, a_1) = vope_receiver(&vope_choices, &vope_ev);
+    let proof = Proof {
+        assertions,
+        u: u + a_0,
+        v: v + a_1,
     };
-    let proof = prover.prove(chi, &vope_choices, &vope_ev);
 
     // ---- VERIFIER side ----
     // Caller pre-adjusts input keys off-band.
-    let input_key_wires: Vec<Gf2_128> = (0..input_count)
+    let input_key_wires: Vec<Gf2_64> = (0..input_count)
         .map(|i| {
             let k = raw_keys[i];
             let key = if input_adjust[i] { k + delta } else { k };
@@ -162,19 +179,18 @@ fn sha256_quicksilver_batch_check_accepts() {
         })
         .collect();
 
-    let gate_keys: Vec<Gf2_128> = raw_keys[input_count..main_cost].to_vec();
+    let gate_keys: Vec<Gf2_64> = raw_keys[input_count..main_cost].to_vec();
 
-    let mut verifier = Verifier::new(delta);
-    let verifier_out = {
-        let mut exec = verifier
-            .execute(&gate_keys, &gate_masks)
-            .expect("execute");
-        let msg_v: [Gf2_128; 512] = core::array::from_fn(|i| input_key_wires[i]);
-        let state_v: [Gf2_128; 256] = core::array::from_fn(|i| input_key_wires[512 + i]);
-        let out = sha256_compress(&mut exec, msg_v, state_v);
-        exec.finish().expect("finish");
-        out
-    };
+    let msg_v: [Gf2_64; 512] = core::array::from_fn(|i| input_key_wires[i]);
+    let state_v: [Gf2_64; 256] = core::array::from_fn(|i| input_key_wires[512 + i]);
+
+    let verifier =
+        Verifier::new(delta, &gate_keys, &gate_masks).expect("tape lengths should match");
+    let mut verifier = verifier.accumulate(ChaCha12Rng::from_seed(chi));
+    let verifier_out = sha256_compress(&mut verifier, msg_v, state_v);
+    let (w, v_assertions) = verifier
+        .finish()
+        .expect("accumulate pass should consume the tape");
 
     // Output IT-MAC sanity: MAC == key + b·delta for each output bit.
     let expected_bits = sha2_compress_out_bits(msg, H0);
@@ -187,9 +203,13 @@ fn sha256_quicksilver_batch_check_accepts() {
         assert_eq!(prover_out[i], expected, "output bit {i}");
     }
 
-    verifier
-        .verify(chi, &vope_keys, proof)
-        .expect("batch check should accept a consistent execution");
+    let b = vope_sender(&vope_keys);
+    assert_eq!(v_assertions, proof.assertions);
+    assert_eq!(
+        w + b,
+        proof.u + delta * proof.v,
+        "batch check should accept a consistent execution"
+    );
 }
 
 /// SHA-256 compression output as a flat bit array (LSB-first within

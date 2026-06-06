@@ -7,7 +7,7 @@ use itybity::{BitLength, FromBitIterator, GetBit, Lsb0, Msb0, SetBit};
 use rand::distr::{Distribution, StandardUniform};
 use serde::{Deserialize, Serialize};
 
-use crate::{Field, FieldError};
+use crate::{Accumulate, Field, FieldError, NaiveAccumulator};
 
 /// An element of GF(2), i.e. a single bit under XOR/AND.
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -118,6 +118,10 @@ impl TryFrom<Array<u8, U1>> for Gf2 {
         // `Gf2_64`'s "any bytes interpret as the field element" convention).
         Ok(Gf2(byte & 1 != 0))
     }
+}
+
+impl Accumulate for Gf2 {
+    type Accumulator = NaiveAccumulator<Gf2>;
 }
 
 impl Field for Gf2 {
