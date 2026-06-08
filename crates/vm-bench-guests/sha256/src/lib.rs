@@ -1,12 +1,18 @@
 //! A minimal `no_std` SHA-256 guest for the zk-vm benchmark.
 //!
-//! The host stages the message into the guest's static [`BUF`] at the address
-//! returned by [`input_ptr`], then calls [`hash`] with the message length. The
-//! guest computes SHA-256, writes the 32-byte digest just past the 4 KiB message
-//! region, reveals it through the VCI so the verifier learns it, and returns the
+//! Memory is handed out through [`cabi_realloc`], the WebAssembly Component
+//! Model's canonical reallocation export: the host allocates the message buffer
+//! by calling `cabi_realloc(0, 0, align, len)`, writes the message there, then
+//! calls [`hash`] with that pointer and the message length. The guest computes
+//! SHA-256, writes the 32-byte digest just past the 4 KiB message region,
+//! reveals it through the VCI so the verifier learns it, and returns the
 //! digest's address. SHA-256 uses only operations the VM supports (`rotate_right`
 //! lowers to `i32.rotr`, etc.).
 #![no_std]
+
+extern crate alloc;
+
+use core::alloc::{GlobalAlloc, Layout};
 
 const H0: [u32; 8] = [
     0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
@@ -23,8 +29,30 @@ const K: [u32; 64] = [
     0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
 ];
 
-/// Message region (`[0, 4096)`) followed by the digest (`[4096, 4128)`).
-static mut BUF: [u8; 4128] = [0u8; 4128];
+/// A minimal bump allocator backing the global allocator: blocks are served
+/// from a static arena and never freed. The arena holds one 4 KiB message region
+/// plus the 32-byte digest, with slack for alignment — enough for the benchmark.
+struct Bump;
+
+static mut HEAP: [u8; 4160] = [0u8; 4160];
+/// Offset of the next free byte within [`HEAP`].
+static mut BUMP: usize = 0;
+
+unsafe impl GlobalAlloc for Bump {
+    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        let align = layout.align().max(1);
+        let base = core::ptr::addr_of!(HEAP) as usize;
+        let bump = core::ptr::addr_of_mut!(BUMP);
+        let aligned = (base + *bump + align - 1) & !(align - 1);
+        *bump = (aligned - base) + layout.size();
+        aligned as *mut u8
+    }
+
+    unsafe fn dealloc(&self, _ptr: *mut u8, _layout: Layout) {}
+}
+
+#[global_allocator]
+static ALLOC: Bump = Bump;
 
 #[link(wasm_import_module = "vc")]
 extern "C" {
@@ -32,20 +60,32 @@ extern "C" {
     fn reveal_bytes_wait(handle: i32);
 }
 
-/// Returns the address of the message buffer for the host to write into.
+/// The Component Model canonical `realloc`:
+/// `cabi_realloc(old_ptr, old_size, align, new_size) -> ptr`.
+///
+/// Delegates to the global allocator: a fresh block (`old_ptr == 0`) is an
+/// [`alloc`], otherwise an [`alloc::alloc::realloc`] of the existing block.
 #[no_mangle]
-pub extern "C" fn input_ptr() -> i32 {
-    core::ptr::addr_of!(BUF) as i32
+pub extern "C" fn cabi_realloc(old_ptr: i32, old_size: i32, align: i32, new_size: i32) -> i32 {
+    let align = (align as usize).max(1);
+    let new_size = new_size as usize;
+    unsafe {
+        if old_ptr == 0 {
+            let layout = Layout::from_size_align_unchecked(new_size, align);
+            alloc::alloc::alloc(layout) as i32
+        } else {
+            let old_layout = Layout::from_size_align_unchecked(old_size as usize, align);
+            alloc::alloc::realloc(old_ptr as *mut u8, old_layout, new_size) as i32
+        }
+    }
 }
 
-/// Hashes the first `len` bytes of the buffer, writes the digest at offset 4096,
-/// reveals it, and returns the digest's address.
+/// Hashes the `len` bytes at `ptr`, writes the digest 4 KiB into the message
+/// region, reveals it, and returns the digest's address.
 #[no_mangle]
-pub extern "C" fn hash(len: i32) -> i32 {
-    let base = core::ptr::addr_of_mut!(BUF) as *mut u8;
-    let digest = unsafe { base.add(4096) };
-    sha256(base as *const u8, len as usize, digest);
-    let digest_ptr = (core::ptr::addr_of!(BUF) as i32) + 4096;
+pub extern "C" fn hash(ptr: i32, len: i32) -> i32 {
+    let digest_ptr = ptr + 4096;
+    sha256(ptr as *const u8, len as usize, digest_ptr as *mut u8);
     unsafe {
         let handle = reveal_bytes(digest_ptr, 32);
         reveal_bytes_wait(handle);

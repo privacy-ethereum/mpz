@@ -166,16 +166,17 @@ fn run(wl: &Workload) -> Option<Value> {
     run_reading(wl, None).0
 }
 
-/// Evaluates a no-argument `i32`-returning export on the ideal VM — used to
-/// recover a guest's static buffer address without measured cost.
-fn ideal_i32(module: &Module, func_name: &str) -> i32 {
+/// Evaluates an `i32`-returning export on the ideal VM — used to recover a
+/// guest-allocated buffer address (via `cabi_realloc`) without measured cost.
+fn ideal_i32(module: &Module, func_name: &str, args: Vec<Value>) -> i32 {
     use mpz_vm_ideal::Instance;
     let mut vm = Instance::new(module.clone()).unwrap();
     let idx = func_idx(module, func_name);
     let (mut ctx, _) = test_st_context(1 << 20);
-    match block_on(vm.call(&mut ctx, idx, vec![])).unwrap() {
+    let params: Vec<Param> = args.into_iter().map(Param::Public).collect();
+    match block_on(vm.call(&mut ctx, idx, params)).unwrap() {
         Some(Value::I32(p)) => p,
-        other => panic!("input_ptr returned {other:?}"),
+        other => panic!("{func_name} returned {other:?}"),
     }
 }
 
@@ -203,7 +204,10 @@ const SHA256_SIZES: &[usize] = &[4096];
 fn bench_sha256(c: &mut Criterion) {
     let wasm = include_bytes!("guests/sha256.wasm");
     let module = Module::parse(wasm).unwrap();
-    let in_ptr = ideal_i32(&module, "input_ptr") as u32;
+    // Allocate the message + digest block through the guest's canonical
+    // `cabi_realloc(old_ptr, old_size, align, new_size)` export.
+    let in_ptr =
+        ideal_i32(&module, "cabi_realloc", vec![Value::I32(0), Value::I32(0), Value::I32(1), Value::I32(4128)]) as u32;
     let digest_ptr = in_ptr + 4096;
 
     let mut group = c.benchmark_group("zk-vm/sha256");
@@ -212,7 +216,10 @@ fn bench_sha256(c: &mut Criterion) {
         let msg: Vec<u8> = (0..len).map(|i| i as u8).collect();
         let wl = Workload::new(module.clone(), "hash")
             .private_mem(in_ptr, msg.clone())
-            .args(vec![Arg::Public(Value::I32(len as i32))]);
+            .args(vec![
+                Arg::Public(Value::I32(in_ptr as i32)),
+                Arg::Public(Value::I32(len as i32)),
+            ]);
 
         // Validate: the revealed digest must match a reference SHA-256.
         let (_, digest) = run_reading(&wl, Some((digest_ptr, 32)));
