@@ -1,0 +1,14 @@
+[package]
+name = "mpz-vm-test-harness"
+version = "0.1.0"
+edition = "2024"
+rust-version.workspace = true
+
+[dependencies]
+mpz-vm-ir = { workspace = true }
+mpz-vm-core-new = { workspace = true }
+wast = "243"
+wat = { workspace = true }
+
+[lints]
+workspace = true
