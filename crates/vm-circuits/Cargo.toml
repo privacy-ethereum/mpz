@@ -1,0 +1,16 @@
+[package]
+name = "mpz-vm-circuits"
+version = "0.1.0"
+edition = "2024"
+rust-version.workspace = true
+
+[dependencies]
+mpz-circuits-new = { workspace = true }
+mpz-fields = { workspace = true }
+mpz-vm-memory = { workspace = true }
+
+[dev-dependencies]
+proptest = "1"
+
+[lints]
+workspace = true

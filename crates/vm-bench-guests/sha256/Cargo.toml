@@ -1,0 +1,17 @@
+# Guest program for the zk-vm SHA-256 benchmark. Excluded from the workspace;
+# built to wasm with:
+#   cargo build -p sha256-guest --release --target wasm32-unknown-unknown
+# and the resulting .wasm copied to crates/vm-zk/benches/guests/sha256.wasm
+[package]
+name = "sha256-guest"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[profile.release]
+opt-level = 3
+lto = true
+panic = "abort"

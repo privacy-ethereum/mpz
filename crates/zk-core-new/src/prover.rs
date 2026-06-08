@@ -1,32 +1,25 @@
-//! Prover-side accumulator + per-execution handle.
-//!
-//! [`Prover`] holds the persistent consistency-check state (per-AND-gate
-//! triples + the assertions hash). Calling [`Prover::execute`] borrows
-//! the caller's gate tape and returns a [`ProverExecute`] which
-//! implements [`Context`]; driving a circuit function through that
-//! handle records triples and per-gate masked-witness bits directly
-//! into the parent `Prover`.
-//!
-//! The prover exploits the pointer-bit convention — every MAC's LSB
-//! carries the authenticated bit — so `mul` computes its witness bit
-//! as `a.lsb & b.lsb` with no separate witness tape.
 
 use blake3::Hasher;
 use itybity::{GetBit, Lsb0};
 use mpz_circuits_new::Context;
-use mpz_core::bitvec::{BitSlice, BitVec};
 use mpz_fields::{gf2::Gf2, gf2_128::Gf2_128};
-use zerocopy::IntoBytes;
 
 use crate::{
-    Error, MAC_ONE, MAC_ZERO, MaskedWitness, Proof, Result,
+    Error, MAC_ONE, MAC_ZERO, Proof, Result,
     check::{Triple, check_prover},
     util::set_lsb,
 };
 
-/// Persistent prover state. Outlives individual circuit executions;
-/// the final [`prove`](Self::prove) consumes the accumulated triples
-/// and assertions to produce the prover→verifier message.
+/// The prover side of the zero-knowledge protocol.
+///
+/// A `Prover` accumulates the state produced while evaluating one or more
+/// circuits, then condenses it into a single [`Proof`] via
+/// [`prove`](Self::prove).
+///
+/// Evaluate a circuit by obtaining a [`ProverExecute`] context from
+/// [`execute`](Self::execute), feeding it through a circuit, and calling
+/// [`ProverExecute::finish`]. State accumulated across executions is consumed
+/// and reset by [`prove`](Self::prove).
 #[derive(Debug, Default)]
 pub struct Prover {
     triples: Vec<Triple>,
@@ -34,59 +27,63 @@ pub struct Prover {
 }
 
 impl Prover {
-    /// Creates an empty prover.
+    /// Creates a new prover with no accumulated state.
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Begins one circuit execution. `gate_masks` and `gate_macs` are
-    /// the per-AND-gate sVOLE tape slices (caller-owned); the returned
-    /// handle implements [`Context`] and writes triples and
-    /// masked-witness bits directly into this prover. Returns
-    /// `Error::TapeLength` if the two tapes have different lengths.
+    /// MAC of a public bit: [`MAC_ONE`] for `true`, [`MAC_ZERO`] for `false`.
+    pub fn public_bit(&self, bit: bool) -> Gf2_128 {
+        if bit {
+            MAC_ONE
+        } else {
+            MAC_ZERO
+        }
+    }
+
+    /// Returns a [`ProverExecute`] context for evaluating a circuit.
+    ///
+    /// The `masks` tape is adjusted in place as the circuit is evaluated, and
+    /// `macs` supplies the corresponding authentication tags. Both tapes are
+    /// indexed in lockstep: entry `i` is consumed by the `i`-th input or AND
+    /// gate.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] if `masks` and `macs` differ in length.
     pub fn execute<'a>(
         &'a mut self,
-        gate_masks: &'a BitSlice,
-        gate_macs: &'a [Gf2_128],
+        masks: &'a mut [bool],
+        macs: &'a [Gf2_128],
     ) -> Result<ProverExecute<'a>> {
-        if gate_masks.len() != gate_macs.len() {
-            return Err(Error::tape_len(
-                "gate_macs",
-                gate_masks.len(),
-                gate_macs.len(),
-            ));
+        if masks.len() != macs.len() {
+            return Err(Error::tape_len("macs", masks.len(), macs.len()));
         }
         Ok(ProverExecute {
             triples: &mut self.triples,
             assertions: &mut self.assertions,
-            masked_witness: BitVec::with_capacity(gate_masks.len()),
-            public_bits: BitVec::new(),
-            gate_masks,
-            gate_macs,
-            counter: 0,
+            masks,
+            macs,
+            cursor: 0,
         })
     }
 
-    /// Runs the Fig-5 step-7 batch check on the accumulated state and
-    /// returns the proof message. Folds the assertions hash into
-    /// `transcript` *before* deriving χ, so χ binds to the public
-    /// statement.
+    /// Produces a [`Proof`] over all state accumulated so far.
+    ///
+    /// The random challenge `chi` and the correlation (`vope_choices`,
+    /// `vope_ev`) mask the proof so it reveals nothing about the witness. The
+    /// accumulated state is cleared, leaving the prover ready to be reused.
     pub fn prove(
         &mut self,
-        transcript: &mut Hasher,
+        chi: [u8; 32],
         vope_choices: &[bool; 128],
         vope_ev: &[Gf2_128; 128],
     ) -> Proof {
         let (a_0, a_1) = crate::vope::vope_receiver(vope_choices, vope_ev);
 
         let assertions = *self.assertions.finalize().as_bytes();
-        transcript.update(&assertions);
 
-        let chi: [u8; 32] = *transcript.finalize().as_bytes();
         let (u, v) = check_prover(&self.triples, chi, a_0, a_1);
-
-        transcript.update(u.as_bytes());
-        transcript.update(v.as_bytes());
 
         self.assertions.reset();
         self.triples.clear();
@@ -95,37 +92,68 @@ impl Prover {
     }
 }
 
-/// Per-execution prover handle. Implements [`Context`].
+/// A circuit evaluation context for the [`Prover`].
+///
+/// Implements [`Context`] so a circuit can be evaluated over authenticated
+/// wires, recording the state needed for the proof. Wire
+/// inputs are supplied with [`input`](Self::input) and
+/// [`input_public`](Self::input_public); [`finish`](Self::finish) validates
+/// that the entire tape was consumed.
 #[derive(Debug)]
 pub struct ProverExecute<'a> {
     triples: &'a mut Vec<Triple>,
     assertions: &'a mut Hasher,
-    masked_witness: BitVec,
-    /// Public bits accumulated from `assert` calls (one bit per
-    /// assertion encoding the `expected` value). Flushed into the
-    /// main transcript by `finish`.
-    public_bits: BitVec,
-    gate_masks: &'a BitSlice,
-    gate_macs: &'a [Gf2_128],
-    counter: usize,
+    masks: &'a mut [bool],
+    macs: &'a [Gf2_128],
+    cursor: usize,
 }
 
 impl ProverExecute<'_> {
-    /// Finishes the execution: asserts that the circuit consumed the
-    /// full gate tape, updates `transcript` with the masked-witness
-    /// bytes followed by the per-`assert` public bits (packed), and
-    /// returns the [`MaskedWitness`] to send to the verifier.
-    #[must_use = "the masked witness must be sent to the verifier"]
-    pub fn finish(self, transcript: &mut Hasher) -> Result<MaskedWitness> {
-        if self.counter != self.gate_macs.len() {
-            return Err(Error::tape_unconsumed(self.counter, self.gate_macs.len()));
+    /// Consumes the next tape entry to commit a private input `bit` and returns
+    /// its authenticated wire.
+    ///
+    /// The corresponding entry of the `masks` tape is adjusted in place to
+    /// encode `bit`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the mask or MAC tape has been exhausted.
+    pub fn input(&mut self, bit: bool) -> Gf2_128 {
+        let i = self.cursor;
+        let slot = self
+            .masks
+            .get_mut(i)
+            .expect("mask tape exhausted during input");
+        let mut mac = *self
+            .macs
+            .get(i)
+            .expect("mac tape exhausted during input");
+        *slot ^= bit;
+        set_lsb(&mut mac, bit);
+        self.cursor = i + 1;
+        mac
+    }
+
+    /// Returns the authenticated wire for a public input `bit`.
+    ///
+    /// Public inputs consume no tape entry, since their value is known to both
+    /// parties; the wire is a fixed constant determined by `bit`.
+    pub fn input_public(&self, bit: bool) -> Gf2_128 {
+        if bit { MAC_ONE } else { MAC_ZERO }
+    }
+
+    /// Finalizes the evaluation, validating that the entire tape was consumed.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] if the number of consumed tape entries does not match
+    /// the tape length, indicating the circuit drew fewer inputs and AND gates
+    /// than the tape provides.
+    pub fn finish(self) -> Result<()> {
+        if self.cursor != self.masks.len() {
+            return Err(Error::tape_unconsumed(self.cursor, self.masks.len()));
         }
-        let bits = self.masked_witness;
-        transcript.update(&bits.as_raw_slice().as_bytes()[..bits.len().div_ceil(8)]);
-        transcript.update(
-            &self.public_bits.as_raw_slice().as_bytes()[..self.public_bits.len().div_ceil(8)],
-        );
-        Ok(MaskedWitness { bits })
+        Ok(())
     }
 }
 
@@ -144,21 +172,19 @@ impl Context for ProverExecute<'_> {
 
     fn mul(&mut self, a: Gf2_128, b: Gf2_128) -> Gf2_128 {
         let z = GetBit::<Lsb0>::get_bit(&a, 0) & GetBit::<Lsb0>::get_bit(&b, 0);
-        let i = self.counter;
-        let mask = self
-            .gate_masks
-            .get(i)
-            .as_deref()
-            .copied()
-            .expect("gate_masks tape exhausted: circuit has more AND gates than the tape");
+        let i = self.cursor;
+        let slot = self
+            .masks
+            .get_mut(i)
+            .expect("mask tape exhausted: circuit has more AND gates than the tape");
         let mut mac = *self
-            .gate_macs
+            .macs
             .get(i)
-            .expect("gate_macs tape exhausted: circuit has more AND gates than the tape");
-        self.masked_witness.push(z ^ mask);
+            .expect("mac tape exhausted: circuit has more AND gates than the tape");
+        *slot ^= z;
         set_lsb(&mut mac, z);
         self.triples.push(Triple { x: a, y: b, z: mac });
-        self.counter = i + 1;
+        self.cursor = i + 1;
         mac
     }
 
@@ -173,7 +199,6 @@ impl Context for ProverExecute<'_> {
         }
 
         self.assertions.update(&v.to_inner().to_le_bytes());
-        self.public_bits.push(expected.0);
 
         Ok(())
     }
