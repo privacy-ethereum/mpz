@@ -1,43 +1,34 @@
 [package]
 name = "mpz-zk-core"
-version = "0.1.0-alpha.5"
+version = "0.1.0"
 edition = "2024"
-
-[lints]
-workspace = true
 
 [features]
 default = []
-rayon = ["dep:rayon", "mpz-core/rayon", "blake3/rayon", "itybity/rayon"]
+rayon = ["dep:rayon", "mpz-fields/rayon", "mpz-core/rayon"]
 
 [dependencies]
 mpz-core = { workspace = true }
 mpz-circuits = { workspace = true }
-mpz-memory-core = { workspace = true }
-mpz-vm-core = { workspace = true }
+mpz-fields = { workspace = true }
 
-thiserror = { workspace = true }
-serde = { workspace = true, features = ["derive"] }
-blake3 = { workspace = true, features = ["serde"] }
-cfg-if = { workspace = true }
-rangeset = { workspace = true, features = ["serde"] }
-rayon = { workspace = true, optional = true }
+blake3 = { workspace = true }
 itybity = { workspace = true }
-zerocopy = { workspace = true }
 rand_chacha = { workspace = true }
+rayon = { workspace = true, optional = true }
+serde = { workspace = true, features = ["derive"] }
+thiserror = { workspace = true }
+zerocopy = { workspace = true }
 
 [dev-dependencies]
-mpz-circuits = { workspace = true, features = ["aes"] }
-mpz-ot-core = { workspace = true, features = ["test-utils"] }
-rand = { workspace = true }
 criterion = { workspace = true }
-aes = { workspace = true }
-rstest = { workspace = true }
+mpz-ot-core = { workspace = true }
+rand = { workspace = true }
+sha2 = { workspace = true, features = ["compress"] }
 
 [[bench]]
-name = "prover"
+name = "sha256"
 harness = false
 
-[[bench]]
-name = "verifier"
-harness = false
+[lints]
+workspace = true

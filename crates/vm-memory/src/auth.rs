@@ -205,7 +205,7 @@ wasm_value!(F32, 32, 4, ValType::F32);
 wasm_value!(F64, 64, 8, ValType::F64);
 
 /// Authenticated register value: a typed bundle of [`Bit`]s mirroring
-/// [`mpz_vm_core_new::value::Value`]. The variant pins both the bit-width
+/// [`mpz_vm_core::value::Value`]. The variant pins both the bit-width
 /// and the WASM type the bits represent.
 #[derive(Debug, Clone)]
 pub enum AuthValue<W = Gf2_128> {

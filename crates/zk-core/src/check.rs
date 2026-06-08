@@ -1,262 +1,154 @@
-//! QuickSilver consistency check.
 
-use std::mem;
-
-use blake3::Hasher;
-use cfg_if::cfg_if;
-use mpz_core::{
-    Block,
-    bitvec::{BitSlice, BitVec},
+use itybity::{GetBit, Lsb0};
+use mpz_fields::{Field, gf2_128::Gf2_128};
+use rand_chacha::{
+    ChaCha12Rng,
+    rand_core::{RngCore, SeedableRng},
 };
-use rand_chacha::{ChaCha12Rng, rand_core::SeedableRng};
-use serde::{Deserialize, Serialize};
+#[cfg(feature = "rayon")]
+use rayon::prelude::*;
 use zerocopy::IntoBytes;
 
-use crate::vole::{vole_receiver, vole_sender};
+use crate::{Error, Result};
 
-type Result<T> = core::result::Result<T, CheckError>;
+const SEGMENT_SIZE: usize = 256;
 
-/// Chunk size for parallel processing of consistency check.
-/// Large enough to saturate caches, small enough for effective work stealing.
-const SEGMENT_SIZE: usize = 512;
-
-/// Values sent from the prover to the verifier for the consistency check.
-#[derive(Debug, Serialize, Deserialize)]
-pub struct UV {
-    u: Block,
-    v: Block,
+#[inline]
+fn lsb(g: Gf2_128) -> bool {
+    GetBit::<Lsb0>::get_bit(&g, 0)
 }
 
 #[derive(Debug, Default, Clone, Copy)]
 pub(crate) struct Triple {
-    pub(crate) x: Block,
-    pub(crate) y: Block,
-    pub(crate) z: Block,
+    pub(crate) x: Gf2_128,
+    pub(crate) y: Gf2_128,
+    pub(crate) z: Gf2_128,
 }
 
-#[derive(Debug, Default)]
-pub(crate) struct Check {
-    triples: Vec<Triple>,
-    adjust: BitVec,
+#[inline]
+fn prover_segment(
+    base_rng: &ChaCha12Rng,
+    stream_id: u64,
+    segment: &[Triple],
+) -> (Gf2_128, Gf2_128) {
+    let mut rng = base_rng.clone();
+    rng.set_stream(stream_id);
+
+    let len = segment.len();
+    let mut xs = [Gf2_128::new(0); SEGMENT_SIZE];
+    let mut ys = [Gf2_128::new(0); SEGMENT_SIZE];
+    let mut body_v = [Gf2_128::new(0); SEGMENT_SIZE];
+    let mut chi = [Gf2_128::new(0); SEGMENT_SIZE];
+
+    for (i, t) in segment.iter().enumerate() {
+        xs[i] = t.x;
+        ys[i] = t.y;
+        // `a_10 = y if lsb(x) else 0`, `a_11 = x if lsb(y) else 0`,
+        // expressed as `a · mask` with `mask ∈ {0, u128::MAX}` so there
+        // is no data-dependent branch.
+        let mask_x = (lsb(t.x) as u128).wrapping_neg();
+        let mask_y = (lsb(t.y) as u128).wrapping_neg();
+        body_v[i] =
+            Gf2_128::new(t.y.to_inner() & mask_x) + Gf2_128::new(t.x.to_inner() & mask_y) + t.z;
+    }
+
+    rng.fill_bytes(chi[..len].as_mut_bytes());
+
+    let u = Gf2_128::double_inner_product(&xs[..len], &ys[..len], &chi[..len]);
+    let v = Gf2_128::inner_product(&body_v[..len], &chi[..len]);
+    (u, v)
 }
 
-impl Check {
-    /// Reserves capacity for at least `n` AND gates, returns the starting
-    /// index.
-    pub(crate) fn reserve(&mut self, n: usize) -> usize {
-        let idx = self.triples.len();
-        self.triples.resize_with(idx + n, Default::default);
-        self.adjust.resize_with(idx + n, |_| Default::default());
-        idx
+#[inline]
+fn verifier_segment(
+    base_rng: &ChaCha12Rng,
+    stream_id: u64,
+    segment: &[Triple],
+    delta: Gf2_128,
+) -> Gf2_128 {
+    let mut rng = base_rng.clone();
+    rng.set_stream(stream_id);
+
+    let len = segment.len();
+    let mut xs = [Gf2_128::new(0); SEGMENT_SIZE];
+    let mut ys = [Gf2_128::new(0); SEGMENT_SIZE];
+    let mut zs = [Gf2_128::new(0); SEGMENT_SIZE];
+    let mut chi = [Gf2_128::new(0); SEGMENT_SIZE];
+
+    for (i, t) in segment.iter().enumerate() {
+        xs[i] = t.x;
+        ys[i] = t.y;
+        zs[i] = t.z;
     }
 
-    pub(crate) fn write(&mut self, idx: usize, triples: &[Triple], adjust: &BitSlice) {
-        self.triples[idx..idx + triples.len()].copy_from_slice(triples);
-        self.adjust[idx..idx + triples.len()].copy_from_bitslice(adjust);
-    }
+    rng.fill_bytes(chi[..len].as_mut_bytes());
 
-    /// Returns `true` if there are gates to check.
-    #[inline]
-    pub(crate) fn wants_check(&self) -> bool {
-        !self.triples.is_empty()
-    }
-
-    /// Executes the prover check, returning `U` and `V` defined in Figure 5,
-    /// Step 7.b.
-    pub(crate) fn check_prover(
-        &mut self,
-        transcript: &mut Hasher,
-        svole_choices: &[bool],
-        svole_ev: &[Block],
-    ) -> Result<UV> {
-        #[inline]
-        fn compute_terms(triple: Triple, chi: Block) -> (Block, Block) {
-            let Triple { x, y, z } = triple;
-
-            let u = x.gfmul(y).gfmul(chi);
-
-            // (Note that the LSB of a MAC contains the authenticated bit).
-            let a_10 = if x.lsb() { y } else { Block::ZERO };
-            let a_11 = if y.lsb() { x } else { Block::ZERO };
-            let v = (a_10 ^ a_11 ^ z).gfmul(chi);
-
-            (u, v)
-        }
-
-        let adjust_len = self.adjust.len();
-        transcript.update(&self.adjust.as_raw_slice().as_bytes()[..adjust_len.div_ceil(8)]);
-
-        let macs = mem::take(&mut self.triples);
-
-        let seed = *transcript.finalize().as_bytes();
-        let rng = ChaCha12Rng::from_seed(seed);
-
-        let process_segment = |rng: &mut ChaCha12Rng, segment: &[Triple]| {
-            use rand_chacha::rand_core::RngCore;
-
-            let mut u_acc = Block::ZERO;
-            let mut v_acc = Block::ZERO;
-            let mut chi = Block::ZERO;
-
-            for &triple in segment {
-                rng.fill_bytes(chi.as_mut());
-
-                let (u, v) = compute_terms(triple, chi);
-                u_acc ^= u;
-                v_acc ^= v;
-            }
-            (u_acc, v_acc)
-        };
-
-        cfg_if! {
-            if #[cfg(feature = "rayon")] {
-                use rayon::prelude::*;
-
-                let (mut u, mut v) = macs
-                    .par_chunks(SEGMENT_SIZE)
-                    .enumerate()
-                    .map(
-                        |(stream_id, segment)| {
-                            let mut rng = rng.clone();
-                            rng.set_stream(stream_id as u64);
-                            process_segment(&mut rng, segment)
-                        }
-                    )
-                    .reduce(
-                        || (Block::ZERO, Block::ZERO),
-                        |(u1, v1), (u2, v2)| (u1 ^ u2, v1 ^ v2),
-                    );
-            } else {
-                let (mut u, mut v) = macs
-                    .chunks(SEGMENT_SIZE)
-                    .enumerate()
-                    .map(|(stream_id, segment)| {
-                        let mut rng = rng.clone();
-                        rng.set_stream(stream_id as u64);
-                        process_segment(&mut rng, segment)
-                    })
-                    .fold(
-                        (Block::ZERO, Block::ZERO),
-                        |(u1, v1), (u2, v2)| (u1 ^ u2, v1 ^ v2),
-                    );
-            }
-        }
-
-        let (a_0, a_1) = vole_receiver(
-            svole_choices.try_into().map_err(|_| CheckError::SVole)?,
-            svole_ev.try_into().map_err(|_| CheckError::SVole)?,
-        );
-
-        u ^= a_0;
-        v ^= a_1;
-
-        transcript.update(&u.to_bytes());
-        transcript.update(&v.to_bytes());
-
-        self.adjust.clear();
-
-        Ok(UV { u, v })
-    }
-
-    /// Executes the verifier check, returning `W` defined in Figure 5, Step
-    /// 7.c.
-    pub(crate) fn check_verifier(
-        &mut self,
-        transcript: &mut Hasher,
-        delta: &Block,
-        svole_keys: &[Block],
-        uv: UV,
-    ) -> Result<()> {
-        #[inline]
-        fn compute_term(triple: Triple, chi: Block, delta: &Block) -> Block {
-            let Triple { x, y, z } = triple;
-            let b = x.gfmul(y) ^ delta.gfmul(z);
-            b.gfmul(chi)
-        }
-
-        let adjust_len = self.adjust.len();
-        transcript.update(&self.adjust.as_raw_slice().as_bytes()[..adjust_len.div_ceil(8)]);
-
-        let keys = mem::take(&mut self.triples);
-
-        let seed = *transcript.finalize().as_bytes();
-        let rng = ChaCha12Rng::from_seed(seed);
-
-        let process_segment = |rng: &mut ChaCha12Rng, segment: &[Triple]| {
-            use rand_chacha::rand_core::RngCore;
-
-            let mut w_acc = Block::ZERO;
-            let mut chi = Block::ZERO;
-
-            for &triple in segment {
-                rng.fill_bytes(chi.as_mut());
-
-                let w = compute_term(triple, chi, delta);
-                w_acc ^= w;
-            }
-
-            w_acc
-        };
-
-        cfg_if! {
-            if #[cfg(feature = "rayon")] {
-                use rayon::prelude::*;
-
-                let mut w = keys
-                    .par_chunks(SEGMENT_SIZE)
-                    .enumerate()
-                    .map(
-                        |(stream_id, segment)| {
-                            let mut rng = rng.clone();
-                            rng.set_stream(stream_id as u64);
-                            process_segment(&mut rng, segment)
-                        }
-                    )
-                    .reduce(
-                        || Block::ZERO,
-                        |w1, w2| w1 ^ w2,
-                    );
-            } else {
-                let mut w = keys
-                    .chunks(SEGMENT_SIZE)
-                    .enumerate()
-                    .map(|(stream_id, segment)| {
-                        let mut rng = rng.clone();
-                        rng.set_stream(stream_id as u64);
-                        process_segment(&mut rng, segment)
-                    })
-                    .fold(Block::ZERO, |w1, w2| w1 ^ w2);
-            }
-        }
-
-        let b = vole_sender(svole_keys.try_into().map_err(|_| CheckError::SVole)?);
-
-        w ^= b;
-
-        let UV { u, v } = uv;
-        transcript.update(&u.to_bytes());
-        transcript.update(&v.to_bytes());
-
-        self.adjust.clear();
-
-        if w != u ^ delta.gfmul(v) {
-            // Invalid! Call the police.
-            return Err(CheckError::Invalid);
-        }
-
-        Ok(())
-    }
-
-    /// Returns the total number of triples that need to be checked.
-    pub(crate) fn total(&self) -> usize {
-        self.triples.len()
-    }
+    let xy_chi = Gf2_128::double_inner_product(&xs[..len], &ys[..len], &chi[..len]);
+    let z_chi = Gf2_128::inner_product(&zs[..len], &chi[..len]);
+    xy_chi + delta * z_chi
 }
 
-#[derive(Debug, thiserror::Error)]
-pub(crate) enum CheckError {
-    #[error("incorrect number of sVOLE instances provided")]
-    SVole,
-    #[error("invalid consistency check")]
-    Invalid,
+pub(crate) fn check_prover(
+    triples: &[Triple],
+    chi: [u8; 32],
+    a_0: Gf2_128,
+    a_1: Gf2_128,
+) -> (Gf2_128, Gf2_128) {
+    let rng = ChaCha12Rng::from_seed(chi);
+
+    let (mut u_acc, mut v_acc) = cfg_select! {
+        feature = "rayon" => triples
+            .par_chunks(SEGMENT_SIZE)
+            .enumerate()
+            .map(|(id, seg)| prover_segment(&rng, id as u64, seg))
+            .reduce(
+                || (Gf2_128::new(0), Gf2_128::new(0)),
+                |(u1, v1), (u2, v2)| (u1 + u2, v1 + v2),
+            ),
+        _ => triples
+            .chunks(SEGMENT_SIZE)
+            .enumerate()
+            .map(|(id, seg)| prover_segment(&rng, id as u64, seg))
+            .fold(
+                (Gf2_128::new(0), Gf2_128::new(0)),
+                |(u1, v1), (u2, v2)| (u1 + u2, v1 + v2),
+            ),
+    };
+
+    u_acc = u_acc + a_0;
+    v_acc = v_acc + a_1;
+
+    (u_acc, v_acc)
+}
+
+pub(crate) fn check_verifier(
+    triples: &[Triple],
+    delta: Gf2_128,
+    chi: [u8; 32],
+    b: Gf2_128,
+    u: Gf2_128,
+    v: Gf2_128,
+) -> Result<()> {
+    let rng = ChaCha12Rng::from_seed(chi);
+
+    let mut w_acc = cfg_select! {
+        feature = "rayon" => triples
+            .par_chunks(SEGMENT_SIZE)
+            .enumerate()
+            .map(|(id, seg)| verifier_segment(&rng, id as u64, seg, delta))
+            .reduce(|| Gf2_128::new(0), |w1, w2| w1 + w2),
+        _ => triples
+            .chunks(SEGMENT_SIZE)
+            .enumerate()
+            .map(|(id, seg)| verifier_segment(&rng, id as u64, seg, delta))
+            .fold(Gf2_128::new(0), |w1, w2| w1 + w2),
+    };
+
+    w_acc = w_acc + b;
+
+    if w_acc != u + delta * v {
+        return Err(Error::check());
+    }
+
+    Ok(())
 }

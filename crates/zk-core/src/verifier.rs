@@ -1,291 +1,231 @@
-use std::sync::{Arc, Mutex};
 
 use blake3::Hasher;
-use mpz_circuits::{Circuit, Gate};
-use mpz_core::{Block, bitvec::BitVec};
-use mpz_memory_core::correlated::{Delta, Key};
+use mpz_circuits::Context;
+use mpz_fields::{gf2::Gf2, gf2_128::Gf2_128};
 
 use crate::{
-    check::{Check, CheckError, Triple, UV},
-    store::VerifierStoreError,
+    Error, MAC_ONE, MAC_ZERO, Proof, Result,
+    check::{Triple, check_verifier},
+    util::set_lsb,
 };
 
-type Result<T> = core::result::Result<T, VerifierError>;
-
+/// The verifier in the VOLE-based zero-knowledge proof protocol.
+///
+/// A `Verifier` holds the global MAC key `delta` and accumulates the state
+/// produced while evaluating a circuit. Evaluation is performed against a
+/// [`VerifierExecute`] obtained from [`execute`](Self::execute), after which
+/// [`verify`](Self::verify) checks the prover's [`Proof`].
+///
+/// A single `Verifier` may be reused across proofs: [`verify`](Self::verify)
+/// clears the accumulated state on completion.
+#[derive(Debug)]
 pub struct Verifier {
-    delta: Delta,
-    check: Arc<Mutex<Check>>,
+    triples: Vec<Triple>,
+    assertions: Hasher,
+    delta: Gf2_128,
+    key_zero: Gf2_128,
+    key_one: Gf2_128,
 }
 
 impl Verifier {
-    /// Creates a new verifier.
-    pub fn new(delta: Delta) -> Self {
+    /// Creates a new `Verifier` with the global MAC key `delta`.
+    pub fn new(delta: Gf2_128) -> Self {
+        let key_one = MAC_ONE + delta;
         Self {
+            triples: Vec::new(),
+            assertions: Hasher::default(),
             delta,
-            check: Arc::new(Mutex::new(Check::default())),
+            key_zero: MAC_ZERO,
+            key_one,
         }
     }
 
-    /// Returns `true` if there are gates to check.
-    pub fn wants_check(&self) -> bool {
-        self.check.lock().unwrap().wants_check()
-    }
-
-    pub fn execute(
-        &mut self,
-        circ: Arc<Circuit>,
-        input_keys: &[Key],
-        gate_keys: &[Key],
-    ) -> Result<VerifierExecute> {
-        if input_keys.len() != circ.inputs().len() {
-            return Err(ErrorRepr::InputKeyCount {
-                expected: circ.inputs().len(),
-                actual: input_keys.len(),
-            }
-            .into());
-        } else if gate_keys.len() != circ.and_count() {
-            return Err(ErrorRepr::GateKeyCount {
-                expected: circ.and_count(),
-                actual: gate_keys.len(),
-            }
-            .into());
-        }
-
-        let check_idx = self.check.lock().unwrap().reserve(circ.and_count());
-
-        Ok(VerifierExecute::new(
-            circ,
-            self.delta,
-            input_keys.to_vec(),
-            gate_keys.to_vec(),
-            self.check.clone(),
-            check_idx,
-        ))
-    }
-
-    /// Executes the consistency check.
-    pub fn check(&mut self, transcript: &mut Hasher, svole_keys: &[Block], uv: UV) -> Result<()> {
-        if Arc::strong_count(&self.check) > 1 {
-            return Err(ErrorRepr::Inprogress.into());
-        }
-
-        self.check
-            .lock()
-            .unwrap()
-            .check_verifier(transcript, self.delta.as_block(), svole_keys, uv)
-            .map_err(From::from)
-    }
-
-    /// Returns the number of pending gates that need to be checked.
-    pub fn pending(&self) -> usize {
-        self.check.lock().unwrap().total()
-    }
-}
-
-/// Verifier circuit execution.
-#[derive(Debug)]
-pub struct VerifierExecute {
-    circ: Arc<Circuit>,
-    delta: Delta,
-    keys: Vec<Key>,
-    gate_keys: Vec<Key>,
-    triples: Vec<Triple>,
-    adjust: BitVec,
-    check: Arc<Mutex<Check>>,
-    check_idx: usize,
-
-    counter: usize,
-    and_count: usize,
-}
-
-impl VerifierExecute {
-    fn new(
-        circ: Arc<Circuit>,
-        delta: Delta,
-        keys: Vec<Key>,
-        gate_keys: Vec<Key>,
-        check: Arc<Mutex<Check>>,
-        check_idx: usize,
-    ) -> Self {
-        let and_count = circ.and_count();
-        Self {
-            circ,
-            delta,
-            keys,
-            gate_keys,
-            triples: Vec::default(),
-            adjust: BitVec::default(),
-            check,
-            check_idx,
-            counter: 0,
-            and_count,
+    /// Key of a public bit: `key_one` (`MAC_ONE + delta`) for `true`,
+    /// `key_zero` ([`MAC_ZERO`]) for `false`.
+    pub fn public_bit(&self, bit: bool) -> Gf2_128 {
+        if bit {
+            self.key_one
+        } else {
+            self.key_zero
         }
     }
 
-    pub fn and_count(&self) -> usize {
-        self.circ.and_count()
-    }
-
-    pub fn consumer(&mut self) -> VerifierConsumer<'_, std::slice::Iter<'_, Gate>> {
-        // Allocate space for all the keys.
-        self.keys
-            .resize_with(self.circ.feed_count(), Default::default);
-
-        if self.triples.capacity() < self.circ.and_count() {
-            self.triples.reserve_exact(self.circ.and_count());
+    /// Begins evaluating a circuit, returning a [`VerifierExecute`] that records
+    /// evaluation state into this verifier.
+    ///
+    /// `keys` is the tape of verifier keys, one entry per input bit and per AND
+    /// gate, consumed in evaluation order. `adjust` is the corresponding tape of
+    /// adjustment bits received from the prover; each entry selects whether the
+    /// matching key is offset by `delta`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] if `keys` and `adjust` differ in length.
+    pub fn execute<'a>(
+        &'a mut self,
+        keys: &'a [Gf2_128],
+        adjust: &'a [bool],
+    ) -> Result<VerifierExecute<'a>> {
+        if keys.len() != adjust.len() {
+            return Err(Error::tape_len("adjust", keys.len(), adjust.len()));
         }
-
-        if self.adjust.capacity() < self.circ.and_count() {
-            self.adjust.reserve_exact(self.circ.and_count());
-        }
-
-        // Reset counter in case this is called multiple times by mistake.
-        self.counter = 0;
-
-        let mut consumer = VerifierConsumer {
-            keys: &mut self.keys,
-            gate_keys: &self.gate_keys,
-            delta: self.delta,
-            gates: self.circ.gates().iter(),
+        Ok(VerifierExecute {
             triples: &mut self.triples,
-            adjust: &mut self.adjust,
-            counter: &mut self.counter,
-            and_count: self.and_count,
-        };
-
-        // If there are no AND gates, we can process the circuit immediately.
-        if self.and_count == 0 {
-            consumer.next(Default::default());
-        }
-
-        consumer
+            assertions: &mut self.assertions,
+            keys,
+            adjust,
+            delta: &self.delta,
+            key_zero: &self.key_zero,
+            key_one: &self.key_one,
+            cursor: 0,
+        })
     }
 
-    pub fn finish(self) -> Result<Vec<Key>> {
-        if self.counter < self.and_count {
-            return Err(ErrorRepr::Incomplete.into());
+    /// Verifies `proof` against the state accumulated during evaluation.
+    ///
+    /// `chi` is the random challenge used to batch the check, and `vope_keys`
+    /// are the verifier's keys used to mask it. On success, the accumulated
+    /// state is cleared so this verifier can be reused.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] if the assertions in `proof` do not match the
+    /// assertions recorded during evaluation, or if the consistency check
+    /// fails.
+    pub fn verify(
+        &mut self,
+        chi: [u8; 32],
+        vope_keys: &[Gf2_128; 128],
+        proof: Proof,
+    ) -> Result<()> {
+        let Proof { assertions, u, v } = proof;
+
+        let expected_assertions = *self.assertions.finalize().as_bytes();
+        if assertions != expected_assertions {
+            return Err(Error::assert());
         }
 
-        // Flush check state.
-        self.check
-            .lock()
-            .unwrap()
-            .write(self.check_idx, &self.triples, &self.adjust);
+        let b = crate::vope::vope_sender(vope_keys);
+        check_verifier(&self.triples, self.delta, chi, b, u, v)?;
 
-        Ok(self.keys[self.circ.outputs()].to_vec())
+        self.assertions.reset();
+        self.triples.clear();
+
+        Ok(())
     }
 }
 
-/// Consumer accepting adjustment bits from the prover for each AND gate.
-#[must_use = "consumer does nothing unless `next` is called"]
-pub struct VerifierConsumer<'a, I> {
-    keys: &'a mut [Key],
-    gate_keys: &'a [Key],
-    delta: Delta,
-    gates: I,
+/// An in-progress circuit evaluation on the verifier side.
+///
+/// Returned by [`Verifier::execute`], a `VerifierExecute` implements
+/// [`Context`] so a circuit can be evaluated over verifier keys. It consumes
+/// the key and adjustment tapes as input and AND gates are encountered,
+/// recording the state needed to check the proof. Call
+/// [`finish`](Self::finish) once evaluation completes to confirm the tapes were
+/// fully consumed.
+#[derive(Debug)]
+pub struct VerifierExecute<'a> {
     triples: &'a mut Vec<Triple>,
-    adjust: &'a mut BitVec,
-    counter: &'a mut usize,
-    and_count: usize,
+    assertions: &'a mut Hasher,
+    keys: &'a [Gf2_128],
+    adjust: &'a [bool],
+    delta: &'a Gf2_128,
+    key_zero: &'a Gf2_128,
+    key_one: &'a Gf2_128,
+    cursor: usize,
 }
 
-impl<'a, I> VerifierConsumer<'a, I>
-where
-    I: Iterator<Item = &'a Gate>,
-{
-    /// Returns `true` if the verifier wants more adjustment bits.
-    #[inline]
-    pub fn wants_adjust(&self) -> bool {
-        *self.counter < self.and_count
+impl VerifierExecute<'_> {
+    /// Consumes the next input from the tapes and returns its verifier key.
+    ///
+    /// The key is offset by `delta` when the corresponding adjustment bit is
+    /// set.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the key or adjustment tape has been exhausted.
+    pub fn input(&mut self) -> Gf2_128 {
+        let i = self.cursor;
+        let raw = *self
+            .keys
+            .get(i)
+            .expect("key tape exhausted during input");
+        let adj = *self
+            .adjust
+            .get(i)
+            .expect("adjust tape exhausted during input");
+        let mut key = if adj { raw + *self.delta } else { raw };
+        set_lsb(&mut key, false);
+        self.cursor = i + 1;
+        key
     }
 
-    /// Processes the next gate in the circuit.
-    #[inline]
-    pub fn next(&mut self, adjust: bool) {
-        while let Some(gate) = self.gates.next() {
-            match gate {
-                Gate::Xor {
-                    x: node_x,
-                    y: node_y,
-                    z: node_z,
-                } => {
-                    let x = self.keys[node_x.id()];
-                    let y = self.keys[node_y.id()];
-                    self.keys[node_z.id()] = x + y;
-                }
-                Gate::And {
-                    x: node_x,
-                    y: node_y,
-                    z: node_z,
-                } => {
-                    let key_x = self.keys[node_x.id()];
-                    let key_y = self.keys[node_y.id()];
-                    let mut key_z = self.gate_keys[*self.counter];
+    /// Returns the verifier key for a public input wire carrying `bit`.
+    ///
+    /// Public inputs consume no tape entries, since their value is known to both
+    /// parties.
+    pub fn input_public(&self, bit: bool) -> Gf2_128 {
+        if bit { *self.key_one } else { *self.key_zero }
+    }
 
-                    key_z.adjust(adjust, &self.delta);
-
-                    self.keys[node_z.id()] = key_z;
-                    self.triples.push(Triple {
-                        x: key_x.into(),
-                        y: key_y.into(),
-                        z: key_z.into(),
-                    });
-                    self.adjust.push(adjust);
-                    *self.counter += 1;
-
-                    // If we have more AND gates, return.
-                    if self.wants_adjust() {
-                        return;
-                    }
-                }
-                Gate::Inv {
-                    x: node_x,
-                    z: node_z,
-                } => {
-                    let mut x = self.keys[node_x.id()];
-                    x.adjust(true, &self.delta);
-                    self.keys[node_z.id()] = x;
-                }
-                Gate::Id {
-                    x: node_x,
-                    z: node_z,
-                } => {
-                    let x = self.keys[node_x.id()];
-                    self.keys[node_z.id()] = x;
-                }
-            }
+    /// Completes evaluation, confirming that the adjustment tape was fully
+    /// consumed.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] if the circuit consumed fewer tape entries than were
+    /// provided, indicating a mismatch between the circuit and the tapes.
+    pub fn finish(self) -> Result<()> {
+        if self.cursor != self.adjust.len() {
+            return Err(Error::tape_unconsumed(self.cursor, self.adjust.len()));
         }
+        Ok(())
     }
 }
 
-#[derive(Debug, thiserror::Error)]
-#[error(transparent)]
-pub struct VerifierError(#[from] ErrorRepr);
+impl Context for VerifierExecute<'_> {
+    type Error = Error;
+    type Wire = Gf2_128;
+    type Field = Gf2;
 
-#[derive(Debug, thiserror::Error)]
-enum ErrorRepr {
-    #[error("invalid input key count: expected {expected}, got {actual}")]
-    InputKeyCount { expected: usize, actual: usize },
-    #[error("invalid gate key count: expected {expected}, got {actual}")]
-    GateKeyCount { expected: usize, actual: usize },
-    #[error("execution is incomplete")]
-    Incomplete,
-    #[error("cannot run consistency check while execution is in progress")]
-    Inprogress,
-    #[error(transparent)]
-    Check(CheckError),
-    #[error("cannot return keys: {0}")]
-    Keys(VerifierStoreError),
-}
-
-impl From<CheckError> for VerifierError {
-    fn from(err: CheckError) -> Self {
-        Self(ErrorRepr::Check(err))
+    fn add(&mut self, a: Gf2_128, b: Gf2_128) -> Gf2_128 {
+        a + b
     }
-}
 
-impl From<VerifierStoreError> for VerifierError {
-    fn from(value: VerifierStoreError) -> Self {
-        Self(ErrorRepr::Keys(value))
+    fn sub(&mut self, a: Gf2_128, b: Gf2_128) -> Gf2_128 {
+        a - b
+    }
+
+    fn mul(&mut self, a: Gf2_128, b: Gf2_128) -> Gf2_128 {
+        let i = self.cursor;
+        let mut key = *self
+            .keys
+            .get(i)
+            .expect("key tape exhausted: circuit has more AND gates than the tape");
+        let adj = *self
+            .adjust
+            .get(i)
+            .expect("adjust tape exhausted: circuit has more AND gates than the witness");
+
+        if adj {
+            key = key + *self.delta;
+        }
+        set_lsb(&mut key, false);
+
+        self.triples.push(Triple { x: a, y: b, z: key });
+        self.cursor = i + 1;
+
+        key
+    }
+
+    fn constant(&mut self, v: Gf2) -> Gf2_128 {
+        if v.0 { *self.key_one } else { *self.key_zero }
+    }
+
+    fn assert_const(&mut self, v: Gf2_128, expected: Gf2) -> Result<()> {
+        let mac = if expected.0 { v + *self.delta } else { v };
+        self.assertions.update(&mac.to_inner().to_le_bytes());
+
+        Ok(())
     }
 }

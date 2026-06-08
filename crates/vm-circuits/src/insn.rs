@@ -1,6 +1,6 @@
-use mpz_circuits_new::Context;
+use mpz_circuits::Context;
 #[cfg(test)]
-use mpz_circuits_new::MaybeConst;
+use mpz_circuits::MaybeConst;
 #[cfg(test)]
 use mpz_fields::Field;
 use mpz_fields::gf2::Gf2;

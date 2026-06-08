@@ -1,76 +1,46 @@
-use std::sync::Arc;
+use mpz_vm_ir::ValType;
 
-use mpz_circuits::Circuit;
-use mpz_memory_core::{Slice, ToRaw};
+use crate::value::Value;
 
-#[derive(Debug, thiserror::Error)]
-pub enum CallError {
-    #[error("input length mismatch: expected {expected}, got {actual}")]
-    InputLength { expected: usize, actual: usize },
-}
-
-#[derive(Debug)]
-pub struct CallBuilder {
-    circ: Arc<Circuit>,
-    inputs: Vec<Slice>,
-}
-
-impl CallBuilder {
-    /// Creates a new call builder.
-    pub fn new(circ: Arc<Circuit>) -> Self {
-        Self {
-            circ,
-            inputs: Vec::new(),
-        }
-    }
-
-    /// Adds an argument to the call.
-    pub fn arg<T: ToRaw>(mut self, arg: T) -> Self {
-        self.inputs.push(arg.to_raw());
-        self
-    }
-
-    /// Builds the call.
-    pub fn build(self) -> Result<Call, CallError> {
-        let input_len = self.inputs.iter().map(|s| s.len()).sum();
-        if self.circ.inputs().len() != input_len {
-            return Err(CallError::InputLength {
-                expected: self.circ.inputs().len(),
-                actual: input_len,
-            });
-        }
-
-        Ok(Call {
-            circ: self.circ,
-            inputs: self.inputs,
-        })
-    }
-}
-
+/// A request to invoke a function in a [`Module`](mpz_vm_ir::Module).
+///
+/// A call identifies the target function by its index within the module and
+/// supplies one [`Param`] for each of the function's parameters.
 #[derive(Debug, Clone)]
 pub struct Call {
-    circ: Arc<Circuit>,
-    inputs: Vec<Slice>,
+    /// The index of the function to invoke within the module.
+    pub func_idx: u32,
+    /// The arguments passed to the function, one per parameter.
+    pub params: Vec<Param>,
 }
 
-impl Call {
-    /// Creates a new call builder.
-    pub fn builder(circ: Arc<Circuit>) -> CallBuilder {
-        CallBuilder::new(circ)
+/// An argument supplied to a function call.
+///
+/// Each variant determines both the value and its [`Visibility`](crate::Visibility):
+/// whether it is known to the caller, shared publicly, or hidden from the
+/// caller entirely.
+#[derive(Debug, Clone)]
+pub enum Param {
+    /// A private argument whose value is known to the caller but kept secret.
+    Private(Value),
+    /// A public argument whose value is known to all parties.
+    Public(Value),
+    /// A blinded argument of the given type whose value is unknown to the caller.
+    Blind(ValType),
+}
+
+impl Param {
+    /// Returns the type of this argument.
+    pub fn ty(&self) -> ValType {
+        match self {
+            Param::Private(v) => v.ty(),
+            Param::Public(v) => v.ty(),
+            Param::Blind(ty) => *ty,
+        }
     }
 
-    /// Returns the circuit.
-    pub fn circ(&self) -> &Circuit {
-        &self.circ
-    }
-
-    /// Returns the inputs.
-    pub fn inputs(&self) -> &[Slice] {
-        &self.inputs
-    }
-
-    /// Consumes the call and returns the circuit and inputs.
-    pub fn into_parts(self) -> (Arc<Circuit>, Vec<Slice>) {
-        (self.circ, self.inputs)
+    /// Creates a public [`I32`](ValType::I32) argument with the given value.
+    pub fn public_i32(v: i32) -> Self {
+        Self::Public(Value::I32(v))
     }
 }

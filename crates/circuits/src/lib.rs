@@ -1,21 +1,87 @@
-//! Circuits and circuit builder types.
+use mpz_fields::Field;
 
-#[cfg(feature = "aes")]
-pub use mpz_circuits_data::AES128;
+pub mod sha256;
 
-#[cfg(feature = "aes")]
-pub use mpz_circuits_data::AES128_KS;
+/// A wire that may be constant.
+#[derive(Debug, Clone, Copy)]
+pub enum MaybeConst<A, B> {
+    /// A variable wire.
+    Var(A),
+    /// A constant wire.
+    Const(B),
+}
 
-#[cfg(feature = "aes")]
-pub use mpz_circuits_data::AES128_POST_KS;
+/// Circuit-evaluation context.
+pub trait Context {
+    type Error;
+    type Wire: Copy;
+    type Field: Field;
 
-#[cfg(feature = "blake3")]
-pub use mpz_circuits_data::BLAKE3_COMPRESS;
+    fn add(&mut self, a: Self::Wire, b: Self::Wire) -> Self::Wire;
 
-#[cfg(feature = "sha2")]
-pub use mpz_circuits_data::SHA256_COMPRESS;
+    fn sub(&mut self, a: Self::Wire, b: Self::Wire) -> Self::Wire;
 
-#[cfg(feature = "keccak")]
-pub use mpz_circuits_data::KECCAK_PERMUTE;
+    fn mul(&mut self, a: Self::Wire, b: Self::Wire) -> Self::Wire;
 
-pub use mpz_circuits_core::*;
+    fn mul_const(&mut self, a: Self::Wire, b: Self::Field) -> MaybeConst<Self::Wire, Self::Field> {
+        if b == Field::zero() {
+            MaybeConst::Const(Field::zero())
+        } else if b == Field::one() {
+            MaybeConst::Var(a)
+        } else {
+            let b = self.constant(b);
+            MaybeConst::Var(self.mul(a, b))
+        }
+    }
+
+    /// Public constant wire.
+    fn constant(&mut self, v: Self::Field) -> Self::Wire;
+
+    /// Assert that `v` equals the constant value `expected`.
+    fn assert_const(&mut self, v: Self::Wire, expected: Self::Field) -> Result<(), Self::Error>;
+
+    /// Assert that two wires carry equal values.
+    fn assert_eq(&mut self, a: Self::Wire, b: Self::Wire) -> Result<(), Self::Error> {
+        let diff = self.sub(a, b);
+        self.assert_const(diff, Self::Field::zero())
+    }
+}
+
+/// Witness-generation context.
+pub struct WitnessCtx<'a, T> {
+    pub witness: &'a mut Vec<T>,
+}
+
+#[derive(Debug)]
+pub struct WitnessError;
+
+impl<T: Field> Context for WitnessCtx<'_, T> {
+    type Error = WitnessError;
+    type Wire = T;
+    type Field = T;
+
+    fn add(&mut self, a: T, b: T) -> T {
+        a + b
+    }
+
+    fn sub(&mut self, a: T, b: T) -> T {
+        a - b
+    }
+
+    fn mul(&mut self, a: T, b: T) -> T {
+        let z = a * b;
+        self.witness.push(z);
+        z
+    }
+
+    fn constant(&mut self, v: T) -> T {
+        v
+    }
+
+    fn assert_const(&mut self, v: T, expected: T) -> Result<(), WitnessError> {
+        if v != expected {
+            return Err(WitnessError);
+        }
+        Ok(())
+    }
+}

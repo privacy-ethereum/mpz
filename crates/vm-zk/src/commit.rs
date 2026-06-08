@@ -1,6 +1,6 @@
 
-use mpz_vm_core_new::{Error as CoreError, Global, Param, Reg, value::Value};
-use mpz_zk_core_new::{ProverExecute, VerifierExecute};
+use mpz_vm_core::{Error as CoreError, Global, Param, Reg, value::Value};
+use mpz_zk_core::{ProverExecute, VerifierExecute};
 use rangeset::set::RangeSet;
 use std::ops::Range;
 

@@ -3,19 +3,19 @@
 //! This crate provides the two parties of a designated-verifier
 //! zero-knowledge proof of program execution. A program is expressed as an
 //! `mpz-vm-ir` [`Module`](mpz_vm_ir::Module) and run through the
-//! [`Vm`](mpz_vm_core_new::Vm) interface implemented by both parties.
+//! [`Vm`](mpz_vm_core::Vm) interface implemented by both parties.
 //!
 //! The [`Prover`] holds the private witness and produces a proof that the
 //! module was executed correctly, while the [`Verifier`] checks that proof
 //! against the public inputs and outputs without learning the witness. The two
 //! parties communicate over a shared channel and are driven through the same
-//! [`Vm`](mpz_vm_core_new::Vm) trait, so the same program description executes
+//! [`Vm`](mpz_vm_core::Vm) trait, so the same program description executes
 //! on both sides.
 
 use std::collections::BTreeMap;
 
-use mpz_vm_core_new::{Trap, value::Value};
-use mpz_zk_core_new::Proof;
+use mpz_vm_core::{Trap, value::Value};
+use mpz_zk_core::Proof;
 
 pub(crate) mod capture;
 pub(crate) mod commit;

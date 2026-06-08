@@ -1,21 +1,20 @@
 [package]
 name = "mpz-circuits"
-version = "0.1.0-alpha.5"
+version = "0.1.0"
 edition = "2024"
+
+[dependencies]
+mpz-fields = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+itybity = { workspace = true }
+rand = { workspace = true }
+sha2 = { workspace = true, features = ["compress"] }
+
+[[bench]]
+name = "sha256"
+harness = false
 
 [lints]
 workspace = true
-
-[lib]
-name = "mpz_circuits"
-
-[features]
-default = []
-aes = ["mpz-circuits-data/aes"]
-sha2 = ["mpz-circuits-data/sha2"]
-blake3 = ["mpz-circuits-data/blake3"]
-keccak = ["mpz-circuits-data/keccak"]
-
-[dependencies]
-mpz-circuits-core = { workspace = true }
-mpz-circuits-data = { workspace = true }

@@ -1,284 +1,205 @@
-use std::sync::{Arc, Mutex};
 
 use blake3::Hasher;
-use mpz_circuits::{Circuit, Gate};
-use mpz_core::{Block, bitvec::BitVec};
-use mpz_memory_core::correlated::Mac;
+use itybity::{GetBit, Lsb0};
+use mpz_circuits::Context;
+use mpz_fields::{gf2::Gf2, gf2_128::Gf2_128};
 
 use crate::{
-    check::{Check, CheckError, Triple, UV},
-    store::ProverStoreError,
+    Error, MAC_ONE, MAC_ZERO, Proof, Result,
+    check::{Triple, check_prover},
+    util::set_lsb,
 };
 
-type Result<T> = core::result::Result<T, ProverError>;
-
+/// The prover side of the zero-knowledge protocol.
+///
+/// A `Prover` accumulates the state produced while evaluating one or more
+/// circuits, then condenses it into a single [`Proof`] via
+/// [`prove`](Self::prove).
+///
+/// Evaluate a circuit by obtaining a [`ProverExecute`] context from
+/// [`execute`](Self::execute), feeding it through a circuit, and calling
+/// [`ProverExecute::finish`]. State accumulated across executions is consumed
+/// and reset by [`prove`](Self::prove).
 #[derive(Debug, Default)]
 pub struct Prover {
-    check: Arc<Mutex<Check>>,
+    triples: Vec<Triple>,
+    assertions: Hasher,
 }
 
 impl Prover {
+    /// Creates a new prover with no accumulated state.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// MAC of a public bit: [`MAC_ONE`] for `true`, [`MAC_ZERO`] for `false`.
+    pub fn public_bit(&self, bit: bool) -> Gf2_128 {
+        if bit {
+            MAC_ONE
+        } else {
+            MAC_ZERO
+        }
+    }
+
+    /// Returns a [`ProverExecute`] context for evaluating a circuit.
+    ///
+    /// The `masks` tape is adjusted in place as the circuit is evaluated, and
+    /// `macs` supplies the corresponding authentication tags. Both tapes are
+    /// indexed in lockstep: entry `i` is consumed by the `i`-th input or AND
+    /// gate.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] if `masks` and `macs` differ in length.
     pub fn execute<'a>(
-        &mut self,
-        circ: Arc<Circuit>,
-        input_macs: &'a [Mac],
-        gate_masks: &'a [bool],
-        gate_macs: &'a [Mac],
-    ) -> Result<ProverExecute> {
-        if input_macs.len() != circ.inputs().len() {
-            return Err(ErrorRepr::InputMacCount {
-                expected: circ.inputs().len(),
-                actual: input_macs.len(),
-            }
-            .into());
-        } else if gate_masks.len() != circ.and_count() {
-            return Err(ErrorRepr::GateMaskCount {
-                expected: circ.and_count(),
-                actual: gate_masks.len(),
-            }
-            .into());
-        } else if gate_macs.len() != circ.and_count() {
-            return Err(ErrorRepr::GateMacCount {
-                expected: circ.and_count(),
-                actual: gate_macs.len(),
-            }
-            .into());
+        &'a mut self,
+        masks: &'a mut [bool],
+        macs: &'a [Gf2_128],
+    ) -> Result<ProverExecute<'a>> {
+        if masks.len() != macs.len() {
+            return Err(Error::tape_len("macs", masks.len(), macs.len()));
         }
-
-        let check_idx = self.check.lock().unwrap().reserve(circ.and_count());
-
-        Ok(ProverExecute::new(
-            circ,
-            input_macs.to_vec(),
-            gate_masks.to_vec(),
-            gate_macs.to_vec(),
-            self.check.clone(),
-            check_idx,
-        ))
-    }
-
-    /// Returns `true` if there are gates to check.
-    pub fn wants_check(&self) -> bool {
-        self.check.lock().unwrap().wants_check()
-    }
-
-    /// Executes the consistency check.
-    pub fn check(
-        &mut self,
-        transcript: &mut Hasher,
-        svole_choices: &[bool],
-        svole_ev: &[Block],
-    ) -> Result<UV> {
-        if Arc::strong_count(&self.check) > 1 {
-            return Err(ErrorRepr::Inprogress.into());
-        }
-
-        self.check
-            .lock()
-            .unwrap()
-            .check_prover(transcript, svole_choices, svole_ev)
-            .map_err(From::from)
-    }
-
-    /// Returns the number of pending gates that need to be checked.
-    pub fn pending(&self) -> usize {
-        self.check.lock().unwrap().total()
-    }
-}
-
-/// Prover circuit execution.
-#[derive(Debug)]
-pub struct ProverExecute {
-    circ: Arc<Circuit>,
-    macs: Vec<Mac>,
-    triples: Vec<Triple>,
-    adjust: BitVec,
-    gate_masks: Vec<bool>,
-    gate_macs: Vec<Mac>,
-    check: Arc<Mutex<Check>>,
-    check_idx: usize,
-
-    counter: usize,
-    and_count: usize,
-}
-
-impl ProverExecute {
-    fn new(
-        circ: Arc<Circuit>,
-        macs: Vec<Mac>,
-        gate_masks: Vec<bool>,
-        gate_macs: Vec<Mac>,
-        check: Arc<Mutex<Check>>,
-        check_idx: usize,
-    ) -> Self {
-        let and_count = circ.and_count();
-        Self {
-            circ,
-            macs,
-            triples: Vec::default(),
-            adjust: BitVec::default(),
-            gate_masks,
-            gate_macs,
-            check,
-            check_idx,
-            counter: 0,
-            and_count,
-        }
-    }
-
-    /// Returns the number of AND gates.
-    pub fn and_count(&self) -> usize {
-        self.circ.and_count()
-    }
-
-    /// Returns an iterator which processes each gate in the circuit.
-    pub fn iter(&mut self) -> ProverIter<'_, std::slice::Iter<'_, Gate>> {
-        // Allocate space for all the MACs.
-        self.macs
-            .resize_with(self.circ.feed_count(), Default::default);
-
-        if self.triples.capacity() < self.circ.and_count() {
-            self.triples.reserve_exact(self.circ.and_count());
-        }
-
-        if self.adjust.capacity() < self.circ.and_count() {
-            self.adjust.reserve_exact(self.circ.and_count());
-        }
-
-        // Reset counter in case this is called multiple times by mistake.
-        self.counter = 0;
-
-        ProverIter {
-            macs: &mut self.macs,
-            gate_masks: &self.gate_masks,
-            gate_macs: &self.gate_macs,
-            gates: self.circ.gates().iter(),
+        Ok(ProverExecute {
             triples: &mut self.triples,
-            adjust: &mut self.adjust,
-            counter: &mut self.counter,
-            and_count: self.and_count,
-        }
+            assertions: &mut self.assertions,
+            masks,
+            macs,
+            cursor: 0,
+        })
     }
 
-    pub fn finish(self) -> Result<Vec<Mac>> {
-        if self.counter != self.and_count {
-            return Err(ErrorRepr::Incomplete.into());
-        }
+    /// Produces a [`Proof`] over all state accumulated so far.
+    ///
+    /// The random challenge `chi` and the correlation (`vope_choices`,
+    /// `vope_ev`) mask the proof so it reveals nothing about the witness. The
+    /// accumulated state is cleared, leaving the prover ready to be reused.
+    pub fn prove(
+        &mut self,
+        chi: [u8; 32],
+        vope_choices: &[bool; 128],
+        vope_ev: &[Gf2_128; 128],
+    ) -> Proof {
+        let (a_0, a_1) = crate::vope::vope_receiver(vope_choices, vope_ev);
 
-        // Flush check state.
-        self.check
-            .lock()
-            .unwrap()
-            .write(self.check_idx, &self.triples, &self.adjust);
+        let assertions = *self.assertions.finalize().as_bytes();
 
-        Ok(self.macs[self.circ.outputs()].to_vec())
+        let (u, v) = check_prover(&self.triples, chi, a_0, a_1);
+
+        self.assertions.reset();
+        self.triples.clear();
+
+        Proof { assertions, u, v }
     }
 }
 
-/// Iterator yielding adjustment bits for each AND gate.
-#[must_use = "iterator does nothing unless consumed"]
-pub struct ProverIter<'a, I> {
-    macs: &'a mut [Mac],
-    gate_masks: &'a [bool],
-    gate_macs: &'a [Mac],
-    gates: I,
+/// A circuit evaluation context for the [`Prover`].
+///
+/// Implements [`Context`] so a circuit can be evaluated over authenticated
+/// wires, recording the state needed for the proof. Wire
+/// inputs are supplied with [`input`](Self::input) and
+/// [`input_public`](Self::input_public); [`finish`](Self::finish) validates
+/// that the entire tape was consumed.
+#[derive(Debug)]
+pub struct ProverExecute<'a> {
     triples: &'a mut Vec<Triple>,
-    adjust: &'a mut BitVec,
-    counter: &'a mut usize,
-    and_count: usize,
+    assertions: &'a mut Hasher,
+    masks: &'a mut [bool],
+    macs: &'a [Gf2_128],
+    cursor: usize,
 }
 
-impl<'a, I> Iterator for ProverIter<'a, I>
-where
-    I: Iterator<Item = &'a Gate>,
-{
-    type Item = bool;
+impl ProverExecute<'_> {
+    /// Consumes the next tape entry to commit a private input `bit` and returns
+    /// its authenticated wire.
+    ///
+    /// The corresponding entry of the `masks` tape is adjusted in place to
+    /// encode `bit`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the mask or MAC tape has been exhausted.
+    pub fn input(&mut self, bit: bool) -> Gf2_128 {
+        let i = self.cursor;
+        let slot = self
+            .masks
+            .get_mut(i)
+            .expect("mask tape exhausted during input");
+        let mut mac = *self
+            .macs
+            .get(i)
+            .expect("mac tape exhausted during input");
+        *slot ^= bit;
+        set_lsb(&mut mac, bit);
+        self.cursor = i + 1;
+        mac
+    }
 
-    #[inline]
-    fn next(&mut self) -> Option<Self::Item> {
-        while let Some(gate) = self.gates.next() {
-            match gate {
-                Gate::Xor { x, y, z } => {
-                    let mac_x = self.macs[x.id()];
-                    let mac_y = self.macs[y.id()];
-                    self.macs[z.id()] = mac_x + mac_y;
-                }
-                Gate::And { x, y, z } => {
-                    let mac_x = self.macs[x.id()];
-                    let mac_y = self.macs[y.id()];
-                    let mut mac_z = self.gate_macs[*self.counter];
+    /// Returns the authenticated wire for a public input `bit`.
+    ///
+    /// Public inputs consume no tape entry, since their value is known to both
+    /// parties; the wire is a fixed constant determined by `bit`.
+    pub fn input_public(&self, bit: bool) -> Gf2_128 {
+        if bit { MAC_ONE } else { MAC_ZERO }
+    }
 
-                    // By convention, the LSB of a MAC must contain the value of the authenticated
-                    // bit. The verifier must set LSB(key) == 0 and LSB(delta)
-                    // == 1.
-                    let w_z = mac_x.pointer() & mac_y.pointer();
-                    mac_z.set_pointer(w_z);
+    /// Finalizes the evaluation, validating that the entire tape was consumed.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Error`] if the number of consumed tape entries does not match
+    /// the tape length, indicating the circuit drew fewer inputs and AND gates
+    /// than the tape provides.
+    pub fn finish(self) -> Result<()> {
+        if self.cursor != self.masks.len() {
+            return Err(Error::tape_unconsumed(self.cursor, self.masks.len()));
+        }
+        Ok(())
+    }
+}
 
-                    let adjust = self.gate_masks[*self.counter] ^ w_z;
+impl Context for ProverExecute<'_> {
+    type Error = Error;
+    type Wire = Gf2_128;
+    type Field = Gf2;
 
-                    self.macs[z.id()] = mac_z;
-                    self.triples.push(Triple {
-                        x: mac_x.into(),
-                        y: mac_y.into(),
-                        z: mac_z.into(),
-                    });
-                    self.adjust.push(adjust);
-                    *self.counter += 1;
+    fn add(&mut self, a: Gf2_128, b: Gf2_128) -> Gf2_128 {
+        a + b
+    }
 
-                    // If we have processed all AND gates, we can compute
-                    // the rest of the "free" gates.
-                    if *self.counter >= self.and_count {
-                        assert!(self.next().is_none());
-                    }
+    fn sub(&mut self, a: Gf2_128, b: Gf2_128) -> Gf2_128 {
+        a - b
+    }
 
-                    return Some(adjust);
-                }
-                Gate::Inv { x, z } => {
-                    let mut mac = self.macs[x.id()];
-                    mac.set_pointer(!mac.pointer());
-                    self.macs[z.id()] = mac;
-                }
-                Gate::Id { x, z } => {
-                    let mac = self.macs[x.id()];
-                    self.macs[z.id()] = mac;
-                }
-            }
+    fn mul(&mut self, a: Gf2_128, b: Gf2_128) -> Gf2_128 {
+        let z = GetBit::<Lsb0>::get_bit(&a, 0) & GetBit::<Lsb0>::get_bit(&b, 0);
+        let i = self.cursor;
+        let slot = self
+            .masks
+            .get_mut(i)
+            .expect("mask tape exhausted: circuit has more AND gates than the tape");
+        let mut mac = *self
+            .macs
+            .get(i)
+            .expect("mac tape exhausted: circuit has more AND gates than the tape");
+        *slot ^= z;
+        set_lsb(&mut mac, z);
+        self.triples.push(Triple { x: a, y: b, z: mac });
+        self.cursor = i + 1;
+        mac
+    }
+
+    fn constant(&mut self, v: Gf2) -> Gf2_128 {
+        if v.0 { MAC_ONE } else { MAC_ZERO }
+    }
+
+    fn assert_const(&mut self, v: Gf2_128, expected: Gf2) -> Result<()> {
+        let got = GetBit::<Lsb0>::get_bit(&v, 0);
+        if got != expected.0 {
+            return Err(Error::assert());
         }
 
-        None
-    }
-}
+        self.assertions.update(&v.to_inner().to_le_bytes());
 
-#[derive(Debug, thiserror::Error)]
-#[error("prover error: {0}")]
-pub struct ProverError(#[from] ErrorRepr);
-
-#[derive(Debug, thiserror::Error)]
-enum ErrorRepr {
-    #[error("incorrect number of input MACs: expected {expected}, actual {actual}")]
-    InputMacCount { expected: usize, actual: usize },
-    #[error("incorrect number of gate masks: expected {expected}, actual {actual}")]
-    GateMaskCount { expected: usize, actual: usize },
-    #[error("incorrect number of gate MACs: expected {expected}, actual {actual}")]
-    GateMacCount { expected: usize, actual: usize },
-    #[error("execution is incomplete")]
-    Incomplete,
-    #[error("cannot run consistency check while execution is in progress")]
-    Inprogress,
-    #[error(transparent)]
-    Check(CheckError),
-    #[error("cannot return Macs: {0}")]
-    Macs(ProverStoreError),
-}
-
-impl From<CheckError> for ProverError {
-    fn from(err: CheckError) -> Self {
-        Self(ErrorRepr::Check(err))
-    }
-}
-
-impl From<ProverStoreError> for ProverError {
-    fn from(value: ProverStoreError) -> Self {
-        Self(ErrorRepr::Macs(value))
+        Ok(())
     }
 }

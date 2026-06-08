@@ -1,9 +1,9 @@
 use crate::harness::{from_bits, run_bin, to_bits};
-use mpz_circuits_new::WitnessCtx;
+use mpz_circuits::WitnessCtx;
 use mpz_fields::gf2::Gf2;
 use proptest::prelude::*;
 
-fn and8<C: mpz_circuits_new::Context<Field = Gf2>>(
+fn and8<C: mpz_circuits::Context<Field = Gf2>>(
     ctx: &mut C,
     a: [C::Wire; 8],
     b: [C::Wire; 8],
@@ -11,7 +11,7 @@ fn and8<C: mpz_circuits_new::Context<Field = Gf2>>(
     crate::and_arr(ctx, a, b)
 }
 
-fn or8<C: mpz_circuits_new::Context<Field = Gf2>>(
+fn or8<C: mpz_circuits::Context<Field = Gf2>>(
     ctx: &mut C,
     a: [C::Wire; 8],
     b: [C::Wire; 8],
@@ -19,7 +19,7 @@ fn or8<C: mpz_circuits_new::Context<Field = Gf2>>(
     crate::or_arr(ctx, a, b)
 }
 
-fn xor8<C: mpz_circuits_new::Context<Field = Gf2>>(
+fn xor8<C: mpz_circuits::Context<Field = Gf2>>(
     ctx: &mut C,
     a: [C::Wire; 8],
     b: [C::Wire; 8],
@@ -27,7 +27,7 @@ fn xor8<C: mpz_circuits_new::Context<Field = Gf2>>(
     crate::xor_arr(ctx, a, b)
 }
 
-fn shl8<C: mpz_circuits_new::Context<Field = Gf2>>(
+fn shl8<C: mpz_circuits::Context<Field = Gf2>>(
     ctx: &mut C,
     a: [C::Wire; 8],
     b: [C::Wire; 8],
@@ -35,7 +35,7 @@ fn shl8<C: mpz_circuits_new::Context<Field = Gf2>>(
     crate::shl_n(ctx, a, b)
 }
 
-fn shr_u8<C: mpz_circuits_new::Context<Field = Gf2>>(
+fn shr_u8<C: mpz_circuits::Context<Field = Gf2>>(
     ctx: &mut C,
     a: [C::Wire; 8],
     b: [C::Wire; 8],
@@ -43,7 +43,7 @@ fn shr_u8<C: mpz_circuits_new::Context<Field = Gf2>>(
     crate::shr_u_n(ctx, a, b)
 }
 
-fn shr_s8<C: mpz_circuits_new::Context<Field = Gf2>>(
+fn shr_s8<C: mpz_circuits::Context<Field = Gf2>>(
     ctx: &mut C,
     a: [C::Wire; 8],
     b: [C::Wire; 8],
@@ -51,7 +51,7 @@ fn shr_s8<C: mpz_circuits_new::Context<Field = Gf2>>(
     crate::shr_s_n(ctx, a, b)
 }
 
-fn rotl8<C: mpz_circuits_new::Context<Field = Gf2>>(
+fn rotl8<C: mpz_circuits::Context<Field = Gf2>>(
     ctx: &mut C,
     a: [C::Wire; 8],
     b: [C::Wire; 8],
@@ -59,7 +59,7 @@ fn rotl8<C: mpz_circuits_new::Context<Field = Gf2>>(
     crate::rotl_n(ctx, a, b)
 }
 
-fn rotr8<C: mpz_circuits_new::Context<Field = Gf2>>(
+fn rotr8<C: mpz_circuits::Context<Field = Gf2>>(
     ctx: &mut C,
     a: [C::Wire; 8],
     b: [C::Wire; 8],

@@ -6,7 +6,7 @@ rust-version.workspace = true
 
 [dependencies]
 mpz-vm-ir = { workspace = true }
-mpz-vm-core-new = { workspace = true }
+mpz-vm-core = { workspace = true }
 wast = "243"
 wat = { workspace = true }
 

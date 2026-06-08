@@ -2,7 +2,7 @@ use mpz_common::{Context, Flush};
 use mpz_core::Block;
 use mpz_fields::gf2_128::Gf2_128;
 use mpz_ot_core::rcot::{RCOTSender, RCOTSenderOutput};
-use mpz_vm_core_new::{
+use mpz_vm_core::{
     Call, Error as CoreError, Global, Param, Reg, Thread, Visibility, Vm, Write, value::Value,
 };
 use mpz_vm_ir::{Function, Module};
@@ -42,7 +42,7 @@ pub struct Verifier<T> {
     pending_reveal: RangeSet<u32>,
     reveal_state: host::RevealState,
     auth: AuthState,
-    zk: mpz_zk_core_new::Verifier,
+    zk: mpz_zk_core::Verifier,
     chunk_cap: Option<usize>,
 }
 
@@ -64,7 +64,7 @@ where
         if delta.to_inner() & 1 != 1 {
             return Err(ZkVmError::DeltaLsb.into());
         }
-        let zk = mpz_zk_core_new::Verifier::new(delta);
+        let zk = mpz_zk_core::Verifier::new(delta);
         let auth = AuthState::new(Bit(zk.public_bit(false)), Bit(zk.public_bit(true)));
         Ok(Self {
             module,
@@ -246,7 +246,7 @@ where
         let reveal_ranges: Vec<Range<u32>> = self.pending_reveal.iter().collect();
         let mut reveal_pending = !reveal_ranges.is_empty();
         // Set once a chunk's proof of a public trap verifies.
-        let mut trapped: Option<mpz_vm_core_new::Trap> = None;
+        let mut trapped: Option<mpz_vm_core::Trap> = None;
         // Mirror of the prover's flag: set once any chunk performs
         // authenticated work, gating the skip of fully public chunks.
         let mut any_zk_work = false;
@@ -339,7 +339,7 @@ where
 
             // Receive the prover's commitment to the whole execute tape
             // (commit + gate adjust), then sample and send the challenge.
-            let commit_msg: mpz_zk_core_new::Commit = io
+            let commit_msg: mpz_zk_core::Commit = io
                 .io_mut()
                 .expect_next()
                 .await

@@ -15,7 +15,7 @@ use futures::executor::block_on;
 use mpz_common::{Context, context::test_mt_context};
 use mpz_core::Block;
 use mpz_ot::{chou_orlandi, ferret, kos};
-use mpz_vm_core_new::{Param, Vm, Write, value::Value};
+use mpz_vm_core::{Param, Vm, Write, value::Value};
 use mpz_vm_ir::{ExportKind, Module};
 use mpz_vm_zk::{Prover, Verifier};
 use rand::{Rng, SeedableRng, rngs::StdRng};

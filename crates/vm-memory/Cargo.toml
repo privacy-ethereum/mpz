@@ -6,7 +6,7 @@ edition = "2024"
 [dependencies]
 mpz-fields = { workspace = true }
 mpz-vm-ir = { workspace = true }
-mpz-vm-core-new = { workspace = true }
+mpz-vm-core = { workspace = true }
 thiserror = { workspace = true }
 zerocopy = { workspace = true, features = ["derive"] }
 

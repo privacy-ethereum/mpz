@@ -1,4 +1,4 @@
-use mpz_circuits_new::Context;
+use mpz_circuits::Context;
 use mpz_fields::{Field, gf2::Gf2};
 
 mod arith;
