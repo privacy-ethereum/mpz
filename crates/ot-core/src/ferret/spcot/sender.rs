@@ -1,6 +1,6 @@
 use blake3::{Hash, Hasher, hash};
 use cfg_if::cfg_if;
-use rand::{Rng, RngExt, SeedableRng};
+use rand::{Rng, RngExt};
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
 
@@ -104,35 +104,34 @@ impl SPCOTSender {
         let vs = slices_from_lengths_mut(&mut self.vs[start..], &spcot_lengths);
         let ks = slices_from_lengths_mut(&mut ms, log2_lengths);
 
-        let iter = {
+        let delta = self.delta;
+
+        // `gen_tree` reuses a per-thread scratch buffer for the GGM internal
+        // nodes, so we don't allocate one tree's worth of buffer per bucket.
+        let sums: Vec<Block> = {
             cfg_if! {
                 if #[cfg(feature = "rayon")] {
                     vs.into_par_iter()
+                        .zip(ks)
+                        .zip(log2_lengths)
+                        .zip(seeds)
+                        .map_init(Vec::new, |scratch, (((v, ks), &depth), seed)| {
+                            gen_tree(scratch, depth, seed, v, ks, delta)
+                        })
+                        .collect()
                 } else {
+                    let mut scratch = Vec::new();
                     vs.into_iter()
+                        .zip(ks)
+                        .zip(log2_lengths)
+                        .zip(seeds)
+                        .map(|(((v, ks), &depth), seed)| {
+                            gen_tree(&mut scratch, depth, seed, v, ks, delta)
+                        })
+                        .collect()
                 }
             }
         };
-
-        let sums: Vec<_> = iter
-            .zip(ks)
-            .zip(log2_lengths)
-            .zip(seeds)
-            .map(|(((v, ks), &depth), seed)| {
-                // Generate the SPCOT vector from GGM leaves.
-                let tree = GgmTree::new_from_seed(depth, seed, v);
-
-                // Encrypt the OT messages.
-                tree.layer_sums().zip(ks).for_each(|(sums, ks)| {
-                    // `sums` is K_0 and K_1 in Fig. 6 Step 3.
-                    ks[0] ^= sums[0];
-                    ks[1] ^= sums[1];
-                });
-
-                // Compute the sum of the leaves.
-                tree.leaves().iter().fold(self.delta, |acc, x| acc ^ x)
-            })
-            .collect();
 
         let masks_len = masks.len();
         self.transcript
@@ -177,14 +176,12 @@ impl SPCOTSender {
         // Computes Y
         let mut v = Block::inn_prdt_red(&y, &Block::MONOMIAL);
 
-        // Computes V
+        // Computes V. The chi vector is regenerated on the fly inside the inner
+        // product, so it is never materialized.
         let seed = *self.transcript.finalize().as_bytes();
-        let mut prg = Prg::from_seed(Block::try_from(&seed[0..16]).unwrap());
+        let chi_seed = Block::try_from(&seed[0..16]).unwrap();
 
-        let mut chis = vec![Block::ZERO; self.vs.len()];
-        prg.random_blocks(&mut chis);
-
-        v ^= Block::inn_prdt_red(&chis, &self.vs);
+        v ^= Prg::chi_inner_product(chi_seed, &self.vs);
 
         // Computes H'(V)
         let hashed_v = hash(&v.to_bytes());
@@ -194,6 +191,34 @@ impl SPCOTSender {
 
         Ok(hashed_v)
     }
+}
+
+/// Generates one SPCOT vector from a GGM tree, folds the layer sums into the OT
+/// messages `ks`, and returns the (delta-seeded) sum of the leaves. `scratch`
+/// is grown as needed and reused across calls to avoid per-tree allocation.
+#[inline]
+fn gen_tree(
+    scratch: &mut Vec<Block>,
+    depth: usize,
+    seed: Block,
+    v: &mut [Block],
+    ks: &mut [[Block; 2]],
+    delta: Block,
+) -> Block {
+    let buf_len = (1usize << depth) - 1;
+    if scratch.len() < buf_len {
+        scratch.resize(buf_len, Block::ZERO);
+    }
+
+    let tree = GgmTree::new_from_seed(depth, seed, v, &mut scratch[..buf_len]);
+
+    // `sums` is K_0 and K_1 in Fig. 6 Step 3.
+    tree.layer_sums().zip(ks.iter_mut()).for_each(|(sums, ks)| {
+        ks[0] ^= sums[0];
+        ks[1] ^= sums[1];
+    });
+
+    tree.leaves().iter().fold(delta, |acc, &x| acc ^ x)
 }
 
 #[derive(Debug, thiserror::Error)]

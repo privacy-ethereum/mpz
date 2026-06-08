@@ -1,7 +1,6 @@
 use blake3::{Hash, Hasher, hash};
 use cfg_if::cfg_if;
 use itybity::ToBits;
-use rand::SeedableRng;
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
 
@@ -23,7 +22,7 @@ type Result<T, E = Error> = core::result::Result<T, E>;
 #[derive(Debug)]
 struct Check {
     z: Block,
-    chis: Vec<Block>,
+    chi_seed: Block,
 }
 
 #[derive(Debug)]
@@ -173,25 +172,30 @@ impl SPCOTReceiver {
         let ggm_sums = slices_from_lengths(&ggm_sums, log2_lengths);
         let ws = slices_from_lengths_mut(&mut self.ws[start..], &spcot_lengths);
 
-        let iter = {
-            cfg_if! {
-                if #[cfg(feature = "rayon")] {
-                    ws.into_par_iter()
-                } else {
-                    ws.into_iter()
-                }
+        // `recover_tree` reuses a per-thread scratch buffer for the GGM internal
+        // nodes, so we don't allocate one tree's worth of buffer per bucket.
+        cfg_if! {
+            if #[cfg(feature = "rayon")] {
+                ws.into_par_iter()
+                    .zip(ggm_sums)
+                    .zip(sums)
+                    .zip(log2_lengths)
+                    .zip(idxs)
+                    .for_each_init(Vec::new, |scratch, ((((w, gsums), sum), &length), &idx)| {
+                        recover_tree(scratch, length, gsums, idx, w, *sum);
+                    });
+            } else {
+                let mut scratch = Vec::new();
+                ws.into_iter()
+                    .zip(ggm_sums)
+                    .zip(sums)
+                    .zip(log2_lengths)
+                    .zip(idxs)
+                    .for_each(|((((w, gsums), sum), &length), &idx)| {
+                        recover_tree(&mut scratch, length, gsums, idx, w, *sum);
+                    });
             }
-        };
-
-        iter.zip(ggm_sums)
-            .zip(sums)
-            .zip(log2_lengths)
-            .zip(idxs)
-            .for_each(|((((w, sums), sum), &length), &idx)| {
-                GgmTree::new_partial(length, sums, idx, w);
-
-                w[idx] = w.iter().fold(*sum, |acc, &x| acc ^ x);
-            });
+        }
 
         self.transcript.update(Block::array_as_flattened_bytes(ms));
         self.transcript.update(Block::as_flattened_bytes(sums));
@@ -221,19 +225,23 @@ impl SPCOTReceiver {
         }
 
         let seed = *self.transcript.finalize().as_bytes();
-        let mut prg = Prg::from_seed(Block::try_from(&seed[0..16]).unwrap());
+        let chi_seed = Block::try_from(&seed[0..16]).unwrap();
 
-        // The sum of all the chi[alpha].
-        let mut sum_chi_alpha = Block::ZERO;
-
-        let mut chis = vec![Block::ZERO; self.ws.len()];
-        prg.random_blocks(&mut chis);
-
-        let mut i = 0;
-        for (length, idx) in self.lengths.iter().zip(&self.indices) {
-            sum_chi_alpha ^= chis[i + idx];
-            i += 1 << length;
-        }
+        // The sum of all the chi[alpha]. Only the `t` chi values at the chosen
+        // indices are needed here, so generate just those instead of the whole
+        // chi vector (the rest is regenerated on the fly in `check`).
+        let alpha_positions: Vec<usize> = {
+            let mut positions = Vec::with_capacity(self.indices.len());
+            let mut i = 0;
+            for (length, idx) in self.lengths.iter().zip(&self.indices) {
+                positions.push(i + idx);
+                i += 1 << length;
+            }
+            positions
+        };
+        let mut chi_alpha = vec![Block::ZERO; alpha_positions.len()];
+        Prg::blocks_at(chi_seed, &alpha_positions, &mut chi_alpha);
+        let sum_chi_alpha = chi_alpha.iter().fold(Block::ZERO, |acc, &x| acc ^ x);
 
         let x_prime = BitVec::from_iter(
             sum_chi_alpha
@@ -244,18 +252,19 @@ impl SPCOTReceiver {
 
         let z = Block::inn_prdt_red(macs, &Block::MONOMIAL);
 
-        self.check = Some(Check { z, chis });
+        self.check = Some(Check { z, chi_seed });
 
         Ok(Derandomize { flip: x_prime })
     }
 
     pub(crate) fn check(&mut self, hashed_v: Hash) -> Result<()> {
-        let Some(Check { z, chis }) = self.check.take() else {
+        let Some(Check { z, chi_seed }) = self.check.take() else {
             return Err(ErrorRepr::State("check not started".to_string()).into());
         };
 
-        // Computes W.
-        let w = z ^ Block::inn_prdt_red(&chis, &self.ws);
+        // Computes W. The chi vector is regenerated on the fly inside the inner
+        // product (same seed as `start_check`), so it is never materialized.
+        let w = z ^ Prg::chi_inner_product(chi_seed, &self.ws);
 
         // Computes H'(W)
         let hashed_w = hash(&w.to_bytes());
@@ -271,6 +280,28 @@ impl SPCOTReceiver {
 
         Ok(())
     }
+}
+
+/// Recovers one partial GGM tree into `w` and fixes up the missing leaf at
+/// `idx`. `scratch` is grown as needed and reused across calls to avoid
+/// per-tree allocation.
+#[inline]
+fn recover_tree(
+    scratch: &mut Vec<Block>,
+    length: usize,
+    gsums: &[Block],
+    idx: usize,
+    w: &mut [Block],
+    sum: Block,
+) {
+    let buf_len = (1usize << length) - 1;
+    if scratch.len() < buf_len {
+        scratch.resize(buf_len, Block::ZERO);
+    }
+
+    GgmTree::new_partial(length, gsums, idx, w, &mut scratch[..buf_len]);
+
+    w[idx] = w.iter().fold(sum, |acc, &x| acc ^ x);
 }
 
 #[derive(Debug, thiserror::Error)]
