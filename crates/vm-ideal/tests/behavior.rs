@@ -9,7 +9,7 @@ use futures::{
 };
 use mpz_common::context::test_st_context;
 use mpz_vm_ir::Module;
-use mpz_vm_core_new::{Param, Vm, Write, value::Value};
+use mpz_vm_core::{Param, Vm, Write, value::Value};
 use mpz_vm_ideal::{IdealError, Instance};
 use mpz_vm_test_harness::behavior::{
     Agreement, MemStep, MemVm, Observation, ReadOutcome, func_index,

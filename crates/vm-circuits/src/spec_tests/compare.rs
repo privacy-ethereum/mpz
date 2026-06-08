@@ -1,6 +1,6 @@
 use crate::harness::{run_bin_bit, run_un_bit};
 use crate::{eq_n, eqz_n, lt_s_n, lt_u_n, ne_n, not};
-use mpz_circuits_new::Context;
+use mpz_circuits::Context;
 use mpz_fields::gf2::Gf2;
 use proptest::prelude::*;
 

@@ -5,7 +5,7 @@
 //!
 //! - [`Bit`], [`Byte`], [`AuthValue`] — generic-over-`W` containers: per-bit
 //!   authentication, byte-shaped bit bundles, and typed register values
-//!   mirroring `mpz_vm_core_new::Value`.
+//!   mirroring `mpz_vm_core::Value`.
 //! - [`Registers<T>`] — sparse register file keyed by absolute `Reg`. Generic
 //!   over the cell type for testability.
 //! - [`LinearMemory<W>`] — sparse byte-addressed memory keyed by `u32`,

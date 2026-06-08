@@ -4,8 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-mpz-zk-core-new = { workspace = true, features = ["rayon"] }
-mpz-circuits-new = { workspace = true }
+mpz-zk-core = { workspace = true, features = ["rayon"] }
+mpz-circuits = { workspace = true }
 mpz-vm-memory = { workspace = true }
 mpz-vm-circuits = { workspace = true }
 
@@ -14,7 +14,7 @@ mpz-common = { workspace = true }
 mpz-fields = { workspace = true }
 mpz-vm-ir = { workspace = true }
 mpz-ot-core = { workspace = true, features = ["rayon"] }
-mpz-vm-core-new = { workspace = true }
+mpz-vm-core = { workspace = true }
 
 itybity = { workspace = true }
 blake3 = { workspace = true }

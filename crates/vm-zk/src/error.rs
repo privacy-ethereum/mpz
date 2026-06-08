@@ -1,12 +1,12 @@
 
 use mpz_vm_ir::ValType;
 use mpz_vm_memory::{AuthValueType, AuthValueWidth};
-use mpz_vm_core_new::{Error as CoreError, Reg, Trap};
+use mpz_vm_core::{Error as CoreError, Reg, Trap};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum ZkVmError {
-    /// An interpreter or instantiation fault from `mpz-vm-core-new`.
+    /// An interpreter or instantiation fault from `mpz-vm-core`.
     #[error(transparent)]
     Core(#[from] CoreError),
 
@@ -78,7 +78,7 @@ impl ZkVmError {
 
 pub(crate) type Result<T> = std::result::Result<T, ZkVmError>;
 
-pub(crate) fn unsupported_op(op: &mpz_vm_core_new::Op) -> ZkVmError {
+pub(crate) fn unsupported_op(op: &mpz_vm_core::Op) -> ZkVmError {
     ZkVmError::Unsupported(format!("zk-vm: op not yet supported: {op:?}"))
 }
 

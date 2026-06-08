@@ -1,5 +1,5 @@
 use super::*;
-use mpz_circuits_new::Context;
+use mpz_circuits::Context;
 use mpz_fields::gf2::Gf2;
 use mpz_fields::gf2_128::Gf2_128;
 use mpz_vm_memory::{I32, I64};

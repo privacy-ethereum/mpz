@@ -7,7 +7,7 @@ use futures::executor::block_on;
 use mpz_common::context::test_st_context;
 use mpz_vm_ir::{ExportKind, Module};
 use mpz_ot::ideal::rcot::ideal_rcot;
-use mpz_vm_core_new::{Param, Vm, value::Value};
+use mpz_vm_core::{Param, Vm, value::Value};
 use mpz_vm_zk::{Prover, ZkVmError};
 use rand::{SeedableRng, rngs::StdRng};
 

@@ -11,7 +11,7 @@ use mpz_common::context::test_st_context;
 use mpz_core::Block;
 use mpz_vm_ir::Module;
 use mpz_ot::ideal::rcot::{IdealRCOTReceiver, IdealRCOTSender, ideal_rcot};
-use mpz_vm_core_new::{Param, Vm, value::Value};
+use mpz_vm_core::{Param, Vm, value::Value};
 use mpz_vm_test_harness::{SpecConfig, SpecVm, run_suite, suites};
 use mpz_vm_zk::{Prover, Verifier, ZkVmError};
 use rand::{Rng, SeedableRng, rngs::StdRng};

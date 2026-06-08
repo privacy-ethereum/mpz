@@ -4,7 +4,7 @@
 
 use futures::executor::block_on;
 use mpz_common::context::test_st_context;
-use mpz_vm_core_new::{Vm, value::Value};
+use mpz_vm_core::{Vm, value::Value};
 use mpz_vm_ideal::Instance;
 use mpz_vm_ir::{ExportKind, Module};
 

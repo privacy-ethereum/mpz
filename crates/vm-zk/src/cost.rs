@@ -5,7 +5,7 @@
 //! same choice `replay` makes when emitting the circuit).
 
 use mpz_vm_ir::{BinaryOp, UnaryOp};
-use mpz_vm_core_new::{Op, Operand};
+use mpz_vm_core::{Op, Operand};
 
 use mpz_vm_circuits as circ;
 
