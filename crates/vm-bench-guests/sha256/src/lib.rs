@@ -1,18 +1,15 @@
-//! A minimal `no_std` SHA-256 guest for the zk-vm benchmark.
+//! A minimal SHA-256 guest for the zk-vm benchmark.
 //!
 //! Memory is handed out through [`cabi_realloc`], the WebAssembly Component
-//! Model's canonical reallocation export: the host allocates the message buffer
-//! by calling `cabi_realloc(0, 0, align, len)`, writes the message there, then
-//! calls [`hash`] with that pointer and the message length. The guest computes
-//! SHA-256, writes the 32-byte digest just past the 4 KiB message region,
-//! reveals it through the VCI so the verifier learns it, and returns the
-//! digest's address. SHA-256 uses only operations the VM supports (`rotate_right`
-//! lowers to `i32.rotr`, etc.).
-#![no_std]
+//! Model's canonical reallocation export: the host calls
+//! `cabi_realloc(0, 0, align, len)` to allocate the message buffer, writes the
+//! message there, then calls [`hash`] with that pointer and the message length.
+//! The guest computes SHA-256, writes the 32-byte digest just past the 4 KiB
+//! message region, reveals it through the VCI so the verifier learns it, and
+//! returns the digest's address. SHA-256 uses only operations the VM supports
+//! (`rotate_right` lowers to `i32.rotr`, etc.).
 
-extern crate alloc;
-
-use core::alloc::{GlobalAlloc, Layout};
+use std::alloc::Layout;
 
 const H0: [u32; 8] = [
     0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
@@ -29,31 +26,6 @@ const K: [u32; 64] = [
     0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
 ];
 
-/// A minimal bump allocator backing the global allocator: blocks are served
-/// from a static arena and never freed. The arena holds one 4 KiB message region
-/// plus the 32-byte digest, with slack for alignment — enough for the benchmark.
-struct Bump;
-
-static mut HEAP: [u8; 4160] = [0u8; 4160];
-/// Offset of the next free byte within [`HEAP`].
-static mut BUMP: usize = 0;
-
-unsafe impl GlobalAlloc for Bump {
-    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        let align = layout.align().max(1);
-        let base = core::ptr::addr_of!(HEAP) as usize;
-        let bump = core::ptr::addr_of_mut!(BUMP);
-        let aligned = (base + *bump + align - 1) & !(align - 1);
-        *bump = (aligned - base) + layout.size();
-        aligned as *mut u8
-    }
-
-    unsafe fn dealloc(&self, _ptr: *mut u8, _layout: Layout) {}
-}
-
-#[global_allocator]
-static ALLOC: Bump = Bump;
-
 #[link(wasm_import_module = "vc")]
 extern "C" {
     fn reveal_bytes(ptr: i32, len: i32) -> i32;
@@ -63,8 +35,9 @@ extern "C" {
 /// The Component Model canonical `realloc`:
 /// `cabi_realloc(old_ptr, old_size, align, new_size) -> ptr`.
 ///
-/// Delegates to the global allocator: a fresh block (`old_ptr == 0`) is an
-/// [`alloc`], otherwise an [`alloc::alloc::realloc`] of the existing block.
+/// Delegates to the default global (system) allocator: a fresh block
+/// (`old_ptr == 0`) is an [`std::alloc::alloc`], otherwise a
+/// [`std::alloc::realloc`] of the existing block.
 #[no_mangle]
 pub extern "C" fn cabi_realloc(old_ptr: i32, old_size: i32, align: i32, new_size: i32) -> i32 {
     let align = (align as usize).max(1);
@@ -72,10 +45,10 @@ pub extern "C" fn cabi_realloc(old_ptr: i32, old_size: i32, align: i32, new_size
     unsafe {
         if old_ptr == 0 {
             let layout = Layout::from_size_align_unchecked(new_size, align);
-            alloc::alloc::alloc(layout) as i32
+            std::alloc::alloc(layout) as i32
         } else {
             let old_layout = Layout::from_size_align_unchecked(old_size as usize, align);
-            alloc::alloc::realloc(old_ptr as *mut u8, old_layout, new_size) as i32
+            std::alloc::realloc(old_ptr as *mut u8, old_layout, new_size) as i32
         }
     }
 }
@@ -193,9 +166,4 @@ fn compress(h: &mut [u32; 8], block: &[u8; 64]) {
     h[5] = h[5].wrapping_add(f);
     h[6] = h[6].wrapping_add(g);
     h[7] = h[7].wrapping_add(hh);
-}
-
-#[panic_handler]
-fn panic(_: &core::panic::PanicInfo) -> ! {
-    loop {}
 }

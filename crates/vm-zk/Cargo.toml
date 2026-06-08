@@ -29,7 +29,6 @@ zerocopy = { workspace = true, features = ["derive"] }
 [dev-dependencies]
 mpz-common = { workspace = true, features = ["test-utils"] }
 mpz-ot = { workspace = true, features = ["ideal", "rayon"] }
-mpz-vm-ideal = { workspace = true }
 mpz-vm-test-harness = { workspace = true }
 criterion = { workspace = true }
 sha2 = "0.10"
