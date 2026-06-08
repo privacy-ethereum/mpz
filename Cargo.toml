@@ -32,8 +32,11 @@ members = [
     "crates/vm-core-new",
     "crates/vm-test-harness",
     "crates/vm-ideal",
+    "crates/vm-memory",
+    "crates/vm-circuits",
+    "crates/vm-zk",
 ]
-exclude = ["crates/lpn-estimator"]
+exclude = ["crates/lpn-estimator", "crates/vm-bench-guests/sha256"]
 resolver = "2"
 
 [workspace.package]
@@ -87,6 +90,9 @@ mpz-vm-ir = { path = "crates/vm-ir" }
 mpz-vm-core-new = { path = "crates/vm-core-new" }
 mpz-vm-test-harness = { path = "crates/vm-test-harness" }
 mpz-vm-ideal = { path = "crates/vm-ideal" }
+mpz-vm-memory = { path = "crates/vm-memory" }
+mpz-vm-circuits = { path = "crates/vm-circuits" }
+mpz-vm-zk = { path = "crates/vm-zk" }
 clmul = { path = "crates/clmul" }
 matrix-transpose = { path = "crates/matrix-transpose" }
 rangeset = "0.4"

@@ -5,7 +5,6 @@
 //! against a simulated sVOLE tape, verifying that the batch
 //! consistency check accepts.
 
-use blake3::Hasher;
 use itybity::{FromBitIterator, ToBits};
 use mpz_circuits_new::{
     WitnessCtx,
@@ -120,6 +119,10 @@ fn sha256_quicksilver_batch_check_accepts() {
     let vope_ev: [Gf2_128; VOPE_COST] = core::array::from_fn(|i| macs[main_cost + i]);
     let vope_keys: [Gf2_128; VOPE_COST] = core::array::from_fn(|i| raw_keys[main_cost + i]);
 
+    // Verifier samples the consistency-check challenge after the prover
+    // commits (here both sides simply share the same value).
+    let chi: [u8; 32] = rng.random();
+
     // Caller builds input commits: input_adjust[i] = bit ^ choice,
     // input MAC has LSB set to the bit.
     let input_adjust: BitVec = (0..input_count)
@@ -129,21 +132,25 @@ fn sha256_quicksilver_batch_check_accepts() {
         .map(|i| set_lsb(macs[i], input_bits[i]))
         .collect();
 
-    // Gate tape slices (caller-owned).
-    let gate_masks: BitVec = choices[input_count..main_cost].iter().copied().collect();
+    // Gate tape slices (caller-owned). `gate_masks` is mutated in
+    // place by `prover.execute`: after `finish` it holds the masked
+    // witness adjust bits.
+    let mut gate_masks: Vec<bool> = choices[input_count..main_cost].to_vec();
     let gate_macs: Vec<Gf2_128> = macs[input_count..main_cost].to_vec();
 
     // ---- PROVER side ----
     let mut prover = Prover::new();
-    let mut prover_transcript = Hasher::default();
-    let (masked_witness, prover_out) = {
-        let mut exec = prover.execute(&gate_masks, &gate_macs).expect("execute");
+    let prover_out = {
+        let mut exec = prover
+            .execute(&mut gate_masks, &gate_macs)
+            .expect("execute");
         let msg_p: [Gf2_128; 512] = core::array::from_fn(|i| input_mac_wires[i]);
         let state_p: [Gf2_128; 256] = core::array::from_fn(|i| input_mac_wires[512 + i]);
         let out = sha256_compress(&mut exec, msg_p, state_p);
-        (exec.finish(&mut prover_transcript).expect("finish"), out)
+        exec.finish().expect("finish");
+        out
     };
-    let proof = prover.prove(&mut prover_transcript, &vope_choices, &vope_ev);
+    let proof = prover.prove(chi, &vope_choices, &vope_ev);
 
     // ---- VERIFIER side ----
     // Caller pre-adjusts input keys off-band.
@@ -158,13 +165,14 @@ fn sha256_quicksilver_batch_check_accepts() {
     let gate_keys: Vec<Gf2_128> = raw_keys[input_count..main_cost].to_vec();
 
     let mut verifier = Verifier::new(delta);
-    let mut verifier_transcript = Hasher::default();
     let verifier_out = {
-        let mut exec = verifier.execute(&gate_keys, masked_witness).expect("execute");
+        let mut exec = verifier
+            .execute(&gate_keys, &gate_masks)
+            .expect("execute");
         let msg_v: [Gf2_128; 512] = core::array::from_fn(|i| input_key_wires[i]);
         let state_v: [Gf2_128; 256] = core::array::from_fn(|i| input_key_wires[512 + i]);
         let out = sha256_compress(&mut exec, msg_v, state_v);
-        exec.finish(&mut verifier_transcript).expect("finish");
+        exec.finish().expect("finish");
         out
     };
 
@@ -180,8 +188,8 @@ fn sha256_quicksilver_batch_check_accepts() {
     }
 
     verifier
-        .verify(&mut verifier_transcript, &vope_keys, proof)
-        .expect("batch check should accept a consistent transcript");
+        .verify(chi, &vope_keys, proof)
+        .expect("batch check should accept a consistent execution");
 }
 
 /// SHA-256 compression output as a flat bit array (LSB-first within

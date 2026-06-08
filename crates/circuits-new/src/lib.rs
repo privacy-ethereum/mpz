@@ -52,6 +52,7 @@ pub struct WitnessCtx<'a, T> {
     pub witness: &'a mut Vec<T>,
 }
 
+#[derive(Debug)]
 pub struct WitnessError;
 
 impl<T: Field> Context for WitnessCtx<'_, T> {
