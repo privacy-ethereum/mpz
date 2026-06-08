@@ -24,7 +24,10 @@ fn width(n: usize) -> usize {
 /// GGM tree.
 pub struct GgmTree<'a> {
     depth: usize,
-    buf: Vec<Block>,
+    /// Internal (non-leaf) tree nodes. Caller-provided scratch of length
+    /// `(1 << depth) - 1`, so it can be reused across trees without
+    /// reallocating or re-zeroing.
+    buf: &'a mut [Block],
     leaves: &'a mut [Block],
 }
 
@@ -36,10 +39,17 @@ impl<'a> GgmTree<'a> {
     /// * `depth` - The depth of the tree.
     /// * `seed` - The seed of the tree.
     /// * `leaves` - The leaves of the tree.
-    pub fn new_from_seed(depth: usize, seed: Block, leaves: &'a mut [Block]) -> Self {
+    /// * `buf` - Scratch for the internal nodes, of length `(1 << depth) - 1`.
+    ///   Its contents are fully overwritten; reuse it across trees to avoid
+    ///   per-tree allocation.
+    pub fn new_from_seed(
+        depth: usize,
+        seed: Block,
+        leaves: &'a mut [Block],
+        buf: &'a mut [Block],
+    ) -> Self {
         assert_eq!(leaves.len(), 1 << depth, "invalid length of leaves");
-
-        let mut buf = vec![Block::ZERO; (1 << depth) - 1];
+        assert_eq!(buf.len(), (1 << depth) - 1, "invalid length of buf");
 
         let tkprp = TwoKeyPrp::new([Block::ZERO, Block::ONE]);
 
@@ -76,12 +86,19 @@ impl<'a> GgmTree<'a> {
     ///   layer.
     /// * `idx` - Index of the missing leaf.
     /// * `leaves` - Leaves of the tree.
-    pub fn new_partial(depth: usize, sums: &[Block], idx: usize, leaves: &'a mut [Block]) -> Self {
+    /// * `buf` - Scratch for the internal nodes, of length `(1 << depth) - 1`.
+    ///   Reuse it across trees to avoid per-tree allocation.
+    pub fn new_partial(
+        depth: usize,
+        sums: &[Block],
+        idx: usize,
+        leaves: &'a mut [Block],
+        buf: &'a mut [Block],
+    ) -> Self {
         assert_eq!(leaves.len(), 1 << depth, "invalid length of leaves");
         assert!(idx < leaves.len(), "index out of bounds");
         assert_eq!(sums.len(), depth, "invalid length of sums");
-
-        let mut buf = vec![Block::ZERO; (1 << depth) - 1];
+        assert_eq!(buf.len(), (1 << depth) - 1, "invalid length of buf");
 
         let tkprp = TwoKeyPrp::new([Block::ZERO, Block::ONE]);
 
@@ -189,8 +206,9 @@ mod tests {
         let depth = 4;
 
         let mut leaves = vec![Block::ZERO; 1 << depth];
+        let mut buf = vec![Block::ZERO; (1 << depth) - 1];
 
-        GgmTree::new_from_seed(depth, seed, &mut leaves);
+        GgmTree::new_from_seed(depth, seed, &mut leaves, &mut buf);
 
         assert!(leaves.iter().all(|leaf| *leaf != Block::ZERO));
     }
@@ -201,8 +219,9 @@ mod tests {
         let depth = 4;
 
         let mut leaves = vec![Block::ZERO; 1 << depth];
+        let mut buf = vec![Block::ZERO; (1 << depth) - 1];
 
-        let ggm = GgmTree::new_from_seed(depth, seed, &mut leaves);
+        let ggm = GgmTree::new_from_seed(depth, seed, &mut leaves, &mut buf);
 
         for i in 0..depth {
             let layer = ggm.layer(i).unwrap();
@@ -217,7 +236,8 @@ mod tests {
         let depth = 4;
 
         let mut full_leaves = vec![Block::ZERO; 1 << depth];
-        let ggm = GgmTree::new_from_seed(depth, seed, &mut full_leaves);
+        let mut buf = vec![Block::ZERO; (1 << depth) - 1];
+        let ggm = GgmTree::new_from_seed(depth, seed, &mut full_leaves, &mut buf);
 
         for i in 0..1 << depth {
             let path = i as u32;
@@ -228,7 +248,8 @@ mod tests {
                 .collect::<Vec<_>>();
 
             let mut leaves = vec![Block::ZERO; 1 << depth];
-            let ggm_partial = GgmTree::new_partial(depth, &sums, i, &mut leaves);
+            let mut partial_buf = vec![Block::ZERO; (1 << depth) - 1];
+            let ggm_partial = GgmTree::new_partial(depth, &sums, i, &mut leaves, &mut partial_buf);
             let mut full_leaves = ggm.leaves().to_vec();
 
             full_leaves[i] = Block::ZERO;

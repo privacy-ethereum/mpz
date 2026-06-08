@@ -100,21 +100,77 @@ impl Block {
 
     /// Compute the inner product of two block vectors, without reducing the
     /// polynomial.
+    ///
+    /// Uses 8 independent accumulators to break the carry-less multiply
+    /// latency-dependency chain (`clmul` is high-latency, fully-pipelined), so
+    /// the loop runs throughput-bound rather than latency-bound.
     #[inline]
     pub fn inn_prdt_no_red(a: &[Block], b: &[Block]) -> (Block, Block) {
         assert_eq!(a.len(), b.len());
-        a.iter()
-            .zip(b.iter())
-            .fold((Block::ZERO, Block::ZERO), |acc, (x, y)| {
-                let t = x.clmul(*y);
-                (t.0 ^ acc.0, t.1 ^ acc.1)
-            })
+
+        const LANES: usize = 8;
+        let mut hi = [Block::ZERO; LANES];
+        let mut lo = [Block::ZERO; LANES];
+
+        let mut a_chunks = a.chunks_exact(LANES);
+        let mut b_chunks = b.chunks_exact(LANES);
+        for (ac, bc) in a_chunks.by_ref().zip(b_chunks.by_ref()) {
+            for j in 0..LANES {
+                let (h, l) = ac[j].clmul(bc[j]);
+                hi[j] ^= h;
+                lo[j] ^= l;
+            }
+        }
+
+        let mut acc_hi = Block::ZERO;
+        let mut acc_lo = Block::ZERO;
+        for j in 0..LANES {
+            acc_hi ^= hi[j];
+            acc_lo ^= lo[j];
+        }
+
+        for (x, y) in a_chunks.remainder().iter().zip(b_chunks.remainder()) {
+            let (h, l) = x.clmul(*y);
+            acc_hi ^= h;
+            acc_lo ^= l;
+        }
+
+        (acc_hi, acc_lo)
     }
 
     /// Compute the inner product of two block vectors.
+    ///
+    /// With the `rayon` feature enabled, the (unreduced) inner product is
+    /// computed in parallel over chunks and combined before a single final
+    /// reduction.
     #[inline]
     pub fn inn_prdt_red(a: &[Block], b: &[Block]) -> Block {
-        let (x, y) = Block::inn_prdt_no_red(a, b);
+        assert_eq!(a.len(), b.len());
+
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "rayon")] {
+                use rayon::prelude::*;
+
+                // Large enough that per-chunk overhead is negligible, small
+                // enough to keep all cores busy on production-sized vectors.
+                const CHUNK: usize = 1 << 16;
+
+                let (x, y) = if a.len() <= CHUNK {
+                    Block::inn_prdt_no_red(a, b)
+                } else {
+                    a.par_chunks(CHUNK)
+                        .zip(b.par_chunks(CHUNK))
+                        .map(|(ac, bc)| Block::inn_prdt_no_red(ac, bc))
+                        .reduce(
+                            || (Block::ZERO, Block::ZERO),
+                            |p, q| (p.0 ^ q.0, p.1 ^ q.1),
+                        )
+                };
+            } else {
+                let (x, y) = Block::inn_prdt_no_red(a, b);
+            }
+        }
+
         Block::reduce_gcm(x, y)
     }
 

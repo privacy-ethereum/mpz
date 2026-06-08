@@ -8,8 +8,9 @@ fn criterion_benchmark(c: &mut Criterion) {
         let depth = 10;
         let seed = rand::random::<Block>();
         let mut leaves = vec![Block::ZERO; 1 << depth];
+        let mut buf = vec![Block::ZERO; (1 << depth) - 1];
         bench.iter(|| {
-            GgmTree::new_from_seed(depth, seed, &mut leaves);
+            GgmTree::new_from_seed(depth, seed, &mut leaves, &mut buf);
             black_box(&leaves);
         });
     });
@@ -18,8 +19,9 @@ fn criterion_benchmark(c: &mut Criterion) {
         let depth = 10;
         let sums = vec![Block::ZERO; depth];
         let mut leaves = vec![Block::ZERO; 1 << depth];
+        let mut buf = vec![Block::ZERO; (1 << depth) - 1];
         bench.iter(|| {
-            GgmTree::new_partial(depth, &sums, 420, &mut leaves);
+            GgmTree::new_partial(depth, &sums, 420, &mut leaves, &mut buf);
             black_box(&leaves);
         });
     });

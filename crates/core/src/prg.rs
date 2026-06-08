@@ -174,6 +174,147 @@ impl Prg {
         let bytes: &mut [u8] = bytemuck::cast_slice_mut(buf);
         self.fill_bytes(bytes);
     }
+
+    /// Fills `buf` with the same pseudo-random block stream that
+    /// `Prg::from_seed(seed).random_blocks(buf)` would produce, but computed in
+    /// parallel.
+    ///
+    /// The PRG is AES in counter mode, so block `i` is
+    /// `AES_seed(i ‖ stream_id=0)` and can be generated independently. With the
+    /// `rayon` feature disabled this falls back to the sequential path and
+    /// produces byte-identical output.
+    pub fn random_blocks_par(seed: Block, buf: &mut [Block]) {
+        #[inline]
+        fn fill_chunk(aes: &AesEncryptor, start: u64, chunk: &mut [Block]) {
+            for (j, blk) in chunk.iter_mut().enumerate() {
+                let mut b = [0u8; 16];
+                b[..8].copy_from_slice(&(start + j as u64).to_le_bytes());
+                // stream_id == 0, so the high 8 bytes stay zero.
+                *blk = Block::from(b);
+            }
+            aes.encrypt_blocks(chunk);
+        }
+
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "rayon")] {
+                use rayon::prelude::*;
+
+                const CHUNK: usize = 1 << 14;
+                let aes = AesEncryptor::new(seed);
+                buf.par_chunks_mut(CHUNK).enumerate().for_each(|(ci, chunk)| {
+                    fill_chunk(&aes, (ci * CHUNK) as u64, chunk);
+                });
+            } else {
+                let aes = AesEncryptor::new(seed);
+                fill_chunk(&aes, 0, buf);
+            }
+        }
+    }
+
+    /// Computes the GF(2^128) inner product `Σ_i chi_i · b_i`, where `chi` is
+    /// the block stream of `Prg::from_seed(seed)` (matching `random_blocks`
+    /// and `random_blocks_par`).
+    ///
+    /// `chi` is regenerated on the fly in counter mode and never materialized,
+    /// so only `b` is streamed from memory — this avoids both the allocation
+    /// and the write+read round-trip of an explicit `chi` vector. The
+    /// result is identical to `Block::inn_prdt_red(&chi, b)`. With the
+    /// `rayon` feature the product is computed over parallel chunks and
+    /// reduced once at the end.
+    pub fn chi_inner_product(seed: Block, b: &[Block]) -> Block {
+        let aes = AesEncryptor::new(seed);
+
+        cfg_if::cfg_if! {
+            if #[cfg(feature = "rayon")] {
+                use rayon::prelude::*;
+
+                const CHUNK: usize = 1 << 16;
+                let (hi, lo) = if b.len() <= CHUNK {
+                    chi_clmul_acc(&aes, 0, b)
+                } else {
+                    b.par_chunks(CHUNK)
+                        .enumerate()
+                        .map(|(ci, chunk)| chi_clmul_acc(&aes, (ci * CHUNK) as u64, chunk))
+                        .reduce(
+                            || (Block::ZERO, Block::ZERO),
+                            |p, q| (p.0 ^ q.0, p.1 ^ q.1),
+                        )
+                };
+            } else {
+                let (hi, lo) = chi_clmul_acc(&aes, 0, b);
+            }
+        }
+
+        Block::reduce_gcm(hi, lo)
+    }
+
+    /// Fills `out[j]` with the block at counter index `positions[j]` of the
+    /// `Prg::from_seed(seed)` stream (stream id 0), i.e. the same value as
+    /// `random_blocks(buf)[positions[j]]`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `out.len() != positions.len()`.
+    pub fn blocks_at(seed: Block, positions: &[usize], out: &mut [Block]) {
+        assert_eq!(positions.len(), out.len());
+        let aes = AesEncryptor::new(seed);
+        for (o, &p) in out.iter_mut().zip(positions) {
+            let mut blk = [0u8; 16];
+            blk[..8].copy_from_slice(&(p as u64).to_le_bytes());
+            *o = Block::from(blk);
+        }
+        aes.encrypt_blocks(out);
+    }
+}
+
+/// Accumulates the unreduced inner product `Σ chi_{start+j} · b[j]`, generating
+/// `chi` in counter mode in small cache-resident batches and using 8
+/// independent accumulators to break the `clmul` latency-dependency chain.
+#[inline]
+fn chi_clmul_acc(aes: &AesEncryptor, start: u64, b: &[Block]) -> (Block, Block) {
+    const BATCH: usize = 256;
+    let mut hi = [Block::ZERO; 8];
+    let mut lo = [Block::ZERO; 8];
+    let mut chi = [Block::ZERO; BATCH];
+
+    let mut off = 0usize;
+    while off < b.len() {
+        let len = BATCH.min(b.len() - off);
+
+        // Generate this batch of chi blocks (counter mode, stream id 0).
+        for (j, c) in chi[..len].iter_mut().enumerate() {
+            let mut blk = [0u8; 16];
+            blk[..8].copy_from_slice(&(start + (off + j) as u64).to_le_bytes());
+            *c = Block::from(blk);
+        }
+        aes.encrypt_blocks(&mut chi[..len]);
+
+        let bc = &b[off..off + len];
+        let mut k = 0;
+        while k + 8 <= len {
+            for j in 0..8 {
+                let (h, l) = chi[k + j].clmul(bc[k + j]);
+                hi[j] ^= h;
+                lo[j] ^= l;
+            }
+            k += 8;
+        }
+        for j in k..len {
+            let (h, l) = chi[j].clmul(bc[j]);
+            hi[0] ^= h;
+            lo[0] ^= l;
+        }
+
+        off += len;
+    }
+
+    let mut acc_hi = Block::ZERO;
+    let mut acc_lo = Block::ZERO;
+    for j in 0..8 {
+        acc_hi ^= hi[j];
+        acc_lo ^= lo[j];
+    }
+    (acc_hi, acc_lo)
 }
 
 impl Default for Prg {
@@ -206,6 +347,53 @@ mod tests {
         prg.random_blocks(&mut y);
 
         assert_ne!(x[0], y[0]);
+    }
+
+    #[test]
+    fn test_random_blocks_par_matches_sequential() {
+        let seed = Block::from(*b"0123456789abcdef");
+        // Cover non-multiples of the 8-block AES batch and the rayon chunk.
+        for len in [0usize, 1, 7, 8, 9, 100, 1023, 16384, 16385, 40000] {
+            let mut seq = vec![Block::ZERO; len];
+            Prg::from_seed(seed).random_blocks(&mut seq);
+
+            let mut par = vec![Block::ZERO; len];
+            Prg::random_blocks_par(seed, &mut par);
+
+            assert_eq!(seq, par, "mismatch at len {len}");
+        }
+    }
+
+    #[test]
+    fn test_chi_inner_product_matches_explicit() {
+        let seed = Block::from(*b"chi_seed_0123456");
+        let mut src = Prg::from_seed(Block::from(*b"vs_seed_abcdefgh"));
+        for len in [0usize, 1, 7, 8, 9, 255, 256, 257, 1000, 70_000] {
+            let mut b = vec![Block::ZERO; len];
+            src.random_blocks(&mut b);
+
+            let mut chis = vec![Block::ZERO; len];
+            Prg::random_blocks_par(seed, &mut chis);
+            let expected = Block::inn_prdt_red(&chis, &b);
+
+            assert_eq!(expected, Prg::chi_inner_product(seed, &b), "len {len}");
+        }
+    }
+
+    #[test]
+    fn test_blocks_at_matches_stream() {
+        let seed = Block::from(*b"some_seed_012345");
+        let n = 2048;
+        let mut full = vec![Block::ZERO; n];
+        Prg::from_seed(seed).random_blocks(&mut full);
+
+        let positions = [0usize, 1, 5, 8, 100, 255, 256, 1023, 2047];
+        let mut out = vec![Block::ZERO; positions.len()];
+        Prg::blocks_at(seed, &positions, &mut out);
+
+        for (o, &p) in out.iter().zip(&positions) {
+            assert_eq!(*o, full[p], "position {p}");
+        }
     }
 
     #[test]
