@@ -3,7 +3,7 @@
 use std::ops::{Add, Mul, Neg, Sub};
 
 use hybrid_array::{Array, typenum::U1};
-use itybity::{BitLength, FromBitIterator, GetBit, Lsb0, Msb0};
+use itybity::{BitLength, FromBitIterator, GetBit, Lsb0, Msb0, SetBit};
 use rand::distr::{Distribution, StandardUniform};
 use serde::{Deserialize, Serialize};
 
@@ -83,6 +83,22 @@ impl GetBit<Msb0> for Gf2 {
     }
 }
 
+impl SetBit<Lsb0> for Gf2 {
+    #[inline]
+    fn set_bit(&mut self, index: usize, value: bool) {
+        assert_eq!(index, 0, "Gf2::set_bit: index out of bounds");
+        self.0 = value;
+    }
+}
+
+impl SetBit<Msb0> for Gf2 {
+    #[inline]
+    fn set_bit(&mut self, index: usize, value: bool) {
+        assert_eq!(index, 0, "Gf2::set_bit: index out of bounds");
+        self.0 = value;
+    }
+}
+
 impl FromBitIterator for Gf2 {
     #[inline]
     fn from_lsb0_iter(iter: impl IntoIterator<Item = bool>) -> Self {
@@ -134,7 +150,10 @@ mod tests {
     use super::Gf2;
     use crate::{
         Field,
-        tests::{test_field_bit_ops_lsb0, test_field_bit_ops_msb0},
+        tests::{
+            test_field_bit_ops_lsb0, test_field_bit_ops_msb0, test_field_set_bit_lsb0,
+            test_field_set_bit_msb0,
+        },
     };
 
     #[test]
@@ -157,5 +176,7 @@ mod tests {
     fn gf2_bit_ops() {
         test_field_bit_ops_lsb0::<Gf2>();
         test_field_bit_ops_msb0::<Gf2>();
+        test_field_set_bit_lsb0::<Gf2>();
+        test_field_set_bit_msb0::<Gf2>();
     }
 }
