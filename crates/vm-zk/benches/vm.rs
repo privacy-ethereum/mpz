@@ -7,12 +7,12 @@
 //! reflects the cost of the actual protocol, including OT/VOLE generation.
 //!
 //! The harness is module-agnostic: describe a [`Workload`] (a module, an
-//! exported function, private memory, and arguments) and bench it. The headline
-//! workload is SHA-256 of a 4 KiB message.
+//! exported function, an optional private input buffer, and arguments) and
+//! bench it. The headline workload is SHA-256 of a 4 KiB message.
 
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use futures::executor::block_on;
-use mpz_common::context::{test_mt_context, test_st_context};
+use mpz_common::{Context, context::test_mt_context};
 use mpz_core::Block;
 use mpz_ot::{chou_orlandi, ferret, kos};
 use mpz_vm_core_new::{Param, Vm, Write, value::Value};
@@ -64,8 +64,12 @@ enum Arg {
 struct Workload {
     module: Module,
     func: u32,
-    /// Private memory regions to stage as `(ptr, bytes)`.
-    mem: Vec<(u32, Vec<u8>)>,
+    /// Optional private input as `(bytes, alloc_size)`. Before the call the
+    /// harness allocates `alloc_size` bytes through the guest's `cabi_realloc`
+    /// export, stages `bytes` there privately, and passes the resulting pointer
+    /// as `func`'s first argument. `alloc_size` may exceed `bytes.len()` to
+    /// cover scratch the guest writes past the input (e.g. the digest).
+    input: Option<(Vec<u8>, u32)>,
     args: Vec<Arg>,
     chunk_cap: Option<usize>,
 }
@@ -76,14 +80,14 @@ impl Workload {
         Self {
             module,
             func,
-            mem: Vec::new(),
+            input: None,
             args: Vec::new(),
             chunk_cap: None,
         }
     }
 
-    fn private_mem(mut self, ptr: u32, bytes: Vec<u8>) -> Self {
-        self.mem.push((ptr, bytes));
+    fn input(mut self, bytes: Vec<u8>, alloc_size: u32) -> Self {
+        self.input = Some((bytes, alloc_size));
         self
     }
 
@@ -104,9 +108,28 @@ fn func_idx(module: &Module, name: &str) -> u32 {
         .expect("function should be exported")
 }
 
+/// Drives one `call` on the prover and verifier concurrently and returns their
+/// results. The two parties exchange messages during a call, so both must run
+/// together; they execute on separate OS threads, as in a real deployment.
+fn call_both(
+    prover: &mut Prover<ProverSvole>,
+    verifier: &mut Verifier<VerifierSvole>,
+    ctx_p: &mut Context,
+    ctx_v: &mut Context,
+    func: u32,
+    p_params: Vec<Param>,
+    v_params: Vec<Param>,
+) -> (Option<Value>, Option<Value>) {
+    std::thread::scope(|s| {
+        let hp = s.spawn(move || block_on(prover.call(ctx_p, func, p_params)).unwrap());
+        let hv = s.spawn(move || block_on(verifier.call(ctx_v, func, v_params)).unwrap());
+        (hp.join().unwrap(), hv.join().unwrap())
+    })
+}
+
 /// Runs the workload once through the prover/verifier over the real OT stack,
-/// optionally reading back a memory range from the verifier afterwards (used to
-/// recover a revealed result). Panics if the two sides disagree.
+/// optionally reading back a memory range (offset relative to the input buffer)
+/// from the verifier afterwards. Panics if the two sides disagree.
 fn run_reading(wl: &Workload, read: Option<(u32, usize)>) -> (Option<Value>, Option<Vec<u8>>) {
     let (v_svole, p_svole) = rcot_stack(0);
     let mut prover = Prover::new(wl.module.clone(), p_svole)
@@ -116,68 +139,86 @@ fn run_reading(wl: &Workload, read: Option<(u32, usize)>) -> (Option<Value>, Opt
         .unwrap()
         .with_chunk_cap(wl.chunk_cap);
 
-    for (ptr, bytes) in &wl.mem {
-        prover.write(*ptr, Write::Private(bytes)).unwrap();
-        verifier.write(*ptr, Write::Blind(bytes.len())).unwrap();
-    }
-
-    let p_params: Vec<Param> = wl
-        .args
-        .iter()
-        .map(|a| match a {
-            Arg::Secret(v) => Param::Private(*v),
-            Arg::Public(v) => Param::Public(*v),
-        })
-        .collect();
-    let v_params: Vec<Param> = wl
-        .args
-        .iter()
-        .map(|a| match a {
-            Arg::Secret(v) => Param::Blind(v.ty()),
-            Arg::Public(v) => Param::Public(*v),
-        })
-        .collect();
-
-    // Multithreaded contexts so each party can parallelize internally; the two
-    // parties run on separate OS threads, as they would in a real deployment.
+    // Multithreaded contexts so each party can parallelize internally.
     let (exec_p, exec_v) = test_mt_context(32 << 20);
     let mut ctx_p = exec_p.new_context().unwrap();
     let mut ctx_v = exec_v.new_context().unwrap();
-    let func = wl.func;
 
-    let (rp, rv) = std::thread::scope(|s| {
-        let prover = &mut prover;
-        let verifier = &mut verifier;
-        let ctx_p = &mut ctx_p;
-        let ctx_v = &mut ctx_v;
-        let hp = s.spawn(move || block_on(prover.call(ctx_p, func, p_params)).unwrap());
-        let hv = s.spawn(move || block_on(verifier.call(ctx_v, func, v_params)).unwrap());
-        (hp.join().unwrap(), hv.join().unwrap())
-    });
+    // If the workload has a private input, allocate space for it inside the
+    // running VM via the guest's `cabi_realloc` export, then stage the bytes at
+    // the returned pointer. Allocating in the measured instance — rather than
+    // discovering an address out of band — lets `cabi_realloc` grow memory so
+    // the staged region is always in bounds, and exercises the real allocator.
+    let in_ptr = if let Some((bytes, size)) = &wl.input {
+        let realloc = func_idx(&wl.module, "cabi_realloc");
+        let alloc_args = || {
+            vec![
+                Param::Public(Value::I32(0)),
+                Param::Public(Value::I32(0)),
+                Param::Public(Value::I32(1)),
+                Param::Public(Value::I32(*size as i32)),
+            ]
+        };
+        let (rp, rv) = call_both(
+            &mut prover,
+            &mut verifier,
+            &mut ctx_p,
+            &mut ctx_v,
+            realloc,
+            alloc_args(),
+            alloc_args(),
+        );
+        assert_eq!(rp, rv, "cabi_realloc must return the same pointer on both sides");
+        let ptr = match rp {
+            Some(Value::I32(p)) => p as u32,
+            other => panic!("cabi_realloc returned {other:?}"),
+        };
+        prover.write(ptr, Write::Private(bytes)).unwrap();
+        verifier.write(ptr, Write::Blind(bytes.len())).unwrap();
+        ptr
+    } else {
+        0
+    };
+
+    // Build params, prepending the input pointer when one was allocated.
+    let mut p_params = Vec::new();
+    let mut v_params = Vec::new();
+    if wl.input.is_some() {
+        p_params.push(Param::Public(Value::I32(in_ptr as i32)));
+        v_params.push(Param::Public(Value::I32(in_ptr as i32)));
+    }
+    for a in &wl.args {
+        match a {
+            Arg::Secret(v) => {
+                p_params.push(Param::Private(*v));
+                v_params.push(Param::Blind(v.ty()));
+            }
+            Arg::Public(v) => {
+                p_params.push(Param::Public(*v));
+                v_params.push(Param::Public(*v));
+            }
+        }
+    }
+
+    let (rp, rv) = call_both(
+        &mut prover,
+        &mut verifier,
+        &mut ctx_p,
+        &mut ctx_v,
+        wl.func,
+        p_params,
+        v_params,
+    );
     exec_p.shutdown();
     exec_v.shutdown();
 
     assert_eq!(rp, rv, "prover and verifier results must agree");
-    let bytes = read.map(|(ptr, len)| verifier.read(ptr, len).unwrap().to_vec());
+    let bytes = read.map(|(off, len)| verifier.read(in_ptr + off, len).unwrap().to_vec());
     (rp, bytes)
 }
 
 fn run(wl: &Workload) -> Option<Value> {
     run_reading(wl, None).0
-}
-
-/// Evaluates an `i32`-returning export on the ideal VM — used to recover a
-/// guest-allocated buffer address (via `cabi_realloc`) without measured cost.
-fn ideal_i32(module: &Module, func_name: &str, args: Vec<Value>) -> i32 {
-    use mpz_vm_ideal::Instance;
-    let mut vm = Instance::new(module.clone()).unwrap();
-    let idx = func_idx(module, func_name);
-    let (mut ctx, _) = test_st_context(1 << 20);
-    let params: Vec<Param> = args.into_iter().map(Param::Public).collect();
-    match block_on(vm.call(&mut ctx, idx, params)).unwrap() {
-        Some(Value::I32(p)) => p,
-        other => panic!("{func_name} returned {other:?}"),
-    }
 }
 
 /// A minimal workload that squares a private input — enough committed work to
@@ -204,25 +245,20 @@ const SHA256_SIZES: &[usize] = &[4096];
 fn bench_sha256(c: &mut Criterion) {
     let wasm = include_bytes!("guests/sha256.wasm");
     let module = Module::parse(wasm).unwrap();
-    // Allocate the message + digest block through the guest's canonical
-    // `cabi_realloc(old_ptr, old_size, align, new_size)` export.
-    let in_ptr =
-        ideal_i32(&module, "cabi_realloc", vec![Value::I32(0), Value::I32(0), Value::I32(1), Value::I32(4128)]) as u32;
-    let digest_ptr = in_ptr + 4096;
 
     let mut group = c.benchmark_group("zk-vm/sha256");
     group.sample_size(10);
     for &len in SHA256_SIZES {
         let msg: Vec<u8> = (0..len).map(|i| i as u8).collect();
+        // Allocate a 4 KiB message region plus the 32-byte digest; the harness
+        // prepends the buffer pointer, so `hash` receives `(ptr, len)`.
         let wl = Workload::new(module.clone(), "hash")
-            .private_mem(in_ptr, msg.clone())
-            .args(vec![
-                Arg::Public(Value::I32(in_ptr as i32)),
-                Arg::Public(Value::I32(len as i32)),
-            ]);
+            .input(msg.clone(), 4128)
+            .args(vec![Arg::Public(Value::I32(len as i32))]);
 
-        // Validate: the revealed digest must match a reference SHA-256.
-        let (_, digest) = run_reading(&wl, Some((digest_ptr, 32)));
+        // Validate: the revealed digest (4 KiB into the buffer) must match a
+        // reference SHA-256.
+        let (_, digest) = run_reading(&wl, Some((4096, 32)));
         let expected = Sha256::digest(&msg);
         assert_eq!(
             digest.as_deref(),
