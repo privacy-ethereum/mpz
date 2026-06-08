@@ -3,6 +3,8 @@
 mod config;
 pub(crate) mod cuckoo;
 pub(crate) mod mpcot;
+#[cfg(test)]
+mod profile;
 mod receiver;
 mod sender;
 pub(crate) mod spcot;
