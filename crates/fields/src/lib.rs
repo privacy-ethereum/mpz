@@ -30,7 +30,7 @@ use std::{
 };
 
 use hybrid_array::{Array, ArraySize};
-use itybity::{BitLength, FromBitIterator, GetBit, Lsb0, Msb0};
+use itybity::{BitLength, FromBitIterator, GetBit, Lsb0, Msb0, SetBit};
 use rand::{Rng, distr::StandardUniform, prelude::Distribution};
 use thiserror::Error;
 use typenum::Unsigned;
@@ -55,6 +55,8 @@ pub trait Field:
     + FromBitIterator
     + GetBit<Lsb0>
     + GetBit<Msb0>
+    + SetBit<Lsb0>
+    + SetBit<Msb0>
     + BitLength
     + Unpin
     + TryFrom<Array<u8, Self::ByteSize>, Error = FieldError>
@@ -320,7 +322,7 @@ pub fn compute_product_repeated<T: Field>(powers: &mut Vec<T>, factor: T, count:
 #[cfg(test)]
 mod tests {
     use super::{Field, compute_product_repeated};
-    use itybity::{GetBit, Lsb0, Msb0};
+    use itybity::{GetBit, Lsb0, Msb0, SetBit};
     use mpz_core::{Block, prg::Prg};
     use rand::SeedableRng;
 
@@ -496,6 +498,34 @@ mod tests {
 
         assert_eq!(b, T::two_pow(T::BIT_SIZE as u32 - 1));
         assert!(GetBit::<Lsb0>::get_bit(&b, T::BIT_SIZE - 1));
+    }
+
+    pub(crate) fn test_field_set_bit_lsb0<T: Field>() {
+        let zero = T::zero();
+        for i in 0..T::BIT_SIZE {
+            let mut a = zero;
+            SetBit::<Lsb0>::set_bit(&mut a, i, true);
+            assert_eq!(a, T::two_pow(i as u32), "set_bit lsb0 at {i}");
+            assert!(GetBit::<Lsb0>::get_bit(&a, i));
+            SetBit::<Lsb0>::set_bit(&mut a, i, false);
+            assert_eq!(a, zero, "clear_bit lsb0 at {i}");
+        }
+    }
+
+    pub(crate) fn test_field_set_bit_msb0<T: Field>() {
+        let zero = T::zero();
+        for i in 0..T::BIT_SIZE {
+            let mut a = zero;
+            SetBit::<Msb0>::set_bit(&mut a, i, true);
+            assert_eq!(
+                a,
+                T::two_pow((T::BIT_SIZE - 1 - i) as u32),
+                "set_bit msb0 at {i}"
+            );
+            assert!(GetBit::<Msb0>::get_bit(&a, i));
+            SetBit::<Msb0>::set_bit(&mut a, i, false);
+            assert_eq!(a, zero, "clear_bit msb0 at {i}");
+        }
     }
 
     pub(crate) fn test_field_bit_ops_msb0<T: Field>() {

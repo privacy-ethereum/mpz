@@ -8,7 +8,7 @@ use ark_serialize::{
     CanonicalDeserialize, CanonicalSerialize, Compress, SerializationError, Validate,
 };
 use hybrid_array::Array;
-use itybity::{BitLength, FromBitIterator, GetBit, Lsb0, Msb0};
+use itybity::{BitLength, FromBitIterator, GetBit, Lsb0, Msb0, SetBit};
 use mpz_core::rand::Rand0_8CompatExt;
 use num_bigint::ToBigUint;
 use rand::{distr::StandardUniform, prelude::Distribution};
@@ -158,6 +158,26 @@ impl GetBit<Msb0> for P256 {
     }
 }
 
+impl SetBit<Lsb0> for P256 {
+    fn set_bit(&mut self, index: usize, value: bool) {
+        let mut bi = MontBackend::<FqConfig, 4>::into_bigint(self.0);
+        let limb = index / 64;
+        let bit = index % 64;
+        if value {
+            bi.0[limb] |= 1u64 << bit;
+        } else {
+            bi.0[limb] &= !(1u64 << bit);
+        }
+        *self = P256(bi.into());
+    }
+}
+
+impl SetBit<Msb0> for P256 {
+    fn set_bit(&mut self, index: usize, value: bool) {
+        SetBit::<Lsb0>::set_bit(self, 255 - index, value)
+    }
+}
+
 impl FromBitIterator for P256 {
     fn from_lsb0_iter(iter: impl IntoIterator<Item = bool>) -> Self {
         P256(BigInt::from_bits_le(&iter.into_iter().collect::<Vec<bool>>()).into())
@@ -182,7 +202,7 @@ mod tests {
 
     use crate::tests::{
         test_field_basic, test_field_bit_ops_lsb0, test_field_bit_ops_msb0,
-        test_field_compute_product_repeated,
+        test_field_compute_product_repeated, test_field_set_bit_lsb0, test_field_set_bit_msb0,
     };
 
     #[test]
@@ -201,6 +221,8 @@ mod tests {
     fn test_p256_bit_ops() {
         test_field_bit_ops_lsb0::<P256>();
         test_field_bit_ops_msb0::<P256>();
+        test_field_set_bit_lsb0::<P256>();
+        test_field_set_bit_msb0::<P256>();
     }
 
     #[test]
