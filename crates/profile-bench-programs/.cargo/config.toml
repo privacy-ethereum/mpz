@@ -1,0 +1,2 @@
+[target.wasm32-unknown-unknown]
+rustflags = ["-C", "debuginfo=limited", "-C", "link-args=--initial-memory=16777216 --max-memory=16777216 --export=__heap_base"]

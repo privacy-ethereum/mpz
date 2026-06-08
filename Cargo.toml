@@ -23,8 +23,13 @@ members = [
     "crates/vm-memory",
     "crates/vm-circuits",
     "crates/vm-zk",
+    "crates/profile-bench",
 ]
-exclude = ["crates/lpn-estimator", "crates/vm-bench-guests/sha256"]
+exclude = [
+    "crates/lpn-estimator",
+    "crates/vm-bench-guests/sha256",
+    "crates/profile-bench-programs",
+]
 resolver = "2"
 
 [workspace.package]
