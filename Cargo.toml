@@ -31,6 +31,7 @@ members = [
     "crates/vm-ir",
     "crates/vm-core-new",
     "crates/vm-test-harness",
+    "crates/vm-ideal",
 ]
 exclude = ["crates/lpn-estimator"]
 resolver = "2"
@@ -85,6 +86,7 @@ mpz-vole-core = { path = "crates/vole-core" }
 mpz-vm-ir = { path = "crates/vm-ir" }
 mpz-vm-core-new = { path = "crates/vm-core-new" }
 mpz-vm-test-harness = { path = "crates/vm-test-harness" }
+mpz-vm-ideal = { path = "crates/vm-ideal" }
 clmul = { path = "crates/clmul" }
 matrix-transpose = { path = "crates/matrix-transpose" }
 rangeset = "0.4"
