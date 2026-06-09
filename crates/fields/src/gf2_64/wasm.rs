@@ -18,6 +18,20 @@ pub(super) fn mul(a: u64, b: u64) -> u64 {
     reduce64(lo, hi)
 }
 
+/// Unreduced carry-less product `a · b` (≤ 127 bits) packed into a `u128`.
+/// The accumulator XORs these and reduces once with [`reduce`].
+#[inline]
+pub(super) fn mul_full(a: u64, b: u64) -> u128 {
+    let (lo, hi) = bmul64_full(a, b);
+    (lo as u128) | ((hi as u128) << 64)
+}
+
+/// Reduces an accumulated 128-bit polynomial to a field element.
+#[inline]
+pub(super) fn reduce(prod: u128) -> u64 {
+    reduce64(prod as u64, (prod >> 64) as u64)
+}
+
 /// Squaring via parallel bit-spread. In char 2,
 /// `(Σ aᵢ xⁱ)² = Σ aᵢ x^(2i)`. Pack the low and high 32-bit halves of
 /// `a` into the two v128 lanes and run the 32→64 bit-spread on both

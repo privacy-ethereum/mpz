@@ -133,6 +133,8 @@ impl Field for Gf2_128 {
 
     type ByteSize = U16;
 
+    type Accumulator = Gf2_128Accumulator;
+
     fn zero() -> Self {
         Self::new(0)
     }
@@ -174,6 +176,55 @@ impl Field for Gf2_128 {
     #[inline]
     fn square(self) -> Self {
         Gf2_128(gf128_square(self.0))
+    }
+}
+
+/// Deferred-reduction [`Accumulator`](crate::Accumulator) for [`Gf2_128`].
+///
+/// Holds the XOR of unreduced 256-bit carry-less products as `(lo, hi)` and
+/// reduces once modulo `p(x) = x¹²⁸ + x⁷ + x² + x + 1`. Reduction is linear
+/// over XOR, so reducing the accumulated sum equals the field sum of the
+/// individual products.
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+pub struct Gf2_128Accumulator {
+    lo: u128,
+    hi: u128,
+}
+
+impl crate::Accumulator for Gf2_128Accumulator {
+    type Field = Gf2_128;
+
+    #[inline]
+    fn zero() -> Self {
+        Self { lo: 0, hi: 0 }
+    }
+
+    #[inline]
+    fn from_field(value: Gf2_128) -> Self {
+        // A reduced element is already `< x¹²⁸`, so it sits entirely in `lo`;
+        // reducing `(value, 0)` is the identity.
+        Self {
+            lo: value.0,
+            hi: 0,
+        }
+    }
+
+    #[inline]
+    fn add_product(&mut self, a: Gf2_128, b: Gf2_128) {
+        let (lo, hi) = gf128_mul_full(a.0, b.0);
+        self.lo ^= lo;
+        self.hi ^= hi;
+    }
+
+    #[inline]
+    fn merge(&mut self, other: &Self) {
+        self.lo ^= other.lo;
+        self.hi ^= other.hi;
+    }
+
+    #[inline]
+    fn reduce(self) -> Gf2_128 {
+        Gf2_128(gf128_reduce(self.lo, self.hi))
     }
 }
 
@@ -273,6 +324,16 @@ fn gf128_double_inner_product(a: &[Gf2_128], b: &[Gf2_128], c: &[Gf2_128]) -> u1
 }
 
 #[inline(always)]
+fn gf128_mul_full(a: u128, b: u128) -> (u128, u128) {
+    backend::mul_full(a, b)
+}
+
+#[inline(always)]
+fn gf128_reduce(lo: u128, hi: u128) -> u128 {
+    backend::reduce(lo, hi)
+}
+
+#[inline(always)]
 fn gf128_inverse(a: u128) -> u128 {
     backend::inverse(a)
 }
@@ -327,11 +388,11 @@ mod tests {
         Field,
         gf2::Gf2,
         tests::{
-            test_extension_field_subfield_inner_product, test_field_axioms_random,
-            test_field_basic, test_field_bit_ops_lsb0, test_field_bit_ops_msb0,
-            test_field_compute_product_repeated, test_field_double_inner_product,
-            test_field_inner_product, test_field_set_bit_lsb0, test_field_set_bit_msb0,
-            test_field_square,
+            test_extension_field_subfield_inner_product, test_field_accumulator,
+            test_field_axioms_random, test_field_basic, test_field_bit_ops_lsb0,
+            test_field_bit_ops_msb0, test_field_compute_product_repeated,
+            test_field_double_inner_product, test_field_inner_product, test_field_set_bit_lsb0,
+            test_field_set_bit_msb0, test_field_square,
         },
     };
     #[test]
@@ -354,6 +415,11 @@ mod tests {
     #[test]
     fn test_gf2_128_double_inner_product() {
         test_field_double_inner_product::<Gf2_128>();
+    }
+
+    #[test]
+    fn test_gf2_128_accumulator() {
+        test_field_accumulator::<Gf2_128>();
     }
 
     #[test]
