@@ -133,6 +133,46 @@ pub trait Vm {
         func_idx: u32,
         params: Vec<Param>,
     ) -> impl std::future::Future<Output = Result<Option<Value>, Self::Error>>;
+
+    /// Flushes any queued memory operations, committing them over `io` without
+    /// running a function.
+    ///
+    /// [`write`](Self::write) and [`reveal`](Self::reveal) stage their effects
+    /// for the next exchange, which normally happens at the start of the next
+    /// [`call`](Self::call). `commit` performs that exchange on demand: queued
+    /// inputs are committed and queued reveals are opened up front. With nothing
+    /// left pending, a subsequent [`call_local`](Self::call_local) can run with
+    /// no further communication.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Self::Error`] if the exchange over `io` fails.
+    fn commit(
+        &mut self,
+        io: &mut mpz_common::Context,
+    ) -> impl std::future::Future<Output = Result<(), Self::Error>>;
+
+    /// Invokes the function at `func_idx` with `params` using only local work,
+    /// without an `io` context.
+    ///
+    /// Unlike [`call`](Self::call), this performs no communication with other
+    /// parties: it runs the function only while every step can be evaluated from
+    /// values this party already holds. It is intended for functions whose
+    /// inputs are all public (or have already been committed via
+    /// [`commit`](Self::commit)).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`Self::Error`] if the call would require communication — for
+    /// example when private or blind inputs remain uncommitted, when a reveal is
+    /// pending, or when execution reaches a symbolic operation that cannot be
+    /// resolved locally — in addition to the usual failures: an invalid
+    /// `func_idx`, a signature mismatch, or a trap.
+    fn call_local(
+        &mut self,
+        func_idx: u32,
+        params: Vec<Param>,
+    ) -> Result<Option<Value>, Self::Error>;
 }
 
 /// An operand of an [`Op`], either a concrete value or a symbolic register.

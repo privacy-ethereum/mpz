@@ -12,7 +12,7 @@ use mpz_vm_ir::Module;
 use mpz_vm_core::{Param, Vm, Write, value::Value};
 use mpz_vm_ideal::{IdealError, Instance};
 use mpz_vm_test_harness::behavior::{
-    Agreement, MemStep, MemVm, Observation, ReadOutcome, func_index,
+    Agreement, MemStep, MemVm, Observation, ReadOutcome, func_index, parse_module,
 };
 
 /// A pair of ideal-VM instances exchanging over an in-process channel.
@@ -89,6 +89,18 @@ impl MemVm for IdealPair {
                     ));
                     observations.push(Observation::Agreement(agreement(a, b)));
                 }
+                MemStep::Commit => {
+                    let (mut ctx_a, mut ctx_b) = test_st_context(8);
+                    block_on(try_join(self.a.commit(&mut ctx_a), self.b.commit(&mut ctx_b)))?;
+                }
+                MemStep::CallLocal { func, args } => {
+                    let idx = func_index(self.a.module(), func)
+                        .ok_or_else(|| IdealError::Internal(format!("no export {func}")))?;
+                    let params: Vec<Param> = args.iter().copied().map(Param::Public).collect();
+                    let a = self.a.call_local(idx, params.clone())?;
+                    let b = self.b.call_local(idx, params)?;
+                    observations.push(Observation::Call { a, b });
+                }
             }
         }
         Ok(observations)
@@ -117,3 +129,43 @@ fn agreement(
 }
 
 mpz_vm_test_harness::mem_behavior_tests!(IdealPair);
+
+/// `call_local` refuses a private parameter: settling it requires an exchange.
+#[test]
+fn call_local_rejects_private_param() {
+    let module =
+        parse_module("(module (func (export \"id\") (param i32) (result i32) local.get 0))")
+            .unwrap();
+    let mut inst = Instance::new(module.clone()).unwrap();
+    let idx = func_index(inst.module(), "id").unwrap();
+    let err = inst
+        .call_local(idx, vec![Param::Private(Value::I32(1))])
+        .unwrap_err();
+    assert!(
+        matches!(err, IdealError::RequiresCommunication(_)),
+        "got {err:?}"
+    );
+}
+
+/// `call_local` refuses to run once execution turns symbolic: a committed
+/// private write feeds a load that cannot be evaluated locally.
+#[test]
+fn call_local_rejects_symbolic_execution() {
+    let module = parse_module(
+        "(module (memory 1)
+            (func (export \"loadadd\") (result i32)
+                i32.const 0 i32.load i32.const 1 i32.add))",
+    )
+    .unwrap();
+    let mut pair = IdealPair::instantiate(&module).unwrap();
+    pair.a.write(0, Write::Private(&7i32.to_le_bytes())).unwrap();
+    pair.b.write(0, Write::Blind(4)).unwrap();
+    let (mut ctx_a, mut ctx_b) = test_st_context(8);
+    block_on(try_join(pair.a.commit(&mut ctx_a), pair.b.commit(&mut ctx_b))).unwrap();
+    let idx = func_index(pair.a.module(), "loadadd").unwrap();
+    let err = pair.a.call_local(idx, vec![]).unwrap_err();
+    assert!(
+        matches!(err, IdealError::RequiresCommunication(_)),
+        "got {err:?}"
+    );
+}

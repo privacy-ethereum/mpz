@@ -13,7 +13,9 @@
 
 use std::collections::BTreeMap;
 
-use mpz_vm_core::{Directive, Global, Pending, Reg, StepResult, Thread, Trap, value::Value};
+use mpz_vm_core::{
+    Directive, Global, Operand, Pending, Reg, StepResult, Thread, Trap, value::Value,
+};
 use mpz_vm_ir::{Function, Module};
 
 use crate::{
@@ -230,6 +232,47 @@ pub(crate) fn capture_chunk(
                     reveals,
                 });
             }
+        }
+    }
+}
+
+/// Steps `thread` to completion using only local work, rejecting any step that
+/// would require a proving round (and thus communication with the other party).
+///
+/// Public computation is reproduced in-thread and runs to a [`StepResult::Done`]
+/// or a trap. A symbolic [`Op`](mpz_vm_core::Op), a private branch, or a host
+/// call (every zk-vm host call is a reveal) reports
+/// [`ZkVmError::RequiresCommunication`]; the remaining directives — local calls,
+/// returns, and public branches — are in-thread control flow.
+pub(crate) fn run_local(
+    module: &Module,
+    global: &mut Global,
+    thread: &mut Thread,
+) -> Result<Option<Value>> {
+    loop {
+        match thread.step(module, global)? {
+            StepResult::Continue => {}
+            StepResult::Directive(Directive::Op(_)) => {
+                return Err(ZkVmError::RequiresCommunication(
+                    "symbolic operation requires a proving round".into(),
+                ));
+            }
+            StepResult::Directive(Directive::Branch {
+                cond: Some(Operand::Symbol { .. }),
+                ..
+            }) => {
+                return Err(ZkVmError::RequiresCommunication(
+                    "private branch requires a proving round".into(),
+                ));
+            }
+            StepResult::Directive(_) => {}
+            StepResult::Blocked(_) => {
+                return Err(ZkVmError::RequiresCommunication(
+                    "execution requires communication".into(),
+                ));
+            }
+            StepResult::Trapped { trap, .. } => return Err(ZkVmError::Trap(trap)),
+            StepResult::Done { result, .. } => return Ok(result),
         }
     }
 }
