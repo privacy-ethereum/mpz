@@ -4,6 +4,9 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Cost Explorer</title>
+<link rel="stylesheet" href="vendor/prism.css" />
+<!-- Prism defines window.Prism for the CodeJar highlighter (classic script runs before the module). -->
+<script src="vendor/prism.js"></script>
 <style>
 
 #profile-viewer *,
@@ -263,11 +266,16 @@ html, body { margin: 0; background: #fff; }
 /* loader + harness */
 #profile-viewer #loader { margin-bottom: 16px; }
 #profile-viewer #harness {
-  width: 100%; box-sizing: border-box; min-height: 170px; resize: vertical;
+  box-sizing: border-box; min-height: 170px; max-height: 340px; overflow: auto;
+  resize: vertical;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 0.8rem; line-height: 1.45; padding: 10px; margin-top: 6px;
+  font-size: 0.8rem; line-height: 1.5; padding: 10px; margin-top: 6px;
   border: 1px solid #e0e0e0; border-radius: 6px; background: #fff; color: #212121;
+  white-space: pre-wrap; tab-size: 2; outline: none;
 }
+#profile-viewer #harness:focus { border-color: #1976d2; }
+/* keep Prism token colors but not its container background */
+#profile-viewer #harness.language-js { background: #fff; }
 #profile-viewer #exports { font-size: 0.82rem; color: #424242; margin-bottom: 8px; }
 #profile-viewer #exports code {
   background: #eef2f7; border-radius: 3px; padding: 1px 5px; margin-right: 6px;
@@ -304,7 +312,7 @@ html, body { margin: 0; background: #fff; }
         <div style="font-size:0.8rem;font-weight:600;color:#616161;margin:12px 0 6px;">Exports <span style="font-weight:400;color:#9e9e9e;">(click to prefill a call)</span></div>
         <div id="exports"></div>
         <label style="font-size:0.8rem;font-weight:600;color:#616161;">Harness &mdash; <code>tracer</code> is in scope; <code>return tracer.call(export, args)</code></label>
-        <textarea id="harness" spellcheck="false"></textarea>
+        <div id="harness" class="language-js" spellcheck="false"></div>
         <div id="run-row">
           <button id="run-btn">Run &#9654;</button>
           <span id="status"></span>
@@ -358,6 +366,7 @@ html, body { margin: 0; background: #fff; }
   </div>
 <script type="module">
 import init, { Tracer } from "./pkg/profile_wasm.js";
+import { CodeJar } from "./vendor/codejar.js";
 
 let DATA = null;
 let wasmBytes = null;
@@ -365,6 +374,9 @@ let wasmBytes = null;
 const dropZone = document.getElementById("drop-zone");
 const fileInput = document.getElementById("file-input");
 const harnessEl = document.getElementById("harness");
+const jar = CodeJar(harnessEl, (el) => window.Prism.highlightElement(el), {
+  tab: "  ",
+});
 const statusEl = document.getElementById("status");
 
 function setStatus(msg, isError) {
@@ -430,17 +442,17 @@ function showModuleInfo(exports, name) {
     const code = document.createElement("code");
     code.textContent = sig(e);
     code.title = "prefill a call to " + e.name;
-    code.addEventListener("click", () => { harnessEl.value = defaultHarness(e); });
+    code.addEventListener("click", () => jar.updateCode(defaultHarness(e)));
     ex.appendChild(code);
   }
-  if (!harnessEl.value.trim()) harnessEl.value = defaultHarness(exports[0]);
+  if (!jar.toString().trim()) jar.updateCode(defaultHarness(exports[0]));
 }
 
 function runHarness() {
   if (!wasmBytes) { setStatus("drop a .wasm module first", true); return; }
   try {
     const tracer = new Tracer(wasmBytes); // fresh state each run
-    const fn = new Function("tracer", harnessEl.value);
+    const fn = new Function("tracer", jar.toString());
     const result = fn(tracer);
     const data = typeof result === "string" ? JSON.parse(result) : result;
     if (!data || !data.stats) {

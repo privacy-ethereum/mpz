@@ -31,7 +31,9 @@ python3 -m http.server 8000
 ```
 
 Drop a `.wasm` module. Its exports are listed; click one to prefill a call. The
-harness is plain JavaScript with a `Tracer` named `tracer` in scope:
+harness is plain JavaScript with a `Tracer` named `tracer` in scope, edited in a
+small syntax-highlighting editor (CodeJar + Prism, vendored under `vendor/` so
+the page stays self-contained):
 
 ```js
 const heap = tracer.heapBase();
