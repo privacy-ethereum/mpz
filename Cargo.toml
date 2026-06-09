@@ -24,12 +24,12 @@ members = [
     "crates/vm-circuits",
     "crates/vm-zk",
     "crates/vm-profile-core",
-    "crates/cost-explorer",
+    "crates/vm-cost-explorer",
 ]
 exclude = [
     "crates/lpn-estimator",
     "crates/vm-bench-guests/sha256",
-    "crates/cost-explorer-sample",
+    "crates/vm-cost-explorer-sample",
 ]
 resolver = "2"
 

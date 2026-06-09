@@ -1,4 +1,4 @@
-# cost-explorer
+# vm-cost-explorer
 
 The profiler ([`vm-profile-core`](../vm-profile-core)) compiled to WebAssembly and
 embedded in a page, so you can profile **arbitrary** WASM modules in the
@@ -13,11 +13,11 @@ wasm32-unknown-unknown`). The script also installs a matching `wasm-bindgen-cli`
 if needed.
 
 ```sh
-./crates/cost-explorer/build-wasm.sh
+./crates/vm-cost-explorer/build-wasm.sh
 ```
 
 This compiles the crate and writes the `--target web` bindings to `pkg/`
-(`cost_explorer.js` + `cost_explorer_bg.wasm`).
+(`vm_cost_explorer.js` + `vm_cost_explorer_bg.wasm`).
 
 ## Run
 
@@ -25,7 +25,7 @@ The page loads the wasm via ES modules + `fetch`, so it must be served over
 HTTP (opening `index.html` from `file://` will not work):
 
 ```sh
-cd crates/cost-explorer
+cd crates/vm-cost-explorer
 python3 -m http.server 8000
 # open http://localhost:8000/index.html
 ```
@@ -74,10 +74,10 @@ module run entirely over public inputs stays in public control flow.
 ## The embedded sample
 
 The default module is the sample guest in
-[`cost-explorer-sample`](../cost-explorer-sample) (exports `sha256` and
+[`vm-cost-explorer-sample`](../vm-cost-explorer-sample) (exports `sha256` and
 `json_parse`). To rebuild and re-embed it after changing that crate (needs a
 nightly toolchain):
 
 ```sh
-./crates/cost-explorer/embed-sample.sh
+./crates/vm-cost-explorer/embed-sample.sh
 ```

@@ -1,7 +1,7 @@
 cargo-features = ["panic-immediate-abort"]
 
 [package]
-name = "cost-explorer-sample"
+name = "vm-cost-explorer-sample"
 version = "0.1.0"
 edition = "2021"
 
