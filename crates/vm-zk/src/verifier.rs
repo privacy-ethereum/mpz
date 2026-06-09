@@ -485,4 +485,145 @@ where
         tracing::info!(chunks = chunk_idx, ?final_output, "verifier call complete");
         Ok(final_output)
     }
+
+    /// Commits any queued blind writes and checks any queued reveals over `io`
+    /// without running a function.
+    ///
+    /// This mirrors the prover's [`commit`](crate::Prover::commit): a single
+    /// proving round commits the wires of every pending [`Write::Blind`] region
+    /// and verifies the prover's opening of every pending [`reveal`](Vm::reveal)
+    /// range, leaving nothing queued. The committed memory wires persist and are
+    /// consumed by a later [`call`](Vm::call).
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`ZkVmError`] if verification fails or communication over `io`
+    /// fails.
+    #[tracing::instrument(level = "info", skip(self, io))]
+    async fn commit(&mut self, io: &mut Context) -> Result<(), ZkVmError> {
+        let commit_bits = self.pending_io.cost_bits();
+        let reveal_ranges: Vec<Range<u32>> = self.pending_reveal.iter().collect();
+        let reveal_pending = !reveal_ranges.is_empty();
+        if commit_bits == 0 && !reveal_pending {
+            return Ok(());
+        }
+
+        // A commit round runs no gates, so the only authenticated bits are the
+        // committed inputs.
+        let execute_bits = commit_bits;
+        let total = execute_bits + VOPE_BITS;
+        let keys = self.allocate(io, total).await?;
+        let (exec_keys, vope_keys) = keys.split_at(execute_bits);
+        let vope_keys: &[Gf2_128; VOPE_BITS] =
+            vope_keys.try_into().expect("vope tail is VOPE_BITS wide");
+
+        let commit_msg: mpz_zk_core::Commit = io
+            .io_mut()
+            .expect_next()
+            .await
+            .map_err(|e| ZkVmError::IoRecv(e.to_string()))?;
+        let adjust: Vec<bool> = commit_msg.adjust.iter().by_vals().collect();
+        if adjust.len() != execute_bits {
+            return Err(ZkVmError::Internal(format!(
+                "commit adjust short: got {} want {}",
+                adjust.len(),
+                execute_bits
+            )));
+        }
+        let chi: [u8; 32] = rand::rng().random();
+        io.io_mut()
+            .send(chi)
+            .await
+            .map_err(|e| ZkVmError::IoSend(e.to_string()))?;
+
+        let ProofMessage {
+            output: _,
+            revealed,
+            proof,
+        } = io
+            .io_mut()
+            .expect_next()
+            .await
+            .map_err(|e| ZkVmError::IoRecv(e.to_string()))?;
+
+        {
+            let mut exec = self
+                .zk
+                .execute(exec_keys, &adjust)
+                .map_err(|e| ZkVmError::Internal(e.to_string()))?;
+            if commit_bits > 0 {
+                commit::commit_memory_verifier(&mut self.auth, &self.pending_io, &mut exec);
+            }
+            if reveal_pending {
+                reveal::reveal_verifier(&mut exec, &self.auth, &reveal_ranges, &revealed)?;
+            }
+            exec.finish()
+                .map_err(|e| ZkVmError::Internal(e.to_string()))?;
+        }
+        self.zk
+            .verify(chi, vope_keys, proof)
+            .map_err(|_| ZkVmError::BatchCheckFailed)?;
+
+        // The opening verified: write the revealed cleartext into linear memory
+        // and drop the ranges' taint so later reads succeed.
+        if reveal_pending {
+            let mut idx = 0;
+            for r in &reveal_ranges {
+                let len = (r.end - r.start) as usize;
+                let memory = self
+                    .global
+                    .memory_mut()
+                    .ok_or(ZkVmError::Core(CoreError::MemoryNotDefined))?;
+                memory
+                    .write_bytes(r.start, &revealed[idx..idx + len])
+                    .map_err(ZkVmError::Trap)?;
+                idx += len;
+                self.global
+                    .set_memory_visibility(r.start, len, Visibility::Public);
+            }
+        }
+        self.pending_io.clear();
+        self.pending_reveal = RangeSet::default();
+        Ok(())
+    }
+
+    /// Runs `func_idx` with `params` using only local work, without an `io`
+    /// context.
+    ///
+    /// Public computation is reproduced in-thread, so a function with public
+    /// inputs yields the same value the prover computes, with no communication.
+    /// Any authenticated work reports [`ZkVmError::RequiresCommunication`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ZkVmError::RequiresCommunication`] if `params` carry private or
+    /// blind values, if inputs or reveals remain queued (commit them first), or
+    /// if execution reaches authenticated work. Otherwise returns
+    /// [`ZkVmError::InvalidFunction`] for a bad `func_idx` or [`ZkVmError::Trap`]
+    /// on a trap.
+    fn call_local(
+        &mut self,
+        func_idx: u32,
+        params: Vec<Param>,
+    ) -> Result<Option<Value>, ZkVmError> {
+        match self.module.function(func_idx) {
+            Some(Function::Local(_)) => {}
+            _ => return Err(ZkVmError::Core(CoreError::InvalidFunction(func_idx))),
+        }
+        if prepare_params(&params)? > 0 {
+            return Err(ZkVmError::RequiresCommunication(
+                "call_local requires public params; private or blind inputs need a proving round"
+                    .into(),
+            ));
+        }
+        if self.pending_io.cost_bits() > 0 || !self.pending_reveal.is_empty() {
+            return Err(ZkVmError::RequiresCommunication(
+                "queued inputs or reveals must be flushed with commit before call_local".into(),
+            ));
+        }
+
+        let mut thread = Thread::new();
+        thread.call(&self.module, &mut self.global, Call { func_idx, params })?;
+        capture::run_local(&self.module, &mut self.global, &mut thread)
+    }
 }

@@ -63,6 +63,17 @@ pub enum MemStep {
     /// Both parties queue a reveal of `ptr..ptr+len`. Takes effect on the next
     /// flush, after which the range is concrete.
     Reveal { ptr: u32, len: usize },
+    /// Both parties flush pending writes and reveals via [`Vm::commit`], with no
+    /// function call. Records no observation: it is a pure flush.
+    ///
+    /// [`Vm::commit`]: mpz_vm_core::Vm::commit
+    Commit,
+    /// Invoke the exported function `func` with public `args` on both parties
+    /// via [`Vm::call_local`] — local work only, with no communication. Records
+    /// a [`Observation::Call`] with each party's return value.
+    ///
+    /// [`Vm::call_local`]: mpz_vm_core::Vm::call_local
+    CallLocal { func: String, args: Vec<Value> },
     /// Invoke the exported function `func` with public `args` on both parties.
     /// Flushes any pending writes/reveals first. Records a [`Observation::Call`]
     /// with each party's return value. A no-op export flushes without computing.
@@ -156,6 +167,11 @@ pub fn scenarios() -> Vec<Scenario> {
         consistent_public_checked_call(),
         inconsistent_public_write_disagrees(),
         inconsistent_public_feeds_authenticated_op(),
+        commit_flushes_private_write(),
+        commit_reveal_separate_rounds(),
+        commit_then_call_consumes_memory(),
+        call_local_runs_public_function(),
+        call_local_with_public_args(),
     ]
 }
 
@@ -397,6 +413,137 @@ fn inconsistent_public_feeds_authenticated_op() -> Scenario {
             },
         ],
         expected: vec![Observation::Agreement(Agreement::Disagreed)],
+    }
+}
+
+/// `commit` flushes a queued private write with no function call: the bytes
+/// become committed (symbolic, unreadable on both sides) without any export
+/// being invoked. The module exports no function at all, so a flush could not
+/// have ridden on a stand-in no-op call. Before the commit, party A could still
+/// read its own un-flushed bytes; after it, the range is symbolic on both.
+fn commit_flushes_private_write() -> Scenario {
+    let bytes = vec![0xca, 0xfe, 0xba, 0xbe];
+    Scenario {
+        name: "commit_flushes_private_write",
+        wat: r#"(module (memory 1))"#.to_string(),
+        steps: vec![
+            MemStep::WritePrivateA {
+                ptr: 0,
+                bytes: bytes.clone(),
+            },
+            MemStep::Commit,
+            MemStep::Read { ptr: 0, len: 4 },
+        ],
+        expected: vec![Observation::Read {
+            a: ReadOutcome::Err,
+            b: ReadOutcome::Err,
+        }],
+    }
+}
+
+/// `commit` run twice: the first commits a private write (leaving it symbolic
+/// and unreadable), the second opens a later reveal against those
+/// already-committed wires — exercising a reveal that spans commit rounds.
+fn commit_reveal_separate_rounds() -> Scenario {
+    let bytes = vec![0x11, 0x22, 0x33, 0x44];
+    Scenario {
+        name: "commit_reveal_separate_rounds",
+        wat: r#"(module (memory 1))"#.to_string(),
+        steps: vec![
+            MemStep::WritePrivateA {
+                ptr: 0,
+                bytes: bytes.clone(),
+            },
+            MemStep::Commit,
+            MemStep::Read { ptr: 0, len: 4 },
+            MemStep::Reveal { ptr: 0, len: 4 },
+            MemStep::Commit,
+            MemStep::Read { ptr: 0, len: 4 },
+        ],
+        expected: vec![
+            Observation::Read {
+                a: ReadOutcome::Err,
+                b: ReadOutcome::Err,
+            },
+            Observation::Read {
+                a: ReadOutcome::Ok(bytes.clone()),
+                b: ReadOutcome::Ok(bytes),
+            },
+        ],
+    }
+}
+
+/// A private write committed up front via `commit` is then consumed by a full
+/// proving `call`: the committed memory wires persist across rounds and feed the
+/// later computation, which returns the right value on both parties.
+fn commit_then_call_consumes_memory() -> Scenario {
+    let wat = r#"(module
+        (memory 1)
+        (func (export "loadadd") (result i32)
+            i32.const 0 i32.load i32.const 1 i32.add))"#
+        .to_string();
+    Scenario {
+        name: "commit_then_call_consumes_memory",
+        wat,
+        steps: vec![
+            MemStep::WritePrivateA {
+                ptr: 0,
+                bytes: 7i32.to_le_bytes().to_vec(),
+            },
+            MemStep::Commit,
+            MemStep::Call {
+                func: "loadadd".to_string(),
+                args: vec![],
+            },
+        ],
+        expected: vec![Observation::Call {
+            a: Some(Value::I32(8)),
+            b: Some(Value::I32(8)),
+        }],
+    }
+}
+
+/// `call_local` runs an all-public function with no communication: a public
+/// write feeds a load that both parties evaluate identically in-thread.
+fn call_local_runs_public_function() -> Scenario {
+    Scenario {
+        name: "call_local_runs_public_function",
+        wat: load0_module(),
+        steps: vec![
+            MemStep::WritePublic {
+                ptr: 0,
+                bytes: 5i32.to_le_bytes().to_vec(),
+            },
+            MemStep::CallLocal {
+                func: "load0".to_string(),
+                args: vec![],
+            },
+        ],
+        expected: vec![Observation::Call {
+            a: Some(Value::I32(5)),
+            b: Some(Value::I32(5)),
+        }],
+    }
+}
+
+/// `call_local` runs a pure public computation over its public arguments, with
+/// no memory and no communication.
+fn call_local_with_public_args() -> Scenario {
+    let wat = r#"(module
+        (func (export "add") (param i32 i32) (result i32)
+            local.get 0 local.get 1 i32.add))"#
+        .to_string();
+    Scenario {
+        name: "call_local_with_public_args",
+        wat,
+        steps: vec![MemStep::CallLocal {
+            func: "add".to_string(),
+            args: vec![Value::I32(2), Value::I32(3)],
+        }],
+        expected: vec![Observation::Call {
+            a: Some(Value::I32(5)),
+            b: Some(Value::I32(5)),
+        }],
     }
 }
 

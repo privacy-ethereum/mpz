@@ -15,7 +15,8 @@ use rangeset::{prelude::*, set::RangeSet};
 use serio::{SinkExt, stream::IoStreamExt};
 
 use mpz_vm_core::{
-    Call, Error as CoreError, Global, Module, Operand, Param, Trap, Visibility, Vm, Write,
+    Call, Directive, Error as CoreError, Global, Module, Operand, Param, Trap, Visibility, Vm,
+    Write,
     thread::{Pending, StepResult, Thread},
     value::Value,
 };
@@ -63,6 +64,11 @@ pub enum IdealError {
     /// An I/O operation over the coordination channel failed.
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
+
+    /// A local-only call ([`Vm::call_local`]) reached work that requires
+    /// communication with another party.
+    #[error("operation requires communication: {0}")]
+    RequiresCommunication(String),
 
     /// An invariant of the ideal VM was violated, indicating a bug.
     #[error("internal error: {0}")]
@@ -525,6 +531,56 @@ impl Instance {
             }
         }
     }
+
+    /// Runs `thread` to completion using only local work, rejecting any step
+    /// that would require communication in a real multi-party backend.
+    ///
+    /// Host calls are still serviced (the ideal functionality holds every
+    /// value, so reveals are local), but a symbolic [`Op`], a private branch, or
+    /// a block on an unheld value reports [`IdealError::RequiresCommunication`].
+    fn run_loop_local(&mut self, thread: &mut Thread) -> Result<Option<Value>, IdealError> {
+        loop {
+            let result = match thread.step(&self.module, &mut self.global) {
+                Ok(r) => r,
+                Err(e) => {
+                    let e: IdealError = e.into();
+                    self.dump_error(thread, &e);
+                    return Err(e);
+                }
+            };
+
+            match result {
+                StepResult::Continue => {}
+                // Control-flow directives (local calls, returns, public branches)
+                // are in-thread bookkeeping; a symbolic op or private branch is
+                // not locally resolvable in a real backend.
+                StepResult::Directive(Directive::Op(_)) => {
+                    return Err(IdealError::RequiresCommunication(
+                        "symbolic operation requires communication".into(),
+                    ));
+                }
+                StepResult::Directive(Directive::Branch {
+                    cond: Some(Operand::Symbol { .. }),
+                    ..
+                }) => {
+                    return Err(IdealError::RequiresCommunication(
+                        "private branch requires communication".into(),
+                    ));
+                }
+                StepResult::Directive(_) => {}
+                StepResult::Blocked(Pending::HostCall { func_idx, args, .. }) => {
+                    self.service_host_call(thread, func_idx, &args)?;
+                }
+                StepResult::Blocked(_) => {
+                    return Err(IdealError::RequiresCommunication(
+                        "execution blocked on a value not held locally".into(),
+                    ));
+                }
+                StepResult::Trapped { trap, .. } => return Err(IdealError::Trap(trap)),
+                StepResult::Done { result, .. } => return Ok(result),
+            }
+        }
+    }
 }
 
 impl Vm for Instance {
@@ -635,6 +691,80 @@ impl Vm for Instance {
         thread.call(&self.module, &mut self.global, call)?;
         self.flush(&mut thread, io, &params).await?;
         self.run_loop(&mut thread).await
+    }
+
+    /// Flushes any pending memory regions over `io` without running a function.
+    ///
+    /// Staged private, blind, public, and reveal regions are exchanged exactly
+    /// as the next [`call`](Vm::call) would, leaving nothing pending. Returns
+    /// immediately when there is no pending memory.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`IdealError`] if the exchange over `io` fails or the module
+    /// has no linear memory to exchange.
+    async fn commit(&mut self, io: &mut IoContext) -> Result<(), IdealError> {
+        if !self.has_pending_memory() {
+            return Ok(());
+        }
+        // No call is in progress, so there are no private/blind parameters to
+        // exchange; `flush` runs the memory exchange against a fresh thread.
+        let mut thread = Thread::new();
+        self.flush(&mut thread, io, &[]).await
+    }
+
+    /// Calls the function at `func_idx` with `params`, running it to completion
+    /// using only local work.
+    ///
+    /// Pending public writes are settled locally; private, blind, or reveal
+    /// regions must first be flushed with [`commit`](Vm::commit), and `params`
+    /// must be public. Execution then runs with no communication.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`IdealError::RequiresCommunication`] if `params` carry private
+    /// or blind values, if any private/blind/reveal region is still pending, or
+    /// if execution reaches a step that is not locally resolvable. Otherwise
+    /// returns a [`IdealError`] for an invalid `func_idx`, a signature mismatch,
+    /// or a trap.
+    fn call_local(
+        &mut self,
+        func_idx: u32,
+        params: Vec<Param>,
+    ) -> Result<Option<Value>, IdealError> {
+        self.validate_call(func_idx, &params)?;
+        if params
+            .iter()
+            .any(|p| matches!(p, Param::Private(_) | Param::Blind(_)))
+        {
+            return Err(IdealError::RequiresCommunication(
+                "call_local requires public params; private or blind inputs must be exchanged via call".into(),
+            ));
+        }
+        if !self.pending_private.is_empty()
+            || !self.pending_blind.is_empty()
+            || !self.pending_reveal.is_empty()
+        {
+            return Err(IdealError::RequiresCommunication(
+                "pending private, blind, or reveal memory must be flushed with commit before call_local".into(),
+            ));
+        }
+
+        // Pending public writes need no exchange: their bytes are already in
+        // memory; settle their visibility locally and clear the queue.
+        let public_ranges: Vec<Range<u32>> = self.pending_public.iter().collect();
+        for range in public_ranges {
+            self.global.set_memory_visibility(
+                range.start,
+                (range.end - range.start) as usize,
+                Visibility::Public,
+            );
+        }
+        self.pending_public.clear();
+
+        let mut thread = Thread::new();
+        thread.call(&self.module, &mut self.global, Call { func_idx, params })?;
+        self.run_loop_local(&mut thread)
     }
 }
 

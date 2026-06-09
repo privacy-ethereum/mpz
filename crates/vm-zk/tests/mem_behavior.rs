@@ -17,7 +17,7 @@ use mpz_vm_ir::Module;
 use mpz_ot::ideal::rcot::ideal_rcot;
 use mpz_vm_core::{Param, Vm, Write, value::Value};
 use mpz_vm_test_harness::behavior::{
-    Agreement, MemStep, MemVm, Observation, ReadOutcome, func_index,
+    Agreement, MemStep, MemVm, Observation, ReadOutcome, func_index, parse_module,
 };
 use mpz_vm_zk::{Prover, Verifier, ZkVmError};
 use rand::{Rng, SeedableRng, rngs::StdRng};
@@ -103,6 +103,21 @@ impl MemVm for ZkPair {
                     ));
                     observations.push(Observation::Agreement(agreement(a, b)));
                 }
+                MemStep::Commit => {
+                    let (mut ctx_p, mut ctx_v) = test_st_context(1024 * 1024);
+                    block_on(try_join(
+                        self.prover.commit(&mut ctx_p),
+                        self.verifier.commit(&mut ctx_v),
+                    ))?;
+                }
+                MemStep::CallLocal { func, args } => {
+                    let idx = func_index(&self.module, func)
+                        .ok_or_else(|| ZkVmError::Internal(format!("no export {func}")))?;
+                    let params: Vec<Param> = args.iter().copied().map(Param::Public).collect();
+                    let a = self.prover.call_local(idx, params.clone())?;
+                    let b = self.verifier.call_local(idx, params)?;
+                    observations.push(Observation::Call { a, b });
+                }
             }
         }
         Ok(observations)
@@ -128,3 +143,53 @@ fn agreement(a: Result<Option<Value>, ZkVmError>, b: Result<Option<Value>, ZkVmE
 }
 
 mpz_vm_test_harness::mem_behavior_tests!(ZkPair);
+
+/// `call_local` refuses a private parameter: committing it requires a proving
+/// round.
+#[test]
+fn call_local_rejects_private_param() {
+    let module =
+        parse_module("(module (func (export \"id\") (param i32) (result i32) local.get 0))")
+            .unwrap();
+    let mut pair = ZkPair::instantiate(&module).unwrap();
+    let idx = func_index(&pair.module, "id").unwrap();
+    let err = pair
+        .prover
+        .call_local(idx, vec![Param::Private(Value::I32(1))])
+        .unwrap_err();
+    assert!(
+        matches!(err, ZkVmError::RequiresCommunication(_)),
+        "got {err:?}"
+    );
+}
+
+/// `call_local` refuses to run once execution turns symbolic: a committed
+/// private write feeds a load, which can only be evaluated under proof. The
+/// same program runs fine through a full `call` (see
+/// `commit_then_call_consumes_memory`).
+#[test]
+fn call_local_rejects_symbolic_execution() {
+    let module = parse_module(
+        "(module (memory 1)
+            (func (export \"loadadd\") (result i32)
+                i32.const 0 i32.load i32.const 1 i32.add))",
+    )
+    .unwrap();
+    let mut pair = ZkPair::instantiate(&module).unwrap();
+    pair.prover
+        .write(0, Write::Private(&7i32.to_le_bytes()))
+        .unwrap();
+    pair.verifier.write(0, Write::Blind(4)).unwrap();
+    let (mut ctx_p, mut ctx_v) = test_st_context(1024 * 1024);
+    block_on(try_join(
+        pair.prover.commit(&mut ctx_p),
+        pair.verifier.commit(&mut ctx_v),
+    ))
+    .unwrap();
+    let idx = func_index(&pair.module, "loadadd").unwrap();
+    let err = pair.prover.call_local(idx, vec![]).unwrap_err();
+    assert!(
+        matches!(err, ZkVmError::RequiresCommunication(_)),
+        "got {err:?}"
+    );
+}

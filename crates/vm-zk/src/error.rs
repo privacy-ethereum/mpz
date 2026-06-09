@@ -61,6 +61,8 @@ pub enum ZkVmError {
 
     #[error("unsupported: {0}")]
     Unsupported(String),
+    #[error("operation requires communication: {0}")]
+    RequiresCommunication(String),
     #[error("internal: {0}")]
     Internal(String),
 }
