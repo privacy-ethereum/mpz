@@ -20,6 +20,24 @@ pub(super) fn mul(a: u128, b: u128) -> u128 {
     }
 }
 
+/// Unreduced 256-bit carry-less product `a · b`, as `(lo, hi)`. The
+/// accumulator XORs these and reduces once with [`reduce`].
+#[inline(always)]
+pub(super) fn mul_full(a: u128, b: u128) -> (u128, u128) {
+    // SAFETY: see `mul`.
+    unsafe {
+        let (lo, hi) = clmul128(load(a), load(b));
+        (extract(lo), extract(hi))
+    }
+}
+
+/// Reduces an accumulated 256-bit polynomial `hi·x¹²⁸ + lo` to a field element.
+#[inline(always)]
+pub(super) fn reduce(lo: u128, hi: u128) -> u128 {
+    // SAFETY: see `mul`.
+    unsafe { extract(reduce128(load(lo), load(hi))) }
+}
+
 /// Squaring via scalar bit-spread — **faster than CLMUL** on x86 for
 /// isolated squarings. In char 2, squaring is just "spread each bit to
 /// twice its index", with all cross terms vanishing. Four 32→64 spreads

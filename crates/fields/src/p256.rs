@@ -17,7 +17,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use typenum::{U32, U256};
 
-use crate::{Field, FieldError};
+use crate::{Field, FieldError, NaiveAccumulator};
 
 /// A type for holding field elements of P256.
 #[derive(Copy, Clone, PartialOrd, Ord, PartialEq, Eq, Serialize, Deserialize)]
@@ -112,6 +112,10 @@ impl Field for P256 {
 
     type ByteSize = U32;
 
+    // Deferred reduction is left for a future change; the prime field uses the
+    // eager accumulator for now.
+    type Accumulator = NaiveAccumulator<P256>;
+
     fn zero() -> Self {
         P256(<Fq as Zero>::zero())
     }
@@ -201,9 +205,14 @@ mod tests {
     use rand::{Rng, SeedableRng};
 
     use crate::tests::{
-        test_field_basic, test_field_bit_ops_lsb0, test_field_bit_ops_msb0,
+        test_field_accumulator, test_field_basic, test_field_bit_ops_lsb0, test_field_bit_ops_msb0,
         test_field_compute_product_repeated, test_field_set_bit_lsb0, test_field_set_bit_msb0,
     };
+
+    #[test]
+    fn test_p256_accumulator() {
+        test_field_accumulator::<P256>();
+    }
 
     #[test]
     fn test_p256_basic() {

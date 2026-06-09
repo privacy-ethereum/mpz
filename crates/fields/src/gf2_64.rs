@@ -137,6 +137,8 @@ impl Field for Gf2_64 {
     type BitSize = U64;
     type ByteSize = U8;
 
+    type Accumulator = Gf2_64Accumulator;
+
     fn zero() -> Self {
         Gf2_64::ZERO
     }
@@ -177,6 +179,47 @@ impl Field for Gf2_64 {
     #[inline]
     fn square(self) -> Self {
         Gf2_64(gf64_square(self.0))
+    }
+}
+
+/// Deferred-reduction [`Accumulator`](crate::Accumulator) for [`Gf2_64`].
+///
+/// A `GF(2⁶⁴)·GF(2⁶⁴)` carry-less product is at most 127 bits, so the XOR of
+/// many unreduced products fits in a single `u128`; reduction modulo
+/// `p(x) = x⁶⁴ + x⁴ + x³ + x + 1` runs once. Reduction is linear over XOR, so
+/// reducing the accumulated sum equals the field sum of the individual
+/// products.
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
+pub struct Gf2_64Accumulator(u128);
+
+impl crate::Accumulator for Gf2_64Accumulator {
+    type Field = Gf2_64;
+
+    #[inline]
+    fn zero() -> Self {
+        Self(0)
+    }
+
+    #[inline]
+    fn from_field(value: Gf2_64) -> Self {
+        // A reduced element is `< x⁶⁴`, so it sits in the low 64 bits;
+        // reducing it back is the identity.
+        Self(value.0 as u128)
+    }
+
+    #[inline]
+    fn add_product(&mut self, a: Gf2_64, b: Gf2_64) {
+        self.0 ^= gf64_mul_full(a.0, b.0);
+    }
+
+    #[inline]
+    fn merge(&mut self, other: &Self) {
+        self.0 ^= other.0;
+    }
+
+    #[inline]
+    fn reduce(self) -> Gf2_64 {
+        Gf2_64(gf64_reduce(self.0))
     }
 }
 
@@ -276,6 +319,16 @@ fn gf64_inverse(a: u64) -> u64 {
 }
 
 #[inline(always)]
+fn gf64_mul_full(a: u64, b: u64) -> u128 {
+    backend::mul_full(a, b)
+}
+
+#[inline(always)]
+fn gf64_reduce(prod: u128) -> u64 {
+    backend::reduce(prod)
+}
+
+#[inline(always)]
 fn gf64_square(a: u64) -> u64 {
     backend::square(a)
 }
@@ -284,11 +337,16 @@ fn gf64_square(a: u64) -> u64 {
 mod tests {
     use super::*;
     use crate::tests::{
-        test_extension_field_subfield_inner_product, test_field_axioms_random,
-        test_field_bit_ops_lsb0, test_field_bit_ops_msb0, test_field_double_inner_product,
-        test_field_inner_product, test_field_set_bit_lsb0, test_field_set_bit_msb0,
-        test_field_square,
+        test_extension_field_subfield_inner_product, test_field_accumulator,
+        test_field_axioms_random, test_field_bit_ops_lsb0, test_field_bit_ops_msb0,
+        test_field_double_inner_product, test_field_inner_product, test_field_set_bit_lsb0,
+        test_field_set_bit_msb0, test_field_square,
     };
+
+    #[test]
+    fn test_accumulator() {
+        test_field_accumulator::<Gf2_64>();
+    }
 
     #[test]
     fn test_bit_ops() {

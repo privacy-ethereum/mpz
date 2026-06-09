@@ -18,6 +18,39 @@ pub(super) fn mul(a: u64, b: u64) -> u64 {
     }
 }
 
+/// Unreduced carry-less product `a · b` (≤ 127 bits) packed into a `u128`.
+/// The accumulator XORs these and reduces once with [`reduce`].
+#[inline(always)]
+pub(super) fn mul_full(a: u64, b: u64) -> u128 {
+    // SAFETY: see `mul`.
+    unsafe {
+        let a_vec = _mm_set_epi64x(0, a as i64);
+        let b_vec = _mm_set_epi64x(0, b as i64);
+        extract128(_mm_clmulepi64_si128(a_vec, b_vec, 0x00))
+    }
+}
+
+/// Reduces an accumulated 128-bit polynomial to a field element.
+#[inline(always)]
+pub(super) fn reduce(prod: u128) -> u64 {
+    // SAFETY: see `mul`.
+    unsafe { _mm_cvtsi128_si64(reduce64(load128(prod))) as u64 }
+}
+
+#[inline(always)]
+unsafe fn load128(x: u128) -> __m128i {
+    unsafe { _mm_set_epi64x((x >> 64) as i64, x as i64) }
+}
+
+#[inline(always)]
+unsafe fn extract128(x: __m128i) -> u128 {
+    unsafe {
+        let lo = _mm_cvtsi128_si64(x) as u64 as u128;
+        let hi = _mm_extract_epi64(x, 1) as u64 as u128;
+        (hi << 64) | lo
+    }
+}
+
 /// Squaring: at the CLMUL level this is identical to `mul(a, a)` (one
 /// carry-less multiply either way), but exposing a dedicated `square`
 /// lets callers express intent and keeps the backend interface uniform

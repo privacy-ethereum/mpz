@@ -73,6 +73,16 @@ pub trait Field:
     /// The number of bytes of a field element as a type number.
     type ByteSize: ArraySize;
 
+    /// The deferred-reduction [`Accumulator`] for this field.
+    ///
+    /// Summing products of field elements (`Σ aᵢ·bᵢ`, a running MAC, a random
+    /// linear combination) normally reduces modulo the field's defining
+    /// polynomial after every product, and that per-product reduction
+    /// dominates. An accumulator folds in *unreduced* products and reduces once
+    /// at the end — see [`Accumulator`]. Fields with no cheaper unreduced form
+    /// (e.g. the prime field) use [`NaiveAccumulator`], which reduces eagerly.
+    type Accumulator: Accumulator<Field = Self>;
+
     /// Return the additive identity element.
     fn zero() -> Self;
 
@@ -217,6 +227,96 @@ pub trait Field:
             .zip(b.iter())
             .zip(c.iter())
             .fold(Self::zero(), |acc, ((x, y), z)| acc + *x * *y * *z)
+    }
+}
+
+/// An accumulator over a [`Field`] that supports *deferred modular reduction*.
+///
+/// Field multiplication reduces modulo the field's defining polynomial (or
+/// prime) after every product. When summing many products that per-product
+/// reduction dominates the cost. An `Accumulator` instead folds *unreduced*
+/// products into a wider internal representation and reduces exactly once, in
+/// [`reduce`](Accumulator::reduce).
+///
+/// An accumulator is an additive group homomorphic to the field under
+/// [`reduce`](Accumulator::reduce): [`zero`](Accumulator::zero) is the identity,
+/// [`merge`](Accumulator::merge) adds two accumulators (e.g. partial sums from
+/// parallel chunks), [`add_product`](Accumulator::add_product) folds in one
+/// product, and reducing yields the field sum of everything folded in. That is,
+/// for any elements,
+///
+/// ```text
+/// { let mut acc = A::zero();
+///   acc.add_product(a, b);
+///   acc.add_product(c, d);
+///   acc.reduce() }                 ==   a * b + c * d
+/// ```
+///
+/// For binary extension fields the unreduced form is the XOR of the double-width
+/// carry-less products, reduced once modulo the irreducible polynomial. For
+/// fields with no cheaper unreduced form, [`NaiveAccumulator`] reduces eagerly
+/// and the deferral is a no-op.
+pub trait Accumulator: Copy {
+    /// The field whose products this accumulates and to which it reduces.
+    type Field: Field;
+
+    /// The empty accumulator; reduces to [`Field::zero`].
+    fn zero() -> Self;
+
+    /// Lifts a reduced field element into an accumulator.
+    ///
+    /// `Self::from_field(x).reduce() == x` for every `x`.
+    fn from_field(value: Self::Field) -> Self;
+
+    /// Folds the product `a · b` into the accumulator without reducing.
+    fn add_product(&mut self, a: Self::Field, b: Self::Field);
+
+    /// Adds `other` into `self`, both still unreduced.
+    ///
+    /// `(self + other).reduce() == self.reduce() + other.reduce()`.
+    fn merge(&mut self, other: &Self);
+
+    /// Reduces the accumulator to a field element: the field sum of every
+    /// product and element folded in.
+    fn reduce(self) -> Self::Field;
+}
+
+/// An [`Accumulator`] that reduces *eagerly*: every product is reduced
+/// immediately, so there is no deferral.
+///
+/// Used by fields whose multiplication has no cheaper unreduced form (e.g. the
+/// prime field [`P256`](crate::p256::P256), and the trivial field
+/// [`Gf2`](crate::gf2::Gf2)). It satisfies the [`Accumulator`] contract by
+/// holding a single reduced field element.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct NaiveAccumulator<F>(F);
+
+impl<F: Field> Accumulator for NaiveAccumulator<F> {
+    type Field = F;
+
+    #[inline]
+    fn zero() -> Self {
+        Self(F::zero())
+    }
+
+    #[inline]
+    fn from_field(value: F) -> Self {
+        Self(value)
+    }
+
+    #[inline]
+    fn add_product(&mut self, a: F, b: F) {
+        self.0 = self.0 + a * b;
+    }
+
+    #[inline]
+    fn merge(&mut self, other: &Self) {
+        self.0 = self.0 + other.0;
+    }
+
+    #[inline]
+    fn reduce(self) -> F {
+        self.0
     }
 }
 
@@ -446,6 +546,65 @@ mod tests {
 
             assert_eq!(T::double_inner_product(&a, &b, &c), expected, "len={len}");
         }
+    }
+
+    pub(crate) fn test_field_accumulator<T: Field>() {
+        use crate::Accumulator;
+        let mut rng = Prg::from_seed(Block::ZERO);
+
+        // The empty accumulator reduces to zero.
+        assert_eq!(<T::Accumulator as Accumulator>::zero().reduce(), T::zero());
+
+        // Lifting a reduced element round-trips through reduce.
+        for _ in 0..100 {
+            let x = T::rand(&mut rng);
+            assert_eq!(T::Accumulator::from_field(x).reduce(), x);
+        }
+
+        // Accumulated products reduce to the field sum of those products, and
+        // agree with the dedicated `inner_product` over the same inputs.
+        for &len in &[1usize, 2, 17, 1024] {
+            let a: Vec<T> = (0..len).map(|_| T::rand(&mut rng)).collect();
+            let b: Vec<T> = (0..len).map(|_| T::rand(&mut rng)).collect();
+
+            let mut acc = T::Accumulator::zero();
+            for (x, y) in a.iter().zip(b.iter()) {
+                acc.add_product(*x, *y);
+            }
+            let expected = a
+                .iter()
+                .zip(b.iter())
+                .fold(T::zero(), |s, (x, y)| s + *x * *y);
+            assert_eq!(acc.reduce(), expected, "deferred sum, len={len}");
+            assert_eq!(
+                acc.reduce(),
+                T::inner_product(&a, &b),
+                "matches inner_product, len={len}"
+            );
+
+            // Merging partial accumulators (as a parallel reduction would)
+            // gives the same result as one running accumulator.
+            let mid = len / 2;
+            let mut left = T::Accumulator::zero();
+            for (x, y) in a[..mid].iter().zip(b[..mid].iter()) {
+                left.add_product(*x, *y);
+            }
+            let mut right = T::Accumulator::zero();
+            for (x, y) in a[mid..].iter().zip(b[mid..].iter()) {
+                right.add_product(*x, *y);
+            }
+            left.merge(&right);
+            assert_eq!(left.reduce(), expected, "merge of partials, len={len}");
+        }
+
+        // A lifted element composes additively with folded products:
+        // `seed + a·b`.
+        let seed = T::rand(&mut rng);
+        let a = T::rand(&mut rng);
+        let b = T::rand(&mut rng);
+        let mut acc = T::Accumulator::from_field(seed);
+        acc.add_product(a, b);
+        assert_eq!(acc.reduce(), seed + a * b, "lifted seed plus product");
     }
 
     pub(crate) fn test_extension_field_subfield_inner_product<F, B>()

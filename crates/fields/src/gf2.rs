@@ -7,7 +7,7 @@ use itybity::{BitLength, FromBitIterator, GetBit, Lsb0, Msb0, SetBit};
 use rand::distr::{Distribution, StandardUniform};
 use serde::{Deserialize, Serialize};
 
-use crate::{Field, FieldError};
+use crate::{Field, FieldError, NaiveAccumulator};
 
 /// An element of GF(2), i.e. a single bit under XOR/AND.
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -124,6 +124,10 @@ impl Field for Gf2 {
     type BitSize = U1;
     type ByteSize = U1;
 
+    // GF(2) multiplication is a single AND with no reduction, so eager
+    // reduction is already optimal.
+    type Accumulator = NaiveAccumulator<Gf2>;
+
     fn zero() -> Self {
         Gf2::ZERO
     }
@@ -151,10 +155,15 @@ mod tests {
     use crate::{
         Field,
         tests::{
-            test_field_bit_ops_lsb0, test_field_bit_ops_msb0, test_field_set_bit_lsb0,
-            test_field_set_bit_msb0,
+            test_field_accumulator, test_field_bit_ops_lsb0, test_field_bit_ops_msb0,
+            test_field_set_bit_lsb0, test_field_set_bit_msb0,
         },
     };
+
+    #[test]
+    fn gf2_accumulator() {
+        test_field_accumulator::<Gf2>();
+    }
 
     #[test]
     fn gf2_arith() {

@@ -36,6 +36,20 @@ pub(super) fn inverse(a: u64) -> u64 {
     out
 }
 
+/// Unreduced carry-less product `a · b` (≤ 127 bits) packed into a `u128`.
+/// The accumulator XORs these and reduces once with [`reduce`].
+#[inline]
+pub(super) fn mul_full(a: u64, b: u64) -> u128 {
+    let (lo, hi) = bmul64_full(a, b);
+    (lo as u128) | ((hi as u128) << 64)
+}
+
+/// Reduces an accumulated 128-bit polynomial to a field element.
+#[inline]
+pub(super) fn reduce(prod: u128) -> u64 {
+    reduce64(prod as u64, (prod >> 64) as u64)
+}
+
 #[inline]
 pub(super) fn inner_product(a: &[Gf2_64], b: &[Gf2_64]) -> u64 {
     let mut acc_lo = 0u64;
