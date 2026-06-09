@@ -30,7 +30,12 @@ python3 -m http.server 8000
 # open http://localhost:8000/index.html
 ```
 
-Drop a `.wasm` module. Its exports are listed; click one to prefill a call. The
+A sample module (`sha256` + `json_parse`, embedded as base64 in
+`sample-module.js`) is loaded and profiled on open, so the page works out of the
+box. Regenerate it with `./embed-sample.sh` after rebuilding the guest. Drop
+your own `.wasm` to replace it.
+
+Its exports are listed; click one to prefill a call. The
 harness is plain JavaScript with a `Tracer` named `tracer` in scope, edited in a
 small syntax-highlighting editor (CodeJar + Prism, vendored under `vendor/` so
 the page stays self-contained):

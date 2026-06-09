@@ -296,14 +296,14 @@ html, body { margin: 0; background: #fff; }
   <div id="profile-viewer">
     <h1 style="margin-bottom:4px;">Cost Explorer</h1>
     <p style="color:#757575;margin-top:0;margin-bottom:16px;font-size:0.9rem;">
-      Drop a WebAssembly module, write a short JS harness to set up its inputs,
-      and run it through the profiler to see instruction histograms and proving
-      costs. (Or drop a <code>.json</code> profile to view it directly.)
+      A sample module is loaded and profiled below. Edit the harness and re-run,
+      or drop your own WebAssembly module to profile it. (Dropping a
+      <code>.json</code> profile views it directly.)
     </p>
 
     <div id="loader">
       <div id="drop-zone">
-        <p><strong>Drop a <code>.wasm</code> module here</strong>, or click to choose</p>
+        <p><strong>Drop a <code>.wasm</code> module</strong> to replace the sample, or click to choose</p>
         <p class="hint">A <code>.json</code> profile is rendered directly.</p>
       </div>
       <input type="file" id="file-input" accept=".wasm,.json" />
@@ -367,6 +367,7 @@ html, body { margin: 0; background: #fff; }
 <script type="module">
 import init, { Tracer } from "./pkg/profile_wasm.js";
 import { CodeJar } from "./vendor/codejar.js";
+import { sampleName, sampleBase64 } from "./sample-module.js";
 
 let DATA = null;
 let wasmBytes = null;
@@ -398,6 +399,24 @@ function setStatus(msg, isError) {
 
 await init();
 
+// Load the embedded sample module by default with a curated harness, and run
+// it so the page shows a populated profile immediately. Dropping a module
+// replaces it.
+const SAMPLE_HARNESS = [
+  "// Sample module — sha256(ptr, len, out) and json_parse(ptr, len).",
+  "// Hash a 2 KB private message with SHA-256:",
+  "const heap = tracer.heapBase();",
+  "const msg = new Uint8Array(2048).fill(0xAB);",
+  "tracer.writePrivate(heap, msg);",
+  "return tracer.fn.sha256(heap, msg.length, heap + msg.length);",
+].join("\n");
+
+function loadSample() {
+  const bytes = Uint8Array.from(atob(sampleBase64), (c) => c.charCodeAt(0));
+  loadWasm(bytes, sampleName, SAMPLE_HARNESS);
+  runHarness();
+}
+
 function loadFile(file) {
   const reader = new FileReader();
   if (file.name.endsWith(".json")) {
@@ -412,12 +431,12 @@ function loadFile(file) {
   }
 }
 
-function loadWasm(bytes, name) {
+function loadWasm(bytes, name, presetHarness) {
   try {
     const probe = new Tracer(bytes); // validate + list exports
     const exports = JSON.parse(probe.exports());
     wasmBytes = bytes;
-    showModuleInfo(exports, name);
+    showModuleInfo(exports, name, presetHarness);
     setStatus(`loaded ${name || "module"} — ${exports.length} export(s)`);
   } catch (err) {
     setStatus("parse error: " + err.message, true);
@@ -465,7 +484,7 @@ function attachExports(tracer) {
   tracer.fn = fns;
 }
 
-function showModuleInfo(exports, name) {
+function showModuleInfo(exports, name, presetHarness) {
   document.getElementById("module-info").style.display = "block";
   const ex = document.getElementById("exports");
   ex.innerHTML = "";
@@ -476,7 +495,9 @@ function showModuleInfo(exports, name) {
     code.addEventListener("click", () => jar.updateCode(defaultHarness(e)));
     ex.appendChild(code);
   }
-  if (!jar.toString().trim()) jar.updateCode(defaultHarness(exports[0]));
+  // A new module gets a fresh harness: the curated preset, or a generic call
+  // to its first export.
+  jar.updateCode(presetHarness || defaultHarness(exports[0]));
 }
 
 function runHarness() {
@@ -975,6 +996,9 @@ function render(data) {
     }
     container.innerHTML = html;
   }
+
+  // Show the embedded sample by default (after the cost model above is set up).
+  loadSample();
 </script>
 </body>
 </html>
