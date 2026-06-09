@@ -1,4 +1,4 @@
-# profile-wasm
+# cost-explorer
 
 The profiler ([`profile-core`](../profile-core)) compiled to WebAssembly and
 embedded in a page, so you can profile **arbitrary** WASM modules in the
@@ -13,11 +13,11 @@ wasm32-unknown-unknown`). The script also installs a matching `wasm-bindgen-cli`
 if needed.
 
 ```sh
-./crates/profile-wasm/build-wasm.sh
+./crates/cost-explorer/build-wasm.sh
 ```
 
 This compiles the crate and writes the `--target web` bindings to `pkg/`
-(`profile_wasm.js` + `profile_wasm_bg.wasm`).
+(`cost_explorer.js` + `cost_explorer_bg.wasm`).
 
 ## Run
 
@@ -25,7 +25,7 @@ The page loads the wasm via ES modules + `fetch`, so it must be served over
 HTTP (opening `index.html` from `file://` will not work):
 
 ```sh
-cd crates/profile-wasm
+cd crates/cost-explorer
 python3 -m http.server 8000
 # open http://localhost:8000/index.html
 ```
@@ -79,5 +79,5 @@ The default module is the sample guest in
 nightly toolchain):
 
 ```sh
-./crates/profile-wasm/embed-sample.sh
+./crates/cost-explorer/embed-sample.sh
 ```

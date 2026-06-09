@@ -364,7 +364,7 @@ html, body { margin: 0; background: #fff; }
     <div id="cost-tooltip">Instruction cost depends on control flow visibility. Under <b>public</b> control flow, instructions are proven via optimized circuits (cost in sVOLE). Under <b>private</b> control flow&mdash;when the program branches on a secret value&mdash;execution switches to step-by-step proving, where each CPU step has a fixed cost (sVOLE/step &times; steps).</div>
   </div>
 <script type="module">
-import init, { Tracer } from "./pkg/profile_wasm.js";
+import init, { Tracer } from "./pkg/cost_explorer.js";
 import { CodeJar } from "./vendor/codejar.js";
 import { sampleName, sampleBase64 } from "./sample-module.js";
 

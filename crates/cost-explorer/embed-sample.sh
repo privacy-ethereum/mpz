@@ -27,7 +27,7 @@ out = (
     "// Embedded sample guest module (crates/profile-bench-programs): exports\n"
     "//   sha256(ptr, len, out) and json_parse(ptr, len).\n"
     "// Loaded by default so the page works out of the box.\n"
-    "// Regenerate with ./crates/profile-wasm/embed-sample.sh\n"
+    "// Regenerate with ./crates/cost-explorer/embed-sample.sh\n"
     'export const sampleName = "profile_bench_programs.wasm";\n'
     f'export const sampleBase64 =\n  "{b64}";\n'
 )
