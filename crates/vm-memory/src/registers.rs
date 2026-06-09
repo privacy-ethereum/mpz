@@ -4,7 +4,7 @@
 
 use std::collections::HashMap;
 
-use mpz_vm_core_new::Reg;
+use mpz_vm_core::Reg;
 
 /// Sparse register file keyed by absolute [`Reg`] index. Frame
 /// layout is the caller's concern; this type is a typed key/value

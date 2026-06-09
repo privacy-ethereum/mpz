@@ -1,9 +1,9 @@
 
 use std::ops::Range;
 
-use mpz_circuits_new::Context;
+use mpz_circuits::Context;
 use mpz_fields::{gf2::Gf2, gf2_128::Gf2_128};
-use mpz_vm_core_new::Memory;
+use mpz_vm_core::Memory;
 
 use mpz_vm_memory::AuthState;
 

@@ -23,7 +23,6 @@ This project is currently under active development and should not be used in pro
   - [`fields`](./crates/fields/) - Finite-fields.
   - [`circuits`](./crates/circuits/) - Boolean circuit DSL.
   - [`ot`](./crates/ot) ([`core`](./crates/ot-core/)) - Oblivious transfer protocols.
-  - [`garble`](./crates/garble/) ([`core`](./crates/garble-core/)) - Boolean garbled circuit protocols.
   - [`share-conversion`](./crates/share-conversion/) ([`core`](./crates/share-conversion-core/)) - Multiplicative-to-Additive and Additive-to-Multiplicative share conversion protocols for a variety of fields.
   - [`cointoss`](./crates/cointoss/) ([`core`](./crates/cointoss-core/)) - 2-party cointoss protocol.
   - [`matrix-transpose`](./crates/matrix-transpose/) - Bit-wise matrix transposition.

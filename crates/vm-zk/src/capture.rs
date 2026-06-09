@@ -13,7 +13,7 @@
 
 use std::collections::BTreeMap;
 
-use mpz_vm_core_new::{Directive, Global, Pending, Reg, StepResult, Thread, Trap, value::Value};
+use mpz_vm_core::{Directive, Global, Pending, Reg, StepResult, Thread, Trap, value::Value};
 use mpz_vm_ir::{Function, Module};
 
 use crate::{
@@ -235,7 +235,7 @@ pub(crate) fn capture_chunk(
 }
 
 fn validate_trap_directive(directive: &Directive, reason: &Trap) -> Result<()> {
-    use mpz_vm_core_new::Op;
+    use mpz_vm_core::Op;
     use mpz_vm_ir::BinaryOp::*;
     let op = match directive {
         Directive::Op(Op::Binary { op, .. }) => *op,
@@ -265,7 +265,7 @@ fn validate_trap_directive(directive: &Directive, reason: &Trap) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mpz_vm_core_new::{Call, Op, Param};
+    use mpz_vm_core::{Call, Op, Param};
     use mpz_vm_ir::{ExportKind, Module, ValType};
 
     fn capture_trace(

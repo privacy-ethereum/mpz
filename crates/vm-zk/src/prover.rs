@@ -2,13 +2,13 @@ use mpz_common::{Context, Flush};
 use mpz_core::Block;
 use mpz_fields::gf2_128::Gf2_128;
 use mpz_ot_core::rcot::{RCOTReceiver, RCOTReceiverOutput};
-use mpz_vm_core_new::{
+use mpz_vm_core::{
     Call, Error as CoreError, Global, Param, Reg, Thread, Visibility, Vm, Write, value::Value,
 };
 use mpz_vm_ir::{Function, Module};
 
 use mpz_vm_memory::{AuthState, Bit, Registers};
-use mpz_zk_core_new::Commit;
+use mpz_zk_core::Commit;
 use rangeset::set::RangeSet;
 use serio::{SinkExt, stream::IoStreamExt};
 use std::ops::Range;
@@ -42,7 +42,7 @@ pub struct Prover<T> {
     pending_reveal: RangeSet<u32>,
     reveal_state: host::RevealState,
     auth: AuthState,
-    zk: mpz_zk_core_new::Prover,
+    zk: mpz_zk_core::Prover,
     chunk_cap: Option<usize>,
 }
 
@@ -55,7 +55,7 @@ impl<T> Prover<T> {
     /// Returns a [`ZkVmError`] if state for `module` cannot be initialized.
     pub fn new(module: Module, svole: T) -> Result<Self, ZkVmError> {
         let global = Global::new(&module)?;
-        let zk = mpz_zk_core_new::Prover::new();
+        let zk = mpz_zk_core::Prover::new();
         let auth = AuthState::new(Bit(zk.public_bit(false)), Bit(zk.public_bit(true)));
         Ok(Self {
             module,
@@ -249,7 +249,7 @@ where
         let reveal_ranges: Vec<Range<u32>> = self.pending_reveal.iter().collect();
         let mut reveal_pending = !reveal_ranges.is_empty();
         // Set once a chunk traps; the proven public outcome.
-        let mut trapped: Option<mpz_vm_core_new::Trap> = None;
+        let mut trapped: Option<mpz_vm_core::Trap> = None;
         // Set once any chunk performs authenticated work (a commit or proof).
         // A fully public chunk before this point has nothing to prove.
         let mut any_zk_work = false;

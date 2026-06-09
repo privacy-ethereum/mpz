@@ -14,7 +14,7 @@
 
 use std::collections::BTreeMap;
 
-use mpz_vm_core_new::{Error as CoreError, Global, Operand, Reg, Visibility, value::Value};
+use mpz_vm_core::{Error as CoreError, Global, Operand, Reg, Visibility, value::Value};
 use mpz_vm_ir::{Function, Module};
 use serde::{Deserialize, Serialize};
 

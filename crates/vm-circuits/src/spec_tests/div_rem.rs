@@ -1,7 +1,7 @@
 use crate::harness::{from_bits, pairs_u64, run_bin, to_bits};
 use crate::{divrem_s_advice_n, divrem_s_advice_values, divrem_u_advice_n, divrem_u_advice_values};
 use crate::{divrem_s_n, divrem_u_n};
-use mpz_circuits_new::{Context, WitnessCtx};
+use mpz_circuits::{Context, WitnessCtx};
 use mpz_fields::gf2::Gf2;
 use proptest::prelude::*;
 

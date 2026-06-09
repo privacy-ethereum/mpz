@@ -11,12 +11,12 @@
 //! Generate a single `#[test]` for an implementation with
 //! [`mem_behavior_tests!`].
 //!
-//! [`Vm::write`]: mpz_vm_core_new::Vm::write
-//! [`Vm::reveal`]: mpz_vm_core_new::Vm::reveal
-//! [`Vm::read`]: mpz_vm_core_new::Vm::read
+//! [`Vm::write`]: mpz_vm_core::Vm::write
+//! [`Vm::reveal`]: mpz_vm_core::Vm::reveal
+//! [`Vm::read`]: mpz_vm_core::Vm::read
 
 use mpz_vm_ir::{ExportKind, Module};
-use mpz_vm_core_new::value::Value;
+use mpz_vm_core::value::Value;
 
 /// A two-party implementation exercised through the memory I/O surface.
 ///

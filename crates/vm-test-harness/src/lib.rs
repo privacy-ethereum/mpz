@@ -17,7 +17,7 @@
 //! ```
 
 use mpz_vm_ir::Module;
-use mpz_vm_core_new::{Param, value::Value};
+use mpz_vm_core::{Param, value::Value};
 use wast::{
     Wast, WastArg, WastDirective, WastExecute, WastRet,
     core::{WastArgCore, WastRetCore},

@@ -3,7 +3,7 @@ use crate::{
     clz_advice_n, clz_advice_values, clz_n, ctz_advice_n, ctz_advice_values, ctz_n, popcnt_advice_n,
     popcnt_advice_values, popcnt_n,
 };
-use mpz_circuits_new::{Context, WitnessCtx};
+use mpz_circuits::{Context, WitnessCtx};
 use mpz_fields::gf2::Gf2;
 use proptest::prelude::*;
 

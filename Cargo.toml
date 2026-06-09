@@ -4,32 +4,20 @@ members = [
     "crates/common",
     "crates/fields",
     "crates/circuits",
-    "crates/circuits-new",
-    "crates/circuits-core",
-    "crates/circuits-data",
     "crates/cointoss",
     "crates/cointoss-core",
-    "crates/hash",
-    "crates/ideal-vm",
     "crates/ot",
     "crates/ot-core",
-    "crates/garble",
-    "crates/garble-core",
     "crates/share-conversion-core",
     "crates/share-conversion",
     "crates/matrix-transpose",
     "crates/clmul",
     "crates/ole-core",
     "crates/ole",
-    "crates/memory-core",
-    "crates/vm-core",
     "crates/zk-core",
-    "crates/zk-core-new",
-    "crates/zk",
     "crates/vole-core",
-    "crates/wasm-bench",
     "crates/vm-ir",
-    "crates/vm-core-new",
+    "crates/vm-core",
     "crates/vm-test-harness",
     "crates/vm-ideal",
     "crates/vm-memory",
@@ -66,28 +54,17 @@ mpz-core = { path = "crates/core" }
 mpz-common = { path = "crates/common" }
 mpz-fields = { path = "crates/fields" }
 mpz-circuits = { path = "crates/circuits" }
-mpz-circuits-new = { path = "crates/circuits-new" }
-mpz-circuits-core = { path = "crates/circuits-core" }
-mpz-circuits-data = { path = "crates/circuits-data" }
 mpz-cointoss = { path = "crates/cointoss" }
 mpz-cointoss-core = { path = "crates/cointoss-core" }
 mpz-ot = { path = "crates/ot" }
 mpz-ot-core = { path = "crates/ot-core" }
-mpz-garble = { path = "crates/garble" }
-mpz-garble-core = { path = "crates/garble-core" }
-mpz-hash = { path = "crates/hash" }
-mpz-ideal-vm = { path = "crates/ideal-vm" }
 mpz-share-conversion-core = { path = "crates/share-conversion-core" }
 mpz-ole = { path = "crates/ole" }
 mpz-ole-core = { path = "crates/ole-core" }
-mpz-memory-core = { path = "crates/memory-core" }
-mpz-vm-core = { path = "crates/vm-core" }
 mpz-zk-core = { path = "crates/zk-core" }
-mpz-zk-core-new = { path = "crates/zk-core-new" }
-mpz-zk = { path = "crates/zk" }
 mpz-vole-core = { path = "crates/vole-core" }
 mpz-vm-ir = { path = "crates/vm-ir" }
-mpz-vm-core-new = { path = "crates/vm-core-new" }
+mpz-vm-core = { path = "crates/vm-core" }
 mpz-vm-test-harness = { path = "crates/vm-test-harness" }
 mpz-vm-ideal = { path = "crates/vm-ideal" }
 mpz-vm-memory = { path = "crates/vm-memory" }

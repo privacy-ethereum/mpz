@@ -14,7 +14,7 @@ use mpz_vm_ir::{FuncType, Function, ValType};
 use rangeset::{prelude::*, set::RangeSet};
 use serio::{SinkExt, stream::IoStreamExt};
 
-use mpz_vm_core_new::{
+use mpz_vm_core::{
     Call, Error as CoreError, Global, Module, Operand, Param, Trap, Visibility, Vm, Write,
     thread::{Pending, StepResult, Thread},
     value::Value,
@@ -23,7 +23,7 @@ use mpz_vm_core_new::{
 /// The error type reported by the ideal [`Vm`] implementation.
 #[derive(Debug, thiserror::Error)]
 pub enum IdealError {
-    /// An interpreter or instantiation fault from `mpz-vm-core-new`.
+    /// An interpreter or instantiation fault from `mpz-vm-core`.
     #[error(transparent)]
     Core(#[from] CoreError),
 

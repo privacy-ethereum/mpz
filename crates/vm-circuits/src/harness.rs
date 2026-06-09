@@ -1,4 +1,4 @@
-use mpz_circuits_new::WitnessCtx;
+use mpz_circuits::WitnessCtx;
 use mpz_fields::gf2::Gf2;
 
 pub(crate) fn to_bits<const N: usize>(v: u64) -> [Gf2; N] {

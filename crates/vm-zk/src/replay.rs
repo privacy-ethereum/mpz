@@ -1,6 +1,6 @@
 //! Replay of a captured execution trace into a zero-knowledge circuit.
 //!
-//! Re-executes the [`Directive`](mpz_vm_core_new::Directive) sequence recorded
+//! Re-executes the [`Directive`](mpz_vm_core::Directive) sequence recorded
 //! during evaluation, applying each directive to the
 //! [`AuthState`] of authenticated values while emitting the corresponding
 //! gadget operations through a [`ZkExec`] backend. This is the step that turns
@@ -16,11 +16,11 @@
 //! reason can be re-derived and constrained against its operands.
 
 use itybity::{GetBit, Lsb0};
-use mpz_circuits_new::Context;
+use mpz_circuits::Context;
 use mpz_fields::{gf2::Gf2, gf2_128::Gf2_128};
 use mpz_vm_ir::{BinaryOp, LoadKind, MemArg, Module, StoreKind, UnaryOp};
-use mpz_vm_core_new::{Directive, Op, Operand, Reg, Trap, ValType, value::Value};
-use mpz_zk_core_new::{ProverExecute, VerifierExecute};
+use mpz_vm_core::{Directive, Op, Operand, Reg, Trap, ValType, value::Value};
+use mpz_zk_core::{ProverExecute, VerifierExecute};
 
 use mpz_vm_memory::{AuthState, AuthValue, Bit, I32, I64};
 

@@ -1,15 +1,23 @@
 [package]
 name = "mpz-vm-core"
-version = "0.1.0-alpha.5"
+version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-mpz-circuits = { workspace = true }
-mpz-memory-core = { workspace = true }
-mpz-common = { workspace = true }
+mpz-vm-ir = { workspace = true }
 thiserror = { workspace = true }
-futures = { workspace = true }
+rangeset = { workspace = true }
+mpz-common = { workspace = true, features = ["future"] }
 async-trait = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serio = { workspace = true }
+
+[dev-dependencies]
+mpz-vm-test-harness = { workspace = true }
+wat = { workspace = true }
+futures = { workspace = true }
+mpz-common = { workspace = true, features = ["test-utils"] }
+aes = { workspace = true }
 
 [lints]
 workspace = true
