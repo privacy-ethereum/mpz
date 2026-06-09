@@ -374,9 +374,21 @@ let wasmBytes = null;
 const dropZone = document.getElementById("drop-zone");
 const fileInput = document.getElementById("file-input");
 const harnessEl = document.getElementById("harness");
-const jar = CodeJar(harnessEl, (el) => window.Prism.highlightElement(el), {
-  tab: "  ",
-});
+// CodeJar's recommended Prism integration: the low-level, synchronous
+// `Prism.highlight(text, grammar, lang)` -> innerHTML. (Using the higher-level
+// `Prism.highlightElement` runs hooks/plugins that disturb CodeJar's cursor
+// save/restore, causing cursor jumps and dropped newlines while typing.)
+const jar = CodeJar(
+  harnessEl,
+  (el) => {
+    el.innerHTML = window.Prism.highlight(
+      el.textContent,
+      window.Prism.languages.javascript,
+      "javascript",
+    );
+  },
+  { tab: "  " },
+);
 const statusEl = document.getElementById("status");
 
 function setStatus(msg, isError) {
