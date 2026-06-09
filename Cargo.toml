@@ -25,6 +25,7 @@ members = [
     "crates/vm-zk",
     "crates/profile-core",
     "crates/profile-bench",
+    "crates/profile-wasm",
 ]
 exclude = [
     "crates/lpn-estimator",

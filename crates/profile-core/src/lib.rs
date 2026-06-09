@@ -10,6 +10,7 @@
 //! This crate is target-agnostic — it carries no I/O, async, or platform
 //! dependencies — so it compiles unchanged for `wasm32-unknown-unknown`.
 
+pub mod module;
 pub mod render;
 pub mod stats;
 pub mod tracer;

@@ -1,4 +1,4 @@
-use mpz_vm_ir::{ConstExpr, ExportKind, Module};
+use mpz_vm_ir::Module;
 
 use profile_core::{Outcome, TraceEvent, Tracer, TracerError};
 
@@ -37,29 +37,16 @@ pub struct CallSpec {
 /// Reads the value of the module's `__heap_base` global, the first address
 /// above static data where the guest's heap begins.
 pub fn find_heap_base(module: &Module) -> u32 {
-    for export in module.exports() {
-        if export.name == "__heap_base"
-            && let ExportKind::Global(idx) = export.kind
-            && let ConstExpr::I32(val) = module.globals()[idx as usize].init
-        {
-            return val as u32;
-        }
-    }
-    eprintln!("Warning: __heap_base not found, using 65536 as fallback");
-    65536
-}
-
-fn resolve_export(module: &Module, name: &str) -> Option<u32> {
-    module.exports().iter().find_map(|export| match export.kind {
-        ExportKind::Func(idx) if export.name == name => Some(idx),
-        _ => None,
+    profile_core::module::heap_base(module).unwrap_or_else(|| {
+        eprintln!("Warning: __heap_base not found, using 65536 as fallback");
+        65536
     })
 }
 
 /// Runs `spec` on `tracer`, returning the recorded trace and a human-readable
 /// outcome string.
 pub fn run_call(mut tracer: Tracer, spec: CallSpec) -> BenchOutput {
-    let func_idx = match resolve_export(tracer.module(), spec.export) {
+    let func_idx = match profile_core::module::func_export(tracer.module(), spec.export) {
         Some(idx) => idx,
         None => {
             return BenchOutput {

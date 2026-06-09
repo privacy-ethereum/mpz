@@ -1,0 +1,15 @@
+[package]
+name = "profile-wasm"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+profile-core = { path = "../profile-core" }
+mpz-vm-ir = { workspace = true }
+mpz-vm-core = { workspace = true }
+wasm-bindgen = "0.2"
+serde_json = "1"
+console_error_panic_hook = "0.1"
