@@ -398,21 +398,41 @@ function setStatus(msg, isError) {
 
 await init();
 
-// Load the embedded sample module by default with a curated harness, and run
-// it so the page shows a populated profile immediately. Dropping a module
-// replaces it.
-const SAMPLE_HARNESS = [
-  "// Sample module — sha256(ptr, len, out) and json_parse(ptr, len).",
-  "// Hash a 2 KB private message with SHA-256:",
-  "const heap = tracer.heapBase();",
-  "const msg = new Uint8Array(2048).fill(0xAB);",
-  "tracer.writePrivate(heap, msg);",
-  "return tracer.fn.sha256(heap, msg.length, heap + msg.length);",
-].join("\n");
+// Ready-to-run harnesses for the sample module's exports, with real inputs.
+const CURATED = {
+  sha256: [
+    "// Hash a 2 KB private message with SHA-256.",
+    "const heap = tracer.heapBase();",
+    "const msg = new Uint8Array(2048).fill(0xAB);",
+    "tracer.writePrivate(heap, msg);",
+    "return tracer.fn.sha256(heap, msg.length, heap + msg.length);",
+  ].join("\n"),
+  json_parse: [
+    "// Parse a JSON document with serde_json. The bytes are private, so",
+    "// parsing branches on their content under private control flow.",
+    "const doc = JSON.stringify({",
+    '  users: [{ id: 1, name: "Ada", email: "ada@example.com", age: 36, active: true,',
+    '    roles: ["admin"], scores: [10, 20],',
+    '    address: { street: "1 Main St", city: "Portland", state: "OR", zip: "97201", country: "US" },',
+    '    preferences: { theme: "dark", language: "en", timezone: "UTC",',
+    "      notifications: { email: true, sms: false, push: true } },",
+    '    metadata: { created_at: "2020-01-01", updated_at: "2021-01-01", login_count: 5, last_ip: "10.0.0.1" } }],',
+    "  pagination: { page: 1, per_page: 10, total: 1, total_pages: 1 },",
+    '  filters: { active_only: true, min_age: null, max_age: null, roles: [], sort_by: "name", sort_order: "asc" },',
+    '  api_version: "1.0", request_id: "req-1",',
+    "});",
+    "const heap = tracer.heapBase();",
+    "const bytes = new TextEncoder().encode(doc);",
+    "tracer.writePrivate(heap, bytes);",
+    "return tracer.fn.json_parse(heap, bytes.length);",
+  ].join("\n"),
+};
 
+// Load the embedded sample module by default and run it so the page shows a
+// populated profile immediately. Dropping a module replaces it.
 function loadSample() {
   const bytes = Uint8Array.from(atob(sampleBase64), (c) => c.charCodeAt(0));
-  loadWasm(bytes, sampleName, SAMPLE_HARNESS);
+  loadWasm(bytes, sampleName, CURATED.sha256);
   runHarness();
 }
 
@@ -441,6 +461,7 @@ function sig(e) {
 
 function defaultHarness(e) {
   if (!e) return "// module has no exported functions";
+  if (CURATED[e.name]) return CURATED[e.name];
   const zeros = e.params.map(() => 0).join(", ");
   return [
     "// `tracer` is a fresh Tracer for the loaded module.",
