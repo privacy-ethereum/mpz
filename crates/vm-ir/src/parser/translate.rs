@@ -167,6 +167,54 @@ impl Translator {
         self.current_body.push(instr);
     }
 
+    /// Write the top-of-stack value into local `local_index`. For `local.tee`
+    /// (`keep` true) the value stays on the stack; for `local.set` it is
+    /// consumed.
+    ///
+    /// When the value was just produced into a temporary, the producing
+    /// instruction is redirected to write the local directly and the copy is
+    /// elided. For `tee`, the stack slot then aliases the local register — the
+    /// same aliasing `local.get` already relies on, so later reads need no copy.
+    /// This removes the produce-then-copy pair that `local.set`/`local.tee`
+    /// would otherwise emit for nearly every computed local.
+    ///
+    /// The peephole only fires when it is provably safe: the source is a
+    /// temporary produced by the immediately preceding instruction, and the
+    /// local is not otherwise aliased on the stack (so no live value of its old
+    /// contents needs preserving). Otherwise it falls back to the
+    /// materialize-and-copy path, which is also used in unreachable code.
+    fn write_local(&mut self, local_index: u32, keep: bool) -> Result<()> {
+        let src = if keep { self.peek()? } else { self.pop()? };
+        let dst = Reg(local_index);
+        if dst == src {
+            return Ok(());
+        }
+
+        if !self.unreachable
+            && src >= self.num_locals
+            && self.current_body.last().and_then(instr_dst) == Some(src)
+            && !self.reg_stack.contains(&dst)
+        {
+            if let Some(instr) = self.current_body.last_mut() {
+                set_instr_dst(instr, dst);
+            }
+            if keep {
+                // The value now lives in the local; alias the stack slot to it
+                // and reclaim the temporary.
+                if let Some(top) = self.reg_stack.last_mut() {
+                    *top = dst;
+                }
+                self.free_regs.push(src);
+            }
+            // For `set`, `pop` already reclaimed `src`.
+            return Ok(());
+        }
+
+        self.materialize_local(dst);
+        self.emit(Instruction::Copy { dst, src });
+        Ok(())
+    }
+
     /// Get the branch arity for a given depth.
     fn branch_arity(&self, depth: u32) -> usize {
         let idx = self.scopes.len().saturating_sub(1 + depth as usize);
@@ -839,23 +887,8 @@ fn translate_operator(
                 t.reg_stack.push(Reg(*local_index));
             }
         }
-        LocalSet { local_index } => {
-            let src = t.pop()?;
-            let dst = Reg(*local_index);
-            if dst != src {
-                // Materialize any aliases to this local on the stack.
-                t.materialize_local(dst);
-                t.emit(Instruction::Copy { dst, src });
-            }
-        }
-        LocalTee { local_index } => {
-            let src = t.peek()?;
-            let dst = Reg(*local_index);
-            if dst != src {
-                t.materialize_local(dst);
-                t.emit(Instruction::Copy { dst, src });
-            }
-        }
+        LocalSet { local_index } => t.write_local(*local_index, false)?,
+        LocalTee { local_index } => t.write_local(*local_index, true)?,
         GlobalGet { global_index } => {
             let dst = t.push();
             t.emit(Instruction::GlobalGet {
@@ -1183,4 +1216,53 @@ fn emit_store(t: &mut Translator, kind: StoreKind, memarg: &wasmparser::MemArg) 
         memarg: parse_memarg(memarg),
     });
     Ok(())
+}
+
+/// Returns the register an instruction writes, if any.
+fn instr_dst(instr: &Instruction) -> Option<Reg> {
+    use Instruction::*;
+    match instr {
+        Call { dst, .. } | CallIndirect { dst, .. } => *dst,
+        Select { dst, .. }
+        | Copy { dst, .. }
+        | GlobalGet { dst, .. }
+        | Load { dst, .. }
+        | MemorySize { dst }
+        | MemoryGrow { dst, .. }
+        | I32Const { dst, .. }
+        | I64Const { dst, .. }
+        | F32Const { dst, .. }
+        | F64Const { dst, .. }
+        | RefNull { dst, .. }
+        | RefIsNull { dst, .. }
+        | RefFunc { dst, .. } => Some(*dst),
+        Arith(InstructionArith::Unary(u)) => Some(u.dst),
+        Arith(InstructionArith::Binary(b)) => Some(b.dst),
+        _ => None,
+    }
+}
+
+/// Redirects an instruction's destination register. Only called on
+/// instructions whose [`instr_dst`] is `Some`.
+fn set_instr_dst(instr: &mut Instruction, reg: Reg) {
+    use Instruction::*;
+    match instr {
+        Call { dst, .. } | CallIndirect { dst, .. } => *dst = Some(reg),
+        Select { dst, .. }
+        | Copy { dst, .. }
+        | GlobalGet { dst, .. }
+        | Load { dst, .. }
+        | MemorySize { dst }
+        | MemoryGrow { dst, .. }
+        | I32Const { dst, .. }
+        | I64Const { dst, .. }
+        | F32Const { dst, .. }
+        | F64Const { dst, .. }
+        | RefNull { dst, .. }
+        | RefIsNull { dst, .. }
+        | RefFunc { dst, .. } => *dst = reg,
+        Arith(InstructionArith::Unary(u)) => u.dst = reg,
+        Arith(InstructionArith::Binary(b)) => b.dst = reg,
+        _ => {}
+    }
 }
