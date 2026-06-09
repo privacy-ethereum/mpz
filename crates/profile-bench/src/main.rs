@@ -1,17 +1,15 @@
 mod bench;
 mod benches;
-mod render;
-mod stats;
-mod tracer;
 
 use std::path::PathBuf;
 
 use mpz_vm_ir::Module;
-
-use crate::{
-    bench::BenchmarkDef,
+use profile_core::{
+    render, stats,
     stats::{BlockInfo, CallInfo, CfRegion, Stats},
 };
+
+use crate::bench::BenchmarkDef;
 
 const WASM_PATH: &str = concat!(
     env!("CARGO_MANIFEST_DIR"),

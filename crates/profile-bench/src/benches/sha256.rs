@@ -1,10 +1,10 @@
 use mpz_vm_core::{Param, Write};
 use mpz_vm_ir::Module;
+use profile_core::Tracer;
 
 use crate::{
     bench::{BenchOutput, CallSpec, find_heap_base, run_call},
     register_benchmark,
-    tracer::Tracer,
 };
 
 fn run(module: &Module) -> BenchOutput {

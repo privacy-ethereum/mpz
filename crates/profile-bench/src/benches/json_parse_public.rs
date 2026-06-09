@@ -5,10 +5,11 @@ use spansy::{Store, json::*};
 
 type RangeSet = rangeset::set::RangeSet<usize>;
 
+use profile_core::Tracer;
+
 use crate::{
     bench::{BenchOutput, CallSpec, find_heap_base, run_call},
     register_benchmark,
-    tracer::Tracer,
 };
 
 static FIXTURE: &[u8] = include_bytes!("../../../profile-bench-programs/fixtures/sample.json");

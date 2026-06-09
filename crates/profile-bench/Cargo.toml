@@ -4,12 +4,12 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+profile-core = { path = "../profile-core" }
 mpz-vm-ir = { workspace = true }
 mpz-vm-core = { workspace = true }
 rangeset = { workspace = true }
-thiserror = { workspace = true }
-serde = { workspace = true, features = ["derive"] }
-serde_json = "1"
 inventory = "0.3"
-rustc-demangle = "0.1"
 spansy = { git = "https://github.com/tlsnotary/tlsn-utils", rev = "dd419bf" }
+
+[dev-dependencies]
+serde_json = "1"

@@ -1,0 +1,13 @@
+[package]
+name = "profile-core"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+mpz-vm-ir = { workspace = true }
+mpz-vm-core = { workspace = true }
+rangeset = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = "1"
+rustc-demangle = "0.1"

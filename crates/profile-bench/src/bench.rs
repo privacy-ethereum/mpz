@@ -1,6 +1,6 @@
 use mpz_vm_ir::{ConstExpr, ExportKind, Module};
 
-use crate::tracer::{Outcome, TraceEvent, Tracer, TracerError};
+use profile_core::{Outcome, TraceEvent, Tracer, TracerError};
 
 /// The trace and outcome produced by running one benchmark.
 pub struct BenchOutput {
