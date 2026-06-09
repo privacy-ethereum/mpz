@@ -23,6 +23,7 @@ members = [
     "crates/vm-memory",
     "crates/vm-circuits",
     "crates/vm-zk",
+    "crates/vm-sys",
 ]
 exclude = ["crates/lpn-estimator", "crates/vm-bench-guests/sha256"]
 resolver = "2"
