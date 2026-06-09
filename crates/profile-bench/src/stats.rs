@@ -269,10 +269,28 @@ pub fn op_name(op: &Op) -> String {
     }
 }
 
+/// Names a load with its WASM opcode (e.g. `I32Load`, `I32Load8U`), so op
+/// histograms key on the same names the cost explorer's cost table uses. The
+/// sub-word [`LoadKind`] variants already debug-print the opcode name; only the
+/// full-width ones need the `Load` suffix.
 fn load_name(kind: LoadKind) -> String {
-    format!("Load({kind:?})")
+    match kind {
+        LoadKind::I32 => "I32Load".into(),
+        LoadKind::I64 => "I64Load".into(),
+        LoadKind::F32 => "F32Load".into(),
+        LoadKind::F64 => "F64Load".into(),
+        other => format!("{other:?}"),
+    }
 }
 
+/// Names a store with its WASM opcode (e.g. `I32Store`, `I32Store8`); see
+/// [`load_name`].
 fn store_name(kind: StoreKind) -> String {
-    format!("Store({kind:?})")
+    match kind {
+        StoreKind::I32 => "I32Store".into(),
+        StoreKind::I64 => "I64Store".into(),
+        StoreKind::F32 => "F32Store".into(),
+        StoreKind::F64 => "F64Store".into(),
+        other => format!("{other:?}"),
+    }
 }

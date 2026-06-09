@@ -50,8 +50,12 @@ cargo run -p profile-bench -- json_parse
 
 ### 3. View results
 
-Open `viewer.html` in a browser and load a JSON file from `output/` to
-visualize the profile data interactively.
+Open `viewer.html` (the **Cost Explorer**) in a browser and load a JSON file
+from `output/`. It shows an execution/proving-cost summary and an instruction
+histogram that can be weighted by raw count or by estimated proving cost
+(sVOLE or bytes), split by public vs. private control flow. The per-op cost
+model is editable in the Cost Table, so you can explore how the instruction
+mix and control-flow visibility drive cost.
 
 ## Output
 
