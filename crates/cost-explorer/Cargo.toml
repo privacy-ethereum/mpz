@@ -7,7 +7,7 @@ edition = "2024"
 crate-type = ["cdylib"]
 
 [dependencies]
-profile-core = { path = "../profile-core" }
+vm-profile-core = { path = "../vm-profile-core" }
 mpz-vm-ir = { workspace = true }
 mpz-vm-core = { workspace = true }
 wasm-bindgen = "0.2"

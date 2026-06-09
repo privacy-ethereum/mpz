@@ -23,7 +23,7 @@ members = [
     "crates/vm-memory",
     "crates/vm-circuits",
     "crates/vm-zk",
-    "crates/profile-core",
+    "crates/vm-profile-core",
     "crates/cost-explorer",
 ]
 exclude = [

@@ -1,4 +1,4 @@
-//! In-browser profiler: a `wasm-bindgen` wrapper around [`profile_core`].
+//! In-browser profiler: a `wasm-bindgen` wrapper around [`vm_profile_core`].
 //!
 //! Exposes a JS-facing [`Tracer`] class so a page can profile an arbitrary
 //! WebAssembly module. The user drives it from a small JS harness — set up
@@ -10,7 +10,7 @@
 
 use mpz_vm_core::{Param, Write, value::Value};
 use mpz_vm_ir::{Module, ValType};
-use profile_core::{Outcome, render, stats, tracer::Tracer as CoreTracer};
+use vm_profile_core::{Outcome, render, stats, tracer::Tracer as CoreTracer};
 use wasm_bindgen::prelude::*;
 
 fn js_err<E: std::fmt::Display>(e: E) -> JsError {
@@ -70,7 +70,7 @@ impl Tracer {
     /// the module does not export it.
     #[wasm_bindgen(js_name = heapBase)]
     pub fn heap_base(&self) -> u32 {
-        profile_core::module::heap_base(self.inner.module()).unwrap_or(65536)
+        vm_profile_core::module::heap_base(self.inner.module()).unwrap_or(65536)
     }
 
     /// Stages `data` at `ptr` as private (held by this party, secret to the
@@ -100,7 +100,7 @@ impl Tracer {
     /// `write_*` methods. If the guest traps, the profile reflects execution up
     /// to the trap.
     pub fn call(&mut self, export: &str, args: Vec<f64>) -> Result<String, JsError> {
-        let func_idx = profile_core::module::func_export(self.inner.module(), export)
+        let func_idx = vm_profile_core::module::func_export(self.inner.module(), export)
             .ok_or_else(|| JsError::new(&format!("export '{export}' not found")))?;
         let params = build_params(self.inner.module(), func_idx, &args)?;
 

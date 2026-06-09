@@ -1,6 +1,6 @@
 # cost-explorer
 
-The profiler ([`profile-core`](../profile-core)) compiled to WebAssembly and
+The profiler ([`vm-profile-core`](../vm-profile-core)) compiled to WebAssembly and
 embedded in a page, so you can profile **arbitrary** WASM modules in the
 browser. Drop a `.wasm`, write a small JS harness to set up its inputs, and run
 it through the single-party tracing VM — the result renders in the Cost Explorer
