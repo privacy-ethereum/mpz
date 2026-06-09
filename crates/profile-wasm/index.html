@@ -297,16 +297,15 @@ html, body { margin: 0; background: #fff; }
     <h1 style="margin-bottom:4px;">Cost Explorer</h1>
     <p style="color:#757575;margin-top:0;margin-bottom:16px;font-size:0.9rem;">
       A sample module is loaded and profiled below. Edit the harness and re-run,
-      or drop your own WebAssembly module to profile it. (Dropping a
-      <code>.json</code> profile views it directly.)
+      or drop your own WebAssembly module to profile it.
     </p>
 
     <div id="loader">
       <div id="drop-zone">
         <p><strong>Drop a <code>.wasm</code> module</strong> to replace the sample, or click to choose</p>
-        <p class="hint">A <code>.json</code> profile is rendered directly.</p>
+        <p class="hint">Its exports become callable as <code>tracer.fn.&lt;name&gt;(...)</code>.</p>
       </div>
-      <input type="file" id="file-input" accept=".wasm,.json" />
+      <input type="file" id="file-input" accept=".wasm" />
 
       <div id="module-info">
         <div style="font-size:0.8rem;font-weight:600;color:#616161;margin:12px 0 6px;">Exports <span style="font-weight:400;color:#9e9e9e;">(click to prefill a call)</span></div>
@@ -419,16 +418,8 @@ function loadSample() {
 
 function loadFile(file) {
   const reader = new FileReader();
-  if (file.name.endsWith(".json")) {
-    reader.onload = (e) => {
-      try { DATA = JSON.parse(e.target.result); render(DATA); }
-      catch (err) { setStatus("bad profile JSON: " + err.message, true); }
-    };
-    reader.readAsText(file);
-  } else {
-    reader.onload = (e) => loadWasm(new Uint8Array(e.target.result), file.name);
-    reader.readAsArrayBuffer(file);
-  }
+  reader.onload = (e) => loadWasm(new Uint8Array(e.target.result), file.name);
+  reader.readAsArrayBuffer(file);
 }
 
 function loadWasm(bytes, name, presetHarness) {

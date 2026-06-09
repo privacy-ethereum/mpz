@@ -55,9 +55,6 @@ works if you prefer.
 Press **Run**. A fresh `Tracer` is created for each run, so re-running starts
 from clean module state.
 
-Dropping a `.json` profile (e.g. one written by the `profile-bench` CLI) renders
-it directly, bypassing the harness.
-
 ### Tracer API (JS)
 
 | Method | Description |
