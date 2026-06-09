@@ -71,10 +71,13 @@ from clean module state.
 Values read from private (or blind) memory drive **private control flow**; a
 module run entirely over public inputs stays in public control flow.
 
-## Try it with the sample guests
+## The embedded sample
+
+The default module is the sample guest in
+[`profile-bench-programs`](../profile-bench-programs) (exports `sha256` and
+`json_parse`). To rebuild and re-embed it after changing that crate (needs a
+nightly toolchain):
 
 ```sh
-./crates/profile-bench/build-wasm.sh   # builds crates/profile-bench/wasm/profile_bench_programs.wasm
+./crates/profile-wasm/embed-sample.sh
 ```
-
-Drop that module and call `sha256(ptr, len, out)` or `json_parse(ptr, len)`.
