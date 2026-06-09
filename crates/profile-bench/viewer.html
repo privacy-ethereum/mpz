@@ -492,10 +492,13 @@ html, body { margin: 0; background: #fff; }
   // when no operand is a public constant). Source of truth:
   // crates/vm-zk/src/cost.rs + crates/vm-circuits/src/insn/*.rs (`COST*`).
   //
-  // Const-operand optimizations make some ops cheaper than the value below:
-  //   - shifts/rotates by a constant amount  -> 0 (free wire shuffle)
+  // Const-operand optimizations make some ops cheaper than the symbolic cost:
+  //   - shifts/rotates by a constant amount  -> 0 (pure wire routing)
   //   - div/rem by a constant divisor        -> i32 2048/2304, i64 8192/8704
   //   - mul / and / or by a public constant  -> same as symbolic (no discount)
+  // Shifts/rotates default to 0 here: compiled code shifts by immediates, which
+  // is free wire routing. A variable (symbolic) shift amount needs a barrel
+  // shifter: 160 (i32) / 384 (i64).
   // Integer loads/stores cost 0 gates here: memory consistency is proven by a
   // separate batched argument, not per-op gates. `Select` and float memory ops
   // are not modeled by vm-zk's `op_cost`; their `pub` values are placeholders.
@@ -522,11 +525,11 @@ html, body { margin: 0; background: #fff; }
     I32GeS: { pub: 32, steps: 1 },
     I32GtS: { pub: 32, steps: 1 },
     I32LeS: { pub: 32, steps: 1 },
-    I32Shl: { pub: 160, steps: 1 },
-    I32ShrU: { pub: 160, steps: 1 },
-    I32ShrS: { pub: 160, steps: 1 },
-    I32Rotl: { pub: 160, steps: 1 },
-    I32Rotr: { pub: 160, steps: 1 },
+    I32Shl: { pub: 0, steps: 1 },
+    I32ShrU: { pub: 0, steps: 1 },
+    I32ShrS: { pub: 0, steps: 1 },
+    I32Rotl: { pub: 0, steps: 1 },
+    I32Rotr: { pub: 0, steps: 1 },
     I32Clz: { pub: 151, steps: 1 },
     I32Ctz: { pub: 151, steps: 1 },
     I32Popcnt: { pub: 88, steps: 1 },
@@ -548,11 +551,11 @@ html, body { margin: 0; background: #fff; }
     I64GeS: { pub: 64, steps: 2 },
     I64GtS: { pub: 64, steps: 2 },
     I64LeS: { pub: 64, steps: 2 },
-    I64Shl: { pub: 384, steps: 1 },
-    I64ShrU: { pub: 384, steps: 1 },
-    I64ShrS: { pub: 384, steps: 1 },
-    I64Rotl: { pub: 384, steps: 1 },
-    I64Rotr: { pub: 384, steps: 1 },
+    I64Shl: { pub: 0, steps: 1 },
+    I64ShrU: { pub: 0, steps: 1 },
+    I64ShrS: { pub: 0, steps: 1 },
+    I64Rotl: { pub: 0, steps: 1 },
+    I64Rotr: { pub: 0, steps: 1 },
     I64Clz: { pub: 310, steps: 2 },
     I64Ctz: { pub: 310, steps: 2 },
     I64Popcnt: { pub: 183, steps: 2 },
