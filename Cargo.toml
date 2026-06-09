@@ -28,6 +28,9 @@ members = [
     "crates/zk",
     "crates/vole-core",
     "crates/wasm-bench",
+    "crates/vm-ir",
+    "crates/vm-core-new",
+    "crates/vm-test-harness",
 ]
 exclude = ["crates/lpn-estimator"]
 resolver = "2"
@@ -79,6 +82,9 @@ mpz-zk-core = { path = "crates/zk-core" }
 mpz-zk-core-new = { path = "crates/zk-core-new" }
 mpz-zk = { path = "crates/zk" }
 mpz-vole-core = { path = "crates/vole-core" }
+mpz-vm-ir = { path = "crates/vm-ir" }
+mpz-vm-core-new = { path = "crates/vm-core-new" }
+mpz-vm-test-harness = { path = "crates/vm-test-harness" }
 clmul = { path = "crates/clmul" }
 matrix-transpose = { path = "crates/matrix-transpose" }
 rangeset = "0.4"
@@ -142,6 +148,10 @@ tracing = "0.1"
 tracing-subscriber = "0.3"
 thiserror = "1"
 opaque-debug = "0.3"
+
+# wasm
+wat = "1.219"
+wasmparser = "0.219"
 
 # misc
 clap = "3"

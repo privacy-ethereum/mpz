@@ -1,0 +1,14 @@
+[package]
+name = "mpz-vm-ir"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+wasmparser = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+wat = { workspace = true }
+
+[lints]
+workspace = true
