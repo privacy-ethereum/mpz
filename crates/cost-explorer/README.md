@@ -74,7 +74,7 @@ module run entirely over public inputs stays in public control flow.
 ## The embedded sample
 
 The default module is the sample guest in
-[`profile-bench-programs`](../profile-bench-programs) (exports `sha256` and
+[`cost-explorer-sample`](../cost-explorer-sample) (exports `sha256` and
 `json_parse`). To rebuild and re-embed it after changing that crate (needs a
 nightly toolchain):
 

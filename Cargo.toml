@@ -29,7 +29,7 @@ members = [
 exclude = [
     "crates/lpn-estimator",
     "crates/vm-bench-guests/sha256",
-    "crates/profile-bench-programs",
+    "crates/cost-explorer-sample",
 ]
 resolver = "2"
 
