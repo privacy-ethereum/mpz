@@ -39,8 +39,13 @@ the page stays self-contained):
 const heap = tracer.heapBase();
 const input = new TextEncoder().encode("hello");
 tracer.writePrivate(heap, input);          // staged as a private (secret) input
-return tracer.call("my_export", [heap, input.length]);
+return tracer.fn.my_export(heap, input.length);
 ```
+
+Each export is exposed as a checked method on `tracer.fn` (e.g.
+`tracer.fn.sha256(ptr, len, out)`), so you don't call by string name and get a
+clear error on the wrong number of arguments. `tracer.call(name, args)` still
+works if you prefer.
 
 Press **Run**. A fresh `Tracer` is created for each run, so re-running starts
 from clean module state.
@@ -58,7 +63,8 @@ it directly, bypassing the harness.
 | `tracer.writePrivate(ptr, data)` | Stage `data` (Uint8Array) as private/secret. |
 | `tracer.writePublic(ptr, data)` | Stage `data` as public. |
 | `tracer.writeBlind(ptr, len)` | Reserve `len` blind bytes (held by the other party). |
-| `tracer.call(export, args)` | Run `export` with scalar `args`; returns the profile JSON. |
+| `tracer.fn.<export>(...args)` | Checked call to a named export; returns the parsed profile. |
+| `tracer.call(export, args)` | Run `export` (by name) with scalar `args`; returns the profile JSON. |
 
 Values read from private (or blind) memory drive **private control flow**; a
 module run entirely over public inputs stays in public control flow.

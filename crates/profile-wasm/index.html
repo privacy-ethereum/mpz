@@ -422,16 +422,35 @@ function defaultHarness(e) {
   const zeros = e.params.map(() => 0).join(", ");
   return [
     "// `tracer` is a fresh Tracer for the loaded module.",
-    "// Stage guest memory (optional), then return tracer.call(export, args).",
+    "// Each export is a method on tracer.fn(...). Stage guest memory",
+    "// (optional), then return a call.",
     "//",
     "// Example — a (ptr, len) function over a private input:",
     "//   const heap = tracer.heapBase();",
     "//   const input = new TextEncoder().encode(\"hello\");",
     "//   tracer.writePrivate(heap, input);",
-    "//   return tracer.call(\"" + e.name + "\", [heap, input.length]);",
+    "//   return tracer.fn." + e.name + "(heap, input.length);",
     "",
-    `return tracer.call(${JSON.stringify(e.name)}, [${zeros}]);`,
+    `return tracer.fn.${e.name}(${zeros});`,
   ].join("\n");
+}
+
+// Builds a named method per export on `tracer.fn`, so harnesses call
+// `tracer.fn.sha256(...)` instead of `tracer.call("sha256", [...])`. Each
+// method checks arity and returns the parsed profile.
+function attachExports(tracer) {
+  const fns = {};
+  for (const { name, params } of JSON.parse(tracer.exports())) {
+    fns[name] = (...args) => {
+      if (args.length !== params.length) {
+        throw new Error(
+          `${name} expects ${params.length} arg(s) (${params.join(", ")}), got ${args.length}`,
+        );
+      }
+      return JSON.parse(tracer.call(name, args));
+    };
+  }
+  tracer.fn = fns;
 }
 
 function showModuleInfo(exports, name) {
@@ -452,11 +471,12 @@ function runHarness() {
   if (!wasmBytes) { setStatus("drop a .wasm module first", true); return; }
   try {
     const tracer = new Tracer(wasmBytes); // fresh state each run
-    const fn = new Function("tracer", jar.toString());
-    const result = fn(tracer);
+    attachExports(tracer);
+    const harnessFn = new Function("tracer", jar.toString());
+    const result = harnessFn(tracer);
     const data = typeof result === "string" ? JSON.parse(result) : result;
     if (!data || !data.stats) {
-      throw new Error("harness must return a profile (the result of tracer.call)");
+      throw new Error("harness must return a profile (e.g. return tracer.fn.<export>(...))");
     }
     DATA = data;
     render(data);
