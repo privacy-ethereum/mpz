@@ -44,6 +44,8 @@ struct RecordedData {
     cot_recv_seed: u64,
     /// Seed for Ferret receiver.
     receiver_seed: Block,
+    /// Correlations actually produced (OT_COUNT rounded up to whole iterations).
+    actual_count: usize,
 }
 
 /// Runs the full Ferret protocol with sender and receiver.
@@ -56,7 +58,7 @@ async fn run_protocol_record_sender(
     cot_seed: Block,
     sender_seed: Block,
     receiver_seed: Block,
-) {
+) -> usize {
     let (cot_send, cot_recv) = ideal_rcot(cot_seed, delta);
 
     let mut sender = Sender::new(config.clone(), sender_seed, cot_send);
@@ -76,6 +78,11 @@ async fn run_protocol_record_sender(
             let _ = output.await.unwrap();
         }
     );
+
+    // Ferret extends in whole LPN iterations, so it produces more than the
+    // requested OT_COUNT. The surplus stays buffered after the request is
+    // fulfilled, so the realized count is OT_COUNT plus what remains available.
+    OT_COUNT + receiver.available()
 }
 
 /// Records sender->receiver messages for receiver replay.
@@ -93,7 +100,7 @@ fn record_for_receiver(seed: u64) -> RecordedData {
 
         let config = bench_config();
 
-        run_protocol_record_sender(
+        let actual_count = run_protocol_record_sender(
             &mut ctx_sender,
             &mut ctx_receiver,
             config,
@@ -108,6 +115,7 @@ fn record_for_receiver(seed: u64) -> RecordedData {
             bytes: recorded.lock().unwrap().clone(),
             cot_recv_seed: seed, // Use same seed for deterministic IdealRCOTReceiver
             receiver_seed,
+            actual_count,
         }
     })
 }
@@ -136,6 +144,8 @@ struct RecordedDataMt {
     cot_recv_seed: u64,
     /// Seed for Ferret receiver.
     receiver_seed: Block,
+    /// Correlations actually produced (OT_COUNT rounded up to whole iterations).
+    actual_count: usize,
 }
 
 /// Runs the full Ferret protocol with MT contexts.
@@ -148,7 +158,7 @@ async fn run_protocol_record_sender_mt(
     cot_seed: Block,
     sender_seed: Block,
     receiver_seed: Block,
-) {
+) -> usize {
     let (cot_send, cot_recv) = ideal_rcot(cot_seed, delta);
 
     let mut sender = Sender::new(config.clone(), sender_seed, cot_send);
@@ -171,6 +181,8 @@ async fn run_protocol_record_sender_mt(
             let _ = output.await.unwrap();
         }
     );
+
+    OT_COUNT + receiver.available()
 }
 
 /// Records sender->receiver messages for MT receiver replay.
@@ -188,7 +200,7 @@ fn record_for_receiver_mt(seed: u64) -> RecordedDataMt {
 
         let config = bench_config();
 
-        run_protocol_record_sender_mt(
+        let actual_count = run_protocol_record_sender_mt(
             &mut exec_sender,
             &mut exec_receiver,
             config,
@@ -208,6 +220,7 @@ fn record_for_receiver_mt(seed: u64) -> RecordedDataMt {
             data,
             cot_recv_seed: seed,
             receiver_seed,
+            actual_count,
         }
     })
 }
@@ -231,12 +244,14 @@ fn criterion_benchmark(c: &mut Criterion) {
     group.sample_size(10);
     group.measurement_time(std::time::Duration::from_secs(10));
 
-    group.throughput(Throughput::Elements(OT_COUNT as u64));
-
     // Record phase
     println!("Recording for Ferret receiver...");
     let recorded = record_for_receiver(0);
     println!("Recorded {} bytes", recorded.bytes.len());
+
+    // Throughput is over the correlations actually produced, not OT_COUNT:
+    // extension rounds up to whole LPN iterations.
+    group.throughput(Throughput::Elements(recorded.actual_count as u64));
 
     // Verify determinism
     let recorded_2 = record_for_receiver(0);
@@ -260,7 +275,6 @@ fn criterion_benchmark(c: &mut Criterion) {
     let mut group_mt = c.benchmark_group("ferret_receiver_mt");
     group_mt.sample_size(10);
     group_mt.measurement_time(std::time::Duration::from_secs(10));
-    group_mt.throughput(Throughput::Elements(OT_COUNT as u64));
 
     println!("Recording for MT Ferret receiver...");
     let recorded_mt = record_for_receiver_mt(0);
@@ -270,6 +284,8 @@ fn criterion_benchmark(c: &mut Criterion) {
         recorded_mt.data.channels.len(),
         total_bytes
     );
+
+    group_mt.throughput(Throughput::Elements(recorded_mt.actual_count as u64));
 
     // Verify determinism
     let recorded_mt_2 = record_for_receiver_mt(0);
