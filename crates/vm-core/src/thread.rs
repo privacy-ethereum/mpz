@@ -7,23 +7,23 @@
 //! happened.
 //!
 //! When the interpreter reaches an operation whose outcome depends on data this
-//! party does not hold — a symbolic branch condition or a host/import call — the
-//! thread blocks and reports a [`Pending`] condition. The embedder supplies the
-//! missing decision through the matching `resolve_*` method
-//! ([`Thread::resolve_branch`] or [`Thread::resolve_host_call`]) before stepping
-//! again.
+//! party does not hold — a symbolic branch condition or a host/import call —
+//! the thread blocks and reports a [`Pending`] condition. The embedder supplies
+//! the missing decision through the matching `resolve_*` method
+//! ([`Thread::resolve_branch`] or [`Thread::resolve_host_call`]) before
+//! stepping again.
 //!
 //! An operation that may trap on operands this party cannot inspect (an integer
 //! divide/remainder with an unheld operand) does not block: it is emitted as an
-//! ordinary [`Directive`] and execution continues as if it did not trap. Whether
-//! it actually trapped is decided externally by correlating its operation index
-//! (see [`Thread::op_counter`]) against the trap a peer reports.
+//! ordinary [`Directive`] and execution continues as if it did not trap.
+//! Whether it actually trapped is decided externally by correlating its
+//! operation index (see [`Thread::op_counter`]) against the trap a peer
+//! reports.
 //!
 //! All execution runs against a [`Context`], which pairs the [`Module`] being
 //! interpreted with the mutable [`Global`] state it operates on.
 
-use std::collections::HashMap;
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use crate::taint::{Class, Taints};
 use mpz_vm_ir::{
@@ -70,15 +70,16 @@ pub enum Pending {
     HostCall {
         /// The index of the called function.
         func_idx: u32,
-        /// The register that receives the return value, if the call returns one.
+        /// The register that receives the return value, if the call returns
+        /// one.
         dst: Option<Reg>,
         /// The call arguments, so the embedder can service the host call.
         args: Vec<Operand>,
     },
     /// An indirect call whose table index is symbolic and not held by this
     /// party, so the dispatch target cannot be chosen locally. The embedder
-    /// resolves it with [`Thread::resolve_call_indirect`] supplying the concrete
-    /// index.
+    /// resolves it with [`Thread::resolve_call_indirect`] supplying the
+    /// concrete index.
     CallIndirect {
         /// The absolute register holding the symbolic table index.
         table_idx: Reg,
@@ -197,10 +198,11 @@ enum PrivateCfExit {
 /// A stepwise interpreter for a single call into a module.
 ///
 /// A thread maintains its own call stack and register file and is driven by
-/// repeated calls to [`step`](Self::step). Construct one with [`new`](Self::new),
-/// begin a call with [`call`](Self::call), then step until a [`StepResult::Done`]
-/// or [`StepResult::Trapped`] is observed, resolving any [`StepResult::Blocked`]
-/// conditions with [`resolve`](Self::resolve) along the way.
+/// repeated calls to [`step`](Self::step). Construct one with
+/// [`new`](Self::new), begin a call with [`call`](Self::call), then step until
+/// a [`StepResult::Done`] or [`StepResult::Trapped`] is observed, resolving any
+/// [`StepResult::Blocked`] conditions with [`resolve`](Self::resolve) along the
+/// way.
 #[derive(Debug)]
 pub struct Thread {
     call_stack: Vec<Frame>,
@@ -213,12 +215,19 @@ pub struct Thread {
     private_cf: Option<PrivateCfExit>,
     deferred_complete: bool,
     deferred_trap: Option<Trap>,
-    /// A concrete value supplied by `resolve_call_indirect`/`resolve_memory_grow`
-    /// to re-run the blocked instruction with.
+    /// A concrete value supplied by
+    /// `resolve_call_indirect`/`resolve_memory_grow` to re-run the blocked
+    /// instruction with.
     resolved: Option<i32>,
     /// Per-function branch side-effect analysis, computed lazily on first entry
     /// to a function and cached by function index.
     analysis: HashMap<u32, Arc<FunctionAnalysis>>,
+}
+
+impl Default for Thread {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Thread {
@@ -407,12 +416,7 @@ impl Thread {
     /// [`Error::InvalidFunction`] if it does not refer to a local
     /// function, and [`Error::Unimplemented`] if the function returns more
     /// than one value.
-    pub fn call(
-        &mut self,
-        module: &Module,
-        global: &mut Global,
-        call: Call,
-    ) -> Result<(), Error> {
+    pub fn call(&mut self, module: &Module, global: &mut Global, call: Call) -> Result<(), Error> {
         let cx = &mut Context { module, global };
         let Call { func_idx, params } = call;
 
@@ -423,7 +427,7 @@ impl Thread {
         let Function::Local(func) = cx
             .module
             .function(func_idx)
-            .ok_or_else(|| Error::UndefinedFunction(func_idx))?
+            .ok_or(Error::UndefinedFunction(func_idx))?
         else {
             return Err(Error::InvalidFunction(func_idx));
         };
@@ -484,11 +488,7 @@ impl Thread {
     /// [`Error::InvalidFunction`], [`Error::UndefinedFunction`], or
     /// [`Error::Unimplemented`] when the operation being executed cannot be
     /// interpreted.
-    pub fn step(
-        &mut self,
-        module: &Module,
-        global: &mut Global,
-    ) -> Result<StepResult, Error> {
+    pub fn step(&mut self, module: &Module, global: &mut Global) -> Result<StepResult, Error> {
         // An imported call is emitted as a directive and only then marked
         // pending. If the embedder steps again without resolving it, re-surface
         // it as blocked rather than erroring.
@@ -666,13 +666,14 @@ impl Thread {
                     self.deferred_complete = true;
                     (None, None)
                 } else {
-                    (
-                        popped.reg_result,
-                        Some((popped.reg_base, popped.num_regs)),
-                    )
+                    (popped.reg_result, Some((popped.reg_base, popped.num_regs)))
                 };
                 self.op_counter += 1;
-                Ok(StepResult::Directive(Directive::Return { dst, src, reclaim }))
+                Ok(StepResult::Directive(Directive::Return {
+                    dst,
+                    src,
+                    reclaim,
+                }))
             }
             FrameStepResult::Blocked(pending) => {
                 self.pending = Some(pending.clone());
@@ -764,8 +765,11 @@ impl Thread {
         // shrink the register file back to this frame's base so a later call at
         // the same depth reuses them. This bounds the register file by the live
         // call stack rather than by total calls made.
-        self.reg_taints
-            .set_range(frame.reg_base.as_u32(), frame.num_regs as usize, Class::Public);
+        self.reg_taints.set_range(
+            frame.reg_base.as_u32(),
+            frame.num_regs as usize,
+            Class::Public,
+        );
         self.registers.truncate(frame.reg_base.index());
         Ok(frame)
     }
@@ -847,7 +851,9 @@ impl Frame {
     fn mark_all_memory_blind(&self, cx: &mut Context<'_>) {
         if let Some(memory) = cx.global.memory() {
             let len = memory.len();
-            cx.global.memory_taints_mut().set_range(0, len, Class::Blind);
+            cx.global
+                .memory_taints_mut()
+                .set_range(0, len, Class::Blind);
         }
     }
 
@@ -883,6 +889,7 @@ impl Frame {
         self.ip += 1;
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn step(
         &mut self,
         cx: &mut Context<'_>,
@@ -1349,17 +1356,17 @@ impl Frame {
                     self.advance_ip();
                     return Ok(FrameStepResult::Directive(d));
                 }
-                let (dst, val) =
-                    match arithmetic::execute(instr, |reg| Ok(registers[reg_base + reg.index()]))?
-                    {
-                        Ok(pair) => pair,
-                        Err(trap) => {
-                            return Ok(FrameStepResult::Trapped {
-                                directive: None,
-                                trap,
-                            });
-                        }
-                    };
+                let (dst, val) = match arithmetic::execute(instr, |reg| {
+                    Ok(registers[reg_base + reg.index()])
+                })? {
+                    Ok(pair) => pair,
+                    Err(trap) => {
+                        return Ok(FrameStepResult::Trapped {
+                            directive: None,
+                            trap,
+                        });
+                    }
+                };
                 self.set_clear(registers, taints, dst, val);
                 self.advance_ip();
             }
@@ -1535,6 +1542,7 @@ impl Frame {
         Ok(FrameStepResult::Directive(d))
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn do_store(
         &mut self,
         cx: &mut Context<'_>,
@@ -1553,13 +1561,11 @@ impl Frame {
             if !self.is_available(taints, addr) {
                 // The destination is unknown to this party: conservatively mark
                 // the whole memory taints and taints, emit, don't write.
-                if mark_all_sym_on_sym_addr {
-                    if let Some(memory) = cx.global.memory() {
-                        let len = memory.len();
-                        cx.global
-                            .memory_taints_mut()
-                            .set_range(0, len, Class::Blind);
-                    }
+                if mark_all_sym_on_sym_addr && let Some(memory) = cx.global.memory() {
+                    let len = memory.len();
+                    cx.global
+                        .memory_taints_mut()
+                        .set_range(0, len, Class::Blind);
                 }
                 self.advance_ip();
                 return Ok(FrameStepResult::Directive(store_op));
@@ -1672,7 +1678,6 @@ impl Frame {
             }
         }
     }
-
 
     fn jump_to(&mut self, target: BlockId) {
         self.current_block = target;
@@ -1829,6 +1834,7 @@ impl Frame {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn handle_symbolic_branch(
         &mut self,
         cx: &mut Context<'_>,
@@ -1847,11 +1853,11 @@ impl Frame {
         }
 
         // Taint all memory if any store exists in the branch region.
-        if region.has_memory_store {
-            if let Some(memory) = cx.global.memory() {
-                let len = memory.len();
-                cx.global.memory_taints_mut().mark_symbolic_range(0, len);
-            }
+        if region.has_memory_store
+            && let Some(memory) = cx.global.memory()
+        {
+            let len = memory.len();
+            cx.global.memory_taints_mut().mark_symbolic_range(0, len);
         }
 
         // Mark registers written in the branch region as symbolic.
@@ -1916,16 +1922,18 @@ fn read_value(mem: &Memory, kind: LoadKind, addr: u32) -> MaybeTrap<Value> {
         LoadKind::I64 => mem.read_i64(addr).map(Value::from),
         LoadKind::F32 => mem.read_f32(addr).map(Value::from),
         LoadKind::F64 => mem.read_f64(addr).map(Value::from),
-        LoadKind::I32Load8S
-        | LoadKind::I32Load8U
-        | LoadKind::I32Load16S
-        | LoadKind::I32Load16U => mem.read_i32_partial(addr, byte_size, signed).map(Value::from),
+        LoadKind::I32Load8S | LoadKind::I32Load8U | LoadKind::I32Load16S | LoadKind::I32Load16U => {
+            mem.read_i32_partial(addr, byte_size, signed)
+                .map(Value::from)
+        }
         LoadKind::I64Load8S
         | LoadKind::I64Load8U
         | LoadKind::I64Load16S
         | LoadKind::I64Load16U
         | LoadKind::I64Load32S
-        | LoadKind::I64Load32U => mem.read_i64_partial(addr, byte_size, signed).map(Value::from),
+        | LoadKind::I64Load32U => mem
+            .read_i64_partial(addr, byte_size, signed)
+            .map(Value::from),
     }
 }
 
@@ -2072,7 +2080,10 @@ mod tests {
                 StepResult::Trapped { .. } => panic!("a blind divisor must not self-trap"),
             }
         }
-        assert!(div_index.is_some(), "should have emitted the div_u directive");
+        assert!(
+            div_index.is_some(),
+            "should have emitted the div_u directive"
+        );
     }
 
     #[test]
@@ -2083,9 +2094,7 @@ mod tests {
         let mut trapped = false;
         loop {
             let pre_counter = thread.op_counter();
-            let result = {
-                thread.step(&module, &mut global).expect("step")
-            };
+            let result = { thread.step(&module, &mut global).expect("step") };
             match result {
                 StepResult::Trapped {
                     index,
@@ -2155,9 +2164,7 @@ mod tests {
         let mut trapped = false;
         loop {
             let pre = thread.op_counter();
-            let result = {
-                thread.step(&module, &mut global).expect("step")
-            };
+            let result = { thread.step(&module, &mut global).expect("step") };
             match result {
                 StepResult::Trapped {
                     index,
@@ -2194,7 +2201,9 @@ mod tests {
             let mut trapped = false;
             loop {
                 let result = {
-                    thread.step(&module, &mut global).expect("step is Ok even on a trap")
+                    thread
+                        .step(&module, &mut global)
+                        .expect("step is Ok even on a trap")
                 };
                 match result {
                     StepResult::Trapped {

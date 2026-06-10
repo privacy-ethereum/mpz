@@ -77,10 +77,10 @@ impl Memory {
             return Err(Trap::MemoryOutOfBounds);
         }
 
-        if let Some(max) = self.max_size {
-            if new_size as u64 > max * 65536 {
-                return Err(Trap::MemoryOutOfBounds);
-            }
+        if let Some(max) = self.max_size
+            && new_size as u64 > max * 65536
+        {
+            return Err(Trap::MemoryOutOfBounds);
         }
 
         self.data.resize(new_size, 0);

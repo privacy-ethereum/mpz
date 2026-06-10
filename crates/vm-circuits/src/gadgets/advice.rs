@@ -2,13 +2,17 @@
 
 use super::*;
 
+/// Quotient and remainder wires returned by the division advice gadgets.
+type DivRemResult<C, const N: usize> =
+    Result<([<C as Context>::Wire; N], [<C as Context>::Wire; N]), <C as Context>::Error>;
+
 pub(crate) fn divrem_u_advice_n<C: Context<Field = Gf2>, const N: usize>(
     ctx: &mut C,
     a: [C::Wire; N],
     b: [C::Wire; N],
     q: [C::Wire; N],
     r: [C::Wire; N],
-) -> Result<([C::Wire; N], [C::Wire; N]), C::Error> {
+) -> DivRemResult<C, N> {
     let qb = mul_n(ctx, q, b);
     let sum = add_n(ctx, qb, r);
     let diff = xor_arr(ctx, sum, a);
@@ -26,7 +30,7 @@ pub(crate) fn divrem_s_advice_n<C: Context<Field = Gf2>, const N: usize>(
     b: [C::Wire; N],
     q: [C::Wire; N],
     r: [C::Wire; N],
-) -> Result<([C::Wire; N], [C::Wire; N]), C::Error> {
+) -> DivRemResult<C, N> {
     let qb = mul_n(ctx, q, b);
     let sum = add_n(ctx, qb, r);
     let diff = xor_arr(ctx, sum, a);
@@ -110,7 +114,10 @@ pub(crate) fn divrem_u_advice_values(a: u64, b: u64, n: usize) -> (u64, u64) {
     let mask = if n == 64 { u64::MAX } else { (1u64 << n) - 1 };
     let a = a & mask;
     let b = b & mask;
-    if b == 0 { (0, a) } else { (a / b, a % b) }
+    match a.checked_div(b) {
+        Some(q) => (q, a % b),
+        None => (0, a),
+    }
 }
 
 /// Quotient and remainder of signed `a / b` over `n` bits, returned as

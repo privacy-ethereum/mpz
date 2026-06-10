@@ -2,8 +2,8 @@
 //!
 //! A program compiled to wasm and run inside the VC VM links against this crate
 //! to invoke the VM's VCI host calls, imported from the `vc` module. The VCI
-//! operation is [`reveal`](Reveal::reveal): disclosing a value the program holds
-//! — concrete or symbolic — so that it becomes public. It is two-phase:
+//! operation is [`reveal`](Reveal::reveal): disclosing a value the program
+//! holds — concrete or symbolic — so that it becomes public. It is two-phase:
 //! `reveal` returns a handle immediately and the handle's `wait` blocks for the
 //! result, which lets a program batch and pipeline reveals.
 //!
@@ -101,8 +101,8 @@ impl_scalar!(f64, reveal_f64, reveal_f64_wait);
 
 /// A pending reveal of a byte region.
 ///
-/// Borrows the region until the reveal completes, so it cannot be reallocated or
-/// mutated while in flight. The disclosure is in place; [`wait`](Self::wait)
+/// Borrows the region until the reveal completes, so it cannot be reallocated
+/// or mutated while in flight. The disclosure is in place; [`wait`](Self::wait)
 /// hands the region back.
 pub struct PendingBytes<'a> {
     handle: i32,

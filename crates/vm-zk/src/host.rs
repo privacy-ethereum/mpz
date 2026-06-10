@@ -1,16 +1,16 @@
 //! Servicing of guest VCI reveal host calls during capture.
 //!
-//! When the thread blocks on a `vc::reveal_*` import, [`service_reveal`] records
-//! a [`RevealEvent`] into the captured trace and returns the value to resolve
-//! the call with. The event is opened in-order during replay against the live
-//! authenticated state, so a scalar's source register still holds its MAC at the
-//! reveal point (the free-list cannot have recycled it yet).
+//! When the thread blocks on a `vc::reveal_*` import, [`service_reveal`]
+//! records a [`RevealEvent`] into the captured trace and returns the value to
+//! resolve the call with. The event is opened in-order during replay against
+//! the live authenticated state, so a scalar's source register still holds its
+//! MAC at the reveal point (the free-list cannot have recycled it yet).
 //!
 //! Disclosure is eager: a `reveal_*` call commits its value to the chunk's
 //! announced payloads immediately, keyed by a unique reveal id; the matching
 //! `*_wait` only retrieves it. The id is allocated from a counter that advances
-//! identically on both parties (lockstep capture), so the handle the guest holds
-//! is the verifier's lookup key.
+//! identically on both parties (lockstep capture), so the handle the guest
+//! holds is the verifier's lookup key.
 
 use std::collections::BTreeMap;
 
@@ -66,11 +66,12 @@ pub(crate) enum RevealEvent {
 /// Per-execution reveal state, owned by the prover/verifier across chunks.
 #[derive(Debug, Default)]
 pub(crate) struct RevealState {
-    /// Monotonic reveal-id counter; identical on both parties (lockstep capture).
+    /// Monotonic reveal-id counter; identical on both parties (lockstep
+    /// capture).
     next_id: u32,
-    /// Every payload disclosed so far, keyed by reveal id. The prover fills this
-    /// as it services reveals; the verifier merges each chunk's announced
-    /// payloads before capturing it.
+    /// Every payload disclosed so far, keyed by reveal id. The prover fills
+    /// this as it services reveals; the verifier merges each chunk's
+    /// announced payloads before capturing it.
     payloads: BTreeMap<u32, RevealPayload>,
 }
 
@@ -89,7 +90,12 @@ impl RevealState {
 
     /// Records a disclosed payload (prover side) both for replay lookups and in
     /// `new` to announce in this chunk's message.
-    fn disclose(&mut self, new: &mut BTreeMap<u32, RevealPayload>, id: u32, payload: RevealPayload) {
+    fn disclose(
+        &mut self,
+        new: &mut BTreeMap<u32, RevealPayload>,
+        id: u32,
+        payload: RevealPayload,
+    ) {
         self.payloads.insert(id, payload.clone());
         new.insert(id, payload);
     }
@@ -98,12 +104,13 @@ impl RevealState {
 /// Services a reveal host call surfaced during capture.
 ///
 /// Returns the trace event to record (if any) and the value to resolve the host
-/// call with (the handle for a `reveal`, the revealed value for a scalar `wait`,
-/// nothing for a byte `wait`). The prover inserts newly disclosed payloads into
-/// `new` (to announce) and into its own `payloads`; the verifier reads them from
-/// `payloads`, pre-merged from the chunk message. Byte waits apply their effect
-/// — making the range public and (verifier) materializing its bytes — to
-/// `global` directly and carry no trace event.
+/// call with (the handle for a `reveal`, the revealed value for a scalar
+/// `wait`, nothing for a byte `wait`). The prover inserts newly disclosed
+/// payloads into `new` (to announce) and into its own `payloads`; the verifier
+/// reads them from `payloads`, pre-merged from the chunk message. Byte waits
+/// apply their effect — making the range public and (verifier) materializing
+/// its bytes — to `global` directly and carry no trace event.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn service_reveal(
     role: Role,
     state: &mut RevealState,
@@ -243,7 +250,11 @@ fn handle_dst(dst: Option<Reg>) -> Result<Reg> {
 fn handle_arg(args: &[Operand]) -> Result<u32> {
     let v = match args.first() {
         Some(Operand::Concrete(v)) | Some(Operand::Symbol { value: Some(v), .. }) => *v,
-        _ => return Err(ZkVmError::Internal("reveal wait handle is not available".into())),
+        _ => {
+            return Err(ZkVmError::Internal(
+                "reveal wait handle is not available".into(),
+            ));
+        }
     };
     v.as_i32()
         .map(|h| h as u32)

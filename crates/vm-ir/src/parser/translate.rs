@@ -2,12 +2,14 @@ use wasmparser::{BinaryReader, BlockType as WasmBlockType, Operator};
 
 use crate::{
     BasicBlock, BinaryArith, BinaryOp, BlockId, Error, FuncType, FunctionBody, Instruction,
-    InstructionArith, LoadKind, MemArg, Reg, Result, StoreKind, Terminator, UnaryArith,
-    UnaryOp, UnsupportedFeature, ValidationError,
+    InstructionArith, LoadKind, MemArg, Reg, Result, StoreKind, Terminator, UnaryArith, UnaryOp,
+    UnsupportedFeature, ValidationError,
 };
 
-use super::cfg::{Scope, get_br_join, get_br_target};
-use super::sections::parse_heap_type;
+use super::{
+    cfg::{Scope, get_br_join, get_br_target},
+    sections::parse_heap_type,
+};
 
 /// Translator from stack-based WASM to CFG-based register instructions.
 pub(super) struct Translator {
@@ -174,9 +176,10 @@ impl Translator {
     /// When the value was just produced into a temporary, the producing
     /// instruction is redirected to write the local directly and the copy is
     /// elided. For `tee`, the stack slot then aliases the local register — the
-    /// same aliasing `local.get` already relies on, so later reads need no copy.
-    /// This removes the produce-then-copy pair that `local.set`/`local.tee`
-    /// would otherwise emit for nearly every computed local.
+    /// same aliasing `local.get` already relies on, so later reads need no
+    /// copy. This removes the produce-then-copy pair that
+    /// `local.set`/`local.tee` would otherwise emit for nearly every
+    /// computed local.
     ///
     /// The peephole only fires when it is provably safe: the source is a
     /// temporary produced by the immediately preceding instruction, and the
@@ -294,15 +297,14 @@ impl Translator {
 
         if let Some(result_reg) = scope.block_result_reg {
             // Copy fall-through result to unified register
-            if !self.unreachable {
-                if let Some(&src_reg) = self.reg_stack.last() {
-                    if src_reg != result_reg {
-                        self.emit(Instruction::Copy {
-                            dst: result_reg,
-                            src: src_reg,
-                        });
-                    }
-                }
+            if !self.unreachable
+                && let Some(&src_reg) = self.reg_stack.last()
+                && src_reg != result_reg
+            {
+                self.emit(Instruction::Copy {
+                    dst: result_reg,
+                    src: src_reg,
+                });
             }
 
             // Finish current arm with jump to join
@@ -383,15 +385,14 @@ impl Translator {
 
         if let Some(result_reg) = scope.block_result_reg {
             // Copy fall-through result to unified register
-            if !self.unreachable {
-                if let Some(&src_reg) = self.reg_stack.last() {
-                    if src_reg != result_reg {
-                        self.emit(Instruction::Copy {
-                            dst: result_reg,
-                            src: src_reg,
-                        });
-                    }
-                }
+            if !self.unreachable
+                && let Some(&src_reg) = self.reg_stack.last()
+                && src_reg != result_reg
+            {
+                self.emit(Instruction::Copy {
+                    dst: result_reg,
+                    src: src_reg,
+                });
             }
 
             if !self.unreachable {
@@ -604,17 +605,15 @@ fn translate_operator(
             let then_was_reachable = !t.unreachable;
 
             // Copy then-branch result to unified register if needed
-            if let Some(result_reg) = block_result_reg {
-                if then_was_reachable {
-                    if let Some(&src_reg) = t.reg_stack.last() {
-                        if src_reg != result_reg {
-                            t.emit(Instruction::Copy {
-                                dst: result_reg,
-                                src: src_reg,
-                            });
-                        }
-                    }
-                }
+            if let Some(result_reg) = block_result_reg
+                && then_was_reachable
+                && let Some(&src_reg) = t.reg_stack.last()
+                && src_reg != result_reg
+            {
+                t.emit(Instruction::Copy {
+                    dst: result_reg,
+                    src: src_reg,
+                });
             }
 
             // Finish then block with jump to join
@@ -653,10 +652,10 @@ fn translate_operator(
             let values: Vec<Reg> = (0..arity).map(|_| t.pop()).collect::<Result<Vec<_>>>()?;
 
             // Copy to target block's result register
-            if let (Some(&src), Some(dst)) = (values.first(), t.branch_result_reg(depth)) {
-                if src != dst {
-                    t.emit(Instruction::Copy { dst, src });
-                }
+            if let (Some(&src), Some(dst)) = (values.first(), t.branch_result_reg(depth))
+                && src != dst
+            {
+                t.emit(Instruction::Copy { dst, src });
             }
 
             match get_br_target(&t.scopes, depth)? {
@@ -682,10 +681,10 @@ fn translate_operator(
             }
 
             // Copy to target block's result register
-            if let (Some(&src), Some(dst)) = (values.first(), t.branch_result_reg(depth)) {
-                if src != dst {
-                    t.emit(Instruction::Copy { dst, src });
-                }
+            if let (Some(&src), Some(dst)) = (values.first(), t.branch_result_reg(depth))
+                && src != dst
+            {
+                t.emit(Instruction::Copy { dst, src });
             }
 
             match get_br_target(&t.scopes, depth)? {
@@ -737,10 +736,11 @@ fn translate_operator(
             if let Some(&src) = values.first() {
                 let mut seen = std::collections::HashSet::new();
                 for &depth in target_vec.iter().chain(std::iter::once(&table.default())) {
-                    if let Some(dst) = t.branch_result_reg(depth) {
-                        if src != dst && seen.insert(dst) {
-                            t.emit(Instruction::Copy { dst, src });
-                        }
+                    if let Some(dst) = t.branch_result_reg(depth)
+                        && src != dst
+                        && seen.insert(dst)
+                    {
+                        t.emit(Instruction::Copy { dst, src });
                     }
                 }
             }

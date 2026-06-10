@@ -286,9 +286,7 @@ where
             seed,
             offset: 0,
             delta: None,
-            value_rng: SmallRng::seed_from_u64(
-                seed.wrapping_add(RECEIVER_VALUE_SEED_OFFSET),
-            ),
+            value_rng: SmallRng::seed_from_u64(seed.wrapping_add(RECEIVER_VALUE_SEED_OFFSET)),
             pending: 0,
             values: Vec::new(),
             macs: Vec::new(),
@@ -419,10 +417,7 @@ where
         self.values.len()
     }
 
-    fn try_recv_vole(
-        &mut self,
-        count: usize,
-    ) -> Result<RVOLEReceiverOutput<W, E>, Self::Error> {
+    fn try_recv_vole(&mut self, count: usize) -> Result<RVOLEReceiverOutput<W, E>, Self::Error> {
         if count > self.values.len() {
             return Err(IdealRVOLEError::new(format!(
                 "not enough RVOLEs: available={}, requested={}",
@@ -554,7 +549,10 @@ mod tests {
         let msg = sender.flush().expect("should have message");
         receiver.flush(msg).unwrap();
 
-        let sender_out = sender_fut.try_recv().unwrap().expect("resolved after flush");
+        let sender_out = sender_fut
+            .try_recv()
+            .unwrap()
+            .expect("resolved after flush");
         let receiver_out = receiver_fut
             .try_recv()
             .unwrap()

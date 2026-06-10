@@ -15,8 +15,8 @@
 //! [`Vm::reveal`]: mpz_vm_core::Vm::reveal
 //! [`Vm::read`]: mpz_vm_core::Vm::read
 
-use mpz_vm_ir::{ExportKind, Module};
 use mpz_vm_core::value::Value;
+use mpz_vm_ir::{ExportKind, Module};
 
 /// A two-party implementation exercised through the memory I/O surface.
 ///
@@ -63,8 +63,8 @@ pub enum MemStep {
     /// Both parties queue a reveal of `ptr..ptr+len`. Takes effect on the next
     /// flush, after which the range is concrete.
     Reveal { ptr: u32, len: usize },
-    /// Both parties flush pending writes and reveals via [`Vm::commit`], with no
-    /// function call. Records no observation: it is a pure flush.
+    /// Both parties flush pending writes and reveals via [`Vm::commit`], with
+    /// no function call. Records no observation: it is a pure flush.
     ///
     /// [`Vm::commit`]: mpz_vm_core::Vm::commit
     Commit,
@@ -75,13 +75,15 @@ pub enum MemStep {
     /// [`Vm::call_local`]: mpz_vm_core::Vm::call_local
     CallLocal { func: String, args: Vec<Value> },
     /// Invoke the exported function `func` with public `args` on both parties.
-    /// Flushes any pending writes/reveals first. Records a [`Observation::Call`]
-    /// with each party's return value. A no-op export flushes without computing.
+    /// Flushes any pending writes/reveals first. Records a
+    /// [`Observation::Call`] with each party's return value. A no-op export
+    /// flushes without computing.
     Call { func: String, args: Vec<Value> },
-    /// Like [`MemStep::Call`], but both parties are driven to completion even if
-    /// one errors, and the step records whether they *agreed* on a valid result
-    /// ([`Observation::Agreement`]). Used to assert that inconsistent inputs are
-    /// not silently reconciled into a single accepted answer.
+    /// Like [`MemStep::Call`], but both parties are driven to completion even
+    /// if one errors, and the step records whether they *agreed* on a valid
+    /// result ([`Observation::Agreement`]). Used to assert that
+    /// inconsistent inputs are not silently reconciled into a single
+    /// accepted answer.
     CheckedCall { func: String, args: Vec<Value> },
     /// Both parties read `ptr..ptr+len`. Records a [`Observation::Read`] with
     /// each party's outcome (bytes, or a failure for a symbolic/pending range).
@@ -359,8 +361,9 @@ fn consistent_public_checked_call() -> Scenario {
     }
 }
 
-/// Inconsistent public writes: the two parties are fed different "public" bytes.
-/// A checked call must surface the divergence rather than silently agree.
+/// Inconsistent public writes: the two parties are fed different "public"
+/// bytes. A checked call must surface the divergence rather than silently
+/// agree.
 fn inconsistent_public_write_disagrees() -> Scenario {
     Scenario {
         name: "inconsistent_public_write_disagrees",
@@ -381,9 +384,10 @@ fn inconsistent_public_write_disagrees() -> Scenario {
 }
 
 /// Inconsistent public bytes feeding an *authenticated* op (added to a private
-/// value). A prover/verifier implementation rejects this cryptographically — the
-/// divergent public wire breaks the proof — while a plain reference implementation
-/// simply computes different results; either way the parties must not agree.
+/// value). A prover/verifier implementation rejects this cryptographically —
+/// the divergent public wire breaks the proof — while a plain reference
+/// implementation simply computes different results; either way the parties
+/// must not agree.
 fn inconsistent_public_feeds_authenticated_op() -> Scenario {
     let wat = r#"(module
         (memory 1)
@@ -474,8 +478,8 @@ fn commit_reveal_separate_rounds() -> Scenario {
 }
 
 /// A private write committed up front via `commit` is then consumed by a full
-/// proving `call`: the committed memory wires persist across rounds and feed the
-/// later computation, which returns the right value on both parties.
+/// proving `call`: the committed memory wires persist across rounds and feed
+/// the later computation, which returns the right value on both parties.
 fn commit_then_call_consumes_memory() -> Scenario {
     let wat = r#"(module
         (memory 1)

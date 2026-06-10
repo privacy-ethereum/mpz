@@ -396,9 +396,9 @@ mod tests {
     #[test]
     fn i32_le_bytes_round_trip() {
         let mut bytes = [Byte::new([bit(0); 8]); 4];
-        for i in 0..4 {
-            for j in 0..8 {
-                bytes[i].bits_mut()[j] = bit(((i * 8 + j) as u128) + 1);
+        for (i, byte) in bytes.iter_mut().enumerate() {
+            for (j, b) in byte.bits_mut().iter_mut().enumerate() {
+                *b = bit(((i * 8 + j) as u128) + 1);
             }
         }
         let v = I32::from_le_bytes(bytes);
@@ -408,9 +408,9 @@ mod tests {
     #[test]
     fn i64_le_bytes_round_trip() {
         let mut bytes = [Byte::new([bit(0); 8]); 8];
-        for i in 0..8 {
-            for j in 0..8 {
-                bytes[i].bits_mut()[j] = bit(((i * 8 + j) as u128) + 1);
+        for (i, byte) in bytes.iter_mut().enumerate() {
+            for (j, b) in byte.bits_mut().iter_mut().enumerate() {
+                *b = bit(((i * 8 + j) as u128) + 1);
             }
         }
         let v = I64::from_le_bytes(bytes);

@@ -1,5 +1,4 @@
-use crate::trap::Trap;
-use crate::value::ValueError;
+use crate::{trap::Trap, value::ValueError};
 
 /// The error type of `mpz-vm-core`.
 ///

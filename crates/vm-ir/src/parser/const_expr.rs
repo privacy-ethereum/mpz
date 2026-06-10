@@ -21,9 +21,7 @@ pub(super) fn parse_const_expr(reader: &mut BinaryReader) -> Result<ConstExpr> {
             RefFunc { function_index } => ConstExpr::RefFunc(*function_index),
             End => continue,
             _ => {
-                return Err(
-                    UnsupportedFeature::ConstExprInstruction(format!("{:?}", op)).into(),
-                );
+                return Err(UnsupportedFeature::ConstExprInstruction(format!("{:?}", op)).into());
             }
         };
         if expr.is_some() {
@@ -54,9 +52,7 @@ pub(super) fn parse_elem_expr(reader: &mut BinaryReader) -> Result<Vec<Instructi
             },
             End => continue,
             _ => {
-                return Err(
-                    UnsupportedFeature::ElemExprInstruction(format!("{:?}", op)).into(),
-                );
+                return Err(UnsupportedFeature::ElemExprInstruction(format!("{:?}", op)).into());
             }
         };
         instrs.push(instr);

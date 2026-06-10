@@ -3,8 +3,7 @@ use mpz_circuits::Context;
 use mpz_circuits::MaybeConst;
 #[cfg(test)]
 use mpz_fields::Field;
-use mpz_fields::gf2::Gf2;
-use mpz_fields::gf2_128::Gf2_128;
+use mpz_fields::{gf2::Gf2, gf2_128::Gf2_128};
 use mpz_vm_memory::{I32, I64};
 
 pub trait CircuitContext: Context<Wire = Gf2_128, Field = Gf2> {}

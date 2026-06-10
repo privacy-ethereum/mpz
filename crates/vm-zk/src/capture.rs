@@ -144,12 +144,12 @@ pub(crate) fn capture_chunk(
             } => {
                 // If the prover announced a trap index, a verifier reaching the
                 // trap locally must land on the same op.
-                if let Some((announced, _)) = &announced_trap {
-                    if *announced != index {
-                        return Err(ZkVmError::Internal(format!(
-                            "local trap at index {index} but prover announced {announced}"
-                        )));
-                    }
+                if let Some((announced, _)) = &announced_trap
+                    && *announced != index
+                {
+                    return Err(ZkVmError::Internal(format!(
+                        "local trap at index {index} but prover announced {announced}"
+                    )));
                 }
                 return Ok(ChunkCapture {
                     trace,
@@ -210,28 +210,25 @@ pub(crate) fn capture_chunk(
             }
         };
 
-        match &directive {
-            Directive::Op(op) => {
-                cost += cost::op_cost(op)?;
-            }
-            _ => {}
+        if let Directive::Op(op) = &directive {
+            cost += cost::op_cost(op)?;
         }
 
         trace.push(directive);
 
-        if let Some(c) = cap {
-            if cost >= c {
-                return Ok(ChunkCapture {
-                    trace,
-                    cost,
-                    done: false,
-                    result: None,
-                    result_symbolic: false,
-                    trap: None,
-                    reveal_actions,
-                    reveals,
-                });
-            }
+        if let Some(c) = cap
+            && cost >= c
+        {
+            return Ok(ChunkCapture {
+                trace,
+                cost,
+                done: false,
+                result: None,
+                result_symbolic: false,
+                trap: None,
+                reveal_actions,
+                reveals,
+            });
         }
     }
 }
@@ -239,11 +236,11 @@ pub(crate) fn capture_chunk(
 /// Steps `thread` to completion using only local work, rejecting any step that
 /// would require a proving round (and thus communication with the other party).
 ///
-/// Public computation is reproduced in-thread and runs to a [`StepResult::Done`]
-/// or a trap. A symbolic [`Op`](mpz_vm_core::Op), a private branch, or a host
-/// call (every zk-vm host call is a reveal) reports
-/// [`ZkVmError::RequiresCommunication`]; the remaining directives — local calls,
-/// returns, and public branches — are in-thread control flow.
+/// Public computation is reproduced in-thread and runs to a
+/// [`StepResult::Done`] or a trap. A symbolic [`Op`](mpz_vm_core::Op), a
+/// private branch, or a host call (every zk-vm host call is a reveal) reports
+/// [`ZkVmError::RequiresCommunication`]; the remaining directives — local
+/// calls, returns, and public branches — are in-thread control flow.
 pub(crate) fn run_local(
     module: &Module,
     global: &mut Global,

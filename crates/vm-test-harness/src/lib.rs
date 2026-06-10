@@ -16,8 +16,8 @@
 //! mpz_vm_test_harness::wasm_spec_tests!(MyPair, mpz_vm_test_harness::SpecConfig::default());
 //! ```
 
-use mpz_vm_ir::Module;
 use mpz_vm_core::{Param, value::Value};
+use mpz_vm_ir::Module;
 use wast::{
     Wast, WastArg, WastDirective, WastExecute, WastRet,
     core::{WastArgCore, WastRetCore},
@@ -30,16 +30,17 @@ pub mod suites;
 /// A two-party implementation under test.
 ///
 /// Party A holds private inputs as [`Param::Private`]; party B sees them as
-/// [`Param::Blind`]. Both parties must agree on the result (or both trap/error).
+/// [`Param::Blind`]. Both parties must agree on the result (or both
+/// trap/error).
 pub trait SpecVm: Sized {
     /// The error type reported by a run.
     type Error: core::error::Error;
 
     /// Labels of the configurations this implementation wants exercised. Every
     /// suite is run once per variant, so the same conformance corpus stresses
-    /// each one. Most implementations keep the single default; an implementation
-    /// with tunable internals (e.g. proof chunking) can return several to drive
-    /// the whole spec through each configuration.
+    /// each one. Most implementations keep the single default; an
+    /// implementation with tunable internals (e.g. proof chunking) can
+    /// return several to drive the whole spec through each configuration.
     ///
     /// The strings are opaque to the harness and passed back to
     /// [`instantiate`](Self::instantiate).
@@ -48,15 +49,16 @@ pub trait SpecVm: Sized {
     }
 
     /// Construct a fresh party pair for `module` under the named `variant` (one
-    /// of the strings returned by [`variants`](Self::variants)). Called once per
-    /// `(module)` directive and again whenever the harness resets after a trap
-    /// or failure. `Err` carries a human-readable reason recorded as a skip.
+    /// of the strings returned by [`variants`](Self::variants)). Called once
+    /// per `(module)` directive and again whenever the harness resets after
+    /// a trap or failure. `Err` carries a human-readable reason recorded as
+    /// a skip.
     fn instantiate(module: &Module, variant: &str) -> Result<Self, String>;
 
-    /// Run `func_idx` on both parties with the given per-party params, returning
-    /// each party's optional return value. An `Err` from either party is
-    /// surfaced as a single [`Self::Error`] (the harness then classifies it via
-    /// [`Self::is_expected_unsupported`]).
+    /// Run `func_idx` on both parties with the given per-party params,
+    /// returning each party's optional return value. An `Err` from either
+    /// party is surfaced as a single [`Self::Error`] (the harness then
+    /// classifies it via [`Self::is_expected_unsupported`]).
     fn run(
         &mut self,
         func_idx: u32,
@@ -93,14 +95,14 @@ impl Privacy {
             Privacy::AllPublic => false,
             Privacy::One(idx) => i == idx,
             Privacy::AllPrivate => true,
-            Privacy::Alternating => i % 2 == 0,
+            Privacy::Alternating => i.is_multiple_of(2),
         }
     }
 
     /// Whether this pattern is worth running on an invocation with `n_args`
     /// arguments. Patterns that would degenerate into one already covered by
-    /// another pass (or by the all-public pass) are skipped, so the extra passes
-    /// only do real work on invocations they actually distinguish.
+    /// another pass (or by the all-public pass) are skipped, so the extra
+    /// passes only do real work on invocations they actually distinguish.
     fn runs_invocation(self, n_args: usize) -> bool {
         match self {
             Privacy::AllPublic => true,
@@ -753,7 +755,9 @@ fn run_assert_trap<V: SpecVm>(
     let (args_a, args_b) = split_args(args, privacy);
 
     match vm.run(func_idx, args_a, args_b) {
-        Ok(_) => Err(SkipReason::Failed("expected trap but succeeded".to_string())),
+        Ok(_) => Err(SkipReason::Failed(
+            "expected trap but succeeded".to_string(),
+        )),
         Err(e) => match classify::<V>(e) {
             // An expected/unsupported error is still a skip, not a satisfied
             // trap.

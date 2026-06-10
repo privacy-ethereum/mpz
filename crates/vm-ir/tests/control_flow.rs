@@ -75,7 +75,8 @@ fn find_call_indirect(block: &mpz_vm_ir::BasicBlock) -> Option<&Instruction> {
         .find(|i| matches!(i, Instruction::CallIndirect { .. }))
 }
 
-/// Collect the destination register of the const writing `val` (i32), if present.
+/// Collect the destination register of the const writing `val` (i32), if
+/// present.
 fn i32_const_dst(block: &mpz_vm_ir::BasicBlock, val: i32) -> Option<Reg> {
     block.body.iter().find_map(|i| match i {
         Instruction::I32Const { dst, val: v } if *v == val => Some(*dst),
@@ -106,7 +107,10 @@ fn test_basic_block() {
     // exact register feeding the continuation is an allocation detail; assert
     // the structure (const present, Jump terminator) instead.
     let b0 = &body.blocks[0];
-    assert!(i32_const_dst(b0, 42).is_some(), "i32.const 42 should be present");
+    assert!(
+        i32_const_dst(b0, 42).is_some(),
+        "i32.const 42 should be present"
+    );
     assert!(matches!(b0.terminator, Terminator::Jump { .. }));
 
     // The block's result is carried through to a Return.
@@ -128,7 +132,10 @@ fn test_block_with_br() {
     // The const is produced, and `br 0` exits the block with a Jump. Register
     // numbers are an allocation detail.
     let b0 = &body.blocks[0];
-    assert!(i32_const_dst(b0, 42).is_some(), "i32.const 42 should be present");
+    assert!(
+        i32_const_dst(b0, 42).is_some(),
+        "i32.const 42 should be present"
+    );
     assert!(matches!(b0.terminator, Terminator::Jump { .. }));
 }
 
@@ -214,7 +221,12 @@ fn test_return_with_value() {
     // data-flow rather than hard-coding the register number.
     let b0 = &body.blocks[0];
     let const_dst = i32_const_dst(b0, 42).expect("i32.const 42 should be present");
-    assert_eq!(b0.terminator, Terminator::Return { values: vec![const_dst] });
+    assert_eq!(
+        b0.terminator,
+        Terminator::Return {
+            values: vec![const_dst]
+        }
+    );
 }
 
 #[test]
@@ -238,7 +250,11 @@ fn test_i64_identity() {
     // Copy). The observable property is that the function returns exactly one
     // value, and that value is the parameter register (reg 0).
     let returned = return_values(body);
-    assert_eq!(returned, vec![Reg(0)], "should return the param register unchanged");
+    assert_eq!(
+        returned,
+        vec![Reg(0)],
+        "should return the param register unchanged"
+    );
 }
 
 #[test]
@@ -459,7 +475,11 @@ fn test_call_indirect_i64() {
     };
     assert_eq!(*type_index, 0);
     assert_eq!(*table_index, 0);
-    assert_eq!(*table_idx, Reg(0), "table index operand is the i32 param (reg 0)");
+    assert_eq!(
+        *table_idx,
+        Reg(0),
+        "table index operand is the i32 param (reg 0)"
+    );
     assert_eq!(args, &vec![Reg(1)], "call arg is the i64 param (reg 1)");
     let call_dst = dst.expect("call to a value-returning type should have a dst");
 

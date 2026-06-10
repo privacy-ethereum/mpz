@@ -18,8 +18,8 @@
 use itybity::{GetBit, Lsb0};
 use mpz_circuits::Context;
 use mpz_fields::{gf2::Gf2, gf2_128::Gf2_128};
-use mpz_vm_ir::{BinaryOp, LoadKind, MemArg, Module, StoreKind, UnaryOp};
 use mpz_vm_core::{Directive, Op, Operand, Reg, Trap, ValType, value::Value};
+use mpz_vm_ir::{BinaryOp, LoadKind, MemArg, Module, StoreKind, UnaryOp};
 use mpz_zk_core::{ProverExecute, VerifierExecute};
 
 use mpz_vm_memory::{AuthState, AuthValue, Bit, I32, I64};
@@ -593,20 +593,46 @@ fn mem_load(
     let eff = eff_addr(addr, memarg)?;
     let m = &auth.memory;
     let av: AuthValue = match kind {
-        I32 => m.load_i32_mixed(eff, concrete, symbolic_mask).map(Into::into),
-        I64 => m.load_i64_mixed(eff, concrete, symbolic_mask).map(Into::into),
-        I32Load8U => m.load_i32_8u_mixed(eff, concrete, symbolic_mask).map(Into::into),
-        I32Load8S => m.load_i32_8s_mixed(eff, concrete, symbolic_mask).map(Into::into),
-        I32Load16U => m.load_i32_16u_mixed(eff, concrete, symbolic_mask).map(Into::into),
-        I32Load16S => m.load_i32_16s_mixed(eff, concrete, symbolic_mask).map(Into::into),
-        I64Load8U => m.load_i64_8u_mixed(eff, concrete, symbolic_mask).map(Into::into),
-        I64Load8S => m.load_i64_8s_mixed(eff, concrete, symbolic_mask).map(Into::into),
-        I64Load16U => m.load_i64_16u_mixed(eff, concrete, symbolic_mask).map(Into::into),
-        I64Load16S => m.load_i64_16s_mixed(eff, concrete, symbolic_mask).map(Into::into),
-        I64Load32U => m.load_i64_32u_mixed(eff, concrete, symbolic_mask).map(Into::into),
-        I64Load32S => m.load_i64_32s_mixed(eff, concrete, symbolic_mask).map(Into::into),
+        I32 => m
+            .load_i32_mixed(eff, concrete, symbolic_mask)
+            .map(Into::into),
+        I64 => m
+            .load_i64_mixed(eff, concrete, symbolic_mask)
+            .map(Into::into),
+        I32Load8U => m
+            .load_i32_8u_mixed(eff, concrete, symbolic_mask)
+            .map(Into::into),
+        I32Load8S => m
+            .load_i32_8s_mixed(eff, concrete, symbolic_mask)
+            .map(Into::into),
+        I32Load16U => m
+            .load_i32_16u_mixed(eff, concrete, symbolic_mask)
+            .map(Into::into),
+        I32Load16S => m
+            .load_i32_16s_mixed(eff, concrete, symbolic_mask)
+            .map(Into::into),
+        I64Load8U => m
+            .load_i64_8u_mixed(eff, concrete, symbolic_mask)
+            .map(Into::into),
+        I64Load8S => m
+            .load_i64_8s_mixed(eff, concrete, symbolic_mask)
+            .map(Into::into),
+        I64Load16U => m
+            .load_i64_16u_mixed(eff, concrete, symbolic_mask)
+            .map(Into::into),
+        I64Load16S => m
+            .load_i64_16s_mixed(eff, concrete, symbolic_mask)
+            .map(Into::into),
+        I64Load32U => m
+            .load_i64_32u_mixed(eff, concrete, symbolic_mask)
+            .map(Into::into),
+        I64Load32S => m
+            .load_i64_32s_mixed(eff, concrete, symbolic_mask)
+            .map(Into::into),
         F32 | F64 => {
-            return Err(ZkVmError::Internal("zk-vm: float load not supported".into()));
+            return Err(ZkVmError::Internal(
+                "zk-vm: float load not supported".into(),
+            ));
         }
     }
     .ok_or(ZkVmError::MemAuthMissing { addr: eff })?;
@@ -637,7 +663,9 @@ where
         I64Store16 => auth.memory.store_i64_16(eff, av.try_as_i64()?),
         I64Store32 => auth.memory.store_i64_32(eff, av.try_as_i64()?),
         F32 | F64 => {
-            return Err(ZkVmError::Internal("zk-vm: float store not supported".into()));
+            return Err(ZkVmError::Internal(
+                "zk-vm: float store not supported".into(),
+            ));
         }
     }
     Ok(())
@@ -795,7 +823,11 @@ where
     C: Context<Wire = Gf2_128, Field = Gf2>,
     C::Error: core::fmt::Debug,
 {
-    let all_ones = if width == 64 { u64::MAX } else { (1u64 << width) - 1 };
+    let all_ones = if width == 64 {
+        u64::MAX
+    } else {
+        (1u64 << width) - 1
+    };
     let int_min = 1u64 << (width - 1);
     assert_const_bits(ctx, rhs, width, all_ones)?;
     assert_const_bits(ctx, lhs, width, int_min)

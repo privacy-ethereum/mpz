@@ -441,12 +441,8 @@ mod tests {
         // pool consumed in matching order.
         let b1 = sender.try_send_vole(R1).unwrap();
         let b2 = sender.try_send_vole(R2).unwrap();
-        let k1_new: Vec<Gf2_128> = (0..R1)
-            .map(|j| b1.keys[j] - a1.diffs[j] * delta)
-            .collect();
-        let k2_new: Vec<Gf2_128> = (0..R2)
-            .map(|j| b2.keys[j] - a2.diffs[j] * delta)
-            .collect();
+        let k1_new: Vec<Gf2_128> = (0..R1).map(|j| b1.keys[j] - a1.diffs[j] * delta).collect();
+        let k2_new: Vec<Gf2_128> = (0..R2).map(|j| b2.keys[j] - a2.diffs[j] * delta).collect();
         assert_vole(delta, &k1_new, &t1, &o1.macs);
         assert_vole(delta, &k2_new, &t2, &o2.macs);
     }

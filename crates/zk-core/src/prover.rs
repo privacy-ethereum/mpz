@@ -1,4 +1,3 @@
-
 use blake3::Hasher;
 use itybity::{GetBit, Lsb0};
 use mpz_circuits::Context;
@@ -34,11 +33,7 @@ impl Prover {
 
     /// MAC of a public bit: [`MAC_ONE`] for `true`, [`MAC_ZERO`] for `false`.
     pub fn public_bit(&self, bit: bool) -> Gf2_128 {
-        if bit {
-            MAC_ONE
-        } else {
-            MAC_ZERO
-        }
+        if bit { MAC_ONE } else { MAC_ZERO }
     }
 
     /// Returns a [`ProverExecute`] context for evaluating a circuit.
@@ -124,10 +119,7 @@ impl ProverExecute<'_> {
             .masks
             .get_mut(i)
             .expect("mask tape exhausted during input");
-        let mut mac = *self
-            .macs
-            .get(i)
-            .expect("mac tape exhausted during input");
+        let mut mac = *self.macs.get(i).expect("mac tape exhausted during input");
         *slot ^= bit;
         set_lsb(&mut mac, bit);
         self.cursor = i + 1;

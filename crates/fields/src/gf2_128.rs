@@ -203,10 +203,7 @@ impl crate::Accumulator for Gf2_128Accumulator {
     fn from_field(value: Gf2_128) -> Self {
         // A reduced element is already `< x¹²⁸`, so it sits entirely in `lo`;
         // reducing `(value, 0)` is the identity.
-        Self {
-            lo: value.0,
-            hi: 0,
-        }
+        Self { lo: value.0, hi: 0 }
     }
 
     #[inline]

@@ -1,4 +1,3 @@
-
 use mpz_vm_ir::{BinaryOp, InstructionArith, Reg, UnaryOp};
 
 use crate::{Error, MaybeTrap, Trap, Value};

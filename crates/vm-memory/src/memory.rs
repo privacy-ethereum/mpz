@@ -23,7 +23,7 @@ use std::collections::HashMap;
 
 use mpz_fields::gf2_128::Gf2_128;
 
-use crate::auth::{Bit, Byte, Wire, F32, F64, I32, I64};
+use crate::auth::{Bit, Byte, F32, F64, I32, I64, Wire};
 
 /// Sparse byte-addressed linear memory keyed by absolute byte address,
 /// storing one [`Byte<W>`] per tainted address. Carries the public-0 and
@@ -160,62 +160,160 @@ impl<W: Wire> LinearMemory<W> {
 
     /// Mixed `i32.load`.
     pub fn load_i32_mixed(&self, addr: u32, concrete: u64, symbolic_mask: u8) -> Option<I32<W>> {
-        Some(I32::from_le_bytes(self.read_bytes::<4>(addr, concrete, symbolic_mask)?))
+        Some(I32::from_le_bytes(self.read_bytes::<4>(
+            addr,
+            concrete,
+            symbolic_mask,
+        )?))
     }
 
     /// Mixed `i64.load`.
     pub fn load_i64_mixed(&self, addr: u32, concrete: u64, symbolic_mask: u8) -> Option<I64<W>> {
-        Some(I64::from_le_bytes(self.read_bytes::<8>(addr, concrete, symbolic_mask)?))
+        Some(I64::from_le_bytes(self.read_bytes::<8>(
+            addr,
+            concrete,
+            symbolic_mask,
+        )?))
     }
 
     /// Mixed `i32.load8_u`.
     pub fn load_i32_8u_mixed(&self, addr: u32, concrete: u64, symbolic_mask: u8) -> Option<I32<W>> {
-        Some(I32(self.load_extended::<32>(addr, 1, ExtendKind::Zero, concrete, symbolic_mask)?))
+        Some(I32(self.load_extended::<32>(
+            addr,
+            1,
+            ExtendKind::Zero,
+            concrete,
+            symbolic_mask,
+        )?))
     }
 
     /// Mixed `i32.load8_s`.
     pub fn load_i32_8s_mixed(&self, addr: u32, concrete: u64, symbolic_mask: u8) -> Option<I32<W>> {
-        Some(I32(self.load_extended::<32>(addr, 1, ExtendKind::Sign, concrete, symbolic_mask)?))
+        Some(I32(self.load_extended::<32>(
+            addr,
+            1,
+            ExtendKind::Sign,
+            concrete,
+            symbolic_mask,
+        )?))
     }
 
     /// Mixed `i32.load16_u`.
-    pub fn load_i32_16u_mixed(&self, addr: u32, concrete: u64, symbolic_mask: u8) -> Option<I32<W>> {
-        Some(I32(self.load_extended::<32>(addr, 2, ExtendKind::Zero, concrete, symbolic_mask)?))
+    pub fn load_i32_16u_mixed(
+        &self,
+        addr: u32,
+        concrete: u64,
+        symbolic_mask: u8,
+    ) -> Option<I32<W>> {
+        Some(I32(self.load_extended::<32>(
+            addr,
+            2,
+            ExtendKind::Zero,
+            concrete,
+            symbolic_mask,
+        )?))
     }
 
     /// Mixed `i32.load16_s`.
-    pub fn load_i32_16s_mixed(&self, addr: u32, concrete: u64, symbolic_mask: u8) -> Option<I32<W>> {
-        Some(I32(self.load_extended::<32>(addr, 2, ExtendKind::Sign, concrete, symbolic_mask)?))
+    pub fn load_i32_16s_mixed(
+        &self,
+        addr: u32,
+        concrete: u64,
+        symbolic_mask: u8,
+    ) -> Option<I32<W>> {
+        Some(I32(self.load_extended::<32>(
+            addr,
+            2,
+            ExtendKind::Sign,
+            concrete,
+            symbolic_mask,
+        )?))
     }
 
     /// Mixed `i64.load8_u`.
     pub fn load_i64_8u_mixed(&self, addr: u32, concrete: u64, symbolic_mask: u8) -> Option<I64<W>> {
-        Some(I64(self.load_extended::<64>(addr, 1, ExtendKind::Zero, concrete, symbolic_mask)?))
+        Some(I64(self.load_extended::<64>(
+            addr,
+            1,
+            ExtendKind::Zero,
+            concrete,
+            symbolic_mask,
+        )?))
     }
 
     /// Mixed `i64.load8_s`.
     pub fn load_i64_8s_mixed(&self, addr: u32, concrete: u64, symbolic_mask: u8) -> Option<I64<W>> {
-        Some(I64(self.load_extended::<64>(addr, 1, ExtendKind::Sign, concrete, symbolic_mask)?))
+        Some(I64(self.load_extended::<64>(
+            addr,
+            1,
+            ExtendKind::Sign,
+            concrete,
+            symbolic_mask,
+        )?))
     }
 
     /// Mixed `i64.load16_u`.
-    pub fn load_i64_16u_mixed(&self, addr: u32, concrete: u64, symbolic_mask: u8) -> Option<I64<W>> {
-        Some(I64(self.load_extended::<64>(addr, 2, ExtendKind::Zero, concrete, symbolic_mask)?))
+    pub fn load_i64_16u_mixed(
+        &self,
+        addr: u32,
+        concrete: u64,
+        symbolic_mask: u8,
+    ) -> Option<I64<W>> {
+        Some(I64(self.load_extended::<64>(
+            addr,
+            2,
+            ExtendKind::Zero,
+            concrete,
+            symbolic_mask,
+        )?))
     }
 
     /// Mixed `i64.load16_s`.
-    pub fn load_i64_16s_mixed(&self, addr: u32, concrete: u64, symbolic_mask: u8) -> Option<I64<W>> {
-        Some(I64(self.load_extended::<64>(addr, 2, ExtendKind::Sign, concrete, symbolic_mask)?))
+    pub fn load_i64_16s_mixed(
+        &self,
+        addr: u32,
+        concrete: u64,
+        symbolic_mask: u8,
+    ) -> Option<I64<W>> {
+        Some(I64(self.load_extended::<64>(
+            addr,
+            2,
+            ExtendKind::Sign,
+            concrete,
+            symbolic_mask,
+        )?))
     }
 
     /// Mixed `i64.load32_u`.
-    pub fn load_i64_32u_mixed(&self, addr: u32, concrete: u64, symbolic_mask: u8) -> Option<I64<W>> {
-        Some(I64(self.load_extended::<64>(addr, 4, ExtendKind::Zero, concrete, symbolic_mask)?))
+    pub fn load_i64_32u_mixed(
+        &self,
+        addr: u32,
+        concrete: u64,
+        symbolic_mask: u8,
+    ) -> Option<I64<W>> {
+        Some(I64(self.load_extended::<64>(
+            addr,
+            4,
+            ExtendKind::Zero,
+            concrete,
+            symbolic_mask,
+        )?))
     }
 
     /// Mixed `i64.load32_s`.
-    pub fn load_i64_32s_mixed(&self, addr: u32, concrete: u64, symbolic_mask: u8) -> Option<I64<W>> {
-        Some(I64(self.load_extended::<64>(addr, 4, ExtendKind::Sign, concrete, symbolic_mask)?))
+    pub fn load_i64_32s_mixed(
+        &self,
+        addr: u32,
+        concrete: u64,
+        symbolic_mask: u8,
+    ) -> Option<I64<W>> {
+        Some(I64(self.load_extended::<64>(
+            addr,
+            4,
+            ExtendKind::Sign,
+            concrete,
+            symbolic_mask,
+        )?))
     }
 
     /// `i32.store`: 4 little-endian bytes.
@@ -269,13 +367,7 @@ impl<W: Wire> LinearMemory<W> {
     /// bit `i` of `symbolic_mask` is set, otherwise built as a transient public
     /// byte from `concrete` (no map insertion). Returns `None` for an absent
     /// committed byte.
-    fn mixed_byte(
-        &self,
-        addr: u32,
-        i: usize,
-        concrete: u64,
-        symbolic_mask: u8,
-    ) -> Option<Byte<W>> {
+    fn mixed_byte(&self, addr: u32, i: usize, concrete: u64, symbolic_mask: u8) -> Option<Byte<W>> {
         if symbolic_mask & (1 << i) != 0 {
             self.inner.get(&(addr + i as u32)).copied()
         } else {
@@ -301,8 +393,9 @@ impl<W: Wire> LinearMemory<W> {
 
     /// Read `n_bytes` consecutive bytes starting at `addr` (each committed or
     /// public per `symbolic_mask`) and extend to `[Bit; N]` per `kind`.
-    /// Zero-extension fills with the public-0 bit; sign-extension replicates the
-    /// high bit of the last byte (bit 7 of the byte at `addr + n_bytes - 1`).
+    /// Zero-extension fills with the public-0 bit; sign-extension replicates
+    /// the high bit of the last byte (bit 7 of the byte at `addr + n_bytes
+    /// - 1`).
     fn load_extended<const N: usize>(
         &self,
         addr: u32,

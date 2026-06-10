@@ -5,9 +5,7 @@ use super::*;
 pub(crate) fn shift_left_const<W: Copy, const N: usize>(a: [W; N], k: usize, fill: W) -> [W; N] {
     let mut out = [fill; N];
     if k < N {
-        for i in 0..(N - k) {
-            out[i + k] = a[i];
-        }
+        out[k..].copy_from_slice(&a[..N - k]);
     }
     out
 }
@@ -15,9 +13,7 @@ pub(crate) fn shift_left_const<W: Copy, const N: usize>(a: [W; N], k: usize, fil
 pub(crate) fn shift_right_const<W: Copy, const N: usize>(a: [W; N], k: usize, fill: W) -> [W; N] {
     let mut out = [fill; N];
     if k < N {
-        for i in k..N {
-            out[i - k] = a[i];
-        }
+        out[..N - k].copy_from_slice(&a[k..]);
     }
     out
 }
@@ -52,9 +48,9 @@ where
 {
     let log2_n = N.trailing_zeros() as usize;
     let mut result = a;
-    for k in 0..log2_n {
+    for (k, &bk) in b.iter().enumerate().take(log2_n) {
         let shifted = shift_const(result, 1 << k);
-        result = mux_arr(ctx, b[k], shifted, result);
+        result = mux_arr(ctx, bk, shifted, result);
     }
     result
 }
@@ -91,7 +87,7 @@ pub(crate) fn rotl_n<C: Context<Field = Gf2>, const N: usize>(
     a: [C::Wire; N],
     b: [C::Wire; N],
 ) -> [C::Wire; N] {
-    barrel_shift(ctx, a, b, |arr, k| rotate_left_const(arr, k))
+    barrel_shift(ctx, a, b, rotate_left_const)
 }
 
 pub(crate) fn rotr_n<C: Context<Field = Gf2>, const N: usize>(
@@ -99,5 +95,5 @@ pub(crate) fn rotr_n<C: Context<Field = Gf2>, const N: usize>(
     a: [C::Wire; N],
     b: [C::Wire; N],
 ) -> [C::Wire; N] {
-    barrel_shift(ctx, a, b, |arr, k| rotate_right_const(arr, k))
+    barrel_shift(ctx, a, b, rotate_right_const)
 }

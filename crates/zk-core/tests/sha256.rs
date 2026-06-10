@@ -166,9 +166,7 @@ fn sha256_quicksilver_batch_check_accepts() {
 
     let mut verifier = Verifier::new(delta);
     let verifier_out = {
-        let mut exec = verifier
-            .execute(&gate_keys, &gate_masks)
-            .expect("execute");
+        let mut exec = verifier.execute(&gate_keys, &gate_masks).expect("execute");
         let msg_v: [Gf2_128; 512] = core::array::from_fn(|i| input_key_wires[i]);
         let state_v: [Gf2_128; 256] = core::array::from_fn(|i| input_key_wires[512 + i]);
         let out = sha256_compress(&mut exec, msg_v, state_v);

@@ -6,9 +6,9 @@ mod common;
 
 use futures::{executor::block_on, future::join};
 use mpz_common::context::test_st_context;
-use mpz_vm_ir::{ExportKind, Module, ValType};
 use mpz_ot::ideal::rcot::ideal_rcot;
 use mpz_vm_core::{Param, Vm, value::Value};
+use mpz_vm_ir::{ExportKind, Module, ValType};
 use mpz_vm_zk::{Prover, Verifier};
 use rand::{SeedableRng, rngs::StdRng};
 

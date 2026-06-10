@@ -91,10 +91,10 @@ pub(crate) fn schoolbook_full_dyn<C: Context<Field = Gf2>>(
     let total = na + nb;
     let z = zero(ctx);
     let mut acc = vec![z; total];
-    for j in 0..nb {
+    for (j, &bj) in b.iter().enumerate() {
         let mut partial = Vec::with_capacity(na);
-        for i in 0..na {
-            partial.push(ctx.mul(a[i], b[j]));
+        for &ai in a {
+            partial.push(ctx.mul(ai, bj));
         }
         add_at_offset(ctx, &mut acc, &partial, j);
     }
@@ -204,8 +204,6 @@ pub(crate) fn mul_n<C: Context<Field = Gf2>, const N: usize>(
 ) -> [C::Wire; N] {
     let full = karatsuba_full(ctx, &a, &b);
     let mut out = a;
-    for i in 0..N {
-        out[i] = full[i];
-    }
+    out.copy_from_slice(&full[..N]);
     out
 }

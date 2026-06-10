@@ -3,15 +3,15 @@
 //!
 //! `spec_all` runs the entire WASM core spec suite through the real
 //! prover/verifier protocol. The zkVM supports only a subset of WebAssembly, so
-//! the harness is configured to treat unsupported ops, private control flow, and
-//! symbolic value/address errors as expected skips rather than failures.
+//! the harness is configured to treat unsupported ops, private control flow,
+//! and symbolic value/address errors as expected skips rather than failures.
 
 use futures::{executor::block_on, future::try_join};
 use mpz_common::context::test_st_context;
 use mpz_core::Block;
-use mpz_vm_ir::Module;
 use mpz_ot::ideal::rcot::{IdealRCOTReceiver, IdealRCOTSender, ideal_rcot};
 use mpz_vm_core::{Param, Vm, value::Value};
+use mpz_vm_ir::Module;
 use mpz_vm_test_harness::{SpecConfig, SpecVm, run_suite, suites};
 use mpz_vm_zk::{Prover, Verifier, ZkVmError};
 use rand::{Rng, SeedableRng, rngs::StdRng};

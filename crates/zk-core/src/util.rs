@@ -1,4 +1,3 @@
-
 use mpz_fields::gf2_128::Gf2_128;
 
 #[inline]

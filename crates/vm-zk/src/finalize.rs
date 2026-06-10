@@ -1,4 +1,3 @@
-
 use mpz_circuits::Context;
 use mpz_fields::{gf2::Gf2, gf2_128::Gf2_128};
 use mpz_vm_core::{Reg, value::Value};

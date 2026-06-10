@@ -7,9 +7,9 @@ mod common;
 
 use futures::{executor::block_on, future::join};
 use mpz_common::context::test_st_context;
-use mpz_vm_ir::{ExportKind, Module};
 use mpz_ot::ideal::rcot::ideal_rcot;
 use mpz_vm_core::{Param, Vm, value::Value};
+use mpz_vm_ir::{ExportKind, Module};
 use mpz_vm_zk::{Prover, Verifier};
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -25,9 +25,10 @@ fn func_idx(module: &Module, name: &str) -> u32 {
 }
 
 // An all-public, non-trapping call does zero authenticated work (no committed
-// inputs, no gates), so both sides must skip the allocate/commit/challenge/proof
-// exchange in lockstep. `join` (not `try_join`) and `block_on` give a hang
-// nowhere to hide: if either side blocks, the test never returns.
+// inputs, no gates), so both sides must skip the
+// allocate/commit/challenge/proof exchange in lockstep. `join` (not `try_join`)
+// and `block_on` give a hang nowhere to hide: if either side blocks, the test
+// never returns.
 #[test]
 fn test_add_public_no_deadlock() {
     common::init_tracing();

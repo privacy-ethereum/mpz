@@ -41,7 +41,11 @@ fn rcot_stack(seed: u64) -> (VerifierSvole, ProverSvole) {
     let verifier = ferret::Sender::new(
         ferret::FerretConfig::default(),
         rng.random(),
-        kos::Sender::new(kos::SenderConfig::default(), delta, chou_orlandi::Receiver::new()),
+        kos::Sender::new(
+            kos::SenderConfig::default(),
+            delta,
+            chou_orlandi::Receiver::new(),
+        ),
     );
     let prover = ferret::Receiver::new(
         ferret::FerretConfig::default(),
@@ -168,7 +172,10 @@ fn run_reading(wl: &Workload, read: Option<(u32, usize)>) -> (Option<Value>, Opt
             alloc_args(),
             alloc_args(),
         );
-        assert_eq!(rp, rv, "cabi_realloc must return the same pointer on both sides");
+        assert_eq!(
+            rp, rv,
+            "cabi_realloc must return the same pointer on both sides"
+        );
         let ptr = match rp {
             Some(Value::I32(p)) => p as u32,
             other => panic!("cabi_realloc returned {other:?}"),
