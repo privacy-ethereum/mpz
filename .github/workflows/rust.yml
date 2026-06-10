@@ -25,9 +25,6 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2.7.7
 
-      - name: "Build"
-        run: cargo build
-
       - name: "Test"
         # Run all tests (bins, examples, lib, integration and docs)
         # https://doc.rust-lang.org/cargo/commands/cargo-test.html#target-selection
@@ -45,6 +42,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Nightly is required: .rustfmt.toml uses unstable options, and clippy
+      # with --all-features builds matrix-transpose's simd-transpose feature,
+      # which needs the nightly-only portable_simd language feature.
       - name: Install Rust Nightly with rustfmt and clippy
         uses: dtolnay/rust-toolchain@stable
         with:
