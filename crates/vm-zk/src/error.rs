@@ -1,7 +1,6 @@
-
+use mpz_vm_core::{Error as CoreError, Reg, Trap};
 use mpz_vm_ir::ValType;
 use mpz_vm_memory::{AuthValueType, AuthValueWidth};
-use mpz_vm_core::{Error as CoreError, Reg, Trap};
 use thiserror::Error;
 
 #[derive(Debug, Error)]

@@ -1,11 +1,14 @@
 #![cfg_attr(feature = "simd-transpose", feature(portable_simd))]
 
+// The SIMD implementation is portable, but the lane count is tuned per
+// architecture: 32 lanes on x86_64 (AVX2-sized registers), 16 lanes
+// (128-bit registers, e.g. NEON or simd128) everywhere else.
 #[cfg(feature = "simd-transpose")]
 #[cfg(target_arch = "x86_64")]
 pub const LANE_COUNT: usize = 32;
 
 #[cfg(feature = "simd-transpose")]
-#[cfg(target_arch = "wasm32")]
+#[cfg(not(target_arch = "x86_64"))]
 pub const LANE_COUNT: usize = 16;
 
 #[cfg(not(feature = "simd-transpose"))]

@@ -20,8 +20,8 @@ fn func_idx(module: &Module, name: &str) -> u32 {
 }
 
 /// A guest that builds a WASI iovec for a 3-byte string and calls `fd_write` to
-/// stdout, returning the call's errno. The ideal VM must service the import (read
-/// the iovec, emit the bytes, write `nwritten`) and report success.
+/// stdout, returning the call's errno. The ideal VM must service the import
+/// (read the iovec, emit the bytes, write `nwritten`) and report success.
 #[test]
 fn fd_write_host_call_is_serviced() {
     let wat = r#"
@@ -47,9 +47,9 @@ fn fd_write_host_call_is_serviced() {
     assert_eq!(out, Some(Value::I32(0)), "fd_write should report errno 0");
 }
 
-/// A guest that reveals a scalar and waits for it. The ideal VM stages the value
-/// under a handle on `reveal_i32` and returns it on `reveal_i32_wait`, so the
-/// two-phase reveal round-trips to the original value.
+/// A guest that reveals a scalar and waits for it. The ideal VM stages the
+/// value under a handle on `reveal_i32` and returns it on `reveal_i32_wait`, so
+/// the two-phase reveal round-trips to the original value.
 #[test]
 fn scalar_reveal_round_trips() {
     let wat = r#"
@@ -66,12 +66,16 @@ fn scalar_reveal_round_trips() {
     let (mut ctx, _) = test_st_context(8);
 
     let out = block_on(vm.call(&mut ctx, idx, vec![])).unwrap();
-    assert_eq!(out, Some(Value::I32(42)), "reveal/wait should return the value");
+    assert_eq!(
+        out,
+        Some(Value::I32(42)),
+        "reveal/wait should return the value"
+    );
 }
 
-/// A guest that reveals a byte range in memory and then reads it back. The ideal
-/// VM marks the range public on `reveal_bytes_wait`; the bytes are already in
-/// place, so the subsequent load observes them.
+/// A guest that reveals a byte range in memory and then reads it back. The
+/// ideal VM marks the range public on `reveal_bytes_wait`; the bytes are
+/// already in place, so the subsequent load observes them.
 #[test]
 fn byte_reveal_marks_range_public() {
     let wat = r#"
@@ -91,5 +95,9 @@ fn byte_reveal_marks_range_public() {
     let (mut ctx, _) = test_st_context(8);
 
     let out = block_on(vm.call(&mut ctx, idx, vec![])).unwrap();
-    assert_eq!(out, Some(Value::I32(7)), "revealed bytes should be readable");
+    assert_eq!(
+        out,
+        Some(Value::I32(7)),
+        "revealed bytes should be readable"
+    );
 }

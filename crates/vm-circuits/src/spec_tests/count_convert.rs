@@ -1,7 +1,7 @@
-use crate::harness::{from_bits, run_conv, run_un, to_bits};
 use crate::{
-    clz_advice_n, clz_advice_values, clz_n, ctz_advice_n, ctz_advice_values, ctz_n, popcnt_advice_n,
-    popcnt_advice_values, popcnt_n,
+    clz_advice_n, clz_advice_values, clz_n, ctz_advice_n, ctz_advice_values, ctz_n,
+    harness::{from_bits, run_conv, run_un, to_bits},
+    popcnt_advice_n, popcnt_advice_values, popcnt_n,
 };
 use mpz_circuits::{Context, WitnessCtx};
 use mpz_fields::gf2::Gf2;
@@ -22,9 +22,7 @@ fn popcnt_w<C: Context<Field = Gf2>, const N: usize>(ctx: &mut C, a: [C::Wire; N
 fn sign_extend<W: Copy, const N: usize>(a: [W; N], m: usize) -> [W; N] {
     let sign = a[m - 1];
     let mut out = [sign; N];
-    for i in 0..m {
-        out[i] = a[i];
-    }
+    out[..m].copy_from_slice(&a[..m]);
     out
 }
 
@@ -352,9 +350,7 @@ proptest! {
         let got = run_conv::<_, 32, 64>(|_c, a| {
             let sign = a[31];
             let mut out = [sign; 64];
-            for i in 0..32 {
-                out[i] = a[i];
-            }
+            out[..32].copy_from_slice(&a);
             out
         }, v as u64);
         prop_assert_eq!(got, v as i32 as i64 as u64, "extend_s v={:#x}", v);
@@ -365,9 +361,7 @@ proptest! {
         let got = run_conv::<_, 32, 64>(|c, a| {
             let z = crate::zero(c);
             let mut out = [z; 64];
-            for i in 0..32 {
-                out[i] = a[i];
-            }
+            out[..32].copy_from_slice(&a);
             out
         }, v as u64);
         prop_assert_eq!(got, v as u64, "extend_u v={:#x}", v);
@@ -545,9 +539,7 @@ fn wrap_extend_boundaries() {
                 |_c, a| {
                     let sign = a[31];
                     let mut out = [sign; 64];
-                    for i in 0..32 {
-                        out[i] = a[i];
-                    }
+                    out[..32].copy_from_slice(&a);
                     out
                 },
                 v as u64
@@ -560,9 +552,7 @@ fn wrap_extend_boundaries() {
                 |c, a| {
                     let z = crate::zero(c);
                     let mut out = [z; 64];
-                    for i in 0..32 {
-                        out[i] = a[i];
-                    }
+                    out[..32].copy_from_slice(&a);
                     out
                 },
                 v as u64

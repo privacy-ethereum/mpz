@@ -62,7 +62,7 @@ where
         // Pointer-bit convention: delta.lsb must be 1 so the per-wire
         // identity `mac.lsb XOR key.lsb == bit * delta.lsb` holds bitwise.
         if delta.to_inner() & 1 != 1 {
-            return Err(ZkVmError::DeltaLsb.into());
+            return Err(ZkVmError::DeltaLsb);
         }
         let zk = mpz_zk_core::Verifier::new(delta);
         let auth = AuthState::new(Bit(zk.public_bit(false)), Bit(zk.public_bit(true)));
@@ -273,8 +273,7 @@ where
             if outcome.trap_at.is_some() != outcome.trap.is_some() {
                 return Err(ZkVmError::Internal(
                     "trap outcome inconsistent: trap_at and trap must agree".into(),
-                )
-                .into());
+                ));
             }
             // Merge the announced reveal payloads before capture so the verifier
             // can resolve this chunk's reveals (and any later wait) in lockstep.
@@ -312,8 +311,7 @@ where
                     if outcome.trap.as_ref() != Some(&point.trap) {
                         return Err(ZkVmError::Internal(
                             "announced trap reason does not match proven trap".into(),
-                        )
-                        .into());
+                        ));
                     }
                     trapped = Some(point.trap.clone());
                     break;
@@ -350,8 +348,7 @@ where
                     "commit adjust short: got {} want {}",
                     adjust.len(),
                     execute_bits
-                ))
-                .into());
+                )));
             }
             let chi: [u8; 32] = rand::rng().random();
             io.io_mut()
@@ -457,8 +454,7 @@ where
                 if outcome.trap.as_ref() != Some(&point.trap) {
                     return Err(ZkVmError::Internal(
                         "announced trap reason does not match proven trap".into(),
-                    )
-                    .into());
+                    ));
                 }
                 trapped = Some(point.trap.clone());
                 break;
@@ -491,9 +487,9 @@ where
     ///
     /// This mirrors the prover's [`commit`](crate::Prover::commit): a single
     /// proving round commits the wires of every pending [`Write::Blind`] region
-    /// and verifies the prover's opening of every pending [`reveal`](Vm::reveal)
-    /// range, leaving nothing queued. The committed memory wires persist and are
-    /// consumed by a later [`call`](Vm::call).
+    /// and verifies the prover's opening of every pending
+    /// [`reveal`](Vm::reveal) range, leaving nothing queued. The committed
+    /// memory wires persist and are consumed by a later [`call`](Vm::call).
     ///
     /// # Errors
     ///
@@ -596,11 +592,11 @@ where
     ///
     /// # Errors
     ///
-    /// Returns [`ZkVmError::RequiresCommunication`] if `params` carry private or
-    /// blind values, if inputs or reveals remain queued (commit them first), or
-    /// if execution reaches authenticated work. Otherwise returns
-    /// [`ZkVmError::InvalidFunction`] for a bad `func_idx` or [`ZkVmError::Trap`]
-    /// on a trap.
+    /// Returns [`ZkVmError::RequiresCommunication`] if `params` carry private
+    /// or blind values, if inputs or reveals remain queued (commit them
+    /// first), or if execution reaches authenticated work. Otherwise
+    /// returns [`ZkVmError::InvalidFunction`] for a bad `func_idx` or
+    /// [`ZkVmError::Trap`] on a trap.
     fn call_local(
         &mut self,
         func_idx: u32,

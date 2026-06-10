@@ -1,4 +1,5 @@
-//! A zero-knowledge virtual machine for proving execution of `mpz-vm-ir` modules.
+//! A zero-knowledge virtual machine for proving execution of `mpz-vm-ir`
+//! modules.
 //!
 //! This crate provides the two parties of a designated-verifier
 //! zero-knowledge proof of program execution. A program is expressed as an

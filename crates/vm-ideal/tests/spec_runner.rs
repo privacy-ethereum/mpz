@@ -3,9 +3,9 @@
 
 use futures::{executor::block_on, future::try_join};
 use mpz_common::context::test_st_context;
-use mpz_vm_ir::Module;
 use mpz_vm_core::{Param, Vm, value::Value};
 use mpz_vm_ideal::{IdealError, Instance};
+use mpz_vm_ir::Module;
 use mpz_vm_test_harness::{SpecConfig, SpecVm};
 
 /// A pair of ideal-VM instances (single party each, exchanging over an

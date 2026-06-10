@@ -1,9 +1,9 @@
 //! End-to-end tests of guest VCI reveal: a program that reveals private data
 //! must disclose it to the blind verifier, with the disclosure bound to the
-//! committed witness. Each scalar case runs the same program on the prover (with
-//! a private input) and the blind verifier, asserting both return the expected
-//! value — so a verifier that failed to learn the reveal, or learned a wrong
-//! value, fails the test.
+//! committed witness. Each scalar case runs the same program on the prover
+//! (with a private input) and the blind verifier, asserting both return the
+//! expected value — so a verifier that failed to learn the reveal, or learned a
+//! wrong value, fails the test.
 
 mod common;
 
@@ -35,10 +35,10 @@ fn blind(v: &Value) -> Param {
     }
 }
 
-/// Runs `func` on the prover (with `inputs` as private parameters) and the blind
-/// verifier (the same inputs as blinds), under `chunk_cap`, asserting both
-/// return `expected`. The verifier assertion is the substance: it only holds if
-/// the reveal disclosed the value to the party that never held it.
+/// Runs `func` on the prover (with `inputs` as private parameters) and the
+/// blind verifier (the same inputs as blinds), under `chunk_cap`, asserting
+/// both return `expected`. The verifier assertion is the substance: it only
+/// holds if the reveal disclosed the value to the party that never held it.
 fn run(wat: &str, func: &str, inputs: &[Value], expected: Value, chunk_cap: Option<usize>) {
     common::init_tracing();
     let module = Module::parse(&wat::parse_str(wat).expect("valid WAT")).expect("valid module");
@@ -66,7 +66,7 @@ fn run(wat: &str, func: &str, inputs: &[Value], expected: Value, chunk_cap: Opti
         async { verifier.call(&mut ctx_v, idx, v_params).await.unwrap() },
     ));
 
-    assert_eq!(result_p, Some(expected.clone()), "prover result for `{func}`");
+    assert_eq!(result_p, Some(expected), "prover result for `{func}`");
     assert_eq!(
         result_v,
         Some(expected),
@@ -88,10 +88,10 @@ fn scalar_reveal_discloses_private_input() {
     run(wat, "disclose", &[Value::I32(42)], Value::I32(42), None);
 }
 
-/// A revealed value is public, so the program can branch on it — the only way to
-/// get data-dependent control flow in zk-vm, which rejects private branching. If
-/// the reveal failed to make the value public, the verifier would block on the
-/// branch and the call would error.
+/// A revealed value is public, so the program can branch on it — the only way
+/// to get data-dependent control flow in zk-vm, which rejects private
+/// branching. If the reveal failed to make the value public, the verifier would
+/// block on the branch and the call would error.
 #[test]
 fn revealed_value_drives_a_branch() {
     let wat = r#"

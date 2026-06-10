@@ -1,4 +1,5 @@
-//! Core building blocks for the designated-verifier zero-knowledge proof system.
+//! Core building blocks for the designated-verifier zero-knowledge proof
+//! system.
 //!
 //! The protocol runs a boolean circuit between a [`Prover`] and a [`Verifier`].
 //! Evaluating the circuit on each side records the information needed to prove
@@ -26,7 +27,8 @@ pub use verifier::{Verifier, VerifierExecute};
 use mpz_core::bitvec::BitVec;
 use mpz_fields::gf2_128::Gf2_128;
 
-/// A specialized [`Result`](core::result::Result) type for this crate's operations.
+/// A specialized [`Result`](core::result::Result) type for this crate's
+/// operations.
 ///
 /// Defaults the error type to [`Error`].
 pub type Result<T, E = Error> = core::result::Result<T, E>;
@@ -285,9 +287,7 @@ mod tests {
         let bad_adjust = vec![false; i.gate_keys.len() - 1];
 
         let mut verifier = Verifier::new(i.delta);
-        let Error(repr) = verifier
-            .execute(&i.gate_keys, &bad_adjust)
-            .unwrap_err();
+        let Error(repr) = verifier.execute(&i.gate_keys, &bad_adjust).unwrap_err();
         assert!(matches!(repr, ErrorRepr::TapeLength { .. }));
     }
 

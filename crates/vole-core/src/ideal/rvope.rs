@@ -46,8 +46,7 @@ fn generate_polynomials<E: Field>(
                 .map(|_| {
                     let mut buf: Array<u8, E::ByteSize> = Array::default();
                     rng.fill_bytes(buf.as_mut_slice());
-                    E::try_from(buf)
-                        .expect("uniform bytes should yield a valid field element")
+                    E::try_from(buf).expect("uniform bytes should yield a valid field element")
                 })
                 .collect()
         })

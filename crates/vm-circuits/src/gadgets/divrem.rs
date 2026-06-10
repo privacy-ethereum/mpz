@@ -12,9 +12,7 @@ pub(crate) fn divrem_u_n<C: Context<Field = Gf2>, const N: usize>(
     let mut r: [C::Wire; N] = [z; N];
     for i in (0..N).rev() {
         let mut new_r = [z; N];
-        for j in 1..N {
-            new_r[j] = r[j - 1];
-        }
+        new_r[1..].copy_from_slice(&r[..N - 1]);
         new_r[0] = a[i];
         let (diff, borrow) = sub_with_borrow_n(ctx, new_r, b);
         let success = not(ctx, borrow);

@@ -126,9 +126,9 @@ fn maj<C: Context<Field = Gf2>>(
 fn constant_word<C: Context<Field = Gf2>>(ctx: &mut C, v: u32) -> Word<C::Wire> {
     let zero = ctx.constant(Gf2::ZERO);
     let mut out = [zero; 32];
-    for i in 0..32 {
+    for (i, wire) in out.iter_mut().enumerate() {
         let bit = (v >> i) & 1 != 0;
-        out[i] = ctx.constant(Gf2(bit));
+        *wire = ctx.constant(Gf2(bit));
     }
     out
 }

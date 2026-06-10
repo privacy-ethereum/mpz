@@ -28,8 +28,9 @@ use crate::{
 ///
 /// The prover holds the private witness and produces a proof that the module
 /// was executed correctly without revealing that witness. It implements the
-/// [`Vm`] trait, through which a program is loaded with inputs ([`write`](Vm::write)),
-/// run ([`call`](Vm::call)), and queried ([`read`](Vm::read), [`reveal`](Vm::reveal)).
+/// [`Vm`] trait, through which a program is loaded with inputs
+/// ([`write`](Vm::write)), run ([`call`](Vm::call)), and queried
+/// ([`read`](Vm::read), [`reveal`](Vm::reveal)).
 ///
 /// The type parameter `T` is the correlated-randomness channel shared with the
 /// verifier.
@@ -128,8 +129,8 @@ where
     ///
     /// Returns [`ZkVmError::Core`] if the module defines no memory,
     /// [`ZkVmError::Trap`] if the write falls outside the bounds of memory, and
-    /// [`ZkVmError::Unsupported`] for a [`Write::Blind`] input, which the prover
-    /// cannot supply.
+    /// [`ZkVmError::Unsupported`] for a [`Write::Blind`] input, which the
+    /// prover cannot supply.
     fn write(&mut self, ptr: u32, w: Write<'_>) -> Result<(), ZkVmError> {
         let memory = self
             .global
@@ -204,9 +205,10 @@ where
     ///
     /// # Errors
     ///
-    /// Returns [`ZkVmError::InvalidFunction`] if `func_idx` does not name a local
-    /// function. Returns a [`ZkVmError`] if proving fails or communication over
-    /// `io` fails, and [`ZkVmError::Trap`] if execution is proven to trap.
+    /// Returns [`ZkVmError::InvalidFunction`] if `func_idx` does not name a
+    /// local function. Returns a [`ZkVmError`] if proving fails or
+    /// communication over `io` fails, and [`ZkVmError::Trap`] if execution
+    /// is proven to trap.
     #[tracing::instrument(level = "info", skip(self, io, params), fields(func_idx, num_params = params.len(), chunk_cap = ?self.chunk_cap))]
     async fn call(
         &mut self,
@@ -578,8 +580,8 @@ where
     /// Returns [`ZkVmError::RequiresCommunication`] if `params` carry private
     /// or blind values, if inputs or reveals remain queued (commit them first),
     /// or if execution reaches authenticated work. Otherwise returns
-    /// [`ZkVmError::InvalidFunction`] for a bad `func_idx` or [`ZkVmError::Trap`]
-    /// on a trap.
+    /// [`ZkVmError::InvalidFunction`] for a bad `func_idx` or
+    /// [`ZkVmError::Trap`] on a trap.
     fn call_local(
         &mut self,
         func_idx: u32,

@@ -3,9 +3,9 @@
 //!
 //! The crate splits execution into a deterministic, party-agnostic
 //! [`Thread`] interpreter and an embedder that drives it. A thread steps
-//! through an [`mpz_vm_ir`] [`Module`], emitting a stream of [`Directive`]s that
-//! describe the abstract operations to perform. Operations whose operands are
-//! [`Visibility::Private`] or [`Visibility::Blind`] are expressed
+//! through an [`mpz_vm_ir`] [`Module`], emitting a stream of [`Directive`]s
+//! that describe the abstract operations to perform. Operations whose operands
+//! are [`Visibility::Private`] or [`Visibility::Blind`] are expressed
 //! symbolically through [`Operand`] and [`Op`]; operations on
 //! [`Visibility::Public`] data are evaluated concretely in-thread.
 //!
@@ -20,8 +20,8 @@
 //!   [`StepResult`] on each [`Thread::step`], which is passed the shared
 //!   [`Module`] and mutable [`Global`] state.
 //! - When a thread cannot proceed without external input it returns
-//!   [`StepResult::Blocked`] carrying a [`Pending`] request, which the
-//!   embedder satisfies with the matching `Thread::resolve_*` method.
+//!   [`StepResult::Blocked`] carrying a [`Pending`] request, which the embedder
+//!   satisfies with the matching `Thread::resolve_*` method.
 
 pub(crate) mod analysis;
 pub(crate) mod arithmetic;
@@ -84,9 +84,9 @@ pub enum Write<'a> {
 /// effects for a particular execution backend.
 pub trait Vm {
     /// The error type this VM reports. Each backend defines its own, expressing
-    /// the conditions it can actually encounter (interpreter faults, traps, I/O,
-    /// and whatever it deems unsupported) without funnelling through a shared
-    /// umbrella.
+    /// the conditions it can actually encounter (interpreter faults, traps,
+    /// I/O, and whatever it deems unsupported) without funnelling through a
+    /// shared umbrella.
     type Error: core::error::Error;
 
     /// Writes `w` into memory at byte offset `ptr`.
@@ -140,9 +140,9 @@ pub trait Vm {
     /// [`write`](Self::write) and [`reveal`](Self::reveal) stage their effects
     /// for the next exchange, which normally happens at the start of the next
     /// [`call`](Self::call). `commit` performs that exchange on demand: queued
-    /// inputs are committed and queued reveals are opened up front. With nothing
-    /// left pending, a subsequent [`call_local`](Self::call_local) can run with
-    /// no further communication.
+    /// inputs are committed and queued reveals are opened up front. With
+    /// nothing left pending, a subsequent [`call_local`](Self::call_local)
+    /// can run with no further communication.
     ///
     /// # Errors
     ///
@@ -156,18 +156,18 @@ pub trait Vm {
     /// without an `io` context.
     ///
     /// Unlike [`call`](Self::call), this performs no communication with other
-    /// parties: it runs the function only while every step can be evaluated from
-    /// values this party already holds. It is intended for functions whose
-    /// inputs are all public (or have already been committed via
+    /// parties: it runs the function only while every step can be evaluated
+    /// from values this party already holds. It is intended for functions
+    /// whose inputs are all public (or have already been committed via
     /// [`commit`](Self::commit)).
     ///
     /// # Errors
     ///
     /// Returns [`Self::Error`] if the call would require communication — for
-    /// example when private or blind inputs remain uncommitted, when a reveal is
-    /// pending, or when execution reaches a symbolic operation that cannot be
-    /// resolved locally — in addition to the usual failures: an invalid
-    /// `func_idx`, a signature mismatch, or a trap.
+    /// example when private or blind inputs remain uncommitted, when a reveal
+    /// is pending, or when execution reaches a symbolic operation that
+    /// cannot be resolved locally — in addition to the usual failures: an
+    /// invalid `func_idx`, a signature mismatch, or a trap.
     fn call_local(
         &mut self,
         func_idx: u32,

@@ -99,8 +99,8 @@ enum WriteKind {
 /// An ideal-functionality [`Vm`] instance bound to a single [`Module`].
 ///
 /// An `Instance` owns the module's [`Global`] state. Inputs supplied through
-/// [`write`](Vm::write) and reveals requested through [`reveal`](Vm::reveal) are
-/// staged and not exchanged until the next [`call`](Vm::call), after which
+/// [`write`](Vm::write) and reveals requested through [`reveal`](Vm::reveal)
+/// are staged and not exchanged until the next [`call`](Vm::call), after which
 /// execution runs to completion locally because every value is available to the
 /// ideal functionality.
 pub struct Instance {
@@ -136,8 +136,8 @@ impl Instance {
     ///
     /// # Errors
     ///
-    /// Returns a [`IdealError`] if the module declares an unsupported or invalid
-    /// import, or if the global state cannot be initialized.
+    /// Returns a [`IdealError`] if the module declares an unsupported or
+    /// invalid import, or if the global state cannot be initialized.
     pub fn new(module: Module) -> Result<Self, IdealError> {
         validate_imports(&module)?;
         let global = Global::new(&module)?;
@@ -191,7 +191,9 @@ impl Instance {
             .function(func_idx)
             .ok_or(IdealError::Core(CoreError::UndefinedFunction(func_idx)))?;
         let func = match func {
-            Function::Import(_) => return Err(IdealError::Core(CoreError::InvalidFunction(func_idx))),
+            Function::Import(_) => {
+                return Err(IdealError::Core(CoreError::InvalidFunction(func_idx)));
+            }
             Function::Local(func) => func,
         };
         if func.func_type().results.len() > 1 {
@@ -275,7 +277,10 @@ impl Instance {
             let mut mem_to_send: BTreeMap<u32, Vec<u8>> = BTreeMap::new();
 
             {
-                let memory = self.global.memory().ok_or(IdealError::Core(CoreError::MemoryNotDefined))?;
+                let memory = self
+                    .global
+                    .memory()
+                    .ok_or(IdealError::Core(CoreError::MemoryNotDefined))?;
                 for range in self.pending_private.iter() {
                     let len = (range.end - range.start) as usize;
                     mem_to_send.insert(
@@ -310,12 +315,17 @@ impl Instance {
             let received_mem: BTreeMap<u32, Vec<u8>> = io.io_mut().expect_next().await?;
 
             {
-                let memory = self.global.memory_mut().ok_or(IdealError::Core(CoreError::MemoryNotDefined))?;
+                let memory = self
+                    .global
+                    .memory_mut()
+                    .ok_or(IdealError::Core(CoreError::MemoryNotDefined))?;
                 for range in &recv_ranges {
                     let len = (range.end - range.start) as usize;
                     if let Some(data) = received_mem.get(&range.start) {
                         debug_assert_eq!(data.len(), len, "recv region length should match");
-                        memory.write_bytes(range.start, data).map_err(IdealError::Trap)?;
+                        memory
+                            .write_bytes(range.start, data)
+                            .map_err(IdealError::Trap)?;
                     }
                 }
             }
@@ -401,7 +411,11 @@ impl Instance {
             Some(Function::Import(import)) => {
                 (import.module().to_string(), import.name().to_string())
             }
-            _ => return Err(IdealError::Internal("host call to non-import function".into())),
+            _ => {
+                return Err(IdealError::Internal(
+                    "host call to non-import function".into(),
+                ));
+            }
         };
         let arg_value = |i: usize| -> Option<Value> {
             match args.get(i) {
@@ -418,7 +432,10 @@ impl Instance {
                 let iovs = arg_i32(1) as u32;
                 let iovs_len = arg_i32(2) as u32;
                 let nwritten_ptr = arg_i32(3) as u32;
-                let memory = self.global.memory_mut().ok_or(IdealError::Core(CoreError::MemoryNotDefined))?;
+                let memory = self
+                    .global
+                    .memory_mut()
+                    .ok_or(IdealError::Core(CoreError::MemoryNotDefined))?;
                 let mut total = 0u32;
                 for i in 0..iovs_len {
                     let iov = iovs + i * 8;
@@ -427,7 +444,9 @@ impl Instance {
                     let lb = memory.read_bytes(iov + 4, 4).map_err(IdealError::Trap)?;
                     let len = u32::from_le_bytes([lb[0], lb[1], lb[2], lb[3]]);
                     if fd == 1 || fd == 2 {
-                        let data = memory.read_bytes(ptr, len as usize).map_err(IdealError::Trap)?;
+                        let data = memory
+                            .read_bytes(ptr, len as usize)
+                            .map_err(IdealError::Trap)?;
                         if let Ok(s) = std::str::from_utf8(data) {
                             eprint!("{s}");
                         }
@@ -460,7 +479,10 @@ impl Instance {
                 Ok(())
             }
             // Scalar wait: return the staged value, now public.
-            ("vc", "reveal_i32_wait" | "reveal_i64_wait" | "reveal_f32_wait" | "reveal_f64_wait") => {
+            (
+                "vc",
+                "reveal_i32_wait" | "reveal_i64_wait" | "reveal_f32_wait" | "reveal_f64_wait",
+            ) => {
                 let handle = arg_i32(0);
                 match self.reveal_handles.remove(&handle) {
                     Some(RevealEntry::Scalar(value)) => {
@@ -500,7 +522,7 @@ impl Instance {
                 Ok(r) => r,
                 Err(e) => {
                     let e: IdealError = e.into();
-                    self.dump_error(&thread, &e);
+                    self.dump_error(thread, &e);
                     return Err(e);
                 }
             };
@@ -512,9 +534,7 @@ impl Instance {
                     self.service_host_call(thread, func_idx, &args)?;
                 }
                 StepResult::Blocked(
-                    Pending::Branch
-                    | Pending::CallIndirect { .. }
-                    | Pending::MemoryGrow { .. },
+                    Pending::Branch | Pending::CallIndirect { .. } | Pending::MemoryGrow { .. },
                 ) => {
                     // The ideal functionality holds every value (private inputs
                     // are shared on exchange), so symbolic branches, indirect-call
@@ -536,8 +556,9 @@ impl Instance {
     /// that would require communication in a real multi-party backend.
     ///
     /// Host calls are still serviced (the ideal functionality holds every
-    /// value, so reveals are local), but a symbolic [`Op`], a private branch, or
-    /// a block on an unheld value reports [`IdealError::RequiresCommunication`].
+    /// value, so reveals are local), but a symbolic [`Op`], a private branch,
+    /// or a block on an unheld value reports
+    /// [`IdealError::RequiresCommunication`].
     fn run_loop_local(&mut self, thread: &mut Thread) -> Result<Option<Value>, IdealError> {
         loop {
             let result = match thread.step(&self.module, &mut self.global) {
@@ -588,17 +609,18 @@ impl Vm for Instance {
 
     /// Stages a [`Write`] of `len` bytes at `ptr` for the next exchange.
     ///
-    /// The destination region is recorded as pending with the visibility implied
-    /// by `w`. For [`Write::Private`] and [`Write::Public`] the supplied bytes
-    /// are copied into linear memory immediately; for [`Write::Blind`] only the
-    /// region is reserved, to be filled in during the exchange. Staging a region
-    /// overrides any previous pending visibility for the overlapping bytes.
+    /// The destination region is recorded as pending with the visibility
+    /// implied by `w`. For [`Write::Private`] and [`Write::Public`] the
+    /// supplied bytes are copied into linear memory immediately; for
+    /// [`Write::Blind`] only the region is reserved, to be filled in during
+    /// the exchange. Staging a region overrides any previous pending
+    /// visibility for the overlapping bytes.
     ///
     /// # Errors
     ///
-    /// Returns [`IdealError::Internal`] if the region `ptr..ptr + len` overflows
-    /// the address space, or [`IdealError::Core`] if the module has no
-    /// linear memory to receive the bytes.
+    /// Returns [`IdealError::Internal`] if the region `ptr..ptr + len`
+    /// overflows the address space, or [`IdealError::Core`] if the module
+    /// has no linear memory to receive the bytes.
     fn write(&mut self, ptr: u32, w: Write<'_>) -> Result<(), IdealError> {
         let (kind, len) = match w {
             Write::Private(data) => (WriteKind::Private, data.len()),
@@ -608,7 +630,10 @@ impl Vm for Instance {
         let range = range_for(ptr, len)?;
 
         if let Write::Private(data) | Write::Public(data) = w {
-            let memory = self.global.memory_mut().ok_or(IdealError::Core(CoreError::MemoryNotDefined))?;
+            let memory = self
+                .global
+                .memory_mut()
+                .ok_or(IdealError::Core(CoreError::MemoryNotDefined))?;
             memory.write_bytes(ptr, data).map_err(IdealError::Trap)?;
         }
 
@@ -625,8 +650,8 @@ impl Vm for Instance {
     ///
     /// # Errors
     ///
-    /// Returns [`IdealError::Internal`] if the region `ptr..ptr + len` overflows
-    /// the address space.
+    /// Returns [`IdealError::Internal`] if the region `ptr..ptr + len`
+    /// overflows the address space.
     fn reveal(&mut self, ptr: u32, len: usize) -> Result<(), IdealError> {
         let range = range_for(ptr, len)?;
         self.apply_pending(range, WriteKind::Reveal);
@@ -635,9 +660,9 @@ impl Vm for Instance {
 
     /// Returns the `len` bytes of linear memory starting at `ptr`.
     ///
-    /// Only fully public, settled memory may be read: the region must contain no
-    /// symbolic (tainted) bytes and must not overlap a pending blind region
-    /// whose contents have not yet been received.
+    /// Only fully public, settled memory may be read: the region must contain
+    /// no symbolic (tainted) bytes and must not overlap a pending blind
+    /// region whose contents have not yet been received.
     ///
     /// # Errors
     ///
@@ -660,11 +685,15 @@ impl Vm for Instance {
                 )));
             }
         }
-        let memory = self.global.memory().ok_or(IdealError::Core(CoreError::MemoryNotDefined))?;
+        let memory = self
+            .global
+            .memory()
+            .ok_or(IdealError::Core(CoreError::MemoryNotDefined))?;
         memory.read_bytes(ptr, len).map_err(IdealError::Trap)
     }
 
-    /// Calls the function at `func_idx` with `params` and runs it to completion.
+    /// Calls the function at `func_idx` with `params` and runs it to
+    /// completion.
     ///
     /// Any pending memory regions and private or blind parameters are exchanged
     /// over `io` before execution begins; the ideal functionality then runs the
@@ -725,8 +754,8 @@ impl Vm for Instance {
     /// Returns [`IdealError::RequiresCommunication`] if `params` carry private
     /// or blind values, if any private/blind/reveal region is still pending, or
     /// if execution reaches a step that is not locally resolvable. Otherwise
-    /// returns a [`IdealError`] for an invalid `func_idx`, a signature mismatch,
-    /// or a trap.
+    /// returns a [`IdealError`] for an invalid `func_idx`, a signature
+    /// mismatch, or a trap.
     fn call_local(
         &mut self,
         func_idx: u32,
@@ -784,9 +813,9 @@ fn range_for(ptr: u32, len: usize) -> Result<Range<u32>, IdealError> {
 ///
 /// # Errors
 ///
-/// Returns [`IdealError::UnsupportedImport`] for an import the ideal VM does not
-/// service, or [`IdealError::ImportSignatureMismatch`] for a serviced import
-/// declared with an unexpected signature.
+/// Returns [`IdealError::UnsupportedImport`] for an import the ideal VM does
+/// not service, or [`IdealError::ImportSignatureMismatch`] for a serviced
+/// import declared with an unexpected signature.
 fn validate_imports(module: &Module) -> Result<(), IdealError> {
     for func in module.functions() {
         let Function::Import(import) = func else {

@@ -138,30 +138,22 @@ mod tests {
     #[test]
     fn costs_match_gate_counts() {
         assert_cost!(I32Clz::COST, |ctx| I32Clz::eval(ctx, dummy_i32()));
-        assert_cost!(I32Clz::COST_WITH_ADVICE - I32Clz::ADVICE, |ctx| I32Clz::eval_with_advice(
-            ctx,
-            dummy_i32(),
-            dummy_i32()
-        ));
+        assert_cost!(I32Clz::COST_WITH_ADVICE - I32Clz::ADVICE, |ctx| {
+            I32Clz::eval_with_advice(ctx, dummy_i32(), dummy_i32())
+        });
         assert_cost!(I32Ctz::COST, |ctx| I32Ctz::eval(ctx, dummy_i32()));
-        assert_cost!(I32Ctz::COST_WITH_ADVICE - I32Ctz::ADVICE, |ctx| I32Ctz::eval_with_advice(
-            ctx,
-            dummy_i32(),
-            dummy_i32()
-        ));
+        assert_cost!(I32Ctz::COST_WITH_ADVICE - I32Ctz::ADVICE, |ctx| {
+            I32Ctz::eval_with_advice(ctx, dummy_i32(), dummy_i32())
+        });
         assert_cost!(I32Popcnt::COST, |ctx| I32Popcnt::eval(ctx, dummy_i32()));
         assert_cost!(I64Clz::COST, |ctx| I64Clz::eval(ctx, dummy_i64()));
-        assert_cost!(I64Clz::COST_WITH_ADVICE - I64Clz::ADVICE, |ctx| I64Clz::eval_with_advice(
-            ctx,
-            dummy_i64(),
-            dummy_i64()
-        ));
+        assert_cost!(I64Clz::COST_WITH_ADVICE - I64Clz::ADVICE, |ctx| {
+            I64Clz::eval_with_advice(ctx, dummy_i64(), dummy_i64())
+        });
         assert_cost!(I64Ctz::COST, |ctx| I64Ctz::eval(ctx, dummy_i64()));
-        assert_cost!(I64Ctz::COST_WITH_ADVICE - I64Ctz::ADVICE, |ctx| I64Ctz::eval_with_advice(
-            ctx,
-            dummy_i64(),
-            dummy_i64()
-        ));
+        assert_cost!(I64Ctz::COST_WITH_ADVICE - I64Ctz::ADVICE, |ctx| {
+            I64Ctz::eval_with_advice(ctx, dummy_i64(), dummy_i64())
+        });
         assert_cost!(I64Popcnt::COST, |ctx| I64Popcnt::eval(ctx, dummy_i64()));
     }
 }

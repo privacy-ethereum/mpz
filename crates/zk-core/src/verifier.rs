@@ -1,4 +1,3 @@
-
 use blake3::Hasher;
 use mpz_circuits::Context;
 use mpz_fields::{gf2::Gf2, gf2_128::Gf2_128};
@@ -43,20 +42,16 @@ impl Verifier {
     /// Key of a public bit: `key_one` (`MAC_ONE + delta`) for `true`,
     /// `key_zero` ([`MAC_ZERO`]) for `false`.
     pub fn public_bit(&self, bit: bool) -> Gf2_128 {
-        if bit {
-            self.key_one
-        } else {
-            self.key_zero
-        }
+        if bit { self.key_one } else { self.key_zero }
     }
 
-    /// Begins evaluating a circuit, returning a [`VerifierExecute`] that records
-    /// evaluation state into this verifier.
+    /// Begins evaluating a circuit, returning a [`VerifierExecute`] that
+    /// records evaluation state into this verifier.
     ///
     /// `keys` is the tape of verifier keys, one entry per input bit and per AND
-    /// gate, consumed in evaluation order. `adjust` is the corresponding tape of
-    /// adjustment bits received from the prover; each entry selects whether the
-    /// matching key is offset by `delta`.
+    /// gate, consumed in evaluation order. `adjust` is the corresponding tape
+    /// of adjustment bits received from the prover; each entry selects
+    /// whether the matching key is offset by `delta`.
     ///
     /// # Errors
     ///
@@ -146,10 +141,7 @@ impl VerifierExecute<'_> {
     /// Panics if the key or adjustment tape has been exhausted.
     pub fn input(&mut self) -> Gf2_128 {
         let i = self.cursor;
-        let raw = *self
-            .keys
-            .get(i)
-            .expect("key tape exhausted during input");
+        let raw = *self.keys.get(i).expect("key tape exhausted during input");
         let adj = *self
             .adjust
             .get(i)
@@ -162,8 +154,8 @@ impl VerifierExecute<'_> {
 
     /// Returns the verifier key for a public input wire carrying `bit`.
     ///
-    /// Public inputs consume no tape entries, since their value is known to both
-    /// parties.
+    /// Public inputs consume no tape entries, since their value is known to
+    /// both parties.
     pub fn input_public(&self, bit: bool) -> Gf2_128 {
         if bit { *self.key_one } else { *self.key_zero }
     }

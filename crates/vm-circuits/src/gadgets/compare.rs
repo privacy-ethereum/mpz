@@ -8,8 +8,8 @@ pub(crate) fn eqz_n<C: Context<Field = Gf2>, const N: usize>(
 ) -> C::Wire {
     let one_w = one(ctx);
     let mut acc = ctx.add(a[0], one_w);
-    for i in 1..N {
-        let inv = ctx.add(a[i], one_w);
+    for &w in &a[1..] {
+        let inv = ctx.add(w, one_w);
         acc = ctx.mul(acc, inv);
     }
     acc

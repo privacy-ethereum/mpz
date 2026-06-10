@@ -8,9 +8,9 @@ pub(crate) fn popcnt_n<C: Context<Field = Gf2>, const N: usize>(
 ) -> [C::Wire; N] {
     let z = zero(ctx);
     let mut count: [C::Wire; N] = [z; N];
-    for i in 0..N {
+    for bit in a {
         let mut inc = [z; N];
-        inc[0] = a[i];
+        inc[0] = bit;
         count = add_n(ctx, count, inc);
     }
     count
@@ -46,8 +46,7 @@ pub(crate) fn ctz_n<C: Context<Field = Gf2>, const N: usize>(
     let z = zero(ctx);
     let mut count: [C::Wire; N] = [z; N];
     let mut done = z;
-    for i in 0..N {
-        let bit = a[i];
+    for bit in a {
         let not_done = not(ctx, done);
         let inc_bit = {
             let not_bit = not(ctx, bit);
@@ -68,9 +67,7 @@ pub(crate) fn sign_extend_low_in_place<C: Context<Field = Gf2>, const N: usize>(
 ) -> [C::Wire; N] {
     let sign = a[m - 1];
     let mut out = [sign; N];
-    for i in 0..m {
-        out[i] = a[i];
-    }
+    out[..m].copy_from_slice(&a[..m]);
     out
 }
 

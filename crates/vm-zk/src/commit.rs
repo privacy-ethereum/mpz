@@ -1,4 +1,3 @@
-
 use mpz_vm_core::{Error as CoreError, Global, Param, Reg, value::Value};
 use mpz_zk_core::{ProverExecute, VerifierExecute};
 use rangeset::set::RangeSet;
@@ -95,14 +94,20 @@ pub(crate) fn commit_memory_prover(
     if pending.cost_bits() == 0 {
         return Ok(());
     }
-    let mem = global.memory().ok_or(ZkVmError::Core(CoreError::MemoryNotDefined))?;
+    let mem = global
+        .memory()
+        .ok_or(ZkVmError::Core(CoreError::MemoryNotDefined))?;
     for range in pending.ranges() {
         let len = (range.end - range.start) as usize;
-        let bytes = mem.read_bytes(range.start, len).map_err(ZkVmError::Trap)?.to_vec();
+        let bytes = mem
+            .read_bytes(range.start, len)
+            .map_err(ZkVmError::Trap)?
+            .to_vec();
         for (i, value) in bytes.into_iter().enumerate() {
             let addr = range.start + i as u32;
-            let byte_bits =
-                Byte::new(core::array::from_fn(|bit_idx| Bit(exec.input((value >> bit_idx) & 1 != 0))));
+            let byte_bits = Byte::new(core::array::from_fn(|bit_idx| {
+                Bit(exec.input((value >> bit_idx) & 1 != 0))
+            }));
             auth.memory.set_byte(addr, byte_bits);
         }
     }

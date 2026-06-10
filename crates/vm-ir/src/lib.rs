@@ -3,12 +3,7 @@ mod parser;
 #[cfg(test)]
 mod tests;
 
-use std::{
-    collections::HashMap,
-    fmt,
-    ops::Add,
-    sync::Arc,
-};
+use std::{collections::HashMap, fmt, ops::Add, sync::Arc};
 
 use thiserror::Error;
 
@@ -505,10 +500,7 @@ pub struct Element {
 #[derive(Debug, Clone, PartialEq)]
 pub enum ElementKind {
     Passive,
-    Active {
-        table_index: u32,
-        offset: ConstExpr,
-    },
+    Active { table_index: u32, offset: ConstExpr },
     Declared,
 }
 

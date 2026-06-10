@@ -1,4 +1,3 @@
-
 use crate::bitset::BitSet;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

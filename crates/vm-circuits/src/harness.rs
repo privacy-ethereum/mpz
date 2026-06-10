@@ -3,16 +3,16 @@ use mpz_fields::gf2::Gf2;
 
 pub(crate) fn to_bits<const N: usize>(v: u64) -> [Gf2; N] {
     let mut out = [Gf2(false); N];
-    for i in 0..N {
-        out[i] = Gf2((v >> i) & 1 != 0);
+    for (i, bit) in out.iter_mut().enumerate() {
+        *bit = Gf2((v >> i) & 1 != 0);
     }
     out
 }
 
 pub(crate) fn from_bits<const N: usize>(b: [Gf2; N]) -> u64 {
     let mut v = 0u64;
-    for i in 0..N {
-        if b[i].0 {
+    for (i, bit) in b.iter().enumerate() {
+        if bit.0 {
             v |= 1u64 << i;
         }
     }
@@ -71,7 +71,6 @@ pub(crate) fn prng() -> impl Iterator<Item = u64> {
         Some(state)
     })
 }
-
 
 pub(crate) fn pairs_u64(n: usize) -> Vec<(u64, u64)> {
     let mut p = prng();

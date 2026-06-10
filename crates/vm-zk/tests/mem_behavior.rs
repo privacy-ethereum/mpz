@@ -13,9 +13,9 @@ use futures::{
 };
 use mpz_common::context::test_st_context;
 use mpz_core::Block;
-use mpz_vm_ir::Module;
 use mpz_ot::ideal::rcot::ideal_rcot;
 use mpz_vm_core::{Param, Vm, Write, value::Value};
+use mpz_vm_ir::Module;
 use mpz_vm_test_harness::behavior::{
     Agreement, MemStep, MemVm, Observation, ReadOutcome, func_index, parse_module,
 };
@@ -135,7 +135,10 @@ fn read_outcome(result: Result<&[u8], ZkVmError>) -> ReadOutcome {
     }
 }
 
-fn agreement(a: Result<Option<Value>, ZkVmError>, b: Result<Option<Value>, ZkVmError>) -> Agreement {
+fn agreement(
+    a: Result<Option<Value>, ZkVmError>,
+    b: Result<Option<Value>, ZkVmError>,
+) -> Agreement {
     match (a, b) {
         (Ok(a), Ok(b)) if a == b => Agreement::Agreed,
         _ => Agreement::Disagreed,

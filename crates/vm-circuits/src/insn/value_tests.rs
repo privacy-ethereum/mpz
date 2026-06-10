@@ -1,7 +1,6 @@
 use super::*;
 use mpz_circuits::Context;
-use mpz_fields::gf2::Gf2;
-use mpz_fields::gf2_128::Gf2_128;
+use mpz_fields::{gf2::Gf2, gf2_128::Gf2_128};
 use mpz_vm_memory::{I32, I64};
 
 struct EvalCtx;
@@ -28,7 +27,11 @@ impl Context for EvalCtx {
     }
 
     fn assert_const(&mut self, v: Gf2_128, expected: Gf2) -> Result<(), ()> {
-        let exp = if expected.0 { Gf2_128::ONE } else { Gf2_128::ZERO };
+        let exp = if expected.0 {
+            Gf2_128::ONE
+        } else {
+            Gf2_128::ZERO
+        };
         if v == exp { Ok(()) } else { Err(()) }
     }
 }
@@ -139,7 +142,11 @@ fn eval_const_lowering() {
             );
             if k != 0 {
                 assert_eq!(
-                    i32_out(I32DivU::eval_const_divisor(&mut EvalCtx, i32_in(a), k as i32)),
+                    i32_out(I32DivU::eval_const_divisor(
+                        &mut EvalCtx,
+                        i32_in(a),
+                        k as i32
+                    )),
                     a / k
                 );
             }
@@ -158,7 +165,11 @@ fn const_shift_amount() {
                 "shl v={v:#x} n={n}"
             );
             assert_eq!(
-                i32_out(I32ShrU::eval_const_amount(&mut EvalCtx, i32_in(v), n as i32)),
+                i32_out(I32ShrU::eval_const_amount(
+                    &mut EvalCtx,
+                    i32_in(v),
+                    n as i32
+                )),
                 v.wrapping_shr(m),
                 "shr_u v={v:#x} n={n}"
             );
@@ -188,7 +199,11 @@ fn const_shift_amount() {
                 "i64 shl v={v:#x} n={n}"
             );
             assert_eq!(
-                i64_out(I64ShrU::eval_const_amount(&mut EvalCtx, i64_in(v), n as i64)),
+                i64_out(I64ShrU::eval_const_amount(
+                    &mut EvalCtx,
+                    i64_in(v),
+                    n as i64
+                )),
                 v.wrapping_shr(m),
                 "i64 shr_u v={v:#x} n={n}"
             );
@@ -244,10 +259,7 @@ fn conversions() {
             i64_out(I64Extend32S::eval(&mut EvalCtx, i64_in(v))),
             ((v as i64) << 32 >> 32) as u64
         );
-        assert_eq!(
-            i32_out(I32WrapI64::eval(&mut EvalCtx, i64_in(v))),
-            v as u32
-        );
+        assert_eq!(i32_out(I32WrapI64::eval(&mut EvalCtx, i64_in(v))), v as u32);
     }
 }
 
@@ -296,16 +308,28 @@ fn divrem_advice_roundtrip() {
             let (q, r) = I32DivU::advice_values(a, b);
             assert_eq!(
                 i32_out(
-                    I32DivU::eval_with_advice(&mut EvalCtx, i32_in(a), i32_in(b), i32_in(q as u32), i32_in(r as u32))
-                        .expect("honest")
+                    I32DivU::eval_with_advice(
+                        &mut EvalCtx,
+                        i32_in(a),
+                        i32_in(b),
+                        i32_in(q),
+                        i32_in(r)
+                    )
+                    .expect("honest")
                 ),
                 a / b
             );
             let (q, r) = I32RemU::advice_values(a, b);
             assert_eq!(
                 i32_out(
-                    I32RemU::eval_with_advice(&mut EvalCtx, i32_in(a), i32_in(b), i32_in(q as u32), i32_in(r as u32))
-                        .expect("honest")
+                    I32RemU::eval_with_advice(
+                        &mut EvalCtx,
+                        i32_in(a),
+                        i32_in(b),
+                        i32_in(q),
+                        i32_in(r)
+                    )
+                    .expect("honest")
                 ),
                 a % b
             );
@@ -313,16 +337,28 @@ fn divrem_advice_roundtrip() {
             let (q, r) = I32DivS::advice_values(sa, sb);
             assert_eq!(
                 i32_out(
-                    I32DivS::eval_with_advice(&mut EvalCtx, i32_in(a), i32_in(b), i32_in(q as u32), i32_in(r as u32))
-                        .expect("honest")
+                    I32DivS::eval_with_advice(
+                        &mut EvalCtx,
+                        i32_in(a),
+                        i32_in(b),
+                        i32_in(q as u32),
+                        i32_in(r as u32)
+                    )
+                    .expect("honest")
                 ) as i32,
                 sa.wrapping_div(sb)
             );
             let (q, r) = I32RemS::advice_values(sa, sb);
             assert_eq!(
                 i32_out(
-                    I32RemS::eval_with_advice(&mut EvalCtx, i32_in(a), i32_in(b), i32_in(q as u32), i32_in(r as u32))
-                        .expect("honest")
+                    I32RemS::eval_with_advice(
+                        &mut EvalCtx,
+                        i32_in(a),
+                        i32_in(b),
+                        i32_in(q as u32),
+                        i32_in(r as u32)
+                    )
+                    .expect("honest")
                 ) as i32,
                 sa.wrapping_rem(sb)
             );
@@ -336,8 +372,14 @@ fn divrem_advice_roundtrip() {
             let (q, r) = I64DivU::advice_values(a, b);
             assert_eq!(
                 i64_out(
-                    I64DivU::eval_with_advice(&mut EvalCtx, i64_in(a), i64_in(b), i64_in(q as u64), i64_in(r as u64))
-                        .expect("honest")
+                    I64DivU::eval_with_advice(
+                        &mut EvalCtx,
+                        i64_in(a),
+                        i64_in(b),
+                        i64_in(q),
+                        i64_in(r)
+                    )
+                    .expect("honest")
                 ),
                 a / b
             );
@@ -370,10 +412,12 @@ fn count_advice_roundtrip() {
 
 #[test]
 fn advice_soundness_rejects_dishonest() {
-    let bad = I32DivU::eval_with_advice(&mut EvalCtx, i32_in(100), i32_in(7), i32_in(0), i32_in(100));
+    let bad =
+        I32DivU::eval_with_advice(&mut EvalCtx, i32_in(100), i32_in(7), i32_in(0), i32_in(100));
     assert!(bad.is_err(), "r >= b must be rejected");
 
-    let bad = I32DivU::eval_with_advice(&mut EvalCtx, i32_in(100), i32_in(7), i32_in(13), i32_in(2));
+    let bad =
+        I32DivU::eval_with_advice(&mut EvalCtx, i32_in(100), i32_in(7), i32_in(13), i32_in(2));
     assert!(bad.is_err(), "q*b + r != a must be rejected");
 
     let h = I32Clz::advice_values(0xF0) ^ 1;

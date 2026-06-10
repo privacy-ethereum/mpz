@@ -16,16 +16,17 @@ pub struct Call {
 
 /// An argument supplied to a function call.
 ///
-/// Each variant determines both the value and its [`Visibility`](crate::Visibility):
-/// whether it is known to the caller, shared publicly, or hidden from the
-/// caller entirely.
+/// Each variant determines both the value and its
+/// [`Visibility`](crate::Visibility): whether it is known to the caller, shared
+/// publicly, or hidden from the caller entirely.
 #[derive(Debug, Clone)]
 pub enum Param {
     /// A private argument whose value is known to the caller but kept secret.
     Private(Value),
     /// A public argument whose value is known to all parties.
     Public(Value),
-    /// A blinded argument of the given type whose value is unknown to the caller.
+    /// A blinded argument of the given type whose value is unknown to the
+    /// caller.
     Blind(ValType),
 }
 

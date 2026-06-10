@@ -12,9 +12,7 @@ pub(crate) struct MPCOTReceiver<T: state::State = Initialized> {
 impl MPCOTReceiver {
     /// Creates a new Receiver.
     pub(crate) fn new() -> Self {
-        MPCOTReceiver {
-            state: Initialized,
-        }
+        MPCOTReceiver { state: Initialized }
     }
 }
 

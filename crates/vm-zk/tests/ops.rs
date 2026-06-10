@@ -1,6 +1,7 @@
 //! Integration tests that route a PRIVATE value through linear memory under the
 //! real prover/verifier protocol — store an authenticated value, load it back
-//! (incl. partial widths and sign/zero extension), and check both parties agree.
+//! (incl. partial widths and sign/zero extension), and check both parties
+//! agree.
 //!
 //! Plain op/result correctness (arithmetic, bitwise, compare, count, div/rem,
 //! conversions, call-arg propagation) with private inputs is covered far more
@@ -13,9 +14,9 @@ mod common;
 
 use futures::{executor::block_on, future::join};
 use mpz_common::context::test_st_context;
-use mpz_vm_ir::{ExportKind, Module};
 use mpz_ot::ideal::rcot::ideal_rcot;
 use mpz_vm_core::{Param, Trap, Vm, value::Value};
+use mpz_vm_ir::{ExportKind, Module};
 use mpz_vm_zk::{Prover, Verifier, ZkVmError};
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -62,12 +63,13 @@ fn run_private(wat: &str, func: &str, inputs: &[Value], expected: Value) {
         async { verifier.call(&mut ctx_v, idx, v_params).await.unwrap() },
     ));
 
-    assert_eq!(result_p, Some(expected.clone()), "prover result for `{func}`");
+    assert_eq!(result_p, Some(expected), "prover result for `{func}`");
     assert_eq!(result_v, Some(expected), "verifier result for `{func}`");
 }
 
 /// A module that stores its private param at a fixed address and loads it back:
-/// `(func (param ty) (result ty) i32.const 16 local.get 0 <store> i32.const 16 <load>)`.
+/// `(func (param ty) (result ty) i32.const 16 local.get 0 <store> i32.const 16
+/// <load>)`.
 fn mem_roundtrip_module(ty: &str, store: &str, load: &str) -> String {
     format!(
         "(module (memory 1) \
@@ -110,16 +112,21 @@ fn i32_mem_partial_widths_private() {
 fn i64_mem_partial_widths_private() {
     // store32 then load32_s of 0x8000_0000 -> sign-extended to i64.
     let s = mem_roundtrip_module("i64", "i64.store32", "i64.load32_s");
-    run_private(&s, "f", &[Value::I64(0x8000_0000)], Value::I64(-0x8000_0000));
+    run_private(
+        &s,
+        "f",
+        &[Value::I64(0x8000_0000)],
+        Value::I64(-0x8000_0000),
+    );
     let u = mem_roundtrip_module("i64", "i64.store32", "i64.load32_u");
     run_private(&u, "f", &[Value::I64(0x8000_0000)], Value::I64(0x8000_0000));
 }
 
 /// Run `func` on both sides expecting it to trap. The prover holds the operands
 /// and self-discovers the trap; the verifier's operands are blind, so it cannot
-/// decide the trap locally and must detect it by matching the prover's announced
-/// trap index against the emitted (could-trap) directive. Asserts both sides
-/// surface `expected`.
+/// decide the trap locally and must detect it by matching the prover's
+/// announced trap index against the emitted (could-trap) directive. Asserts
+/// both sides surface `expected`.
 fn run_private_trap(wat: &str, func: &str, inputs: &[Value], expected: Trap) {
     common::init_tracing();
     let binary = wat::parse_str(wat).expect("valid WAT");
@@ -158,7 +165,12 @@ fn run_private_trap(wat: &str, func: &str, inputs: &[Value], expected: Trap) {
 fn div_u_by_zero_traps_private() {
     let wat = "(module (func $f (export \"f\") (param i32 i32) (result i32) \
                local.get 0 local.get 1 i32.div_u))";
-    run_private_trap(wat, "f", &[Value::I32(6), Value::I32(0)], Trap::DivideByZero);
+    run_private_trap(
+        wat,
+        "f",
+        &[Value::I32(6), Value::I32(0)],
+        Trap::DivideByZero,
+    );
 }
 
 #[test]

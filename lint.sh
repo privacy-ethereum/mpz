@@ -1,7 +1,8 @@
 #!/bin/sh
 
-# This script is used to run checks before committing changes to the repository.
-# It is a good approximation of what CI will do.
+# Formatting and lint checks for the workspace. CI runs this same script
+# (see .github/workflows/rust.yml), so passing locally means the Rustfmt
+# and Clippy job will pass too.
 
 # Fail if any command fails
 set -e

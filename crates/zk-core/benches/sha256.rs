@@ -103,7 +103,9 @@ fn setup_inputs(num_blocks: usize) -> BenchInputs {
 
     let (delta, raw_keys, choices, macs) = sample_rcot(&mut rng, total);
 
-    let input_adjust: Vec<bool> = (0..input_count).map(|i| input_bits[i] ^ choices[i]).collect();
+    let input_adjust: Vec<bool> = (0..input_count)
+        .map(|i| input_bits[i] ^ choices[i])
+        .collect();
     let input_mac_wires: Vec<Gf2_128> = (0..input_count)
         .map(|i| set_lsb(macs[i], input_bits[i]))
         .collect();
@@ -135,7 +137,9 @@ fn setup_inputs(num_blocks: usize) -> BenchInputs {
     let mut gate_adjust = gate_masks.clone();
     let mut prover = Prover::new();
     {
-        let mut exec = prover.execute(&mut gate_adjust, &gate_macs).expect("execute");
+        let mut exec = prover
+            .execute(&mut gate_adjust, &gate_macs)
+            .expect("execute");
         let _ = sha256_chain(&mut exec, state_p, &msg_p);
         exec.finish().expect("finish");
     }
@@ -166,7 +170,9 @@ fn run_prover(inputs: &BenchInputs, num_blocks: usize) {
     let mut masks = inputs.gate_masks.clone();
     let mut prover = Prover::new();
     {
-        let mut exec = prover.execute(&mut masks, &inputs.gate_macs).expect("execute");
+        let mut exec = prover
+            .execute(&mut masks, &inputs.gate_macs)
+            .expect("execute");
         let _ = sha256_chain(&mut exec, state, &msg_blocks);
         exec.finish().expect("finish");
     }

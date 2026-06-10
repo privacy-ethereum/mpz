@@ -51,15 +51,12 @@ jobs:
         with:
           toolchain: nightly
           components: rustfmt, clippy
-          targets: wasm32-unknown-unknown
 
       - uses: Swatinem/rust-cache@v2.7.7
 
-      - name: "Check formatting"
-        run: cargo +nightly fmt --check --all
-
-      - name: Run Clippy
-        run: cargo +nightly clippy --workspace --all-targets --all-features -- -D warnings
+      - name: "Check formatting and clippy"
+        # Same script developers run locally
+        run: ./lint.sh
 
   miri:
     if: ( ! github.event.pull_request.draft )

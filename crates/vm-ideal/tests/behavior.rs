@@ -8,9 +8,9 @@ use futures::{
     future::{join, try_join},
 };
 use mpz_common::context::test_st_context;
-use mpz_vm_ir::Module;
 use mpz_vm_core::{Param, Vm, Write, value::Value};
 use mpz_vm_ideal::{IdealError, Instance};
+use mpz_vm_ir::Module;
 use mpz_vm_test_harness::behavior::{
     Agreement, MemStep, MemVm, Observation, ReadOutcome, func_index, parse_module,
 };
@@ -91,7 +91,10 @@ impl MemVm for IdealPair {
                 }
                 MemStep::Commit => {
                     let (mut ctx_a, mut ctx_b) = test_st_context(8);
-                    block_on(try_join(self.a.commit(&mut ctx_a), self.b.commit(&mut ctx_b)))?;
+                    block_on(try_join(
+                        self.a.commit(&mut ctx_a),
+                        self.b.commit(&mut ctx_b),
+                    ))?;
                 }
                 MemStep::CallLocal { func, args } => {
                     let idx = func_index(self.a.module(), func)
@@ -158,10 +161,16 @@ fn call_local_rejects_symbolic_execution() {
     )
     .unwrap();
     let mut pair = IdealPair::instantiate(&module).unwrap();
-    pair.a.write(0, Write::Private(&7i32.to_le_bytes())).unwrap();
+    pair.a
+        .write(0, Write::Private(&7i32.to_le_bytes()))
+        .unwrap();
     pair.b.write(0, Write::Blind(4)).unwrap();
     let (mut ctx_a, mut ctx_b) = test_st_context(8);
-    block_on(try_join(pair.a.commit(&mut ctx_a), pair.b.commit(&mut ctx_b))).unwrap();
+    block_on(try_join(
+        pair.a.commit(&mut ctx_a),
+        pair.b.commit(&mut ctx_b),
+    ))
+    .unwrap();
     let idx = func_index(pair.a.module(), "loadadd").unwrap();
     let err = pair.a.call_local(idx, vec![]).unwrap_err();
     assert!(

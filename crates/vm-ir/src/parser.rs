@@ -3,9 +3,7 @@ mod const_expr;
 mod sections;
 mod translate;
 
-use wasmparser::{
-    BinaryReader, CompositeInnerType, Parser, Payload, TypeRef,
-};
+use wasmparser::{BinaryReader, CompositeInnerType, Parser, Payload, TypeRef};
 
 use crate::{
     Data, Element, Export, FuncType, Function, Global, GlobalType, ImportedFunction, Local,
@@ -262,14 +260,14 @@ pub fn parse_module(bytes: &[u8]) -> Result<Module> {
     }
 
     // Validate data count if present
-    if let Some(count) = data_count {
-        if data.len() != count as usize {
-            return Err(ValidationError::DataCountMismatch {
-                expected: count,
-                actual: data.len() as u32,
-            }
-            .into());
+    if let Some(count) = data_count
+        && data.len() != count as usize
+    {
+        return Err(ValidationError::DataCountMismatch {
+            expected: count,
+            actual: data.len() as u32,
         }
+        .into());
     }
 
     Ok(Module {

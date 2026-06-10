@@ -1,15 +1,14 @@
 use super::{LANE_COUNT, TransposeError};
 use std::{
     ops::ShlAssign,
-    simd::{Simd, SimdElement},
+    simd::{Simd, SimdElement, cmp::SimdPartialOrd},
 };
 
 /// SIMD version for bit-level transposition
 ///
 /// Assumes an LSB0 bit encoding of the matrix.
 /// This SIMD implementation additionally requires that the matrix has at least
-/// 16 (WASM) or 32 (x86_64) columns and rows
-#[cfg(any(target_arch = "x86_64", target_arch = "wasm32"))]
+/// `LANE_COUNT` columns and rows
 pub fn transpose_bits(matrix: &mut [u8], rows: usize) -> Result<(), TransposeError> {
     // Check that number of rows is not smaller than LANE_COUNT
     if rows < LANE_COUNT {
@@ -80,15 +79,9 @@ where
 /// Assumes an LSB0 bit encoding of the matrix.
 /// This function is an implementation of the bit-level transpose in
 /// https://docs.rs/oblivious-transfer/latest/oblivious_transfer/extension/fn.transpose128.html
-/// Caller has to make sure that columns is a multiple of 16 or 32
-#[cfg(any(target_arch = "x86_64", target_arch = "wasm32"))]
+/// Caller has to make sure that columns is a multiple of `LANE_COUNT`
 #[inline]
 pub unsafe fn bitmask_shift_unchecked(matrix: &mut [u8], columns: usize) {
-    #[cfg(target_arch = "wasm32")]
-    use std::arch::wasm32::u8x16_bitmask;
-    #[cfg(target_arch = "x86_64")]
-    use std::arch::x86_64::_mm256_movemask_epi8;
-
     matrix.iter_mut().for_each(|b| *b = b.reverse_bits());
     let simd_one = Simd::<u8, LANE_COUNT>::splat(1);
     let mut s: Simd<u8, LANE_COUNT>;
@@ -97,13 +90,13 @@ pub unsafe fn bitmask_shift_unchecked(matrix: &mut [u8], columns: usize) {
         for _ in 0..8 {
             for chunk in unsafe { row.as_chunks_unchecked_mut::<LANE_COUNT>() } {
                 s = Simd::from_array(*chunk);
-                #[cfg(target_arch = "x86_64")]
-                let high_bits = unsafe { _mm256_movemask_epi8(s.reverse().into()) };
-                #[cfg(target_arch = "wasm32")]
-                let high_bits = u8x16_bitmask(s.reverse().into());
-                let high_bits: Vec<u8> = high_bits
-                    .to_be_bytes()
-                    .into_iter()
+                // Extract the MSB of every lane into a bitmask, lane 0 in the
+                // least significant bit (the portable equivalent of x86
+                // movemask / wasm bitmask, lowered to those instructions
+                // where available).
+                let high_bits = s.reverse().simd_ge(Simd::splat(0x80)).to_bitmask();
+                let high_bits: Vec<u8> = high_bits.to_be_bytes()[8 - LANE_COUNT / 8..]
+                    .iter()
                     .map(|b| b.reverse_bits())
                     .collect();
                 shifted_row.extend_from_slice(&high_bits);

@@ -1,4 +1,3 @@
-
 use itybity::{GetBit, Lsb0};
 use mpz_fields::{Field, gf2_128::Gf2_128};
 use rand_chacha::{

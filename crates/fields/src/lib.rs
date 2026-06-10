@@ -239,11 +239,11 @@ pub trait Field:
 /// [`reduce`](Accumulator::reduce).
 ///
 /// An accumulator is an additive group homomorphic to the field under
-/// [`reduce`](Accumulator::reduce): [`zero`](Accumulator::zero) is the identity,
-/// [`merge`](Accumulator::merge) adds two accumulators (e.g. partial sums from
-/// parallel chunks), [`add_product`](Accumulator::add_product) folds in one
-/// product, and reducing yields the field sum of everything folded in. That is,
-/// for any elements,
+/// [`reduce`](Accumulator::reduce): [`zero`](Accumulator::zero) is the
+/// identity, [`merge`](Accumulator::merge) adds two accumulators (e.g. partial
+/// sums from parallel chunks), [`add_product`](Accumulator::add_product) folds
+/// in one product, and reducing yields the field sum of everything folded in.
+/// That is, for any elements,
 ///
 /// ```text
 /// { let mut acc = A::zero();
@@ -252,10 +252,10 @@ pub trait Field:
 ///   acc.reduce() }                 ==   a * b + c * d
 /// ```
 ///
-/// For binary extension fields the unreduced form is the XOR of the double-width
-/// carry-less products, reduced once modulo the irreducible polynomial. For
-/// fields with no cheaper unreduced form, [`NaiveAccumulator`] reduces eagerly
-/// and the deferral is a no-op.
+/// For binary extension fields the unreduced form is the XOR of the
+/// double-width carry-less products, reduced once modulo the irreducible
+/// polynomial. For fields with no cheaper unreduced form, [`NaiveAccumulator`]
+/// reduces eagerly and the deferral is a no-op.
 pub trait Accumulator: Copy {
     /// The field whose products this accumulates and to which it reduces.
     type Field: Field;
