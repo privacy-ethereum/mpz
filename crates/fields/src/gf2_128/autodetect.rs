@@ -1,7 +1,8 @@
-//! Runtime backend selection for GF(2¹²⁸) on x86_64 built without
-//! compile-time PCLMULQDQ: each operation dispatches to the intrinsics
-//! backend when the CPU supports carry-less multiplication, falling back
-//! to the portable software backend otherwise.
+//! Runtime backend selection for GF(2¹²⁸) on x86_64: each operation
+//! dispatches to the intrinsics backend when the CPU supports carry-less
+//! multiplication, falling back to the portable software backend
+//! otherwise. When PCLMULQDQ is enabled at compile time, `cpufeatures`
+//! resolves the check statically and the dispatch disappears.
 #![allow(unsafe_code)]
 
 use super::{Gf2_128, soft, x86};
