@@ -157,3 +157,7 @@ crossbeam-channel = "0.5"
 crossbeam-deque = "0.8"
 crossbeam-utils = "0.8"
 async-task = "4"
+
+[patch.crates-io]
+# Fixsliced AES over v128 words on wasm32 simd128 (branch: feat/aes-wasm-simd-word).
+aes = { git = "https://github.com/privacy-ethereum/block-ciphers", rev = "5e0ac41ab52a4c81f945d78a06d771c944c7d6b7" }
