@@ -4,7 +4,8 @@ use serio::{Serialize, SinkExt};
 use mpz_common::{Context, Flush};
 use mpz_core::Block;
 use mpz_fields::Field;
-use mpz_ole_core::{ROLESender, ROLESenderOutput, Sender as Core, SenderError as CoreError};
+use mpz_ole_core::gilboa::{Sender as Core, SenderError as CoreError};
+use mpz_ole_core::{ROLESender, ROLESenderOutput};
 use mpz_ot::rot::ROTSender;
 
 /// ROLE sender wrapping a random OT sender.

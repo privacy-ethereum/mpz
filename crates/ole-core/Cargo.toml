@@ -21,3 +21,15 @@ mpz-fields.workspace = true
 mpz-core.workspace = true
 mpz-ot-core.workspace = true
 mpz-common = { workspace = true, features = ["future"] }
+
+# dhim (malicious subquadratic OLE): big-integer CRT arithmetic + prime sampling.
+crypto-bigint = { workspace = true }
+crypto-primes = { workspace = true }
+
+[dev-dependencies]
+rand_chacha.workspace = true
+criterion.workspace = true
+
+[[bench]]
+name = "ole"
+harness = false

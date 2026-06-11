@@ -1,122 +1,114 @@
-//! ROLE receiver.
+//! ROLE sender.
 
 use std::collections::VecDeque;
 
 use hybrid_array::Array;
+use rand::SeedableRng;
 
 use mpz_common::future::{MaybeDone, Sender as OutputSender, new_output};
+use mpz_core::{Block, prg::Prg};
 use mpz_fields::Field;
-use mpz_ot_core::rot::{ROTReceiver, ROTReceiverOutput};
+use mpz_ot_core::rot::{ROTSender, ROTSenderOutput};
 
-use crate::{OLEId, OLEShare, ROLEReceiver, ROLEReceiverOutput, SenderMasks};
+use super::SenderMasks;
+use crate::{OLEId, OLEShare, ROLESender, ROLESenderOutput};
 
 #[derive(Debug)]
 struct Queued<F> {
     count: usize,
-    sender: OutputSender<ROLEReceiverOutput<F>>,
+    sender: OutputSender<ROLESenderOutput<F>>,
 }
 
-/// ROLE receiver wrapping a random OT receiver.
+/// ROLE Sender wrapping a random OT sender.
 #[derive(Debug)]
-pub struct Receiver<T, F> {
+pub struct Sender<T, F> {
     id: OLEId,
     alloc: usize,
     /// The total count of ROLEs in the `queue`.
     pending: usize,
     queue: VecDeque<Queued<F>>,
     rot: T,
+    prg: Prg,
     role: Vec<OLEShare<F>>,
 }
 
-impl<T, F> Receiver<T, F> {
-    /// Creates a new ROLE receiver.
+impl<T, F> Sender<T, F> {
+    /// Creates a new ROLE sender.
     ///
     /// # Arguments
     ///
-    /// * `rot` - Random OT receiver.
-    pub fn new(rot: T) -> Self {
+    /// * `seed` - Random seed for the sender.
+    /// * `rot` - Random OT sender.
+    pub fn new(seed: Block, rot: T) -> Self {
         Self {
             id: OLEId::default(),
             alloc: 0,
             pending: 0,
             queue: VecDeque::new(),
             rot,
+            prg: Prg::from_seed(seed),
             role: Vec::new(),
         }
     }
 
-    /// Returns the random OT receiver.
+    /// Returns the random OT sender.
     pub fn rot(&self) -> &T {
         &self.rot
     }
 
-    /// Returns a mutable reference to the random OT receiver.
+    /// Returns a mutable reference to the random OT sender.
     pub fn rot_mut(&mut self) -> &mut T {
         &mut self.rot
     }
 
-    /// Returns the random OT receiver.
+    /// Returns the random OT sender.
     pub fn into_inner(self) -> T {
         self.rot
     }
 }
 
-impl<T, F> Receiver<T, F>
+impl<T, F> Sender<T, F>
 where
-    T: ROTReceiver<bool, F>,
+    T: ROTSender<[F; 2]>,
     F: Field,
 {
-    /// Returns `true` if the receiver wants to receive.
-    pub fn wants_recv(&self) -> bool {
+    /// Returns `true` if the sender wants to send.
+    pub fn wants_send(&self) -> bool {
         self.alloc > 0
     }
 
-    /// Receives the OLEs.
-    pub fn recv(&mut self, msg: SenderMasks<F>) -> Result<(), ReceiverError> {
-        let SenderMasks { masks } = msg;
-
+    /// Evaluates the OLEs as the sender.
+    pub fn send(&mut self) -> Result<SenderMasks<F>, SenderError> {
         let count = self.alloc;
         if self.pending > count {
-            return Err(ReceiverError(ErrorRepr::InsufficientOle {
+            return Err(SenderError(ErrorRepr::InsufficientOle {
                 count: self.pending,
                 available: count,
             }));
-        } else if masks.len() != count {
-            return Err(ReceiverError(ErrorRepr::WrongCount {
-                expected: count,
-                actual: masks.len(),
-            }));
         }
 
-        let ROTReceiverOutput {
-            choices,
-            msgs: corr,
-            ..
-        } = self
+        let ROTSenderOutput { keys: masks, .. } = self
             .rot
-            .try_recv_rot(count * F::BIT_SIZE)
-            .map_err(ReceiverError::ot)?;
+            .try_send_rot(count * F::BIT_SIZE)
+            .map_err(SenderError::ot)?;
 
-        let shares: Vec<OLEShare<F>> = choices
+        let (shares, masks): (Vec<_>, Vec<_>) = masks
             .chunks(F::BIT_SIZE)
-            .zip(corr.chunks(F::BIT_SIZE))
-            .zip(masks)
-            .map(|((bits, corr), mask)| {
-                OLEShare::new_ole_receiver(
-                    F::from_lsb0_iter(bits.iter().copied()),
-                    Array::<F, F::BitSize>::try_from(corr)
+            .map(|masks| {
+                OLEShare::new_ole_sender(
+                    F::rand(&mut self.prg),
+                    Array::try_from(masks)
                         .expect("slice should have length of bit size of field element"),
-                    mask,
                 )
             })
-            .collect();
+            .unzip();
 
         let mut i = 0;
         for Queued { count, sender } in self.queue.drain(..) {
             let shares = shares[i..i + count].to_vec();
             i += count;
 
-            sender.send(ROLEReceiverOutput {
+            sender.send(ROLESenderOutput {
                 id: self.id.next(),
                 shares,
             });
@@ -127,22 +119,22 @@ where
         self.alloc = 0;
         self.pending = 0;
 
-        Ok(())
+        Ok(SenderMasks { masks })
     }
 }
 
-impl<T, F> ROLEReceiver<F> for Receiver<T, F>
+impl<T, F> ROLESender<F> for Sender<T, F>
 where
-    T: ROTReceiver<bool, F>,
+    T: ROTSender<[F; 2]>,
     F: Field,
 {
-    type Error = ReceiverError;
-    type Future = MaybeDone<ROLEReceiverOutput<F>>;
+    type Error = SenderError;
+    type Future = MaybeDone<ROLESenderOutput<F>>;
 
-    fn alloc(&mut self, count: usize) -> Result<(), ReceiverError> {
+    fn alloc(&mut self, count: usize) -> Result<(), Self::Error> {
         self.rot
             .alloc(count * F::BIT_SIZE)
-            .map_err(ReceiverError::ot)?;
+            .map_err(SenderError::ot)?;
 
         self.alloc += count;
 
@@ -153,9 +145,9 @@ where
         self.role.len()
     }
 
-    fn try_recv_role(&mut self, count: usize) -> Result<ROLEReceiverOutput<F>, Self::Error> {
+    fn try_send_role(&mut self, count: usize) -> Result<ROLESenderOutput<F>, Self::Error> {
         if count > self.role.len() {
-            return Err(ReceiverError(ErrorRepr::InsufficientOle {
+            return Err(SenderError(ErrorRepr::InsufficientOle {
                 count,
                 available: self.role.len(),
             }));
@@ -163,13 +155,13 @@ where
 
         let shares = self.role.drain(..count).collect();
 
-        Ok(ROLEReceiverOutput {
+        Ok(ROLESenderOutput {
             id: self.id.next(),
             shares,
         })
     }
 
-    fn queue_recv_role(&mut self, count: usize) -> Result<Self::Future, Self::Error> {
+    fn queue_send_role(&mut self, count: usize) -> Result<Self::Future, Self::Error> {
         let (sender, recv) = new_output();
 
         self.pending += count;
@@ -179,12 +171,12 @@ where
     }
 }
 
-/// Error for [`Receiver`].
+/// Error for [`Sender`].
 #[derive(Debug, thiserror::Error)]
 #[error(transparent)]
-pub struct ReceiverError(#[from] ErrorRepr);
+pub struct SenderError(#[from] ErrorRepr);
 
-impl ReceiverError {
+impl SenderError {
     fn ot<E>(err: E) -> Self
     where
         E: Into<Box<dyn std::error::Error + Send + Sync + 'static>>,
@@ -199,6 +191,4 @@ enum ErrorRepr {
     Ot(Box<dyn std::error::Error + Send + Sync + 'static>),
     #[error("insufficient OLE, wanted: {count}, available: {available}")]
     InsufficientOle { count: usize, available: usize },
-    #[error("sender sent wrong number of OLEs, expected: {expected}, actual: {actual}")]
-    WrongCount { expected: usize, actual: usize },
 }
