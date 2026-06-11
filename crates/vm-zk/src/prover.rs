@@ -8,7 +8,7 @@ use mpz_vm_core::{
 use mpz_vm_ir::{Function, Module};
 
 use mpz_vm_memory::{AuthState, Bit, Registers};
-use mpz_zk_core::{Commitment, MAC_ONE, MAC_ZERO, Proof, prover_wire, vope_receiver};
+use mpz_zk_core::{Commitment, MAC_ONE, MAC_ZERO, Proof, ProverOutput, prover_wire, vope_receiver};
 use rand_chacha::ChaCha12Rng;
 use rand_chacha::rand_core::SeedableRng;
 use rangeset::set::RangeSet;
@@ -332,7 +332,7 @@ where
                     last_out = Some(LastOut { auth, revealed });
                 }
 
-                let (u, v, assertions) = ctx
+                let ProverOutput { u, v, assertions, .. } = ctx
                     .finish()
                     .map_err(|e| ZkVmError::Internal(e.to_string()))?;
                 Ok((u, v, assertions, last_out))
@@ -698,6 +698,7 @@ where
                 assertions: out.assertions,
                 u: out.u + a_0,
                 v: out.v + a_1,
+                coefficients: Vec::new(),
             };
             io.io_mut()
                 .send(ProofMessage {
@@ -814,7 +815,7 @@ where
                 .ok_or(ZkVmError::Core(CoreError::MemoryNotDefined))?;
             revealed = reveal::reveal_prover(&mut ctx, &self.auth, memory, &reveal_ranges)?;
         }
-        let (u, v, assertions) = ctx
+        let ProverOutput { u, v, assertions, .. } = ctx
             .finish()
             .map_err(|e| ZkVmError::Internal(e.to_string()))?;
 
@@ -823,6 +824,7 @@ where
             assertions,
             u: u + a_0,
             v: v + a_1,
+            coefficients: Vec::new(),
         };
         io.io_mut()
             .send(ProofMessage {

@@ -15,7 +15,7 @@ use serio::{SinkExt, stream::IoStreamExt};
 use std::ops::Range;
 
 use mpz_vm_memory::{AuthState, Bit, Registers};
-use mpz_zk_core::{Commitment, MAC_ONE, MAC_ZERO, verifier_wire, vope_sender};
+use mpz_zk_core::{Commitment, MAC_ONE, MAC_ZERO, VerifierOutput, verifier_wire, vope_sender};
 
 use crate::{
     ChunkOutcome, ProofMessage, VOPE_BITS,
@@ -232,7 +232,7 @@ where
                     last_auth = Some(auth);
                 }
 
-                let (w, assertions) = ctx
+                let VerifierOutput { w, assertions, .. } = ctx
                     .finish()
                     .map_err(|e| ZkVmError::Internal(e.to_string()))?;
                 Ok((w, assertions, last_auth))
@@ -711,7 +711,7 @@ where
         if reveal_pending {
             reveal::reveal_verifier(&mut ctx, &self.auth, &reveal_ranges, &revealed)?;
         }
-        let (w, assertions) = ctx
+        let VerifierOutput { w, assertions, .. } = ctx
             .finish()
             .map_err(|e| ZkVmError::Internal(e.to_string()))?;
 

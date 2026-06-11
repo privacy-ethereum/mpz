@@ -16,7 +16,7 @@ use mpz_ot_core::ideal::rcot::IdealRCOT;
 use rand::{Rng, SeedableRng, rngs::StdRng};
 use rand_chacha::ChaCha12Rng;
 
-use mpz_zk_core::{Commit, Proof, Prover, Verifier, vope_receiver, vope_sender};
+use mpz_zk_core::{Commit, Proof, Prover, ProverOutput, Verifier, VerifierOutput, vope_receiver, vope_sender};
 
 const VOPE_COST: usize = 128;
 
@@ -151,13 +151,14 @@ fn sha256_quicksilver_batch_check_accepts() {
     // Accumulate pass: re-evaluates the circuit, folding the proof.
     let mut prover = Prover::committed(&gate_macs).accumulate(ChaCha12Rng::from_seed(chi));
     let prover_out = sha256_compress(&mut prover, msg_p, state_p);
-    let (u, v, assertions) = prover.finish().expect("accumulate finish");
+    let ProverOutput { u, v, assertions, .. } = prover.finish().expect("accumulate finish");
 
     let (a_0, a_1) = vope_receiver(&vope_choices, &vope_ev);
     let proof = Proof {
         assertions,
         u: u + a_0,
         v: v + a_1,
+        coefficients: Vec::new(),
     };
 
     // ---- VERIFIER side ----
@@ -177,7 +178,7 @@ fn sha256_quicksilver_batch_check_accepts() {
     let msg_v: [Gf2_128; 512] = core::array::from_fn(|i| input_key_wires[i]);
     let state_v: [Gf2_128; 256] = core::array::from_fn(|i| input_key_wires[512 + i]);
     let verifier_out = sha256_compress(&mut verifier, msg_v, state_v);
-    let (w, v_assertions) = verifier.finish().expect("finish");
+    let VerifierOutput { w, assertions: v_assertions, .. } = verifier.finish().expect("finish");
 
     // Output IT-MAC sanity: MAC == key + b·delta for each output bit.
     let expected_bits = sha2_compress_out_bits(msg, H0);

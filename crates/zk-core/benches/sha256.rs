@@ -14,7 +14,7 @@ use mpz_circuits::{
 use mpz_core::Block;
 use mpz_fields::gf2_128::Gf2_128;
 use mpz_ot_core::ideal::rcot::IdealRCOT;
-use mpz_zk_core::{Commit, Proof, Prover, Verifier, vope_receiver, vope_sender};
+use mpz_zk_core::{Commit, Proof, Prover, ProverOutput, Verifier, VerifierOutput, vope_receiver, vope_sender};
 use rand::{Rng, SeedableRng, rngs::StdRng};
 use rand_chacha::ChaCha12Rng;
 
@@ -141,13 +141,14 @@ fn setup_inputs(num_blocks: usize) -> BenchInputs {
     commit.finish().expect("commit finish");
     let mut prover = Prover::committed(&gate_macs).accumulate(ChaCha12Rng::from_seed(chi));
     let _ = sha256_chain(&mut prover, state_p, &msg_p);
-    let (u, v, assertions) = prover.finish().expect("accumulate finish");
+    let ProverOutput { u, v, assertions, .. } = prover.finish().expect("accumulate finish");
 
     let (a_0, a_1) = vope_receiver(&vope_choices, &vope_ev);
     let proof = Proof {
         assertions,
         u: u + a_0,
         v: v + a_1,
+        coefficients: Vec::new(),
     };
 
     BenchInputs {
@@ -179,13 +180,14 @@ fn run_prover(inputs: &BenchInputs, num_blocks: usize) {
     let mut prover =
         Prover::committed(&inputs.gate_macs).accumulate(ChaCha12Rng::from_seed(inputs.chi));
     let _ = sha256_chain(&mut prover, state, &msg_blocks);
-    let (u, v, assertions) = prover.finish().expect("accumulate finish");
+    let ProverOutput { u, v, assertions, .. } = prover.finish().expect("accumulate finish");
 
     let (a_0, a_1) = vope_receiver(&inputs.vope_choices, &inputs.vope_ev);
     let _proof = Proof {
         assertions,
         u: u + a_0,
         v: v + a_1,
+        coefficients: Vec::new(),
     };
 }
 
@@ -199,7 +201,7 @@ fn run_verifier(inputs: &BenchInputs, num_blocks: usize) {
         Verifier::new(inputs.delta, &inputs.gate_keys, &inputs.gate_adjust).expect("new");
     let mut verifier = verifier.accumulate(ChaCha12Rng::from_seed(inputs.chi));
     let _ = sha256_chain(&mut verifier, state, &msg_blocks);
-    let (w, assertions) = verifier.finish().expect("finish");
+    let VerifierOutput { w, assertions, .. } = verifier.finish().expect("finish");
 
     let b = vope_sender(&inputs.vope_keys);
     assert_eq!(assertions, inputs.proof.assertions);

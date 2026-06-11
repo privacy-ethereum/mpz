@@ -10,13 +10,13 @@
 //! starts from [`prover::Prover::committed`], installs the challenge stream,
 //! and the accumulate pass
 //! ([`prover::Accumulate`]) folds every multiplication and assertion into the
-//! proof, yielding `(u, v, assertions)`, which the caller masks with the VOPE
+//! proof, yielding a [`ProverOutput`], which the caller masks with the VOPE
 //! correlation ([`vope_receiver`]) to form a [`Proof`].
 //!
 //! The verifier starts from the received commitment
 //! ([`verifier::Committed`]), installs the challenge stream it sampled, and
 //! performs a single accumulate pass ([`verifier::Accumulate`]) over the same
-//! circuits, yielding `(w, assertions)`. The caller masks `w` with the VOPE
+//! circuits, yielding a [`VerifierOutput`]. The caller masks `w` with the VOPE
 //! correlation ([`vope_sender`]) and accepts iff `w == u + delta * v` and the
 //! assertion hashes match.
 //!
@@ -25,20 +25,71 @@
 //! the challenge stream seeked to its gate offset — and the partial results
 //! combined by field addition. See [`prover::Prover::committed`].
 //!
+//! Two extensions reuse the same machinery:
+//!
+//! - [`PolyContext`] (composite QuickSilver) verifies higher-degree polynomial
+//!   constraints `f(w) = 0` directly, rather than committing every intermediate
+//!   product — the prover sends `d_max` masked coefficients per proof and the
+//!   verifier batches all constraints into one check.
+//! - [`gf64`] runs the whole protocol over `GF(2^64)` instead of bits, keeping
+//!   the `GF(2^128)` MACs (a subfield IT-MAC). The boolean path's pointer-bit
+//!   packing does not generalize, so the prover carries the value explicitly;
+//!   both the triple check and [`PolyContext`] are available there too.
+//!
 //! Errors surfaced by these operations are reported via [`Error`] and the
 //! crate-wide [`Result`] alias.
 
+pub mod gf64;
+pub mod poly;
 pub mod prover;
 mod util;
 pub mod verifier;
 mod vope;
 
+pub use poly::{DeltaPowers, MAX_DEGREE, PolyContext, ProverPoly, VerifierPoly};
 pub use prover::{Commit, Prover};
 pub use verifier::Verifier;
 pub use vope::{vope_receiver, vope_sender};
 
 use mpz_core::bitvec::BitVec;
 use mpz_fields::gf2_128::Gf2_128;
+
+/// The output of a prover accumulate pass ([`Prover::finish`] and its
+/// [`gf64`] counterpart).
+///
+/// The caller masks `(u, v)` with the VOPE correlation
+/// ([`vope_receiver`]) and the polynomial-check `poly` coefficients
+/// ([`ProverPoly::coefficients`]) with the degree-`d_max` VOPE coefficients
+/// before assembling a [`Proof`].
+#[derive(Debug)]
+pub struct ProverOutput {
+    /// The `u` proof accumulator (the `Σ χᵢ·MₓMᵧ` body), reduced.
+    pub u: Gf2_128,
+    /// The `v` proof accumulator (the subfield-scaled body), reduced.
+    pub v: Gf2_128,
+    /// The polynomial-check coefficients; empty unless [`PolyContext`]
+    /// constraints were recorded.
+    pub poly: ProverPoly,
+    /// Hash of the wires asserted during evaluation.
+    pub assertions: [u8; 32],
+}
+
+/// The output of a verifier accumulate pass ([`Verifier::finish`] and its
+/// [`gf64`] counterpart).
+///
+/// The caller masks `w` with the VOPE correlation ([`vope_sender`]) and
+/// accepts iff `w == u + delta·v`, the assertion hashes match, and the
+/// polynomial check passes ([`VerifierPoly::check`]).
+#[derive(Debug)]
+pub struct VerifierOutput {
+    /// The reduced check value `Σ χᵢ·xᵢyᵢ + Δ·Σ χᵢ·zᵢ`.
+    pub w: Gf2_128,
+    /// The polynomial-check state; empty unless [`PolyContext`] constraints
+    /// were recorded.
+    pub poly: VerifierPoly,
+    /// Hash of the wires asserted during evaluation.
+    pub assertions: [u8; 32],
+}
 
 /// Materializes the prover's authenticated wire for the tape entry `mac`
 /// committed to `bit`.
@@ -106,6 +157,11 @@ pub struct Proof {
     pub u: Gf2_128,
     /// The masked `v` proof accumulator.
     pub v: Gf2_128,
+    /// Masked coefficients of the polynomial check, degrees
+    /// `0 ..= d_max - 1` ([`ProverPoly::coefficients`] plus the degree-`d_max`
+    /// VOPE mask coefficients). Empty when no polynomial constraints were
+    /// recorded.
+    pub coefficients: Vec<Gf2_128>,
 }
 
 /// An error returned by the prover or verifier.
@@ -133,12 +189,24 @@ impl Error {
     pub(crate) fn tape_unconsumed(consumed: usize, total: usize) -> Self {
         Self(ErrorRepr::TapeUnconsumed { consumed, total })
     }
+
+    pub(crate) fn degree(max_seen: usize, d_max: usize) -> Self {
+        Self(ErrorRepr::Degree { max_seen, d_max })
+    }
+
+    pub(crate) fn check() -> Self {
+        Self(ErrorRepr::Check)
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
 enum ErrorRepr {
     #[error("witness assertion failed")]
     Assert,
+    #[error("polynomial check failed")]
+    Check,
+    #[error("constraint degree {max_seen} exceeds d_max {d_max}")]
+    Degree { max_seen: usize, d_max: usize },
     #[error("tape `{name}` length mismatch: expected {expected}, got {actual}")]
     TapeLength {
         name: &'static str,
@@ -161,9 +229,10 @@ mod tests {
     use rand_chacha::ChaCha12Rng;
 
     use super::{
-        Commit, Error, ErrorRepr, Proof, Prover, Verifier, util::set_lsb, vope_receiver,
-        vope_sender,
+        Commit, DeltaPowers, Error, ErrorRepr, PolyContext, Proof, Prover, ProverOutput, Verifier,
+        VerifierOutput, util::set_lsb, vope_receiver, vope_sender,
     };
+    use mpz_fields::gf2::Gf2;
 
     fn random_delta(rng: &mut StdRng) -> Gf2_128 {
         let mut d = Gf2_128::new(rng.random());
@@ -256,13 +325,14 @@ mod tests {
         commit.finish().unwrap();
         let mut prover = Prover::committed(&i.gate_macs).accumulate(ChaCha12Rng::from_seed(i.chi));
         let _ = compress(&mut prover, i.msg_macs, i.state_macs);
-        let (u, v, assertions) = prover.finish().unwrap();
+        let ProverOutput { u, v, assertions, .. } = prover.finish().unwrap();
 
         let (a_0, a_1) = vope_receiver(&i.vope_choices, &i.vope_ev);
         Proof {
             assertions,
             u: u + a_0,
             v: v + a_1,
+            coefficients: Vec::new(),
         }
     }
 
@@ -272,7 +342,8 @@ mod tests {
         let verifier = Verifier::new(i.delta, gate_keys, masks).unwrap();
         let mut verifier = verifier.accumulate(ChaCha12Rng::from_seed(i.chi));
         let _ = compress(&mut verifier, i.msg_keys, i.state_keys);
-        verifier.finish().unwrap()
+        let VerifierOutput { w, assertions, .. } = verifier.finish().unwrap();
+        (w, assertions)
     }
 
     #[test]
@@ -380,7 +451,7 @@ mod tests {
             let mut prover =
                 Prover::committed(&i.gate_macs).accumulate(ChaCha12Rng::from_seed(chi));
             let _ = compress(&mut prover, i.msg_macs, i.state_macs);
-            let (u, v, _) = prover.finish().unwrap();
+            let ProverOutput { u, v, .. } = prover.finish().unwrap();
             (u, v)
         };
 
@@ -432,7 +503,7 @@ mod tests {
             for (a, b, _, _) in wires {
                 let _ = p.mul(*a, *b);
             }
-            let (u, v, _) = p.finish().unwrap();
+            let ProverOutput { u, v, .. } = p.finish().unwrap();
             (u, v)
         };
 
@@ -442,11 +513,13 @@ mod tests {
                              gate_offset: usize| {
             let mut rng = ChaCha12Rng::from_seed(chi);
             rng.set_word_pos((gate_offset * 4) as u128);
-            let mut v = Verifier::new(delta, keys, adjust).unwrap().accumulate(rng);
+            let mut v = Verifier::new(delta, keys, adjust)
+                .unwrap()
+                .accumulate(rng);
             for (_, _, a, b) in wires {
                 let _ = v.mul(*a, *b);
             }
-            let (w, _) = v.finish().unwrap();
+            let VerifierOutput { w, .. } = v.finish().unwrap();
             w
         };
 
@@ -488,19 +561,20 @@ mod tests {
         commit.finish().unwrap();
         let mut prover = Prover::committed(&gate_macs).accumulate(ChaCha12Rng::from_seed(chi));
         prover.assert_eq(mac_a, mac_b).unwrap();
-        let (u, v, assertions) = prover.finish().unwrap();
+        let ProverOutput { u, v, assertions, .. } = prover.finish().unwrap();
 
         let (a_0, a_1) = vope_receiver(&vope_choices, &vope_ev);
         let proof = Proof {
             assertions,
             u: u + a_0,
             v: v + a_1,
+            coefficients: Vec::new(),
         };
 
         let verifier = Verifier::new(delta, &gate_keys, &gate_masks).unwrap();
         let mut verifier = verifier.accumulate(ChaCha12Rng::from_seed(chi));
         verifier.assert_eq(key_a, key_b).unwrap();
-        let (w, v_assertions) = verifier.finish().unwrap();
+        let VerifierOutput { w, assertions: v_assertions, .. } = verifier.finish().unwrap();
         let b = vope_sender(&vope_keys);
 
         assert_eq!(v_assertions, proof.assertions);
@@ -552,25 +626,263 @@ mod tests {
         // Prover skips the assertion (simulating a malicious party).
         Commit::new(&mut gate_masks).finish().unwrap();
         let prover = Prover::committed(&gate_macs).accumulate(ChaCha12Rng::from_seed(chi));
-        let (u, v, assertions) = prover.finish().unwrap();
+        let ProverOutput { u, v, assertions, .. } = prover.finish().unwrap();
 
         let (a_0, a_1) = vope_receiver(&vope_choices, &vope_ev);
         let proof = Proof {
             assertions,
             u: u + a_0,
             v: v + a_1,
+            coefficients: Vec::new(),
         };
 
         // Verifier honestly performs the assertion.
         let verifier = Verifier::new(delta, &gate_keys, &gate_masks).unwrap();
         let mut verifier = verifier.accumulate(ChaCha12Rng::from_seed(chi));
         verifier.assert_eq(key_a, key_b).unwrap();
-        let (w, v_assertions) = verifier.finish().unwrap();
+        let VerifierOutput { w, assertions: v_assertions, .. } = verifier.finish().unwrap();
         let b = vope_sender(&vope_keys);
 
         assert_ne!(v_assertions, proof.assertions);
         // The check equation itself still holds — rejection comes from
         // the assertion hash mismatch.
         assert_eq!(w + b, proof.u + delta * proof.v);
+    }
+
+    /// A trace mixing the triple check and the polynomial check: a committed
+    /// multiplication, a degree-3 `acc_mux`-shaped constraint, a materialized
+    /// degree-2 mux whose output feeds another committed multiplication.
+    ///
+    /// Consumes 3 tape entries and 4 challenge weights.
+    fn poly_trace<C>(ctx: &mut C, w: [C::Wire; 6]) -> Result<C::Wire, C::Error>
+    where
+        C: PolyContext<Field = Gf2>,
+    {
+        let m = ctx.mul(w[0], w[1]);
+
+        let [y, a, ww, s, u0, u1] = w.map(|x| ctx.lift(x));
+        let r = u0 * (ww + a);
+        let t = u1 * (s + a + r);
+        ctx.assert_zero(y + a + r + t)?;
+
+        let mux = a + u0 * (a + s);
+        let out = ctx.materialize(mux);
+
+        Ok(ctx.mul(out, m))
+    }
+
+    /// Satisfying witness for [`poly_trace`]: bits `[y, a, w, s, u0, u1]`
+    /// with `y` solved so the degree-3 constraint holds.
+    fn poly_witness(rng: &mut StdRng) -> [bool; 6] {
+        let mut b: [bool; 6] = core::array::from_fn(|_| rng.random());
+        let r = b[4] & (b[2] ^ b[1]);
+        b[0] = b[1] ^ r ^ (b[5] & (b[3] ^ b[1] ^ r));
+        b
+    }
+
+    /// Mocked degree-`d_max` VOPE correlation: random mask coefficients on
+    /// the prover side, their `Δ`-weighted sum on the verifier side.
+    fn mock_poly_vope(
+        rng: &mut StdRng,
+        powers: &DeltaPowers,
+        d_max: usize,
+    ) -> (Vec<Gf2_128>, Gf2_128) {
+        let coeffs: Vec<Gf2_128> = (0..d_max).map(|_| Gf2_128::new(rng.random())).collect();
+        let mut sum = Gf2_128::new(0);
+        let mut pw = Gf2_128::new(1);
+        for &c in &coeffs {
+            sum = sum + c * pw;
+            pw = pw * powers.delta();
+        }
+        (coeffs, sum)
+    }
+
+    #[test]
+    fn poly_round_trip() {
+        let mut rng = StdRng::seed_from_u64(20);
+        let delta = random_delta(&mut rng);
+        let powers = DeltaPowers::new(delta);
+        let chi: [u8; 32] = rng.random();
+        const D_MAX: usize = 3;
+
+        let bits = poly_witness(&mut rng);
+        let pairs: Vec<(Gf2_128, Gf2_128)> =
+            bits.iter().map(|&b| input(&mut rng, b, delta)).collect();
+        let macs_in: [Gf2_128; 6] = core::array::from_fn(|i| pairs[i].0);
+        let keys_in: [Gf2_128; 6] = core::array::from_fn(|i| pairs[i].1);
+
+        let gates: Vec<_> = (0..3).map(|_| corr(&mut rng, delta)).collect();
+        let mut masks: Vec<bool> = gates.iter().map(|(c, _, _)| *c).collect();
+        let gate_macs: Vec<Gf2_128> = gates.iter().map(|(_, m, _)| *m).collect();
+        let gate_keys: Vec<Gf2_128> = gates.iter().map(|(_, _, k)| *k).collect();
+
+        let vope: [(bool, Gf2_128, Gf2_128); 128] = core::array::from_fn(|_| corr(&mut rng, delta));
+        let vope_choices: [bool; 128] = core::array::from_fn(|i| vope[i].0);
+        let vope_ev: [Gf2_128; 128] = core::array::from_fn(|i| vope[i].1);
+        let vope_keys: [Gf2_128; 128] = core::array::from_fn(|i| vope[i].2);
+        let (poly_masks, poly_vope_sum) = mock_poly_vope(&mut rng, &powers, D_MAX);
+
+        // Prover: commit pass, then accumulate pass.
+        let mut commit = Commit::new(&mut masks);
+        poly_trace(&mut commit, macs_in).unwrap();
+        commit.finish().unwrap();
+
+        let mut prover = Prover::committed(&gate_macs).accumulate(ChaCha12Rng::from_seed(chi));
+        poly_trace(&mut prover, macs_in).unwrap();
+        let ProverOutput { u, v, poly, assertions } = prover.finish().unwrap();
+
+        let (a_0, a_1) = vope_receiver(&vope_choices, &vope_ev);
+        let coefficients: Vec<Gf2_128> = poly
+            .coefficients(D_MAX)
+            .unwrap()
+            .iter()
+            .zip(&poly_masks)
+            .map(|(&c, &m)| c + m)
+            .collect();
+        let proof = Proof {
+            assertions,
+            u: u + a_0,
+            v: v + a_1,
+            coefficients,
+        };
+
+        // Verifier: single accumulate pass over the same trace.
+        let verifier = Verifier::new(delta, &gate_keys, &masks).unwrap();
+        let mut verifier = verifier.accumulate(ChaCha12Rng::from_seed(chi));
+        poly_trace(&mut verifier, keys_in).unwrap();
+        let VerifierOutput { w, poly: v_poly, assertions: v_assertions } = verifier.finish().unwrap();
+        let b = vope_sender(&vope_keys);
+
+        assert_eq!(v_assertions, proof.assertions);
+        assert_eq!(w + b, proof.u + delta * proof.v);
+        v_poly
+            .check(&powers, &proof.coefficients, poly_vope_sum)
+            .unwrap();
+    }
+
+    #[test]
+    fn poly_dishonest_adjust_rejected() {
+        // An honest run, then the verifier consumes a flipped adjust bit for
+        // the materialized wire: the triple or poly check must reject.
+        let mut rng = StdRng::seed_from_u64(21);
+        let delta = random_delta(&mut rng);
+        let powers = DeltaPowers::new(delta);
+        let chi: [u8; 32] = rng.random();
+        const D_MAX: usize = 3;
+
+        let bits = poly_witness(&mut rng);
+        let pairs: Vec<(Gf2_128, Gf2_128)> =
+            bits.iter().map(|&b| input(&mut rng, b, delta)).collect();
+        let macs_in: [Gf2_128; 6] = core::array::from_fn(|i| pairs[i].0);
+        let keys_in: [Gf2_128; 6] = core::array::from_fn(|i| pairs[i].1);
+
+        let gates: Vec<_> = (0..3).map(|_| corr(&mut rng, delta)).collect();
+        let mut masks: Vec<bool> = gates.iter().map(|(c, _, _)| *c).collect();
+        let gate_macs: Vec<Gf2_128> = gates.iter().map(|(_, m, _)| *m).collect();
+        let gate_keys: Vec<Gf2_128> = gates.iter().map(|(_, _, k)| *k).collect();
+        let (poly_masks, poly_vope_sum) = mock_poly_vope(&mut rng, &powers, D_MAX);
+
+        let mut commit = Commit::new(&mut masks);
+        poly_trace(&mut commit, macs_in).unwrap();
+        commit.finish().unwrap();
+
+        let mut prover = Prover::committed(&gate_macs).accumulate(ChaCha12Rng::from_seed(chi));
+        poly_trace(&mut prover, macs_in).unwrap();
+        let ProverOutput { poly, .. } = prover.finish().unwrap();
+        let coefficients: Vec<Gf2_128> = poly
+            .coefficients(D_MAX)
+            .unwrap()
+            .iter()
+            .zip(&poly_masks)
+            .map(|(&c, &m)| c + m)
+            .collect();
+
+        // Flip the adjust bit of the materialized wire (tape entry 1).
+        masks[1] = !masks[1];
+
+        let verifier = Verifier::new(delta, &gate_keys, &masks).unwrap();
+        let mut verifier = verifier.accumulate(ChaCha12Rng::from_seed(chi));
+        poly_trace(&mut verifier, keys_in).unwrap();
+        let VerifierOutput { poly: v_poly, .. } = verifier.finish().unwrap();
+
+        assert!(
+            v_poly
+                .check(&powers, &coefficients, poly_vope_sum)
+                .is_err(),
+            "flipped materialize commitment must break the poly check"
+        );
+    }
+
+    #[test]
+    fn poly_subrange_folding_matches_full() {
+        // Two disjoint batches of poly constraints folded with seeked
+        // challenge streams and merged must match the full fold. Each
+        // constraint consumes one 16-byte challenge (4 ChaCha words).
+        let mut rng = StdRng::seed_from_u64(22);
+        let delta = random_delta(&mut rng);
+        let powers = DeltaPowers::new(delta);
+        let chi: [u8; 32] = rng.random();
+        const N: usize = 10;
+        const MID: usize = 4;
+        const D_MAX: usize = 3;
+
+        let wires: Vec<[(Gf2_128, Gf2_128); 6]> = (0..N)
+            .map(|_| {
+                let bits = poly_witness(&mut rng);
+                core::array::from_fn(|i| input(&mut rng, bits[i], delta))
+            })
+            .collect();
+
+        let fold_prover = |range: core::ops::Range<usize>, offset: usize| {
+            let mut rng = ChaCha12Rng::from_seed(chi);
+            rng.set_word_pos((offset * 4) as u128);
+            let mut p = Prover::committed(&[]).accumulate(rng);
+            for w in &wires[range] {
+                let [y, a, ww, s, u0, u1] =
+                    core::array::from_fn(|i| p.lift(w[i].0));
+                let r = u0 * (ww + a);
+                let t = u1 * (s + a + r);
+                p.assert_zero(y + a + r + t).unwrap();
+            }
+            let ProverOutput { poly, .. } = p.finish().unwrap();
+            poly
+        };
+
+        let full = fold_prover(0..N, 0);
+        let mut lo = fold_prover(0..MID, 0);
+        let hi = fold_prover(MID..N, MID);
+        lo.merge(&hi);
+        assert_eq!(
+            full.coefficients(D_MAX).unwrap(),
+            lo.coefficients(D_MAX).unwrap()
+        );
+
+        // Verifier partials must satisfy the check against the full prover
+        // coefficients.
+        let fold_verifier = |range: core::ops::Range<usize>, offset: usize| {
+            let mut rng = ChaCha12Rng::from_seed(chi);
+            rng.set_word_pos((offset * 4) as u128);
+            let v = Verifier::new(delta, &[], &[]).unwrap();
+            let mut v = v.accumulate(rng);
+            for w in &wires[range] {
+                let [y, a, ww, s, u0, u1] =
+                    core::array::from_fn(|i| v.lift(w[i].1));
+                let r = u0 * (ww + a);
+                let t = u1 * (s + a + r);
+                v.assert_zero(y + a + r + t).unwrap();
+            }
+            let VerifierOutput { poly, .. } = v.finish().unwrap();
+            poly
+        };
+
+        let mut v_lo = fold_verifier(0..MID, 0);
+        let v_hi = fold_verifier(MID..N, MID);
+        v_lo.merge(&v_hi);
+        v_lo.check(
+            &powers,
+            &full.coefficients(D_MAX).unwrap(),
+            Gf2_128::new(0),
+        )
+        .unwrap();
     }
 }
