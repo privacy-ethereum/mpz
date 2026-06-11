@@ -22,6 +22,7 @@ use crate::{
     cost,
     error::{Result, ZkVmError},
     host::{self, RevealEvent, RevealPayload, RevealState},
+    memlog::{self, MemoryLog, Stored},
 };
 
 /// Returns whether `func_idx` names an imported (host) function.
@@ -35,11 +36,60 @@ pub(crate) enum Role {
     Verifier,
 }
 
+/// Capture limits: the chunk's op-cost cap and the per-segment cost target.
+/// Both must match between the prover and verifier.
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct Limits {
+    pub(crate) chunk_cap: Option<usize>,
+    pub(crate) segment_cost: Option<usize>,
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct TrapPoint {
     pub(crate) index: u64,
     pub(crate) directive: Option<Directive>,
     pub(crate) trap: Trap,
+}
+
+/// Plaintext state captured at a segment boundary, recorded by the prover so
+/// each segment's commit/accumulate workers can be seeded without walking the
+/// preceding segments.
+///
+/// The verifier records no snapshot: it derives the boundary *layout* from
+/// the directive skeleton (see [`segment`](crate::segment)) and obtains the
+/// committed values through the prover's adjustment bits.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct Snapshot {
+    /// The thread's flat register file (absolute registers).
+    pub(crate) regs: Vec<Value>,
+    /// The module's globals, by global index.
+    pub(crate) globals: Vec<Value>,
+    /// Plaintext of every byte stored to since the previous mark (boundaries
+    /// are per-segment deltas).
+    pub(crate) mem: BTreeMap<u32, u8>,
+}
+
+/// A segment boundary: the trace splits *before* `directive_idx`.
+///
+/// The `sym_*`/`pub_mem` fields record the thread's taint state at the mark.
+/// Public computation updates registers, globals, and (untainted) memory
+/// without emitting directives, so an item written symbolically during the
+/// segment may be publicly overwritten by the time of the mark — its auth
+/// wire is then dead (every later use surfaces as a concrete operand) and
+/// must not be stitched. Taint symbolic-ness is identical across parties, so
+/// both record the same sets and derive the same boundary layout.
+#[derive(Clone, Debug)]
+pub(crate) struct SegmentMark {
+    pub(crate) directive_idx: usize,
+    /// Registers symbolic per the thread at the mark, ascending.
+    pub(crate) sym_regs: Vec<u32>,
+    /// Globals symbolic at the mark, ascending.
+    pub(crate) sym_globals: Vec<u32>,
+    /// Bytes written since the previous mark that are *not* symbolic at the
+    /// mark (publicly overwritten or revealed), ascending.
+    pub(crate) pub_mem: Vec<u32>,
+    /// Plaintext at the boundary; `None` on the verifier.
+    pub(crate) snapshot: Option<Snapshot>,
 }
 
 pub(crate) struct ChunkCapture {
@@ -55,14 +105,18 @@ pub(crate) struct ChunkCapture {
     /// Payloads newly disclosed by reveals in this chunk, to announce (prover)
     /// or already merged (verifier). Keyed by reveal id.
     pub(crate) reveals: BTreeMap<u32, RevealPayload>,
+    /// Segment boundaries inside `trace`, in ascending directive order. Both
+    /// sides produce identical `directive_idx` sequences since cost accrues
+    /// identically over identical skeletons.
+    pub(crate) marks: Vec<SegmentMark>,
 }
 
-#[tracing::instrument(level = "trace", skip_all, fields(cap, ?role, announced_trap))]
+#[tracing::instrument(level = "trace", skip_all, fields(?limits, ?role, announced_trap))]
 pub(crate) fn capture_chunk(
     module: &Module,
     global: &mut Global,
     thread: &mut Thread,
-    cap: Option<usize>,
+    limits: Limits,
     role: Role,
     announced_trap: Option<(u64, Trap)>,
     reveal_state: &mut RevealState,
@@ -71,6 +125,12 @@ pub(crate) fn capture_chunk(
     let mut cost: usize = 0;
     let mut reveal_actions: Vec<RevealEvent> = Vec::new();
     let mut reveals: BTreeMap<u32, RevealPayload> = BTreeMap::new();
+    let mut marks: Vec<SegmentMark> = Vec::new();
+    // The chunk's memory accesses; each boundary snapshot reads the current
+    // plaintext of the bytes written since the previous mark, then drains the
+    // written view.
+    let mut log = MemoryLog::default();
+    let mut next_mark = limits.segment_cost.unwrap_or(usize::MAX);
 
     loop {
         let directive = match thread.step(module, global)? {
@@ -116,6 +176,7 @@ pub(crate) fn capture_chunk(
                     && thread.op_counter() == *i + 1 =>
             {
                 validate_trap_directive(&d, reason)?;
+                trim_marks(&mut marks, trace.len());
                 return Ok(ChunkCapture {
                     trace,
                     cost,
@@ -129,6 +190,7 @@ pub(crate) fn capture_chunk(
                     }),
                     reveal_actions,
                     reveals,
+                    marks,
                 });
             }
             StepResult::Directive(d) => d,
@@ -151,6 +213,7 @@ pub(crate) fn capture_chunk(
                         "local trap at index {index} but prover announced {announced}"
                     )));
                 }
+                trim_marks(&mut marks, trace.len());
                 return Ok(ChunkCapture {
                     trace,
                     cost,
@@ -164,6 +227,7 @@ pub(crate) fn capture_chunk(
                     }),
                     reveal_actions,
                     reveals,
+                    marks,
                 });
             }
             // Blocked on a condition the zk-vm does not support: private
@@ -197,6 +261,7 @@ pub(crate) fn capture_chunk(
                 }
             },
             StepResult::Done { result, symbolic } => {
+                trim_marks(&mut marks, trace.len());
                 return Ok(ChunkCapture {
                     trace,
                     cost,
@@ -206,19 +271,82 @@ pub(crate) fn capture_chunk(
                     trap: None,
                     reveal_actions,
                     reveals,
+                    marks,
                 });
             }
         };
 
         if let Directive::Op(op) = &directive {
             cost += cost::op_cost(op)?;
+            // Log accesses leniently: an unsupported (symbolic) address is
+            // replay's error to surface, at its natural protocol point.
+            match op {
+                mpz_vm_core::Op::Store {
+                    kind,
+                    addr,
+                    val,
+                    memarg,
+                } => {
+                    if let Ok(eff) = memlog::eff_addr(addr, memarg) {
+                        let stored = match val {
+                            Operand::Concrete(v) => Stored::Public(*v),
+                            Operand::Symbol { .. } => Stored::Symbolic,
+                        };
+                        log.record_store(*kind, eff, stored);
+                    }
+                }
+                mpz_vm_core::Op::Load {
+                    kind,
+                    addr,
+                    memarg,
+                    symbolic_mask,
+                    ..
+                } => {
+                    if let Ok(eff) = memlog::eff_addr(addr, memarg) {
+                        log.record_load(*kind, eff, *symbolic_mask);
+                    }
+                }
+                _ => {}
+            }
         }
 
         trace.push(directive);
 
-        if let Some(c) = cap
+        if cost >= next_mark {
+            let snapshot = match role {
+                Role::Prover => Some(snapshot(global, thread, &log)?),
+                Role::Verifier => None,
+            };
+            let sym_regs = (0..thread.registers().len() as u32)
+                .filter(|&r| thread.is_register_symbolic(r))
+                .collect();
+            let sym_globals = (0..global.globals().len() as u32)
+                .filter(|&g| global.is_global_symbolic(g))
+                .collect();
+            let pub_mem = log
+                .written_addrs()
+                .filter(|&a| !global.memory_tainted(a, 1))
+                .collect();
+            // Boundaries are deltas: drain the written view so the next
+            // snapshot covers only bytes written after this mark.
+            log.take_written();
+            marks.push(SegmentMark {
+                directive_idx: trace.len(),
+                sym_regs,
+                sym_globals,
+                pub_mem,
+                snapshot,
+            });
+            next_mark = cost
+                + limits
+                    .segment_cost
+                    .expect("next_mark finite only with segment cost");
+        }
+
+        if let Some(c) = limits.chunk_cap
             && cost >= c
         {
+            trim_marks(&mut marks, trace.len());
             return Ok(ChunkCapture {
                 trace,
                 cost,
@@ -228,8 +356,40 @@ pub(crate) fn capture_chunk(
                 trap: None,
                 reveal_actions,
                 reveals,
+                marks,
             });
         }
+    }
+}
+
+/// Reads the prover's plaintext at a segment boundary: the thread's flat
+/// register file, the module globals, and the current value of every byte
+/// stored to since the previous mark.
+fn snapshot(global: &Global, thread: &Thread, log: &MemoryLog) -> Result<Snapshot> {
+    let mut mem = BTreeMap::new();
+    if log.has_writes() {
+        let memory = global
+            .memory()
+            .ok_or(ZkVmError::Core(mpz_vm_core::Error::MemoryNotDefined))?;
+        for addr in log.written_addrs() {
+            mem.insert(
+                addr,
+                memory.read_bytes(addr, 1).map_err(ZkVmError::Trap)?[0],
+            );
+        }
+    }
+    Ok(Snapshot {
+        regs: thread.registers().to_vec(),
+        globals: global.globals().to_vec(),
+        mem,
+    })
+}
+
+/// Drops a trailing mark that coincides with the end of the trace, which
+/// would otherwise produce an empty final segment.
+fn trim_marks(marks: &mut Vec<SegmentMark>, trace_len: usize) {
+    while marks.last().is_some_and(|m| m.directive_idx >= trace_len) {
+        marks.pop();
     }
 }
 
@@ -324,7 +484,7 @@ mod tests {
             module,
             &mut global,
             &mut thread,
-            None,
+            Limits::default(),
             role,
             None,
             &mut reveal_state,

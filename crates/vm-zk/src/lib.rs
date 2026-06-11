@@ -24,9 +24,11 @@ pub(crate) mod cost;
 pub(crate) mod error;
 pub(crate) mod finalize;
 pub(crate) mod host;
+pub(crate) mod memlog;
 mod prover;
 pub(crate) mod replay;
 pub(crate) mod reveal;
+pub(crate) mod segment;
 mod verifier;
 
 use host::RevealPayload;

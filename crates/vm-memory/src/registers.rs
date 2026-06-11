@@ -9,7 +9,7 @@ use mpz_vm_core::Reg;
 /// Sparse register file keyed by absolute [`Reg`] index. Frame
 /// layout is the caller's concern; this type is a typed key/value
 /// store, nothing more.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Registers<T> {
     inner: HashMap<Reg, T>,
 }

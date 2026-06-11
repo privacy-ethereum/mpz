@@ -12,7 +12,7 @@
 
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use futures::executor::block_on;
-use mpz_common::{Context, context::test_mt_context};
+use mpz_common::{Context, context::test_mt_context, executor::Executor};
 use mpz_core::Block;
 use mpz_ot::{chou_orlandi, ferret, kos};
 use mpz_vm_core::{Param, Vm, Write, value::Value};
@@ -76,6 +76,7 @@ struct Workload {
     input: Option<(Vec<u8>, u32)>,
     args: Vec<Arg>,
     chunk_cap: Option<usize>,
+    segment_cost: Option<usize>,
 }
 
 impl Workload {
@@ -87,6 +88,7 @@ impl Workload {
             input: None,
             args: Vec::new(),
             chunk_cap: None,
+            segment_cost: None,
         }
     }
 
@@ -97,6 +99,11 @@ impl Workload {
 
     fn args(mut self, args: Vec<Arg>) -> Self {
         self.args = args;
+        self
+    }
+
+    fn segment_cost(mut self, cost: Option<usize>) -> Self {
+        self.segment_cost = cost;
         self
     }
 }
@@ -110,6 +117,39 @@ fn func_idx(module: &Module, name: &str) -> u32 {
             _ => None,
         })
         .expect("function should be exported")
+}
+
+/// The long-lived transport between the parties: a multithreaded executor
+/// pair and one context per side. Created once and reused across iterations
+/// so worker-pool spawn/teardown stays out of the measurement; everything
+/// cryptographic (base OT, KOS, Ferret, prover/verifier state) is rebuilt
+/// inside each iteration so the measured time stays end-to-end.
+struct Session {
+    exec_p: Executor,
+    exec_v: Executor,
+    ctx_p: Context,
+    ctx_v: Context,
+}
+
+impl Session {
+    fn new() -> Self {
+        let (exec_p, exec_v) = test_mt_context(32 << 20);
+        let ctx_p = exec_p.new_context().unwrap();
+        let ctx_v = exec_v.new_context().unwrap();
+        Self {
+            exec_p,
+            exec_v,
+            ctx_p,
+            ctx_v,
+        }
+    }
+}
+
+impl Drop for Session {
+    fn drop(&mut self) {
+        self.exec_p.shutdown();
+        self.exec_v.shutdown();
+    }
 }
 
 /// Drives one `call` on the prover and verifier concurrently and returns their
@@ -134,19 +174,25 @@ fn call_both(
 /// Runs the workload once through the prover/verifier over the real OT stack,
 /// optionally reading back a memory range (offset relative to the input buffer)
 /// from the verifier afterwards. Panics if the two sides disagree.
-fn run_reading(wl: &Workload, read: Option<(u32, usize)>) -> (Option<Value>, Option<Vec<u8>>) {
+///
+/// The whole crypto stack is built from scratch — only `session`'s executors
+/// and contexts are reused.
+fn run_reading(
+    wl: &Workload,
+    read: Option<(u32, usize)>,
+    session: &mut Session,
+) -> (Option<Value>, Option<Vec<u8>>) {
     let (v_svole, p_svole) = rcot_stack(0);
     let mut prover = Prover::new(wl.module.clone(), p_svole)
         .unwrap()
-        .with_chunk_cap(wl.chunk_cap);
+        .with_chunk_cap(wl.chunk_cap)
+        .with_segment_cost(wl.segment_cost);
     let mut verifier = Verifier::new(wl.module.clone(), v_svole)
         .unwrap()
-        .with_chunk_cap(wl.chunk_cap);
+        .with_chunk_cap(wl.chunk_cap)
+        .with_segment_cost(wl.segment_cost);
 
-    // Multithreaded contexts so each party can parallelize internally.
-    let (exec_p, exec_v) = test_mt_context(32 << 20);
-    let mut ctx_p = exec_p.new_context().unwrap();
-    let mut ctx_v = exec_v.new_context().unwrap();
+    let Session { ctx_p, ctx_v, .. } = session;
 
     // If the workload has a private input, allocate space for it inside the
     // running VM via the guest's `cabi_realloc` export, then stage the bytes at
@@ -166,8 +212,8 @@ fn run_reading(wl: &Workload, read: Option<(u32, usize)>) -> (Option<Value>, Opt
         let (rp, rv) = call_both(
             &mut prover,
             &mut verifier,
-            &mut ctx_p,
-            &mut ctx_v,
+            ctx_p,
+            ctx_v,
             realloc,
             alloc_args(),
             alloc_args(),
@@ -210,22 +256,20 @@ fn run_reading(wl: &Workload, read: Option<(u32, usize)>) -> (Option<Value>, Opt
     let (rp, rv) = call_both(
         &mut prover,
         &mut verifier,
-        &mut ctx_p,
-        &mut ctx_v,
+        ctx_p,
+        ctx_v,
         wl.func,
         p_params,
         v_params,
     );
-    exec_p.shutdown();
-    exec_v.shutdown();
 
     assert_eq!(rp, rv, "prover and verifier results must agree");
     let bytes = read.map(|(off, len)| verifier.read(in_ptr + off, len).unwrap().to_vec());
     (rp, bytes)
 }
 
-fn run(wl: &Workload) -> Option<Value> {
-    run_reading(wl, None).0
+fn run(wl: &Workload, session: &mut Session) -> Option<Value> {
+    run_reading(wl, None, session).0
 }
 
 /// A minimal workload that squares a private input — enough committed work to
@@ -235,11 +279,12 @@ fn bench_square(c: &mut Criterion) {
         (i32.mul (local.get 0) (local.get 0))))"#;
     let module = Module::parse(&wat::parse_str(wat).unwrap()).unwrap();
     let wl = Workload::new(module, "f").args(vec![Arg::Secret(Value::I32(7))]);
-    assert_eq!(run(&wl), Some(Value::I32(49)));
+    let mut session = Session::new();
+    assert_eq!(run(&wl, &mut session), Some(Value::I32(49)));
 
     let mut group = c.benchmark_group("zk-vm");
     group.sample_size(10);
-    group.bench_function("square_i32", |b| b.iter(|| run(&wl)));
+    group.bench_function("square_i32", |b| b.iter(|| run(&wl, &mut session)));
     group.finish();
 }
 
@@ -253,30 +298,44 @@ fn bench_sha256(c: &mut Criterion) {
     let wasm = include_bytes!("guests/sha256.wasm");
     let module = Module::parse(wasm).unwrap();
 
+    // Segment-cost variants: None proves each chunk sequentially; the others
+    // split it into parallel segments of roughly that many gate bits.
+    const SEGMENT_COSTS: &[(Option<usize>, &str)] = &[
+        (None, "seq"),
+        (Some(400_000), "seg400k"),
+        (Some(100_000), "seg100k"),
+        (Some(25_000), "seg25k"),
+    ];
+
+    let mut session = Session::new();
     let mut group = c.benchmark_group("zk-vm/sha256");
     group.sample_size(10);
     for &len in SHA256_SIZES {
         let msg: Vec<u8> = (0..len).map(|i| i as u8).collect();
-        // Allocate a 4 KiB message region plus the 32-byte digest; the harness
-        // prepends the buffer pointer, so `hash` receives `(ptr, len)`.
-        let wl = Workload::new(module.clone(), "hash")
-            .input(msg.clone(), 4128)
-            .args(vec![Arg::Public(Value::I32(len as i32))]);
+        for &(cost, tag) in SEGMENT_COSTS {
+            // Allocate a 4 KiB message region plus the 32-byte digest; the
+            // harness prepends the buffer pointer, so `hash` receives
+            // `(ptr, len)`.
+            let wl = Workload::new(module.clone(), "hash")
+                .input(msg.clone(), 4128)
+                .args(vec![Arg::Public(Value::I32(len as i32))])
+                .segment_cost(cost);
 
-        // Validate: the revealed digest (4 KiB into the buffer) must match a
-        // reference SHA-256.
-        let (_, digest) = run_reading(&wl, Some((4096, 32)));
-        let expected = Sha256::digest(&msg);
-        assert_eq!(
-            digest.as_deref(),
-            Some(expected.as_slice()),
-            "revealed digest must match reference SHA-256 for {len} bytes"
-        );
+            // Validate: the revealed digest (4 KiB into the buffer) must match
+            // a reference SHA-256.
+            let (_, digest) = run_reading(&wl, Some((4096, 32)), &mut session);
+            let expected = Sha256::digest(&msg);
+            assert_eq!(
+                digest.as_deref(),
+                Some(expected.as_slice()),
+                "revealed digest must match reference SHA-256 for {len} bytes"
+            );
 
-        group.throughput(Throughput::Bytes(len as u64));
-        group.bench_with_input(BenchmarkId::from_parameter(len), &wl, |b, wl| {
-            b.iter(|| run(wl))
-        });
+            group.throughput(Throughput::Bytes(len as u64));
+            group.bench_with_input(BenchmarkId::new(tag, len), &wl, |b, wl| {
+                b.iter(|| run(wl, &mut session))
+            });
+        }
     }
     group.finish();
 }

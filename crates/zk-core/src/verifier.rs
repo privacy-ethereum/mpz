@@ -1,136 +1,116 @@
 use blake3::Hasher;
 use mpz_circuits::Context;
-use mpz_fields::{gf2::Gf2, gf2_128::Gf2_128};
-
-use crate::{
-    Error, MAC_ONE, MAC_ZERO, Proof, Result,
-    check::{Triple, check_verifier},
-    util::set_lsb,
+use mpz_fields::{
+    Accumulator,
+    gf2::Gf2,
+    gf2_128::{Gf2_128, Gf2_128Accumulator},
 };
+use rand_core::RngCore;
+use zerocopy::IntoBytes;
 
-/// The verifier in the VOLE-based zero-knowledge proof protocol.
+use crate::{Error, MAC_ONE, MAC_ZERO, Result, util::set_lsb};
+
+/// The verifier side of the zero-knowledge protocol.
 ///
-/// A `Verifier` holds the global MAC key `delta` and accumulates the state
-/// produced while evaluating a circuit. Evaluation is performed against a
-/// [`VerifierExecute`] obtained from [`execute`](Self::execute), after which
-/// [`verify`](Self::verify) checks the prover's [`Proof`].
+/// A `Verifier` holds the global MAC key `delta` and walks the circuits once,
+/// with the flow tracked as a typestate:
 ///
-/// A single `Verifier` may be reused across proofs: [`verify`](Self::verify)
-/// clears the accumulated state on completion.
+/// 1. [`Verifier<Committed>`](Committed) is constructed from the received
+///    commitment (the adjustment bits) and the key tape.
+///    [`accumulate`](Self::accumulate) installs the challenge stream provided
+///    by the caller.
+/// 2. [`Verifier<Accumulate>`](Accumulate) implements [`Context`] directly,
+///    folding every multiplication and assertion into the running check state
+///    as the circuits are evaluated. [`finish`](Self::finish) yields
+///    `(w, assertions)`.
+///
+/// The caller masks `w` with the VOPE correlation
+/// ([`vope_sender`](crate::vope_sender)) and accepts the prover's proof iff
+/// `w == u + delta * v` and the assertion hashes match.
 #[derive(Debug)]
-pub struct Verifier {
-    triples: Vec<Triple>,
-    assertions: Hasher,
+pub struct Verifier<'a, S> {
+    keys: &'a [Gf2_128],
+    adjust: &'a [bool],
     delta: Gf2_128,
-    key_zero: Gf2_128,
     key_one: Gf2_128,
+    cursor: usize,
+    state: S,
 }
 
-impl Verifier {
-    /// Creates a new `Verifier` with the global MAC key `delta`.
-    pub fn new(delta: Gf2_128) -> Self {
-        let key_one = MAC_ONE + delta;
-        Self {
-            triples: Vec::new(),
-            assertions: Hasher::default(),
-            delta,
-            key_zero: MAC_ZERO,
-            key_one,
-        }
-    }
+/// Committed state for the [`Verifier`].
+///
+/// The prover's commitment has been received; the verifier awaits the
+/// challenge stream before beginning the accumulate pass.
+#[derive(Debug)]
+pub struct Committed;
 
-    /// Key of a public bit: `key_one` (`MAC_ONE + delta`) for `true`,
-    /// `key_zero` ([`MAC_ZERO`]) for `false`.
-    pub fn public_bit(&self, bit: bool) -> Gf2_128 {
-        if bit { self.key_one } else { self.key_zero }
-    }
+/// Accumulate-phase state for the [`Verifier`].
+///
+/// Holds the challenge stream and the running check state folded during
+/// evaluation, split into the `Σ χᵢ·xᵢyᵢ` and `Σ χᵢ·zᵢ` accumulators so
+/// reduction and the `delta` factor are both applied once at
+/// [`finish`](Verifier::finish).
+#[derive(Debug)]
+pub struct Accumulate<R> {
+    assertions: Hasher,
+    rng: R,
+    xy: Gf2_128Accumulator,
+    z: Gf2_128Accumulator,
+}
 
-    /// Begins evaluating a circuit, returning a [`VerifierExecute`] that
-    /// records evaluation state into this verifier.
+impl<'a> Verifier<'a, Committed> {
+    /// Creates a new verifier with the global MAC key `delta`.
     ///
-    /// `keys` is the tape of verifier keys, one entry per input bit and per AND
-    /// gate, consumed in evaluation order. `adjust` is the corresponding tape
-    /// of adjustment bits received from the prover; each entry selects
-    /// whether the matching key is offset by `delta`.
+    /// `keys` is the tape of verifier keys, one entry per input bit and per
+    /// AND gate, consumed in evaluation order. `adjust` is the corresponding
+    /// tape of adjustment bits received from the prover as the commitment;
+    /// each entry selects whether the matching key is offset by `delta`.
+    ///
+    /// When folding a sub-range of a trace, pass the sub-range's tape slices
+    /// and seek the challenge stream to the sub-range's gate offset: the `w`
+    /// outputs of the sub-ranges sum to the full trace's `w`.
     ///
     /// # Errors
     ///
     /// Returns [`Error`] if `keys` and `adjust` differ in length.
-    pub fn execute<'a>(
-        &'a mut self,
-        keys: &'a [Gf2_128],
-        adjust: &'a [bool],
-    ) -> Result<VerifierExecute<'a>> {
+    pub fn new(delta: Gf2_128, keys: &'a [Gf2_128], adjust: &'a [bool]) -> Result<Self> {
         if keys.len() != adjust.len() {
             return Err(Error::tape_len("adjust", keys.len(), adjust.len()));
         }
-        Ok(VerifierExecute {
-            triples: &mut self.triples,
-            assertions: &mut self.assertions,
+        Ok(Self {
             keys,
             adjust,
-            delta: &self.delta,
-            key_zero: &self.key_zero,
-            key_one: &self.key_one,
+            delta,
+            key_one: MAC_ONE + delta,
             cursor: 0,
+            state: Committed,
         })
     }
 
-    /// Verifies `proof` against the state accumulated during evaluation.
+    /// Begins the accumulate pass, drawing challenge weights from `rng`.
     ///
-    /// `chi` is the random challenge used to batch the check, and `vope_keys`
-    /// are the verifier's keys used to mask it. On success, the accumulated
-    /// state is cleared so this verifier can be reused.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`Error`] if the assertions in `proof` do not match the
-    /// assertions recorded during evaluation, or if the consistency check
-    /// fails.
-    pub fn verify(
-        &mut self,
-        chi: [u8; 32],
-        vope_keys: &[Gf2_128; 128],
-        proof: Proof,
-    ) -> Result<()> {
-        let Proof { assertions, u, v } = proof;
-
-        let expected_assertions = *self.assertions.finalize().as_bytes();
-        if assertions != expected_assertions {
-            return Err(Error::assert());
+    /// Each multiplication consumes 16 bytes of the stream, so `rng` must be
+    /// positioned to match the gates evaluated: the caller derives it from the
+    /// challenge it sampled and seeks it when folding a sub-range of the
+    /// trace.
+    pub fn accumulate<R: RngCore>(self, rng: R) -> Verifier<'a, Accumulate<R>> {
+        Verifier {
+            keys: self.keys,
+            adjust: self.adjust,
+            delta: self.delta,
+            key_one: self.key_one,
+            cursor: self.cursor,
+            state: Accumulate {
+                assertions: Hasher::default(),
+                rng,
+                xy: Gf2_128Accumulator::zero(),
+                z: Gf2_128Accumulator::zero(),
+            },
         }
-
-        let b = crate::vope::vope_sender(vope_keys);
-        check_verifier(&self.triples, self.delta, chi, b, u, v)?;
-
-        self.assertions.reset();
-        self.triples.clear();
-
-        Ok(())
     }
 }
 
-/// An in-progress circuit evaluation on the verifier side.
-///
-/// Returned by [`Verifier::execute`], a `VerifierExecute` implements
-/// [`Context`] so a circuit can be evaluated over verifier keys. It consumes
-/// the key and adjustment tapes as input and AND gates are encountered,
-/// recording the state needed to check the proof. Call
-/// [`finish`](Self::finish) once evaluation completes to confirm the tapes were
-/// fully consumed.
-#[derive(Debug)]
-pub struct VerifierExecute<'a> {
-    triples: &'a mut Vec<Triple>,
-    assertions: &'a mut Hasher,
-    keys: &'a [Gf2_128],
-    adjust: &'a [bool],
-    delta: &'a Gf2_128,
-    key_zero: &'a Gf2_128,
-    key_one: &'a Gf2_128,
-    cursor: usize,
-}
-
-impl VerifierExecute<'_> {
+impl<'a, R> Verifier<'a, Accumulate<R>> {
     /// Consumes the next input from the tapes and returns its verifier key.
     ///
     /// The key is offset by `delta` when the corresponding adjustment bit is
@@ -146,7 +126,7 @@ impl VerifierExecute<'_> {
             .adjust
             .get(i)
             .expect("adjust tape exhausted during input");
-        let mut key = if adj { raw + *self.delta } else { raw };
+        let mut key = if adj { raw + self.delta } else { raw };
         set_lsb(&mut key, false);
         self.cursor = i + 1;
         key
@@ -157,25 +137,30 @@ impl VerifierExecute<'_> {
     /// Public inputs consume no tape entries, since their value is known to
     /// both parties.
     pub fn input_public(&self, bit: bool) -> Gf2_128 {
-        if bit { *self.key_one } else { *self.key_zero }
+        if bit { self.key_one } else { MAC_ZERO }
     }
 
-    /// Completes evaluation, confirming that the adjustment tape was fully
-    /// consumed.
+    /// Completes the accumulate phase, yielding `(w, assertions)`.
+    ///
+    /// The caller masks `w` with the VOPE correlation
+    /// ([`vope_sender`](crate::vope_sender)) and accepts the prover's proof
+    /// iff `w == u + delta * v` and the assertion hashes match.
     ///
     /// # Errors
     ///
-    /// Returns [`Error`] if the circuit consumed fewer tape entries than were
-    /// provided, indicating a mismatch between the circuit and the tapes.
-    pub fn finish(self) -> Result<()> {
+    /// Returns [`Error`] if the number of consumed tape entries does not match
+    /// the tape length, indicating the circuits drew fewer inputs and AND
+    /// gates than the tape provides.
+    pub fn finish(self) -> Result<(Gf2_128, [u8; 32])> {
         if self.cursor != self.adjust.len() {
             return Err(Error::tape_unconsumed(self.cursor, self.adjust.len()));
         }
-        Ok(())
+        let w = self.state.xy.reduce() + self.delta * self.state.z.reduce();
+        Ok((w, *self.state.assertions.finalize().as_bytes()))
     }
 }
 
-impl Context for VerifierExecute<'_> {
+impl<R: RngCore> Context for Verifier<'_, Accumulate<R>> {
     type Error = Error;
     type Wire = Gf2_128;
     type Field = Gf2;
@@ -197,26 +182,30 @@ impl Context for VerifierExecute<'_> {
         let adj = *self
             .adjust
             .get(i)
-            .expect("adjust tape exhausted: circuit has more AND gates than the witness");
+            .expect("adjust tape exhausted: circuit has more AND gates than the tape");
 
         if adj {
-            key = key + *self.delta;
+            key = key + self.delta;
         }
         set_lsb(&mut key, false);
-
-        self.triples.push(Triple { x: a, y: b, z: key });
         self.cursor = i + 1;
+
+        let mut chi = Gf2_128::new(0);
+        self.state.rng.fill_bytes(chi.as_mut_bytes());
+
+        self.state.xy.add_product(a * b, chi);
+        self.state.z.add_product(key, chi);
 
         key
     }
 
     fn constant(&mut self, v: Gf2) -> Gf2_128 {
-        if v.0 { *self.key_one } else { *self.key_zero }
+        self.input_public(v.0)
     }
 
     fn assert_const(&mut self, v: Gf2_128, expected: Gf2) -> Result<()> {
-        let mac = if expected.0 { v + *self.delta } else { v };
-        self.assertions.update(&mac.to_inner().to_le_bytes());
+        let mac = if expected.0 { v + self.delta } else { v };
+        self.state.assertions.update(&mac.to_inner().to_le_bytes());
 
         Ok(())
     }

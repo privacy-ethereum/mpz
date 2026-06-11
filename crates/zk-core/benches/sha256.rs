@@ -14,8 +14,9 @@ use mpz_circuits::{
 use mpz_core::Block;
 use mpz_fields::gf2_128::Gf2_128;
 use mpz_ot_core::ideal::rcot::IdealRCOT;
-use mpz_zk_core::{Proof, Prover, Verifier};
+use mpz_zk_core::{Commit, Proof, Prover, Verifier, vope_receiver, vope_sender};
 use rand::{Rng, SeedableRng, rngs::StdRng};
+use rand_chacha::ChaCha12Rng;
 
 const VOPE_COST: usize = 128;
 
@@ -73,7 +74,7 @@ struct BenchInputs {
     input_mac_wires: Vec<Gf2_128>,
     input_key_wires: Vec<Gf2_128>,
     /// Gate masks as committed (cloned per prover iteration, since
-    /// `execute` overwrites them with the adjust bits in place).
+    /// the commit pass overwrites them with the adjust bits in place).
     gate_masks: Vec<bool>,
     gate_macs: Vec<Gf2_128>,
     gate_keys: Vec<Gf2_128>,
@@ -82,7 +83,7 @@ struct BenchInputs {
     vope_choices: [bool; VOPE_COST],
     vope_ev: [Gf2_128; VOPE_COST],
     vope_keys: [Gf2_128; VOPE_COST],
-    /// Verifier's consistency-check challenge.
+    /// Seed of the consistency-check challenge stream.
     chi: [u8; 32],
     /// Proof produced by the prover, consumed in the verifier benchmark.
     proof: Proof,
@@ -135,15 +136,19 @@ fn setup_inputs(num_blocks: usize) -> BenchInputs {
         .collect();
 
     let mut gate_adjust = gate_masks.clone();
-    let mut prover = Prover::new();
-    {
-        let mut exec = prover
-            .execute(&mut gate_adjust, &gate_macs)
-            .expect("execute");
-        let _ = sha256_chain(&mut exec, state_p, &msg_p);
-        exec.finish().expect("finish");
-    }
-    let proof = prover.prove(chi, &vope_choices, &vope_ev);
+    let mut commit = Commit::new(&mut gate_adjust);
+    let _ = sha256_chain(&mut commit, state_p, &msg_p);
+    commit.finish().expect("commit finish");
+    let mut prover = Prover::committed(&gate_macs).accumulate(ChaCha12Rng::from_seed(chi));
+    let _ = sha256_chain(&mut prover, state_p, &msg_p);
+    let (u, v, assertions) = prover.finish().expect("accumulate finish");
+
+    let (a_0, a_1) = vope_receiver(&vope_choices, &vope_ev);
+    let proof = Proof {
+        assertions,
+        u: u + a_0,
+        v: v + a_1,
+    };
 
     BenchInputs {
         delta,
@@ -168,15 +173,20 @@ fn run_prover(inputs: &BenchInputs, num_blocks: usize) {
         .collect();
 
     let mut masks = inputs.gate_masks.clone();
-    let mut prover = Prover::new();
-    {
-        let mut exec = prover
-            .execute(&mut masks, &inputs.gate_macs)
-            .expect("execute");
-        let _ = sha256_chain(&mut exec, state, &msg_blocks);
-        exec.finish().expect("finish");
-    }
-    let _proof = prover.prove(inputs.chi, &inputs.vope_choices, &inputs.vope_ev);
+    let mut commit = Commit::new(&mut masks);
+    let _ = sha256_chain(&mut commit, state, &msg_blocks);
+    commit.finish().expect("commit finish");
+    let mut prover =
+        Prover::committed(&inputs.gate_macs).accumulate(ChaCha12Rng::from_seed(inputs.chi));
+    let _ = sha256_chain(&mut prover, state, &msg_blocks);
+    let (u, v, assertions) = prover.finish().expect("accumulate finish");
+
+    let (a_0, a_1) = vope_receiver(&inputs.vope_choices, &inputs.vope_ev);
+    let _proof = Proof {
+        assertions,
+        u: u + a_0,
+        v: v + a_1,
+    };
 }
 
 fn run_verifier(inputs: &BenchInputs, num_blocks: usize) {
@@ -185,24 +195,26 @@ fn run_verifier(inputs: &BenchInputs, num_blocks: usize) {
         .map(|b| core::array::from_fn(|i| inputs.input_key_wires[256 + b * 512 + i]))
         .collect();
 
-    let mut verifier = Verifier::new(inputs.delta);
-    {
-        let mut exec = verifier
-            .execute(&inputs.gate_keys, &inputs.gate_adjust)
-            .expect("execute");
-        let _ = sha256_chain(&mut exec, state, &msg_blocks);
-        exec.finish().expect("finish");
-    }
-    verifier
-        .verify(inputs.chi, &inputs.vope_keys, inputs.proof.clone())
-        .expect("verify");
+    let verifier =
+        Verifier::new(inputs.delta, &inputs.gate_keys, &inputs.gate_adjust).expect("new");
+    let mut verifier = verifier.accumulate(ChaCha12Rng::from_seed(inputs.chi));
+    let _ = sha256_chain(&mut verifier, state, &msg_blocks);
+    let (w, assertions) = verifier.finish().expect("finish");
+
+    let b = vope_sender(&inputs.vope_keys);
+    assert_eq!(assertions, inputs.proof.assertions);
+    assert_eq!(
+        w + b,
+        inputs.proof.u + inputs.delta * inputs.proof.v,
+        "consistency check failed"
+    );
 }
 
 fn bench_sha256(c: &mut Criterion) {
     // Build, bench, and drop one `BenchInputs` per size before
-    // constructing the next: the gate tape plus triple buffer for the
-    // largest size is multiple GiB, so keeping every size resident at
-    // once OOMs on 32-bit targets.
+    // constructing the next: the gate tapes for the largest size are
+    // hundreds of MiB, so keeping every size resident at once strains
+    // 32-bit targets.
     for &(bytes, name) in SIZES {
         let num_blocks = bytes / 64;
         let inputs = setup_inputs(num_blocks);

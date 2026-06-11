@@ -18,7 +18,7 @@ use crate::{
 /// `regs` is frame-scoped; `globals` and `memory` are long-lived
 /// (shared across calls), mirroring WASM's global and linear-memory
 /// semantics.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct AuthState {
     pub regs: Registers<AuthValue>,
     pub globals: Registers<AuthValue>,
