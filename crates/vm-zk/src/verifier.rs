@@ -7,20 +7,24 @@ use mpz_vm_core::{
 };
 use mpz_vm_ir::{Function, Module};
 use rand::Rng;
+use rand_chacha::ChaCha12Rng;
+use rand_chacha::rand_core::SeedableRng;
 use rangeset::set::RangeSet;
+use rayon::prelude::*;
 use serio::{SinkExt, stream::IoStreamExt};
 use std::ops::Range;
 
 use mpz_vm_memory::{AuthState, Bit, Registers};
+use mpz_zk_core::{Commitment, MAC_ONE, MAC_ZERO, verifier_wire, vope_sender};
 
 use crate::{
     ChunkOutcome, ProofMessage, VOPE_BITS,
-    capture::{self, Role},
-    commit::{self, PendingIo, prepare_params},
+    capture::{self, ChunkCapture, Role},
+    commit::{self, PendingIo, VerifierTape, prepare_params},
     error::ZkVmError,
     finalize, host,
     replay::{self, ReplayState},
-    reveal,
+    reveal, segment,
 };
 
 /// A zero-knowledge verifier for an [`mpz-vm-ir`](mpz_vm_ir) [`Module`].
@@ -42,8 +46,9 @@ pub struct Verifier<T> {
     pending_reveal: RangeSet<u32>,
     reveal_state: host::RevealState,
     auth: AuthState,
-    zk: mpz_zk_core::Verifier,
+    delta: Gf2_128,
     chunk_cap: Option<usize>,
+    segment_cost: Option<usize>,
 }
 
 impl<T> Verifier<T>
@@ -64,8 +69,7 @@ where
         if delta.to_inner() & 1 != 1 {
             return Err(ZkVmError::DeltaLsb);
         }
-        let zk = mpz_zk_core::Verifier::new(delta);
-        let auth = AuthState::new(Bit(zk.public_bit(false)), Bit(zk.public_bit(true)));
+        let auth = AuthState::new(Bit(MAC_ZERO), Bit(MAC_ONE + delta));
         Ok(Self {
             module,
             global,
@@ -74,8 +78,9 @@ where
             pending_reveal: RangeSet::default(),
             reveal_state: host::RevealState::default(),
             auth,
-            zk,
+            delta,
             chunk_cap: None,
+            segment_cost: None,
         })
     }
 
@@ -87,6 +92,17 @@ where
     /// This must match the prover's setting for the two sides to agree.
     pub fn with_chunk_cap(mut self, cap: Option<usize>) -> Self {
         self.chunk_cap = cap;
+        self
+    }
+
+    /// Sets the gate-cost target per proving segment, returning the updated
+    /// verifier.
+    ///
+    /// Splits each chunk into segments folded by parallel workers; see
+    /// [`Prover::with_segment_cost`](crate::Prover::with_segment_cost). This
+    /// must match the prover's setting for the two sides to agree.
+    pub fn with_segment_cost(mut self, cost: Option<usize>) -> Self {
+        self.segment_cost = cost;
         self
     }
 }
@@ -114,6 +130,139 @@ where
             .map_err(|e| ZkVmError::SvoleIo(e.to_string()))?;
         Ok(keys.into_iter().map(|k| zerocopy::transmute!(k)).collect())
     }
+
+    /// The parallel per-segment accumulate pass: checks the prover's
+    /// commitment by folding every segment with the sampled challenge.
+    /// Returns the combined `(w, assertions)` and the chunk-final state.
+    #[allow(clippy::too_many_arguments)]
+    fn accumulate_pass(
+        &self,
+        chunk: &ChunkCapture,
+        plan: &segment::Plan,
+        seg_keys: &[Gf2_128],
+        seg_adjust: &[bool],
+        chi: [u8; 32],
+        output: Option<Value>,
+        revealed: &[u8],
+        reveal_ranges: &[Range<u32>],
+        reveal_pending: bool,
+    ) -> Result<VAccOut, ZkVmError> {
+        let delta = self.delta;
+        // Boundary commitment wires, materialized straight off the tape.
+        let boundary_wires: Vec<Option<Vec<Gf2_128>>> = plan
+            .segments
+            .iter()
+            .map(|seg| {
+                seg.boundary.as_ref().map(|b| {
+                    b.tape
+                        .clone()
+                        .map(|i| verifier_wire(seg_keys[i], seg_adjust[i], delta))
+                        .collect()
+                })
+            })
+            .collect();
+
+        let module = &self.module;
+        let auth_base = &self.auth;
+        let last = plan.segments.len() - 1;
+        let pub_bit = move |b: bool| if b { MAC_ONE + delta } else { MAC_ZERO };
+
+        let results: Vec<(Gf2_128, [u8; 32], Option<AuthState>)> = plan
+            .segments
+            .par_iter()
+            .enumerate()
+            .map(|(j, seg)| -> Result<_, ZkVmError> {
+                let mut auth = auth_base.clone();
+                for (prev_seg, prev_wires) in plan.segments.iter().zip(&boundary_wires).take(j) {
+                    let prev = prev_seg
+                        .boundary
+                        .as_ref()
+                        .expect("non-final segments carry a boundary");
+                    let wires = prev_wires.as_ref().expect("wires for boundary");
+                    segment::apply_boundary(&mut auth, prev, wires, &pub_bit)?;
+                }
+
+                let mut rng = ChaCha12Rng::from_seed(chi);
+                rng.set_word_pos((seg.chi_gates as u128) * 4);
+                let mut ctx = mpz_zk_core::Verifier::new(
+                    delta,
+                    &seg_keys[seg.tape.clone()],
+                    &seg_adjust[seg.tape.clone()],
+                )
+                .map_err(|e| ZkVmError::Internal(e.to_string()))?
+                .accumulate(rng);
+                let mut state = ReplayState::root();
+                replay::replay(
+                    &chunk.trace[seg.directives.clone()],
+                    &chunk.reveal_actions[seg.reveals.clone()],
+                    module,
+                    &mut auth,
+                    &mut ctx,
+                    &mut state,
+                )?;
+
+                if let Some(b) = &seg.boundary {
+                    let wires = boundary_wires[j].as_ref().expect("wires for boundary");
+                    segment::assert_boundary(&auth, b, wires, &mut ctx)?;
+                }
+
+                let mut last_auth = None;
+                if j == last {
+                    match &chunk.trap {
+                        // A trapping chunk carries no output to authenticate.
+                        // When the trap is tied to a committed op, check its
+                        // divisor is zero; a fully public trap has no
+                        // committed divisor.
+                        Some(t) => {
+                            if let Some(directive) = &t.directive {
+                                replay::replay_trap(directive, &t.trap, &auth, &mut ctx)?;
+                            }
+                        }
+                        None => {
+                            // Only a symbolic return is revealed/authenticated;
+                            // a concrete return is already public.
+                            if chunk.result_symbolic {
+                                finalize::bind_output(&state, &mut ctx, &auth, output)?;
+                            }
+                        }
+                    }
+                    if reveal_pending {
+                        reveal::reveal_verifier(&mut ctx, &auth, reveal_ranges, revealed)?;
+                    }
+                    last_auth = Some(auth);
+                }
+
+                let (w, assertions) = ctx
+                    .finish()
+                    .map_err(|e| ZkVmError::Internal(e.to_string()))?;
+                Ok((w, assertions, last_auth))
+            })
+            .collect::<Result<_, _>>()?;
+
+        let mut w = Gf2_128::new(0);
+        let mut hasher = blake3::Hasher::new();
+        let mut final_auth = None;
+        for (w_j, h_j, last_auth) in results {
+            w = w + w_j;
+            hasher.update(&h_j);
+            if let Some(auth) = last_auth {
+                final_auth = Some(auth);
+            }
+        }
+
+        Ok(VAccOut {
+            w,
+            assertions: *hasher.finalize().as_bytes(),
+            auth: final_auth.expect("last segment produces final state"),
+        })
+    }
+}
+
+/// Output of the verifier's accumulate pass over one chunk.
+struct VAccOut {
+    w: Gf2_128,
+    assertions: [u8; 32],
+    auth: AuthState,
 }
 
 impl<T> Vm for Verifier<T>
@@ -239,7 +388,6 @@ where
         let mut commit_bits = input_bits + self.pending_io.cost_bits();
 
         self.auth.regs = Registers::new();
-        let mut state = ReplayState::root();
         let mut final_output = None;
         let mut chunk_idx: usize = 0;
         // Memory ranges to open on the first proving chunk; mirrors the prover.
@@ -283,7 +431,10 @@ where
                 &self.module,
                 &mut self.global,
                 &mut thread,
-                self.chunk_cap,
+                capture::Limits {
+                    chunk_cap: self.chunk_cap,
+                    segment_cost: self.segment_cost,
+                },
                 Role::Verifier,
                 outcome.trap_at.zip(outcome.trap.clone()),
                 &mut self.reveal_state,
@@ -292,10 +443,12 @@ where
                 events = chunk.trace.len(),
                 cost = chunk.cost,
                 done = chunk.done,
+                segments = chunk.marks.len() + 1,
                 "captured chunk"
             );
 
-            let execute_bits = commit_bits + chunk.cost;
+            let plan = segment::plan(&chunk, &self.module, &self.auth, &params, root_reg_base);
+            let execute_bits = commit_bits + plan.tape_len;
 
             // Mirror the prover's skip exactly: a fully public chunk reached
             // before any authenticated work has nothing to prove, so both sides
@@ -328,7 +481,13 @@ where
             any_zk_work = true;
 
             let total = execute_bits + VOPE_BITS;
-            tracing::info!(commit_bits, cost = chunk.cost, total, "cost plan");
+            tracing::info!(
+                commit_bits,
+                cost = chunk.cost,
+                total,
+                segments = plan.segments.len(),
+                "cost plan"
+            );
 
             let keys = self.allocate(io, total).await?;
             let (exec_keys, vope_keys) = keys.split_at(execute_bits);
@@ -336,13 +495,14 @@ where
                 vope_keys.try_into().expect("vope tail is VOPE_BITS wide");
 
             // Receive the prover's commitment to the whole execute tape
-            // (commit + gate adjust), then sample and send the challenge.
-            let commit_msg: mpz_zk_core::Commit = io
+            // (commit prefix, gates, and boundary commitments), then sample
+            // and send the challenge.
+            let commitment: Commitment = io
                 .io_mut()
                 .expect_next()
                 .await
                 .map_err(|e| ZkVmError::IoRecv(e.to_string()))?;
-            let adjust: Vec<bool> = commit_msg.adjust.iter().by_vals().collect();
+            let adjust: Vec<bool> = commitment.adjust.iter().by_vals().collect();
             if adjust.len() != execute_bits {
                 return Err(ZkVmError::Internal(format!(
                     "commit adjust short: got {} want {}",
@@ -366,58 +526,49 @@ where
                 .await
                 .map_err(|e| ZkVmError::IoRecv(e.to_string()))?;
 
-            {
-                let mut exec = self
-                    .zk
-                    .execute(exec_keys, &adjust)
-                    .map_err(|e| ZkVmError::Internal(e.to_string()))?;
-                if commit_bits > 0 {
-                    commit::commit_verifier(
-                        &mut self.auth,
-                        root_reg_base,
-                        &params,
-                        &self.pending_io,
-                        &mut exec,
-                    )?;
-                }
-                replay::replay(
-                    &chunk.trace,
-                    &chunk.reveal_actions,
-                    &self.module,
+            // Input-commit prefix: pure tape materialization into the
+            // persistent auth state shared by every segment worker.
+            if commit_bits > 0 {
+                let mut tape = VerifierTape {
+                    keys: &exec_keys[..commit_bits],
+                    adjust: &adjust[..commit_bits],
+                    delta: self.delta,
+                    cursor: 0,
+                };
+                commit::commit_verifier(
                     &mut self.auth,
-                    &mut exec,
-                    &mut state,
+                    root_reg_base,
+                    &params,
+                    &self.pending_io,
+                    &mut tape,
                 )?;
-                match &chunk.trap {
-                    // A trapping chunk carries no output to authenticate. When
-                    // the trap is tied to a committed op, check its divisor is
-                    // zero; a fully public trap has no committed divisor.
-                    Some(t) => {
-                        if let Some(directive) = &t.directive {
-                            replay::replay_trap(directive, &t.trap, &self.auth, &mut exec)?;
-                        }
-                    }
-                    None => {
-                        // Only a symbolic return is revealed/authenticated; a
-                        // concrete return is already public to both parties.
-                        if chunk.result_symbolic {
-                            finalize::bind_output(&state, &mut exec, &self.auth, output)?;
-                        }
-                    }
-                }
-                // Authenticate the prover's opened cleartext against the
-                // committed wires for any pending reveals.
-                if reveal_pending {
-                    reveal::reveal_verifier(&mut exec, &self.auth, &reveal_ranges, &revealed)?;
-                }
-                exec.finish()
-                    .map_err(|e| ZkVmError::Internal(e.to_string()))?;
             }
+
+            // ---- Accumulate pass: parallel proof checking ----
+            let seg_keys = &exec_keys[commit_bits..];
+            let seg_adjust = &adjust[commit_bits..];
+            let out = self.accumulate_pass(
+                &chunk,
+                &plan,
+                seg_keys,
+                seg_adjust,
+                chi,
+                output,
+                &revealed,
+                &reveal_ranges,
+                reveal_pending,
+            )?;
+            // The chunk-final worker state carries every wire forward.
+            self.auth = out.auth;
             commit_bits = 0;
 
-            self.zk
-                .verify(chi, vope_keys, proof)
-                .map_err(|_| ZkVmError::BatchCheckFailed)?;
+            if out.assertions != proof.assertions {
+                return Err(ZkVmError::BatchCheckFailed);
+            }
+            let b = vope_sender(vope_keys);
+            if out.w + b != proof.u + self.delta * proof.v {
+                return Err(ZkVmError::BatchCheckFailed);
+            }
 
             // The opening verified: write the revealed cleartext into linear
             // memory and drop the ranges' taint so later reads succeed.
@@ -513,12 +664,12 @@ where
         let vope_keys: &[Gf2_128; VOPE_BITS] =
             vope_keys.try_into().expect("vope tail is VOPE_BITS wide");
 
-        let commit_msg: mpz_zk_core::Commit = io
+        let commitment: Commitment = io
             .io_mut()
             .expect_next()
             .await
             .map_err(|e| ZkVmError::IoRecv(e.to_string()))?;
-        let adjust: Vec<bool> = commit_msg.adjust.iter().by_vals().collect();
+        let adjust: Vec<bool> = commitment.adjust.iter().by_vals().collect();
         if adjust.len() != execute_bits {
             return Err(ZkVmError::Internal(format!(
                 "commit adjust short: got {} want {}",
@@ -542,23 +693,35 @@ where
             .await
             .map_err(|e| ZkVmError::IoRecv(e.to_string()))?;
 
-        {
-            let mut exec = self
-                .zk
-                .execute(exec_keys, &adjust)
-                .map_err(|e| ZkVmError::Internal(e.to_string()))?;
-            if commit_bits > 0 {
-                commit::commit_memory_verifier(&mut self.auth, &self.pending_io, &mut exec);
-            }
-            if reveal_pending {
-                reveal::reveal_verifier(&mut exec, &self.auth, &reveal_ranges, &revealed)?;
-            }
-            exec.finish()
-                .map_err(|e| ZkVmError::Internal(e.to_string()))?;
+        if commit_bits > 0 {
+            let mut tape = VerifierTape {
+                keys: exec_keys,
+                adjust: &adjust,
+                delta: self.delta,
+                cursor: 0,
+            };
+            commit::commit_memory_verifier(&mut self.auth, &self.pending_io, &mut tape);
         }
-        self.zk
-            .verify(chi, vope_keys, proof)
-            .map_err(|_| ZkVmError::BatchCheckFailed)?;
+
+        // The commit round folds no gates; a tape-free accumulate context
+        // hashes the reveal assertions, mirroring the prover.
+        let mut ctx = mpz_zk_core::Verifier::new(self.delta, &[], &[])
+            .map_err(|e| ZkVmError::Internal(e.to_string()))?
+            .accumulate(ChaCha12Rng::from_seed(chi));
+        if reveal_pending {
+            reveal::reveal_verifier(&mut ctx, &self.auth, &reveal_ranges, &revealed)?;
+        }
+        let (w, assertions) = ctx
+            .finish()
+            .map_err(|e| ZkVmError::Internal(e.to_string()))?;
+
+        if assertions != proof.assertions {
+            return Err(ZkVmError::BatchCheckFailed);
+        }
+        let b = vope_sender(vope_keys);
+        if w + b != proof.u + self.delta * proof.v {
+            return Err(ZkVmError::BatchCheckFailed);
+        }
 
         // The opening verified: write the revealed cleartext into linear memory
         // and drop the ranges' taint so later reads succeed.

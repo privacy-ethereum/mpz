@@ -20,7 +20,7 @@ use mpz_circuits::Context;
 use mpz_fields::{gf2::Gf2, gf2_128::Gf2_128};
 use mpz_vm_core::{Directive, Op, Operand, Reg, Trap, ValType, value::Value};
 use mpz_vm_ir::{BinaryOp, LoadKind, MemArg, Module, StoreKind, UnaryOp};
-use mpz_zk_core::{ProverExecute, VerifierExecute};
+use rand_chacha::ChaCha12Rng;
 
 use mpz_vm_memory::{AuthState, AuthValue, Bit, I32, I64};
 
@@ -37,6 +37,14 @@ use crate::{
 // Execution backend
 // ============================================================
 
+/// The prover's accumulate-pass circuit context over a segment's MAC tape.
+pub(crate) type ProverCtx<'a> =
+    mpz_zk_core::prover::Prover<'a, mpz_zk_core::prover::Accumulate<ChaCha12Rng>>;
+
+/// The verifier's accumulate-pass circuit context over a segment's key tape.
+pub(crate) type VerifierCtx<'a> =
+    mpz_zk_core::verifier::Verifier<'a, mpz_zk_core::verifier::Accumulate<ChaCha12Rng>>;
+
 /// The prover/verifier-side capabilities replay needs on top of a circuit
 /// [`Context`]: public-bit constants and blind witness advice.
 pub(crate) trait ZkExec: Context<Wire = Gf2_128, Field = Gf2> {
@@ -51,7 +59,7 @@ pub(crate) trait ZkExec: Context<Wire = Gf2_128, Field = Gf2> {
     fn advise_i64(&mut self, compute: impl FnOnce() -> u64) -> I64;
 }
 
-impl ZkExec for ProverExecute<'_> {
+impl ZkExec for mpz_zk_core::Commit<'_> {
     fn public_bit(&mut self, value: bool) -> Gf2_128 {
         self.input_public(value)
     }
@@ -67,7 +75,23 @@ impl ZkExec for ProverExecute<'_> {
     }
 }
 
-impl ZkExec for VerifierExecute<'_> {
+impl ZkExec for ProverCtx<'_> {
+    fn public_bit(&mut self, value: bool) -> Gf2_128 {
+        self.input_public(value)
+    }
+
+    fn advise_i32(&mut self, compute: impl FnOnce() -> u32) -> I32 {
+        let v = compute();
+        I32::from(core::array::from_fn(|i| self.input((v >> i) & 1 != 0)))
+    }
+
+    fn advise_i64(&mut self, compute: impl FnOnce() -> u64) -> I64 {
+        let v = compute();
+        I64::from(core::array::from_fn(|i| self.input((v >> i) & 1 != 0)))
+    }
+}
+
+impl ZkExec for VerifierCtx<'_> {
     fn public_bit(&mut self, value: bool) -> Gf2_128 {
         self.input_public(value)
     }
@@ -566,18 +590,6 @@ where
 // Memory
 // ============================================================
 
-fn eff_addr(addr: &Operand, memarg: &MemArg) -> Result<u32> {
-    match addr {
-        Operand::Concrete(Value::I32(a)) => Ok((*a as u64 + memarg.offset as u64) as u32),
-        Operand::Symbol { .. } => Err(ZkVmError::Unsupported(
-            "zk-vm: symbolic memory address not supported".into(),
-        )),
-        other => Err(ZkVmError::Internal(format!(
-            "memory address operand is not i32: {other:?}"
-        ))),
-    }
-}
-
 /// Loads `kind` at the effective address, taking symbolic bytes from committed
 /// memory and the remaining (public) bytes from `concrete` per `symbolic_mask`.
 fn mem_load(
@@ -590,7 +602,7 @@ fn mem_load(
     symbolic_mask: u8,
 ) -> Result<()> {
     use LoadKind::*;
-    let eff = eff_addr(addr, memarg)?;
+    let eff = crate::memlog::eff_addr(addr, memarg)?;
     let m = &auth.memory;
     let av: AuthValue = match kind {
         I32 => m
@@ -652,7 +664,7 @@ where
     C: ZkExec,
 {
     use StoreKind::*;
-    let eff = eff_addr(addr, memarg)?;
+    let eff = crate::memlog::eff_addr(addr, memarg)?;
     let av = operand_value(val, auth, exec)?;
     match kind {
         I32 => auth.memory.store_i32(eff, av.try_as_i32()?),

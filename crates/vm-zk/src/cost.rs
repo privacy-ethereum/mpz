@@ -11,6 +11,28 @@ use mpz_vm_circuits as circ;
 
 use crate::error::{Result, unsupported_binary, unsupported_op, unsupported_unary};
 
+/// Tape entries consumed by `op` as committed blind advice (rather than AND
+/// gates). The challenge stream advances only on gates, so segment chi
+/// offsets are computed from `op_cost - op_advice_bits`.
+pub(crate) fn op_advice_bits(op: &Op) -> usize {
+    use mpz_vm_ir::{BinaryOp::*, UnaryOp::*};
+    match op {
+        // Division advice commits the quotient and remainder.
+        Op::Binary { op: bop, rhs, .. } if !rhs.is_concrete() => match bop {
+            I32DivU | I32RemU | I32DivS | I32RemS => 64,
+            I64DivU | I64RemU | I64DivS | I64RemS => 128,
+            _ => 0,
+        },
+        // Count advice commits one value of the operand's width.
+        Op::Unary { op: uop, .. } => match uop {
+            I32Clz | I32Ctz => 32,
+            I64Clz | I64Ctz => 64,
+            _ => 0,
+        },
+        _ => 0,
+    }
+}
+
 pub(crate) fn op_cost(op: &Op) -> Result<usize> {
     Ok(match op {
         Op::Copy { .. } | Op::GlobalGet { .. } | Op::GlobalSet { .. } => 0,

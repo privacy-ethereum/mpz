@@ -27,16 +27,25 @@ impl SpecVm for ZkPair {
 
     fn variants() -> Vec<String> {
         // Default (unbounded chunk) plus a small-cap variant that drives the
-        // whole spec corpus through multi-chunk proving, exercising cross-chunk
-        // authenticated-state liveness on every construct rather than on a few
-        // hand-written programs.
-        vec![String::new(), "chunk64".to_string()]
+        // whole spec corpus through multi-chunk proving (exercising
+        // cross-chunk authenticated-state liveness), plus a small
+        // segment-cost variant that drives it through multi-segment parallel
+        // proving (exercising boundary-commitment stitching) on every
+        // construct rather than on a few hand-written programs.
+        vec![
+            String::new(),
+            "chunk64".to_string(),
+            "seg16".to_string(),
+            "chunk64seg16".to_string(),
+        ]
     }
 
     fn instantiate(module: &Module, variant: &str) -> Result<Self, String> {
-        let cap = match variant {
-            "" => None,
-            "chunk64" => Some(64),
+        let (cap, segment_cost) = match variant {
+            "" => (None, None),
+            "chunk64" => (Some(64), None),
+            "seg16" => (None, Some(16)),
+            "chunk64seg16" => (Some(64), Some(16)),
             other => return Err(format!("unknown variant: {other}")),
         };
         let mut rng = StdRng::seed_from_u64(0);
@@ -45,10 +54,12 @@ impl SpecVm for ZkPair {
         let (svole_sender, svole_receiver) = ideal_rcot(rng.random(), delta);
         let prover = Prover::new(module.clone(), svole_receiver)
             .map_err(|e| format!("{:?}", e))?
-            .with_chunk_cap(cap);
+            .with_chunk_cap(cap)
+            .with_segment_cost(segment_cost);
         let verifier = Verifier::new(module.clone(), svole_sender)
             .map_err(|e| format!("{:?}", e))?
-            .with_chunk_cap(cap);
+            .with_chunk_cap(cap)
+            .with_segment_cost(segment_cost);
         Ok(Self { prover, verifier })
     }
 

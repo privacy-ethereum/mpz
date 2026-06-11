@@ -19,6 +19,10 @@ mpz-vm-core = { workspace = true }
 itybity = { workspace = true }
 blake3 = { workspace = true }
 rand = { workspace = true }
+rand_chacha = { workspace = true }
+# Unconditional: the segmented prover/verifier always parallelize across
+# segments, unlike zk-core where rayon is an optional acceleration.
+rayon = { workspace = true }
 rangeset = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serio = { workspace = true }

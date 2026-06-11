@@ -14,8 +14,9 @@ use mpz_core::{Block, bitvec::BitVec};
 use mpz_fields::{gf2::Gf2, gf2_128::Gf2_128};
 use mpz_ot_core::ideal::rcot::IdealRCOT;
 use rand::{Rng, SeedableRng, rngs::StdRng};
+use rand_chacha::ChaCha12Rng;
 
-use mpz_zk_core::{Prover, Verifier};
+use mpz_zk_core::{Commit, Proof, Prover, Verifier, vope_receiver, vope_sender};
 
 const VOPE_COST: usize = 128;
 
@@ -133,24 +134,31 @@ fn sha256_quicksilver_batch_check_accepts() {
         .collect();
 
     // Gate tape slices (caller-owned). `gate_masks` is mutated in
-    // place by `prover.execute`: after `finish` it holds the masked
-    // witness adjust bits.
+    // place by the prover's commit pass: after `finish` it holds the
+    // masked witness adjust bits.
     let mut gate_masks: Vec<bool> = choices[input_count..main_cost].to_vec();
     let gate_macs: Vec<Gf2_128> = macs[input_count..main_cost].to_vec();
 
     // ---- PROVER side ----
-    let mut prover = Prover::new();
-    let prover_out = {
-        let mut exec = prover
-            .execute(&mut gate_masks, &gate_macs)
-            .expect("execute");
-        let msg_p: [Gf2_128; 512] = core::array::from_fn(|i| input_mac_wires[i]);
-        let state_p: [Gf2_128; 256] = core::array::from_fn(|i| input_mac_wires[512 + i]);
-        let out = sha256_compress(&mut exec, msg_p, state_p);
-        exec.finish().expect("finish");
-        out
+    let msg_p: [Gf2_128; 512] = core::array::from_fn(|i| input_mac_wires[i]);
+    let state_p: [Gf2_128; 256] = core::array::from_fn(|i| input_mac_wires[512 + i]);
+
+    // Commit pass: adjusts `gate_masks` in place, touching no MACs.
+    let mut commit = Commit::new(&mut gate_masks);
+    let _ = sha256_compress(&mut commit, msg_p, state_p);
+    commit.finish().expect("commit finish");
+
+    // Accumulate pass: re-evaluates the circuit, folding the proof.
+    let mut prover = Prover::committed(&gate_macs).accumulate(ChaCha12Rng::from_seed(chi));
+    let prover_out = sha256_compress(&mut prover, msg_p, state_p);
+    let (u, v, assertions) = prover.finish().expect("accumulate finish");
+
+    let (a_0, a_1) = vope_receiver(&vope_choices, &vope_ev);
+    let proof = Proof {
+        assertions,
+        u: u + a_0,
+        v: v + a_1,
     };
-    let proof = prover.prove(chi, &vope_choices, &vope_ev);
 
     // ---- VERIFIER side ----
     // Caller pre-adjusts input keys off-band.
@@ -164,15 +172,12 @@ fn sha256_quicksilver_batch_check_accepts() {
 
     let gate_keys: Vec<Gf2_128> = raw_keys[input_count..main_cost].to_vec();
 
-    let mut verifier = Verifier::new(delta);
-    let verifier_out = {
-        let mut exec = verifier.execute(&gate_keys, &gate_masks).expect("execute");
-        let msg_v: [Gf2_128; 512] = core::array::from_fn(|i| input_key_wires[i]);
-        let state_v: [Gf2_128; 256] = core::array::from_fn(|i| input_key_wires[512 + i]);
-        let out = sha256_compress(&mut exec, msg_v, state_v);
-        exec.finish().expect("finish");
-        out
-    };
+    let verifier = Verifier::new(delta, &gate_keys, &gate_masks).expect("new");
+    let mut verifier = verifier.accumulate(ChaCha12Rng::from_seed(chi));
+    let msg_v: [Gf2_128; 512] = core::array::from_fn(|i| input_key_wires[i]);
+    let state_v: [Gf2_128; 256] = core::array::from_fn(|i| input_key_wires[512 + i]);
+    let verifier_out = sha256_compress(&mut verifier, msg_v, state_v);
+    let (w, v_assertions) = verifier.finish().expect("finish");
 
     // Output IT-MAC sanity: MAC == key + b·delta for each output bit.
     let expected_bits = sha2_compress_out_bits(msg, H0);
@@ -185,9 +190,13 @@ fn sha256_quicksilver_batch_check_accepts() {
         assert_eq!(prover_out[i], expected, "output bit {i}");
     }
 
-    verifier
-        .verify(chi, &vope_keys, proof)
-        .expect("batch check should accept a consistent execution");
+    let b = vope_sender(&vope_keys);
+    assert_eq!(v_assertions, proof.assertions);
+    assert_eq!(
+        w + b,
+        proof.u + delta * proof.v,
+        "batch check should accept a consistent execution"
+    );
 }
 
 /// SHA-256 compression output as a flat bit array (LSB-first within

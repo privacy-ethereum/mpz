@@ -280,6 +280,15 @@ impl Thread {
         &self.registers
     }
 
+    /// Returns whether the register at absolute index `abs_reg` currently
+    /// holds symbolic (committed) data.
+    ///
+    /// Symbolic-ness is identical across parties: a register is symbolic for
+    /// both or neither, only *heldness* differs.
+    pub fn is_register_symbolic(&self, abs_reg: u32) -> bool {
+        self.reg_taints.is_symbolic(abs_reg)
+    }
+
     /// Returns a mutable view of the thread's register file, indexed by
     /// absolute register number.
     pub fn registers_mut(&mut self) -> &mut [Value] {

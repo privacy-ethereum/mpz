@@ -1,5 +1,5 @@
+use mpz_fields::gf2_128::Gf2_128;
 use mpz_vm_core::{Error as CoreError, Global, Param, Reg, value::Value};
-use mpz_zk_core::{ProverExecute, VerifierExecute};
 use rangeset::set::RangeSet;
 use std::ops::Range;
 
@@ -59,6 +59,42 @@ pub(crate) fn prepare_params(params: &[Param]) -> Result<usize> {
     Ok(bits)
 }
 
+/// The prover's view of an input-commit tape region: each committed bit XORs
+/// into the mask in place and yields its authenticated wire directly off the
+/// tape. Input commits draw no challenge and fold nothing, so no circuit
+/// context is involved.
+pub(crate) struct ProverTape<'a> {
+    pub(crate) masks: &'a mut [bool],
+    pub(crate) macs: &'a [Gf2_128],
+    pub(crate) cursor: usize,
+}
+
+impl ProverTape<'_> {
+    fn bit(&mut self, b: bool) -> Gf2_128 {
+        let i = self.cursor;
+        self.masks[i] ^= b;
+        self.cursor = i + 1;
+        mpz_zk_core::prover_wire(self.macs[i], b)
+    }
+}
+
+/// The verifier's view of an input-commit tape region: each entry yields the
+/// key wire adjusted by the received commitment.
+pub(crate) struct VerifierTape<'a> {
+    pub(crate) keys: &'a [Gf2_128],
+    pub(crate) adjust: &'a [bool],
+    pub(crate) delta: Gf2_128,
+    pub(crate) cursor: usize,
+}
+
+impl VerifierTape<'_> {
+    fn bit(&mut self) -> Gf2_128 {
+        let i = self.cursor;
+        self.cursor = i + 1;
+        mpz_zk_core::verifier_wire(self.keys[i], self.adjust[i], self.delta)
+    }
+}
+
 #[tracing::instrument(level = "debug", skip_all, fields(num_params = params.len()))]
 pub(crate) fn commit_prover(
     auth: &mut AuthState,
@@ -66,7 +102,7 @@ pub(crate) fn commit_prover(
     params: &[Param],
     pending: &PendingIo,
     global: &Global,
-    exec: &mut ProverExecute<'_>,
+    tape: &mut ProverTape<'_>,
 ) -> Result<()> {
     for (i, p) in params.iter().enumerate() {
         let (ty, bits): (mpz_vm_ir::ValType, Vec<bool>) = match p {
@@ -76,20 +112,20 @@ pub(crate) fn commit_prover(
             Param::Blind(ty) => (*ty, vec![false; ty_width(*ty)]),
             Param::Public(_) => continue,
         };
-        let auth_bits: Vec<Bit> = bits.into_iter().map(|b| Bit(exec.input(b))).collect();
+        let auth_bits: Vec<Bit> = bits.into_iter().map(|b| Bit(tape.bit(b))).collect();
         auth.regs.set(
             root_reg_base + i as u32,
             AuthValue::from_bits(ty, &auth_bits)?,
         );
     }
-    commit_memory_prover(auth, pending, global, exec)
+    commit_memory_prover(auth, pending, global, tape)
 }
 
 pub(crate) fn commit_memory_prover(
     auth: &mut AuthState,
     pending: &PendingIo,
     global: &Global,
-    exec: &mut ProverExecute<'_>,
+    tape: &mut ProverTape<'_>,
 ) -> Result<()> {
     if pending.cost_bits() == 0 {
         return Ok(());
@@ -106,7 +142,7 @@ pub(crate) fn commit_memory_prover(
         for (i, value) in bytes.into_iter().enumerate() {
             let addr = range.start + i as u32;
             let byte_bits = Byte::new(core::array::from_fn(|bit_idx| {
-                Bit(exec.input((value >> bit_idx) & 1 != 0))
+                Bit(tape.bit((value >> bit_idx) & 1 != 0))
             }));
             auth.memory.set_byte(addr, byte_bits);
         }
@@ -120,7 +156,7 @@ pub(crate) fn commit_verifier(
     root_reg_base: Reg,
     params: &[Param],
     pending: &PendingIo,
-    exec: &mut VerifierExecute<'_>,
+    tape: &mut VerifierTape<'_>,
 ) -> Result<()> {
     for (i, p) in params.iter().enumerate() {
         let ty = match p {
@@ -129,28 +165,28 @@ pub(crate) fn commit_verifier(
             Param::Public(_) => continue,
         };
         let width = ty_width(ty);
-        let auth_bits: Vec<Bit> = (0..width).map(|_| Bit(exec.input())).collect();
+        let auth_bits: Vec<Bit> = (0..width).map(|_| Bit(tape.bit())).collect();
         auth.regs.set(
             root_reg_base + i as u32,
             AuthValue::from_bits(ty, &auth_bits)?,
         );
     }
-    commit_memory_verifier(auth, pending, exec);
+    commit_memory_verifier(auth, pending, tape);
     Ok(())
 }
 
 pub(crate) fn commit_memory_verifier(
     auth: &mut AuthState,
     pending: &PendingIo,
-    exec: &mut VerifierExecute<'_>,
+    tape: &mut VerifierTape<'_>,
 ) {
     for addr in pending.addrs() {
-        let byte_bits = Byte::new(core::array::from_fn(|_| Bit(exec.input())));
+        let byte_bits = Byte::new(core::array::from_fn(|_| Bit(tape.bit())));
         auth.memory.set_byte(addr, byte_bits);
     }
 }
 
-fn value_le_bits(v: Value, width: usize) -> Vec<bool> {
+pub(crate) fn value_le_bits(v: Value, width: usize) -> Vec<bool> {
     let bytes = v.to_le_bytes();
     (0..width)
         .map(|i| (bytes[i / 8] >> (i % 8)) & 1 != 0)

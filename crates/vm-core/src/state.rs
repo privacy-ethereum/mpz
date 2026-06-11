@@ -37,7 +37,8 @@ impl Global {
         &mut self.memory_taints
     }
 
-    pub(crate) fn globals(&self) -> &[Value] {
+    /// The current values of the module's globals, indexed by global index.
+    pub fn globals(&self) -> &[Value] {
         &self.globals
     }
 
@@ -47,6 +48,12 @@ impl Global {
 
     pub(crate) fn global_taints(&self) -> &Taints {
         &self.global_taints
+    }
+
+    /// Returns whether the global at `idx` currently holds symbolic
+    /// (committed) data. Symbolic-ness is identical across parties.
+    pub fn is_global_symbolic(&self, idx: u32) -> bool {
+        self.global_taints.is_symbolic(idx)
     }
 
     pub(crate) fn global_taints_mut(&mut self) -> &mut Taints {

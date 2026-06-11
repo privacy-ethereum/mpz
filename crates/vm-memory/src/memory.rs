@@ -28,7 +28,7 @@ use crate::auth::{Bit, Byte, F32, F64, I32, I64, Wire};
 /// Sparse byte-addressed linear memory keyed by absolute byte address,
 /// storing one [`Byte<W>`] per tainted address. Carries the public-0 and
 /// public-1 [`Bit<W>`]s used to fill extensions and encode public bytes.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct LinearMemory<W = Gf2_128> {
     inner: HashMap<u32, Byte<W>>,
     zero: Bit<W>,

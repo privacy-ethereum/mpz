@@ -8,19 +8,22 @@ use mpz_vm_core::{
 use mpz_vm_ir::{Function, Module};
 
 use mpz_vm_memory::{AuthState, Bit, Registers};
-use mpz_zk_core::Commit;
+use mpz_zk_core::{Commitment, MAC_ONE, MAC_ZERO, Proof, prover_wire, vope_receiver};
+use rand_chacha::ChaCha12Rng;
+use rand_chacha::rand_core::SeedableRng;
 use rangeset::set::RangeSet;
+use rayon::prelude::*;
 use serio::{SinkExt, stream::IoStreamExt};
 use std::ops::Range;
 
 use crate::{
     ChunkOutcome, ProofMessage, VOPE_BITS,
-    capture::{self, Role},
-    commit::{self, PendingIo, prepare_params},
+    capture::{self, ChunkCapture, Role},
+    commit::{self, PendingIo, ProverTape, prepare_params},
     error::ZkVmError,
     finalize, host,
     replay::{self, ReplayState},
-    reveal,
+    reveal, segment,
 };
 
 /// A zero-knowledge prover that executes a [`Module`] and proves correct
@@ -43,8 +46,8 @@ pub struct Prover<T> {
     pending_reveal: RangeSet<u32>,
     reveal_state: host::RevealState,
     auth: AuthState,
-    zk: mpz_zk_core::Prover,
     chunk_cap: Option<usize>,
+    segment_cost: Option<usize>,
 }
 
 impl<T> Prover<T> {
@@ -56,8 +59,7 @@ impl<T> Prover<T> {
     /// Returns a [`ZkVmError`] if state for `module` cannot be initialized.
     pub fn new(module: Module, svole: T) -> Result<Self, ZkVmError> {
         let global = Global::new(&module)?;
-        let zk = mpz_zk_core::Prover::new();
-        let auth = AuthState::new(Bit(zk.public_bit(false)), Bit(zk.public_bit(true)));
+        let auth = AuthState::new(Bit(MAC_ZERO), Bit(MAC_ONE));
         Ok(Self {
             module,
             global,
@@ -66,8 +68,8 @@ impl<T> Prover<T> {
             pending_reveal: RangeSet::default(),
             reveal_state: host::RevealState::default(),
             auth,
-            zk,
             chunk_cap: None,
+            segment_cost: None,
         })
     }
 
@@ -79,6 +81,19 @@ impl<T> Prover<T> {
     /// lets a chunk run until the program completes or traps.
     pub fn with_chunk_cap(mut self, cap: Option<usize>) -> Self {
         self.chunk_cap = cap;
+        self
+    }
+
+    /// Sets the gate-cost target per proving segment, returning the updated
+    /// prover.
+    ///
+    /// A value of `Some(cost)` splits each chunk's trace into segments of
+    /// roughly `cost` gate bits, which are committed and folded by parallel
+    /// workers and stitched together with boundary commitments. `None` proves
+    /// each chunk as a single segment. This must match the verifier's setting
+    /// for the two sides to agree.
+    pub fn with_segment_cost(mut self, cost: Option<usize>) -> Self {
+        self.segment_cost = cost;
         self
     }
 }
@@ -111,6 +126,278 @@ where
         let macs = msgs.into_iter().map(|m| zerocopy::transmute!(m)).collect();
         Ok((masks, macs))
     }
+
+    /// Runs the two-pass proof of one chunk: the parallel per-segment commit
+    /// pass over `exec_masks`, and — once `chi` is known — the parallel
+    /// per-segment accumulate pass yielding the combined `(u, v, assertions)`
+    /// plus the chunk-final state.
+    ///
+    /// `commit_bits` is the input-commit prefix length; the segment region
+    /// (gates, advice, and boundary commitments) follows it.
+    #[allow(clippy::too_many_arguments)]
+    fn commit_pass(
+        &mut self,
+        chunk: &ChunkCapture,
+        plan: &segment::Plan,
+        commit_bits: usize,
+        root_reg_base: Reg,
+        params: &[Param],
+        exec_masks: &mut [bool],
+        exec_macs: &[Gf2_128],
+    ) -> Result<Vec<Option<Vec<bool>>>, ZkVmError> {
+        // Input-commit prefix: pure tape materialization. Installs the real
+        // MAC wires into the persistent auth state, which every segment
+        // worker starts from (in both passes — the commit pass only reads
+        // their pointer bits).
+        let (prefix_masks, seg_masks) = exec_masks.split_at_mut(commit_bits);
+        let (prefix_macs, _) = exec_macs.split_at(commit_bits);
+        if commit_bits > 0 {
+            let mut tape = ProverTape {
+                masks: prefix_masks,
+                macs: prefix_macs,
+                cursor: 0,
+            };
+            commit::commit_prover(
+                &mut self.auth,
+                root_reg_base,
+                params,
+                &self.pending_io,
+                &self.global,
+                &mut tape,
+            )?;
+        }
+
+        // Boundary plaintext, resolved from the capture snapshots, and the
+        // boundary commitments XORed straight into the mask region.
+        let mut boundary_bits: Vec<Option<Vec<bool>>> = Vec::with_capacity(plan.segments.len());
+        for seg in &plan.segments {
+            match &seg.boundary {
+                Some(b) => {
+                    let bits = segment::boundary_bits(b)?;
+                    for (i, &bit) in bits.iter().enumerate() {
+                        seg_masks[b.tape.start + i] ^= bit;
+                    }
+                    boundary_bits.push(Some(bits));
+                }
+                None => boundary_bits.push(None),
+            }
+        }
+
+        // Pointer-bit wires for every delta boundary, shared across workers:
+        // worker `j` seeds from all deltas before its segment.
+        let ptr_wires: Vec<Option<Vec<Gf2_128>>> = boundary_bits
+            .iter()
+            .map(|bits| {
+                bits.as_ref()
+                    .map(|b| b.iter().map(|&bit| Gf2_128::new(bit as u128)).collect())
+            })
+            .collect();
+
+        // Parallel per-segment commit workers: plaintext circuit evaluation
+        // over pointer-bit wires, adjusting each segment's gate/advice masks
+        // in place.
+        let gate_masks = gate_mask_slices(seg_masks, &plan.segments);
+        let module = &self.module;
+        let auth_base = &self.auth;
+        plan.segments
+            .par_iter()
+            .zip(gate_masks)
+            .enumerate()
+            .try_for_each(|(j, (seg, gmasks))| -> Result<(), ZkVmError> {
+                let mut auth = auth_base.clone();
+                for (prev_seg, prev_wires) in plan.segments.iter().zip(&ptr_wires).take(j) {
+                    let prev = prev_seg
+                        .boundary
+                        .as_ref()
+                        .expect("non-final segments carry a boundary");
+                    let wires = prev_wires.as_ref().expect("wires for boundary");
+                    segment::apply_boundary(&mut auth, prev, wires, &pub_bit_prover)?;
+                }
+                let mut ctx = mpz_zk_core::Commit::new(gmasks);
+                let mut state = ReplayState::root();
+                replay::replay(
+                    &chunk.trace[seg.directives.clone()],
+                    &chunk.reveal_actions[seg.reveals.clone()],
+                    module,
+                    &mut auth,
+                    &mut ctx,
+                    &mut state,
+                )?;
+                ctx.finish()
+                    .map_err(|e| ZkVmError::Internal(e.to_string()))?;
+                Ok(())
+            })?;
+
+        Ok(boundary_bits)
+    }
+
+    /// The parallel per-segment accumulate pass. Returns the combined
+    /// `(u, v, assertions)`, the opened reveal cleartext, and the chunk-final
+    /// authenticated state to persist.
+    #[allow(clippy::too_many_arguments)]
+    fn accumulate_pass(
+        &self,
+        chunk: &ChunkCapture,
+        plan: &segment::Plan,
+        boundary_bits: &[Option<Vec<bool>>],
+        seg_macs: &[Gf2_128],
+        chi: [u8; 32],
+        reveal_ranges: &[Range<u32>],
+        reveal_pending: bool,
+    ) -> Result<AccOut, ZkVmError> {
+        // Boundary commitment wires, materialized straight off the tape.
+        let boundary_wires: Vec<Option<Vec<Gf2_128>>> = plan
+            .segments
+            .iter()
+            .zip(boundary_bits)
+            .map(|(seg, bits)| {
+                seg.boundary.as_ref().map(|b| {
+                    let bits = bits.as_ref().expect("bits for boundary");
+                    bits.iter()
+                        .enumerate()
+                        .map(|(i, &bit)| prover_wire(seg_macs[b.tape.start + i], bit))
+                        .collect()
+                })
+            })
+            .collect();
+
+        let module = &self.module;
+        let auth_base = &self.auth;
+        let memory = self.global.memory();
+        let last = plan.segments.len() - 1;
+
+        let results: Vec<(Gf2_128, Gf2_128, [u8; 32], Option<LastOut>)> = plan
+            .segments
+            .par_iter()
+            .enumerate()
+            .map(|(j, seg)| -> Result<_, ZkVmError> {
+                let mut auth = auth_base.clone();
+                for (prev_seg, prev_wires) in plan.segments.iter().zip(&boundary_wires).take(j) {
+                    let prev = prev_seg
+                        .boundary
+                        .as_ref()
+                        .expect("non-final segments carry a boundary");
+                    let wires = prev_wires.as_ref().expect("wires for boundary");
+                    segment::apply_boundary(&mut auth, prev, wires, &pub_bit_prover)?;
+                }
+
+                let mut rng = ChaCha12Rng::from_seed(chi);
+                rng.set_word_pos((seg.chi_gates as u128) * 4);
+                let mut ctx =
+                    mpz_zk_core::Prover::committed(&seg_macs[seg.tape.clone()]).accumulate(rng);
+                let mut state = ReplayState::root();
+                replay::replay(
+                    &chunk.trace[seg.directives.clone()],
+                    &chunk.reveal_actions[seg.reveals.clone()],
+                    module,
+                    &mut auth,
+                    &mut ctx,
+                    &mut state,
+                )?;
+
+                if let Some(b) = &seg.boundary {
+                    let wires = boundary_wires[j].as_ref().expect("wires for boundary");
+                    segment::assert_boundary(&auth, b, wires, &mut ctx).map_err(|e| {
+                        ZkVmError::Internal(format!(
+                            "segment {j} (directives {:?}): {e}",
+                            seg.directives
+                        ))
+                    })?;
+                }
+
+                let mut last_out = None;
+                if j == last {
+                    let mut revealed = Vec::new();
+                    match &chunk.trap {
+                        // A trapping chunk produces no output to bind. When the
+                        // trap is tied to a committed op, prove its divisor is
+                        // zero; a fully public trap has no committed divisor.
+                        Some(t) => {
+                            if let Some(directive) = &t.directive {
+                                replay::replay_trap(directive, &t.trap, &auth, &mut ctx)?;
+                            }
+                        }
+                        None => {
+                            // Only a symbolic return is revealed/bound; a concrete
+                            // return is already public to both parties.
+                            if chunk.result_symbolic {
+                                finalize::bind_output(&state, &mut ctx, &auth, chunk.result)?;
+                            }
+                        }
+                    }
+                    if reveal_pending {
+                        let memory = memory.ok_or(ZkVmError::Core(CoreError::MemoryNotDefined))?;
+                        revealed = reveal::reveal_prover(&mut ctx, &auth, memory, reveal_ranges)?;
+                    }
+                    last_out = Some(LastOut { auth, revealed });
+                }
+
+                let (u, v, assertions) = ctx
+                    .finish()
+                    .map_err(|e| ZkVmError::Internal(e.to_string()))?;
+                Ok((u, v, assertions, last_out))
+            })
+            .collect::<Result<_, _>>()?;
+
+        let mut u = Gf2_128::new(0);
+        let mut v = Gf2_128::new(0);
+        let mut hasher = blake3::Hasher::new();
+        let mut final_out = None;
+        for (u_j, v_j, h_j, last_out) in results {
+            u = u + u_j;
+            v = v + v_j;
+            hasher.update(&h_j);
+            if let Some(out) = last_out {
+                final_out = Some(out);
+            }
+        }
+        let LastOut { auth, revealed } = final_out.expect("last segment produces final state");
+
+        Ok(AccOut {
+            u,
+            v,
+            assertions: *hasher.finalize().as_bytes(),
+            revealed,
+            auth,
+        })
+    }
+}
+
+/// Output of the prover's accumulate pass over one chunk.
+struct AccOut {
+    u: Gf2_128,
+    v: Gf2_128,
+    assertions: [u8; 32],
+    revealed: Vec<u8>,
+    auth: AuthState,
+}
+
+struct LastOut {
+    auth: AuthState,
+    revealed: Vec<u8>,
+}
+
+/// The prover's wire for a public bit.
+fn pub_bit_prover(bit: bool) -> Gf2_128 {
+    if bit { MAC_ONE } else { MAC_ZERO }
+}
+
+/// Splits the segment mask region into per-segment gate/advice slices,
+/// skipping the (already finalized) boundary blocks between them.
+fn gate_mask_slices<'m>(
+    mut region: &'m mut [bool],
+    segments: &[segment::Segment],
+) -> Vec<&'m mut [bool]> {
+    let mut out = Vec::with_capacity(segments.len());
+    for seg in segments {
+        let (gates, rest) = region.split_at_mut(seg.tape.len());
+        out.push(gates);
+        region = match &seg.boundary {
+            Some(b) => rest.split_at_mut(b.tape.len()).1,
+            None => rest,
+        };
+    }
+    out
 }
 
 impl<T> Vm for Prover<T>
@@ -243,7 +530,6 @@ where
         let mut commit_bits = input_bits + self.pending_io.cost_bits();
 
         self.auth.regs = Registers::new();
-        let mut state = ReplayState::root();
         let mut final_result = None;
         let mut chunk_idx: usize = 0;
         // Memory ranges to open on the first proving chunk. Draining them
@@ -266,7 +552,10 @@ where
                 &self.module,
                 &mut self.global,
                 &mut thread,
-                self.chunk_cap,
+                capture::Limits {
+                    chunk_cap: self.chunk_cap,
+                    segment_cost: self.segment_cost,
+                },
                 Role::Prover,
                 None,
                 &mut self.reveal_state,
@@ -275,6 +564,7 @@ where
                 events = chunk.trace.len(),
                 cost = chunk.cost,
                 done = chunk.done,
+                segments = chunk.marks.len() + 1,
                 "captured chunk"
             );
 
@@ -297,7 +587,8 @@ where
                 .await
                 .map_err(|e| ZkVmError::IoSend(e.to_string()))?;
 
-            let execute_bits = commit_bits + chunk.cost;
+            let plan = segment::plan(&chunk, &self.module, &self.auth, &params, root_reg_base);
+            let execute_bits = commit_bits + plan.tape_len;
 
             // A fully public chunk reached before any authenticated work has
             // nothing to prove: no committed bits, no gates, and any trap it
@@ -329,7 +620,13 @@ where
             any_zk_work = true;
 
             let total = execute_bits + VOPE_BITS;
-            tracing::info!(commit_bits, cost = chunk.cost, total, "cost plan");
+            tracing::info!(
+                commit_bits,
+                cost = chunk.cost,
+                total,
+                segments = plan.segments.len(),
+                "cost plan"
+            );
 
             let (mut masks, macs) = self.allocate(io, total).await?;
             let (exec_masks, vope_masks) = masks.split_at_mut(execute_bits);
@@ -340,70 +637,26 @@ where
             let vope_macs: &[Gf2_128; VOPE_BITS] =
                 vope_macs.try_into().expect("vope tail is VOPE_BITS wide");
 
-            // Cleartext of bytes opened on this chunk, streamed in the proof.
-            let mut revealed: Vec<u8> = Vec::new();
-            {
-                let mut exec = self
-                    .zk
-                    .execute(exec_masks, exec_macs)
-                    .map_err(|e| ZkVmError::Internal(e.to_string()))?;
-                if commit_bits > 0 {
-                    commit::commit_prover(
-                        &mut self.auth,
-                        root_reg_base,
-                        &params,
-                        &self.pending_io,
-                        &self.global,
-                        &mut exec,
-                    )?;
-                }
-                replay::replay(
-                    &chunk.trace,
-                    &chunk.reveal_actions,
-                    &self.module,
-                    &mut self.auth,
-                    &mut exec,
-                    &mut state,
-                )?;
-                match &chunk.trap {
-                    // A trapping chunk produces no output to bind. When the
-                    // trap is tied to a committed op, prove its divisor is
-                    // zero; a fully public trap has no committed divisor.
-                    Some(t) => {
-                        if let Some(directive) = &t.directive {
-                            replay::replay_trap(directive, &t.trap, &self.auth, &mut exec)?;
-                        }
-                    }
-                    None => {
-                        // Only a symbolic return is revealed/bound; a concrete
-                        // return is already public to both parties.
-                        if chunk.result_symbolic {
-                            finalize::bind_output(&state, &mut exec, &self.auth, chunk.result)?;
-                        }
-                    }
-                }
-                // Open any pending reveals against their committed wires,
-                // collecting the cleartext to stream in the proof message.
-                if reveal_pending {
-                    let memory = self
-                        .global
-                        .memory()
-                        .ok_or(ZkVmError::Core(CoreError::MemoryNotDefined))?;
-                    revealed =
-                        reveal::reveal_prover(&mut exec, &self.auth, memory, &reveal_ranges)?;
-                }
-                exec.finish()
-                    .map_err(|e| ZkVmError::Internal(e.to_string()))?;
-            }
+            // ---- Commit pass: parallel plaintext evaluation ----
+            let boundary_bits = self.commit_pass(
+                &chunk,
+                &plan,
+                commit_bits,
+                root_reg_base,
+                &params,
+                exec_masks,
+                exec_macs,
+            )?;
             commit_bits = 0;
-            // The whole execute tape's adjust witness (commit + gate)
-            // ships in one Commit message, sent before the prover learns
-            // the verifier's challenge.
-            let commit_payload = Commit {
+
+            // The whole execute tape's adjust witness (commit prefix, gates,
+            // and boundary commitments) ships in one Commitment message, sent
+            // before the prover learns the verifier's challenge.
+            let commitment = Commitment {
                 adjust: exec_masks.iter().copied().collect(),
             };
             io.io_mut()
-                .send(commit_payload)
+                .send(commitment)
                 .await
                 .map_err(|e| ZkVmError::IoSend(e.to_string()))?;
 
@@ -414,6 +667,20 @@ where
                 .expect_next()
                 .await
                 .map_err(|e| ZkVmError::IoRecv(e.to_string()))?;
+
+            // ---- Accumulate pass: parallel proof folding ----
+            let seg_macs = &exec_macs[exec_macs.len() - plan.tape_len..];
+            let out = self.accumulate_pass(
+                &chunk,
+                &plan,
+                &boundary_bits,
+                seg_macs,
+                chi,
+                &reveal_ranges,
+                reveal_pending,
+            )?;
+            // The chunk-final worker state carries every wire forward.
+            self.auth = out.auth;
 
             if chunk.done {
                 final_result = chunk.result;
@@ -426,11 +693,16 @@ where
             } else {
                 None
             };
-            let proof = self.zk.prove(chi, vope_masks, vope_macs);
+            let (a_0, a_1) = vope_receiver(vope_masks, vope_macs);
+            let proof = Proof {
+                assertions: out.assertions,
+                u: out.u + a_0,
+                v: out.v + a_1,
+            };
             io.io_mut()
                 .send(ProofMessage {
                     output: out_val,
-                    revealed,
+                    revealed: out.revealed,
                     proof,
                 })
                 .await
@@ -504,36 +776,25 @@ where
         let vope_macs: &[Gf2_128; VOPE_BITS] =
             vope_macs.try_into().expect("vope tail is VOPE_BITS wide");
 
-        let mut revealed: Vec<u8> = Vec::new();
-        {
-            let mut exec = self
-                .zk
-                .execute(exec_masks, exec_macs)
-                .map_err(|e| ZkVmError::Internal(e.to_string()))?;
-            if commit_bits > 0 {
-                commit::commit_memory_prover(
-                    &mut self.auth,
-                    &self.pending_io,
-                    &self.global,
-                    &mut exec,
-                )?;
-            }
-            if reveal_pending {
-                let memory = self
-                    .global
-                    .memory()
-                    .ok_or(ZkVmError::Core(CoreError::MemoryNotDefined))?;
-                revealed = reveal::reveal_prover(&mut exec, &self.auth, memory, &reveal_ranges)?;
-            }
-            exec.finish()
-                .map_err(|e| ZkVmError::Internal(e.to_string()))?;
+        if commit_bits > 0 {
+            let mut tape = ProverTape {
+                masks: exec_masks,
+                macs: exec_macs,
+                cursor: 0,
+            };
+            commit::commit_memory_prover(
+                &mut self.auth,
+                &self.pending_io,
+                &self.global,
+                &mut tape,
+            )?;
         }
 
-        let commit_payload = Commit {
+        let commitment = Commitment {
             adjust: exec_masks.iter().copied().collect(),
         };
         io.io_mut()
-            .send(commit_payload)
+            .send(commitment)
             .await
             .map_err(|e| ZkVmError::IoSend(e.to_string()))?;
         let chi: [u8; 32] = io
@@ -541,7 +802,28 @@ where
             .expect_next()
             .await
             .map_err(|e| ZkVmError::IoRecv(e.to_string()))?;
-        let proof = self.zk.prove(chi, vope_masks, vope_macs);
+
+        // The commit round folds no gates; a tape-free accumulate context
+        // hashes the reveal assertions into the proof.
+        let mut revealed: Vec<u8> = Vec::new();
+        let mut ctx = mpz_zk_core::Prover::committed(&[]).accumulate(ChaCha12Rng::from_seed(chi));
+        if reveal_pending {
+            let memory = self
+                .global
+                .memory()
+                .ok_or(ZkVmError::Core(CoreError::MemoryNotDefined))?;
+            revealed = reveal::reveal_prover(&mut ctx, &self.auth, memory, &reveal_ranges)?;
+        }
+        let (u, v, assertions) = ctx
+            .finish()
+            .map_err(|e| ZkVmError::Internal(e.to_string()))?;
+
+        let (a_0, a_1) = vope_receiver(vope_masks, vope_macs);
+        let proof = Proof {
+            assertions,
+            u: u + a_0,
+            v: v + a_1,
+        };
         io.io_mut()
             .send(ProofMessage {
                 output: None,

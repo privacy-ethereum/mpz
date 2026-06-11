@@ -5,7 +5,7 @@ edition = "2024"
 
 [features]
 default = []
-rayon = ["dep:rayon", "mpz-fields/rayon", "mpz-core/rayon"]
+rayon = ["mpz-fields/rayon", "mpz-core/rayon"]
 
 [dependencies]
 mpz-core = { workspace = true }
@@ -14,8 +14,7 @@ mpz-fields = { workspace = true }
 
 blake3 = { workspace = true }
 itybity = { workspace = true }
-rand_chacha = { workspace = true }
-rayon = { workspace = true, optional = true }
+rand_core = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 thiserror = { workspace = true }
 zerocopy = { workspace = true }
@@ -24,6 +23,7 @@ zerocopy = { workspace = true }
 criterion = { workspace = true }
 mpz-ot-core = { workspace = true }
 rand = { workspace = true }
+rand_chacha = { workspace = true }
 sha2 = { workspace = true, features = ["compress"] }
 
 [[bench]]
