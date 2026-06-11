@@ -9,10 +9,9 @@ pub mod gf2_128;
 pub mod gf2_64;
 pub mod p256;
 
-#[cfg(not(any(
-    all(target_arch = "x86_64", target_feature = "pclmulqdq"),
-    all(target_arch = "wasm32", target_feature = "simd128"),
-)))]
+// Needed wherever a soft backend is compiled — on x86_64 the Gf2_128 soft
+// fallback exists even when PCLMULQDQ is enabled at compile time.
+#[cfg(not(all(target_arch = "wasm32", target_feature = "simd128")))]
 mod bmul;
 
 #[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]

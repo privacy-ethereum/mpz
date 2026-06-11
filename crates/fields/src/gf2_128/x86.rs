@@ -1,9 +1,9 @@
 //! x86_64 PCLMULQDQ fast path for GF(2¹²⁸). Multiply and inner-product
 //! share carry-less multiply (`clmul128`) and reduction (`reduce128`).
 //!
-//! Entry points are `#[target_feature(enable = "pclmulqdq")]`: when the
-//! crate is compiled with the feature they are called directly, otherwise
-//! the `autodetect` backend dispatches to them after runtime detection.
+//! Entry points are `#[target_feature(enable = "pclmulqdq")]` and are
+//! always reached through the `autodetect` backend, which dispatches to
+//! them after (possibly compile-time-resolved) feature detection.
 #![allow(unsafe_code)]
 
 use std::arch::x86_64::*;

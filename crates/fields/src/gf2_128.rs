@@ -291,13 +291,12 @@ impl ExtensionField<Gf2_128> for Gf2_128 {
 }
 
 cfg_select! {
-    all(target_arch = "x86_64", target_feature = "pclmulqdq") => {
-        mod x86;
-        use x86 as backend;
-    }
     target_arch = "x86_64" => {
-        // Compiled without PCLMULQDQ: detect it at runtime, falling back to
-        // the software backend.
+        // Dispatch to the PCLMULQDQ backend via runtime detection, falling
+        // back to the software backend. When PCLMULQDQ is enabled at compile
+        // time, `cpufeatures` elides the runtime check entirely. (Calling the
+        // `#[target_feature]` functions directly would require `unsafe` even
+        // then, so the static case routes through here too.)
         mod autodetect;
         mod soft;
         mod x86;
