@@ -10,10 +10,6 @@
 //!
 //! [ePrint 2025/1722]: https://eprint.iacr.org/2025/1722
 
-// TODO(port): document public items and re-enable these crate-level lints for
-// the dhim subtree. Relaxed for the initial integration pass.
-#![allow(missing_docs, unreachable_pub, dead_code)]
-
 use crypto_bigint::{BoxedUint, NonZero, Resize};
 use hybrid_array::Array;
 use itybity::{FromBitIterator, ToBits};
@@ -252,7 +248,7 @@ mod tests {
     /// messages between an [`OleSender`] and an [`OleReceiver`] (no I/O).
     /// Returns the receiver's output `y` (or an abort).
     #[allow(clippy::too_many_arguments)]
-    pub fn run_ole_local<F, SOt, ROt, SRng, RRng>(
+    fn run_ole_local<F, SOt, ROt, SRng, RRng>(
         config: &'static Config,
         sender_ot: SOt,
         receiver_ot: ROt,
@@ -406,7 +402,7 @@ mod tests {
     /// [`OleSenderError`] / [`OleReceiverError`]; this driver-level enum
     /// unifies the two so one function can shuttle both parties.
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub enum OleError {
+    enum OleError {
         /// The sender failed (only ever out-of-order — it runs no abortable
         /// check).
         Sender(OleSenderError),

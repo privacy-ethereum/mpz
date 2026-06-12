@@ -229,6 +229,10 @@ impl SenderState {
 }
 
 /// Error returned by an [`OleSender`] round.
+// `Wmult` carries the internal `wmult::SenderError`, which is surfaced only
+// opaquely (Display/source) — `wmult` is a crate-internal module, so the type
+// is intentionally not nameable in the public API.
+#[allow(private_interfaces)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OleSenderError {
     /// A round was called in the wrong state: the method required state

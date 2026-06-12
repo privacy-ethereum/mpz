@@ -266,6 +266,10 @@ impl RoundState {
 }
 
 /// Error returned by an [`OleReceiver`] round.
+// `Wmult` carries the internal `wmult::ReceiverError`, which is surfaced only
+// opaquely (Display/source) — `wmult` is a crate-internal module, so the type
+// is intentionally not nameable in the public API.
+#[allow(private_interfaces)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OleReceiverError {
     /// A round was called in the wrong state: the method required state

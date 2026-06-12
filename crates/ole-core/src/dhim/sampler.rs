@@ -11,7 +11,7 @@ use rand::{CryptoRng, RngCore};
 ///
 /// Panics if `bit_length` is too small to admit a prime
 /// with the top bit set.
-pub fn sample_random_prime<R: RngCore + CryptoRng + ?Sized>(
+pub(crate) fn sample_random_prime<R: RngCore + CryptoRng + ?Sized>(
     rng: &mut R,
     bit_length: u32,
     q: &BoxedUint,
@@ -39,7 +39,7 @@ mod tests {
 
     /// Miller–Rabin primality test for a [`BoxedUint`] (delegates to
     /// `crypto-primes`).
-    pub fn is_prime(candidate: &BoxedUint) -> bool {
+    pub(crate) fn is_prime(candidate: &BoxedUint) -> bool {
         cp_is_prime(Flavor::Any, candidate)
     }
 

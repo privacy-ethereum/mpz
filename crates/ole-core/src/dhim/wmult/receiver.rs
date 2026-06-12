@@ -10,7 +10,7 @@ use super::{
 };
 
 /// Weak multiplication receiver.
-pub struct Receiver {
+pub(crate) struct Receiver {
     /// Receiver input residue `x` (`x < p`).
     x: u64,
     /// The prime modulus.
@@ -34,7 +34,7 @@ impl Receiver {
     /// * `p` — the CRT prime modulus this Wmult operates over.
     /// * `tau` — the precomputed bit permutation `τ` (must have `⌈log₂ p⌉`
     ///   entries).
-    pub fn new(x: u64, p: u64, tau: Tau) -> Self {
+    pub(crate) fn new(x: u64, p: u64, tau: Tau) -> Self {
         debug_assert!(x < p);
         debug_assert_eq!(tau.len(), ceil_log2(p) as usize, "τ must have ℓ entries");
         Self {
@@ -48,7 +48,7 @@ impl Receiver {
     }
 
     /// Allocates resources.
-    pub fn alloc<S: RotReceiverSource>(&mut self, rot: &mut S) -> Result<(), ReceiverError> {
+    pub(crate) fn alloc<S: RotReceiverSource>(&mut self, rot: &mut S) -> Result<(), ReceiverError> {
         self.check_state(ReceiverState::Initialized)?;
         rot.alloc(ceil_log2(self.p) as usize);
         self.state = ReceiverState::Allocated;
@@ -56,12 +56,13 @@ impl Receiver {
     }
 
     /// Builds the receiver's request.
-    pub fn request<S: RotReceiverSource, R: Rng + ?Sized>(
+    pub(crate) fn request<S: RotReceiverSource, R: Rng + ?Sized>(
         &mut self,
         rot: &mut S,
         rng: &mut R,
     ) -> Result<ReceiverMsg, ReceiverError> {
         self.check_state(ReceiverState::Allocated)?;
+
         let l = self.tau.len();
 
         // Step 1a: choose c. If x + p ≥ 2^ℓ, c must be 0 to keep x + c·p < 2^ℓ;
@@ -93,8 +94,9 @@ impl Receiver {
     }
 
     /// Finishes the protocol and returns the output. Consumes the receiver.
-    pub fn finish(self, msg: &SenderMsg) -> Result<u64, ReceiverError> {
+    pub(crate) fn finish(self, msg: &SenderMsg) -> Result<u64, ReceiverError> {
         self.check_state(ReceiverState::Requested)?;
+
         let l = self.tau.len();
         if msg.corrections.len() != l {
             return Err(ReceiverError::CorrectionCount {
@@ -154,7 +156,7 @@ impl ReceiverState {
 
 /// Error returned by a [`Receiver`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ReceiverError {
+pub(crate) enum ReceiverError {
     /// A step was called in the wrong state: the method required state
     /// `expected`, but the receiver was at `found`.
     OutOfOrder {

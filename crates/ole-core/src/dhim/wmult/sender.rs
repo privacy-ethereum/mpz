@@ -5,7 +5,7 @@ use crate::dhim::rot::RotSenderSource;
 use super::{ReceiverMsg, SenderMsg, Tau, ceil_log2, cot, zp};
 
 /// Weak multiplication sender.
-pub struct Sender {
+pub(crate) struct Sender {
     /// Sender input residue `a` (`a < p`).
     a: u64,
     /// The prime modulus.
@@ -24,7 +24,7 @@ impl Sender {
     ///
     /// * `a` — the sender's input residue, `a < p`.
     /// * `p` — the CRT prime modulus.
-    pub fn new(a: u64, p: u64) -> Self {
+    pub(crate) fn new(a: u64, p: u64) -> Self {
         debug_assert!(a < p);
         Self {
             a,
@@ -39,7 +39,7 @@ impl Sender {
     /// # Errors
     ///
     /// [`SenderError::OutOfOrder`] unless the sender is freshly initialized.
-    pub fn alloc<S: RotSenderSource>(&mut self, rot: &mut S) -> Result<(), SenderError> {
+    pub(crate) fn alloc<S: RotSenderSource>(&mut self, rot: &mut S) -> Result<(), SenderError> {
         self.check_state(SenderState::Initialized)?;
 
         rot.alloc(ceil_log2(self.p) as usize);
@@ -54,7 +54,7 @@ impl Sender {
     ///
     /// * `rot` — the ROT sender-share source.
     /// * `msg` — the receiver's request ([`ReceiverMsg`]).
-    pub fn respond<S: RotSenderSource>(
+    pub(crate) fn respond<S: RotSenderSource>(
         &mut self,
         rot: &mut S,
         msg: &ReceiverMsg,
@@ -90,7 +90,7 @@ impl Sender {
     /// # Panics
     ///
     /// Panics if `tau` does not have exactly `ℓ` entries.
-    pub fn output(&self, tau: &Tau) -> Result<u64, SenderError> {
+    pub(crate) fn output(&self, tau: &Tau) -> Result<u64, SenderError> {
         self.check_state(SenderState::Responded)?;
 
         let l = ceil_log2(self.p) as usize;
@@ -142,7 +142,7 @@ impl SenderState {
 
 /// Error returned by a [`Sender`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SenderError {
+pub(crate) enum SenderError {
     /// A step was called in the wrong state: the method required state
     /// `expected`, but the sender was at `found`.
     OutOfOrder {

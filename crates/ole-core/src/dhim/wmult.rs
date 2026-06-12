@@ -16,8 +16,8 @@ mod receiver;
 mod sender;
 mod zp;
 
-pub use receiver::{Receiver, ReceiverError};
-pub use sender::{Sender, SenderError};
+pub(crate) use receiver::{Receiver, ReceiverError};
+pub(crate) use sender::{Sender, SenderError};
 
 /// A bit permutation `τ` for one `Wmult` (`ℓ = ⌈log₂ p⌉` entries).
 ///
@@ -26,7 +26,7 @@ pub use sender::{Sender, SenderError};
 /// handles: slot `i` reads bit `τ(i)` of its input and contributes weight
 /// `2^{τ(i)}`.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Tau(Vec<usize>);
+pub(crate) struct Tau(Vec<usize>);
 
 impl Tau {
     /// Samples a permutation of `{0,…,ℓ−1}` from `rng` — an unbiased
@@ -65,16 +65,16 @@ impl Tau {
 
 /// The receiver → sender message.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ReceiverMsg {
+pub(crate) struct ReceiverMsg {
     /// COT flip bit `fᵢ = λᵢ ⊕ iᵢ` for each of the `ℓ` positions.
-    pub flips: Vec<bool>,
+    pub(crate) flips: Vec<bool>,
 }
 
 /// The sender → receiver message.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SenderMsg {
+pub(crate) struct SenderMsg {
     /// `oᵢ = a₁ − a₀ − a mod p` for each of the `ℓ` positions.
-    pub corrections: Vec<u64>,
+    pub(crate) corrections: Vec<u64>,
 }
 
 /// `⌈log₂ p⌉` for `p ≥ 2` — the number of bit positions / OTs a single `Wmult`
@@ -97,7 +97,7 @@ pub(crate) fn ceil_log2(p: u64) -> u32 {
 /// 16-byte master seed, both parties expand it here into all `t` permutations,
 /// and only that seed travels the wire. Sending `t` independent permutations
 /// instead would cost ~0.9–2.5 KB against a ~1.77 KB total for `|q| = 256`.
-pub fn derive_taus(master: [u8; 16], primes: &[u64]) -> Vec<Tau> {
+pub(crate) fn derive_taus(master: [u8; 16], primes: &[u64]) -> Vec<Tau> {
     let mut prg = Prg::new_with_seed(master);
     primes
         .iter()

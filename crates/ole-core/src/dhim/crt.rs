@@ -4,7 +4,7 @@ use crypto_bigint::{BoxedUint, ConcatenatingMul, Limb, NonZero, Reciprocal, Resi
 
 /// The CRT system for a fixed set of small primes.
 #[derive(Clone)]
-pub struct CrtSystem {
+pub(crate) struct CrtSystem {
     /// The CRT moduli `pᵢ`, distinct primes `> 3`, in increasing order.
     primes: Vec<u64>,
     /// The smooth modulus `n = ∏ pᵢ`.
@@ -28,7 +28,7 @@ impl CrtSystem {
     /// # Panics
     ///
     /// Panics if `primes` is empty.
-    pub fn new(primes: Vec<u64>) -> Self {
+    pub(crate) fn new(primes: Vec<u64>) -> Self {
         assert!(!primes.is_empty(), "CRT basis needs at least one prime");
 
         // n = ∏ pᵢ. The running precision grows with each factor; we normalise once at
@@ -88,27 +88,29 @@ impl CrtSystem {
     }
 
     /// The CRT moduli `pᵢ`.
-    pub fn primes(&self) -> &[u64] {
+    pub(crate) fn primes(&self) -> &[u64] {
         &self.primes
     }
 
     /// The number of primes `t`.
-    pub fn num_primes(&self) -> usize {
+    #[cfg(test)]
+    pub(crate) fn num_primes(&self) -> usize {
         self.primes.len()
     }
 
     /// The smooth modulus `n = ∏ pᵢ`.
-    pub fn modulus(&self) -> &BoxedUint {
+    pub(crate) fn modulus(&self) -> &BoxedUint {
         &self.modulus
     }
 
     /// The smooth modulus as a non-zero divisor.
-    pub fn modulus_nz(&self) -> &NonZero<BoxedUint> {
+    #[cfg(test)]
+    pub(crate) fn modulus_nz(&self) -> &NonZero<BoxedUint> {
         &self.modulus_nz
     }
 
     /// The shared bit precision of the basis's [`BoxedUint`]s.
-    pub fn precision(&self) -> u32 {
+    pub(crate) fn precision(&self) -> u32 {
         self.precision
     }
 
@@ -116,7 +118,7 @@ impl CrtSystem {
     ///
     /// `x` may be given at any precision; it is reduced modulo each `pᵢ`
     /// independently, so values `≥ n` are handled the same as `x mod n`.
-    pub fn encode(&self, x: &BoxedUint) -> Vec<u64> {
+    pub(crate) fn encode(&self, x: &BoxedUint) -> Vec<u64> {
         self.reciprocals
             .iter()
             .map(|recip| x.rem_limb_with_reciprocal(recip).0)
@@ -131,7 +133,7 @@ impl CrtSystem {
     /// # Panics
     ///
     /// Panics if `residues.len() != self.num_primes()`.
-    pub fn decode(&self, residues: &[u64]) -> BoxedUint {
+    pub(crate) fn decode(&self, residues: &[u64]) -> BoxedUint {
         assert_eq!(
             residues.len(),
             self.primes.len(),

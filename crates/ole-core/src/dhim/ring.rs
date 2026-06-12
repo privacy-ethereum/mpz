@@ -7,7 +7,7 @@ use crypto_bigint::{
 
 /// The residue ring `Z_m` for an odd modulus `m`.
 #[derive(Clone)]
-pub struct Ring {
+pub(crate) struct Ring {
     /// Montgomery parameters for `m`.
     params: BoxedMontyParams,
     /// The modulus `m`.
@@ -23,7 +23,7 @@ impl Ring {
     ///
     /// Panics if `m` is even or zero (the Montgomery backend requires an odd
     /// modulus).
-    pub fn new(modulus: BoxedUint) -> Self {
+    pub(crate) fn new(modulus: BoxedUint) -> Self {
         let precision = modulus.bits_precision();
         let odd = Odd::new(modulus.clone())
             .into_option()
@@ -37,24 +37,27 @@ impl Ring {
     }
 
     /// The modulus `m`.
-    pub fn modulus(&self) -> &BoxedUint {
+    #[cfg(test)]
+    pub(crate) fn modulus(&self) -> &BoxedUint {
         &self.modulus
     }
 
     /// The bit precision of the ring's [`BoxedUint`] representatives.
-    pub fn precision(&self) -> u32 {
+    #[cfg(test)]
+    pub(crate) fn precision(&self) -> u32 {
         self.precision
     }
 
     /// The additive identity `0`.
-    pub fn zero(&self) -> Elem {
+    pub(crate) fn zero(&self) -> Elem {
         Elem {
             inner: BoxedMontyForm::zero(&self.params),
         }
     }
 
     /// The multiplicative identity `1`.
-    pub fn one(&self) -> Elem {
+    #[cfg(test)]
+    pub(crate) fn one(&self) -> Elem {
         Elem {
             inner: BoxedMontyForm::one(&self.params),
         }
@@ -68,7 +71,7 @@ impl Ring {
     // `from_*` reads as a free constructor to clippy, but embedding genuinely
     // needs the ring's Montgomery params, hence `&self`.
     #[allow(clippy::wrong_self_convention)]
-    pub fn from_uint(&self, v: &BoxedUint) -> Elem {
+    pub(crate) fn from_uint(&self, v: &BoxedUint) -> Elem {
         let reduced = if v.bits_precision() > self.precision {
             // Reduce at the input's (wider) precision, then shrink the `< m`
             // result down to the ring precision.
@@ -86,27 +89,29 @@ impl Ring {
     }
 
     /// Embeds a `u64` into the ring.
+    #[cfg(test)]
     #[allow(clippy::wrong_self_convention)]
-    pub fn from_u64(&self, v: u64) -> Elem {
+    pub(crate) fn from_u64(&self, v: u64) -> Elem {
         self.from_uint(&BoxedUint::from(v))
     }
 }
 
 /// An element of a [`Ring`] (`Z_m`).
 #[derive(Clone, PartialEq, Eq)]
-pub struct Elem {
+pub(crate) struct Elem {
     inner: BoxedMontyForm,
 }
 
 impl Elem {
     /// Returns the canonical representative in `[0, m)`.
-    pub fn to_uint(&self) -> BoxedUint {
+    pub(crate) fn to_uint(&self) -> BoxedUint {
         self.inner.retrieve()
     }
 
     /// Returns the multiplicative inverse, or `None` if `self` is not
     /// invertible mod `m`.
-    pub fn inverse(&self) -> Option<Elem> {
+    #[cfg(test)]
+    pub(crate) fn inverse(&self) -> Option<Elem> {
         self.inner
             .invert()
             .into_option()
@@ -114,7 +119,8 @@ impl Elem {
     }
 
     /// Returns `self` raised to the power `exponent`.
-    pub fn pow(&self, exponent: &BoxedUint) -> Elem {
+    #[cfg(test)]
+    pub(crate) fn pow(&self, exponent: &BoxedUint) -> Elem {
         Elem {
             inner: self.inner.pow(exponent),
         }

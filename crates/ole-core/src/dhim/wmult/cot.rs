@@ -6,14 +6,14 @@ use super::zp;
 
 /// The sender → receiver correction message `o` of Protocol 3.15.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Correction {
+pub(crate) struct Correction {
     /// `o = a₁ − a₀ − δ mod p` (after the conditional swap).
-    pub o: u64,
+    pub(crate) o: u64,
 }
 
 /// **Receiver, step 1.** Returns the bit `f = choice ⊕ i` to send to the
 /// sender, where `i = rot.choice` is the ROT's random selection.
-pub fn receiver_flip(rot: &RotReceiverShare, choice: bool) -> bool {
+pub(crate) fn receiver_flip(rot: &RotReceiverShare, choice: bool) -> bool {
     choice ^ rot.choice
 }
 
@@ -24,7 +24,7 @@ pub fn receiver_flip(rot: &RotReceiverShare, choice: bool) -> bool {
 /// * the [`Correction`] `o` to send to the receiver.
 ///
 /// Requires `delta < p` (and the ROT messages reduced mod `p`).
-pub fn sender_step(rot: RotSenderShare, delta: u64, f: bool, p: u64) -> (u64, Correction) {
+pub(crate) fn sender_step(rot: RotSenderShare, delta: u64, f: bool, p: u64) -> (u64, Correction) {
     debug_assert!(delta < p && rot.a0 < p && rot.a1 < p);
     let (a0, a1) = if f {
         (rot.a1, rot.a0)
@@ -39,7 +39,12 @@ pub fn sender_step(rot: RotSenderShare, delta: u64, f: bool, p: u64) -> (u64, Co
 /// **Receiver, step 3.** Consumes the ROT receiver-share, its real `choice`,
 /// and the sender's [`Correction`], and returns the `COT_p` output
 /// `a₀ + choice·δ`.
-pub fn receiver_output(rot: RotReceiverShare, choice: bool, corr: Correction, p: u64) -> u64 {
+pub(crate) fn receiver_output(
+    rot: RotReceiverShare,
+    choice: bool,
+    corr: Correction,
+    p: u64,
+) -> u64 {
     debug_assert!(rot.msg < p && corr.o < p);
     if choice {
         zp::sub(rot.msg, corr.o, p)
