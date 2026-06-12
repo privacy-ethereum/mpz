@@ -444,6 +444,24 @@ fn pow(base: Gf2_128, exp: usize) -> Gf2_128 {
     acc
 }
 
+/// Top-aligns `val` by `Δ^gap`, where `gap` is an operand's degree shortfall
+/// against the sum's degree.
+///
+/// In balanced expression trees `gap` is almost always 0 or 1, so those cases
+/// are handled without the `pow` loop — and `gap == 0` skips the multiply
+/// entirely. That spurious `val · Δ^0 = val · 1` is otherwise paid on *every*
+/// equal-degree addition and dominates the verifier's cost in addition-heavy
+/// gadgets (mux trees, etc.). The `Δ^1 = Δ` case is the precomputed shift the
+/// store already carries. Larger gaps (rare) fall back to `pow`.
+#[inline]
+fn align(val: Gf2_128, delta: Gf2_128, gap: usize) -> Gf2_128 {
+    match gap {
+        0 => val,
+        1 => val * delta,
+        n => val * pow(delta, n),
+    }
+}
+
 impl Coeffs for VerifierCoeffs {
     type At<N: Degree> = VerifierStore;
 
@@ -456,7 +474,7 @@ impl Coeffs for VerifierCoeffs {
     {
         let (da, db) = (A::USIZE, B::USIZE);
         let dmax = da.max(db);
-        let val = a.val * pow(a.delta, dmax - da) + b.val * pow(b.delta, dmax - db);
+        let val = align(a.val, a.delta, dmax - da) + align(b.val, b.delta, dmax - db);
         VerifierStore {
             val,
             delta: a.delta,

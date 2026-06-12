@@ -1,8 +1,10 @@
 //! Polynomial-constraint prover/verifier benchmark.
 //!
-//! **`mux`**: a 1-of-16 multiplexer over 32-bit values. Each output bit is a
-//! depth-4 binary mux tree `a + sel·(a + b)` over the committed inputs and four
-//! committed selector bits, giving 32 degree-5 constraints per multiplexer.
+//! **`mux{2,4,8,16}`**: a 1-of-`w` multiplexer over 32-bit values. Each output
+//! bit is a depth-`log2(w)` binary mux tree `a + sel·(a + b)` over the committed
+//! inputs and `log2(w)` committed selector bits, giving 32 degree-`(log2(w)+1)`
+//! constraints per multiplexer. The variants sweep the mux degree: 1-of-2
+//! (degree 2) through 1-of-16 (degree 5).
 //!
 //! The workload uses only `lift` + `assert_zero` (no AND gates and no
 //! `materialize`), so the triple check is trivial and the measured cost is the
@@ -32,18 +34,75 @@ const VOPE_COST: usize = 128;
 // Gadget
 // ===========================================================================
 
-/// One 1-of-16 multiplexer over 32-bit values: `sel` is 4 committed selector
-/// bits, `inputs` is 16 committed 32-bit values, `out` is the committed
-/// selected value. Each output bit is a depth-4 mux tree, a degree-5
-/// constraint.
-fn mux16_u32<C>(ctx: &mut C, sel: &[Gf2_128; 4], inputs: &[[Gf2_128; 32]; 16], out: &[Gf2_128; 32])
+// Each gadget builds 32 output-bit constraints for one 1-of-`w` multiplexer.
+// The selectors (`sel`, `log2(w)` wires), inputs (`inputs`, `w·32` wires laid
+// out as `input·32 + bit`) and output (`out`, 32 wires) are flat committed-wire
+// slices. The mux level `a + sel·(a + b)` raises the expression degree by one
+// per tree level, so the top constraint is degree `log2(w)+1`. The degree is
+// part of the `Expr` *type*, so each width is spelled out statically rather than
+// folded over a runtime-sized tree.
+
+/// 1-of-2 mux, depth 1, degree-2 constraints.
+fn mux2_u32<C>(ctx: &mut C, sel: &[Gf2_128], inputs: &[Gf2_128], out: &[Gf2_128])
+where
+    C: PolyContext<Field = Gf2, Wire = Gf2_128>,
+    C::Error: std::fmt::Debug,
+{
+    let s0 = ctx.lift(sel[0]);
+    for bit in 0..32 {
+        let leaf: [Expr<C::Coeffs, U1>; 2] = core::array::from_fn(|n| ctx.lift(inputs[n * 32 + bit]));
+        let top = leaf[0] + s0 * (leaf[0] + leaf[1]); // degree 2
+        let o = ctx.lift(out[bit]);
+        ctx.assert_zero(top - o).expect("mux output");
+    }
+}
+
+/// 1-of-4 mux, depth 2, degree-3 constraints.
+fn mux4_u32<C>(ctx: &mut C, sel: &[Gf2_128], inputs: &[Gf2_128], out: &[Gf2_128])
+where
+    C: PolyContext<Field = Gf2, Wire = Gf2_128>,
+    C::Error: std::fmt::Debug,
+{
+    let s: [Expr<C::Coeffs, U1>; 2] = core::array::from_fn(|i| ctx.lift(sel[i]));
+    for bit in 0..32 {
+        let leaf: [Expr<C::Coeffs, U1>; 4] = core::array::from_fn(|n| ctx.lift(inputs[n * 32 + bit]));
+        let l0: [Expr<C::Coeffs, _>; 2] =
+            core::array::from_fn(|j| leaf[2 * j] + s[0] * (leaf[2 * j] + leaf[2 * j + 1]));
+        let top = l0[0] + s[1] * (l0[0] + l0[1]); // degree 3
+        let o = ctx.lift(out[bit]);
+        ctx.assert_zero(top - o).expect("mux output");
+    }
+}
+
+/// 1-of-8 mux, depth 3, degree-4 constraints.
+fn mux8_u32<C>(ctx: &mut C, sel: &[Gf2_128], inputs: &[Gf2_128], out: &[Gf2_128])
+where
+    C: PolyContext<Field = Gf2, Wire = Gf2_128>,
+    C::Error: std::fmt::Debug,
+{
+    let s: [Expr<C::Coeffs, U1>; 3] = core::array::from_fn(|i| ctx.lift(sel[i]));
+    for bit in 0..32 {
+        let leaf: [Expr<C::Coeffs, U1>; 8] = core::array::from_fn(|n| ctx.lift(inputs[n * 32 + bit]));
+        let l0: [Expr<C::Coeffs, _>; 4] =
+            core::array::from_fn(|j| leaf[2 * j] + s[0] * (leaf[2 * j] + leaf[2 * j + 1]));
+        let l1: [Expr<C::Coeffs, _>; 2] =
+            core::array::from_fn(|j| l0[2 * j] + s[1] * (l0[2 * j] + l0[2 * j + 1]));
+        let top = l1[0] + s[2] * (l1[0] + l1[1]); // degree 4
+        let o = ctx.lift(out[bit]);
+        ctx.assert_zero(top - o).expect("mux output");
+    }
+}
+
+/// 1-of-16 mux, depth 4, degree-5 constraints.
+fn mux16_u32<C>(ctx: &mut C, sel: &[Gf2_128], inputs: &[Gf2_128], out: &[Gf2_128])
 where
     C: PolyContext<Field = Gf2, Wire = Gf2_128>,
     C::Error: std::fmt::Debug,
 {
     let s: [Expr<C::Coeffs, U1>; 4] = core::array::from_fn(|i| ctx.lift(sel[i]));
     for bit in 0..32 {
-        let leaf: [Expr<C::Coeffs, U1>; 16] = core::array::from_fn(|n| ctx.lift(inputs[n][bit]));
+        let leaf: [Expr<C::Coeffs, U1>; 16] =
+            core::array::from_fn(|n| ctx.lift(inputs[n * 32 + bit]));
         // Mux level: `a + sel·(a + b)`, raising the degree by one each time.
         let l0: [Expr<C::Coeffs, _>; 8] =
             core::array::from_fn(|j| leaf[2 * j] + s[0] * (leaf[2 * j] + leaf[2 * j + 1]));
@@ -76,23 +135,37 @@ trait PolyCircuit {
         C::Error: std::fmt::Debug;
 }
 
-/// `n` independent 1-of-16 multiplexers over 32-bit values; 548 committed bits
-/// each (4 selector + 16·32 inputs + 32 output).
+/// `n` independent 1-of-`width` multiplexers over 32-bit values. Each mux
+/// commits `log2(width)` selector + `width·32` input + 32 output bits.
 struct MuxCircuit {
+    /// Number of mux inputs (a power of two: 2, 4, 8 or 16).
+    width: usize,
     n: usize,
 }
 
-const MUX_BITS: usize = 4 + 16 * 32 + 32;
+impl MuxCircuit {
+    /// Number of selector bits / mux-tree depth.
+    fn depth(&self) -> usize {
+        self.width.trailing_zeros() as usize
+    }
+
+    /// Committed bits per multiplexer.
+    fn mux_bits(&self) -> usize {
+        self.depth() + self.width * 32 + 32
+    }
+}
 
 impl PolyCircuit for MuxCircuit {
     fn witness(&self) -> Vec<bool> {
+        let depth = self.depth();
         let mut rng = StdRng::seed_from_u64(0x111);
-        let mut bits = Vec::with_capacity(self.n * MUX_BITS);
+        let mut bits = Vec::with_capacity(self.n * self.mux_bits());
         for _ in 0..self.n {
-            let sel: [bool; 4] = core::array::from_fn(|_| rng.random());
-            let idx = (0..4).fold(0usize, |a, i| a | ((sel[i] as usize) << i));
-            let inputs: [[bool; 32]; 16] =
-                core::array::from_fn(|_| core::array::from_fn(|_| rng.random()));
+            let sel: Vec<bool> = (0..depth).map(|_| rng.random()).collect();
+            let idx = (0..depth).fold(0usize, |a, i| a | ((sel[i] as usize) << i));
+            let inputs: Vec<[bool; 32]> = (0..self.width)
+                .map(|_| core::array::from_fn(|_| rng.random()))
+                .collect();
             let out = inputs[idx];
 
             bits.extend(sel);
@@ -105,7 +178,7 @@ impl PolyCircuit for MuxCircuit {
     }
 
     fn d_max(&self) -> usize {
-        5
+        self.depth() + 1
     }
 
     fn eval<C>(&self, ctx: &mut C, wires: &[Gf2_128])
@@ -113,13 +186,20 @@ impl PolyCircuit for MuxCircuit {
         C: PolyContext<Field = Gf2, Wire = Gf2_128>,
         C::Error: std::fmt::Debug,
     {
+        let depth = self.depth();
+        let mux_bits = self.mux_bits();
         for m in 0..self.n {
-            let base = m * MUX_BITS;
-            let sel: [Gf2_128; 4] = core::array::from_fn(|i| wires[base + i]);
-            let inputs: [[Gf2_128; 32]; 16] =
-                core::array::from_fn(|n| core::array::from_fn(|b| wires[base + 4 + n * 32 + b]));
-            let out: [Gf2_128; 32] = core::array::from_fn(|b| wires[base + 4 + 512 + b]);
-            mux16_u32(ctx, &sel, &inputs, &out);
+            let base = m * mux_bits;
+            let sel = &wires[base..base + depth];
+            let inputs = &wires[base + depth..base + depth + self.width * 32];
+            let out = &wires[base + mux_bits - 32..base + mux_bits];
+            match self.width {
+                2 => mux2_u32(ctx, sel, inputs, out),
+                4 => mux4_u32(ctx, sel, inputs, out),
+                8 => mux8_u32(ctx, sel, inputs, out),
+                16 => mux16_u32(ctx, sel, inputs, out),
+                w => unreachable!("unsupported mux width {w}"),
+            }
         }
     }
 }
@@ -319,9 +399,17 @@ fn bench_circuit<Circ: PolyCircuit>(c: &mut Criterion, name: &str, circ: Circ, u
 }
 
 fn bench_poly(c: &mut Criterion) {
-    // 2k 1-of-16 multiplexers of 32-bit values.
+    // 2k multiplexers of 32-bit values each, swept over 1-of-{2,4,8,16}
+    // (mux degrees 2..=5).
     const N_MUX: usize = 2_000;
-    bench_circuit(c, "mux", MuxCircuit { n: N_MUX }, N_MUX as u64);
+    for width in [2usize, 4, 8, 16] {
+        bench_circuit(
+            c,
+            &format!("mux{width}"),
+            MuxCircuit { width, n: N_MUX },
+            N_MUX as u64,
+        );
+    }
 }
 
 criterion_group!(benches, bench_poly);
