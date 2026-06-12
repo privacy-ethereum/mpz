@@ -28,6 +28,12 @@ pub(crate) fn sample_random_prime<R: RngCore + CryptoRng + ?Sized>(
     }
 }
 
+/// Returns `true` iff `r` is a valid consistency prime — i.e. `r ∈
+/// 𝒫_{s_r}\{q}`: a prime of exactly `bit_length` bits, not equal to `q`.
+pub(crate) fn is_valid_consistency_prime(r: &BoxedUint, bit_length: u32, q: &BoxedUint) -> bool {
+    r.bits() == bit_length && r != q && crypto_primes::is_prime(Flavor::Any, r)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

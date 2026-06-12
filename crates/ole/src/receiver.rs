@@ -3,8 +3,10 @@ use serio::{Deserialize, stream::IoStreamExt};
 
 use mpz_common::{Context, Flush};
 use mpz_fields::Field;
-use mpz_ole_core::gilboa::{Receiver as Core, ReceiverError as CoreError};
-use mpz_ole_core::{ROLEReceiver, ROLEReceiverOutput};
+use mpz_ole_core::{
+    ROLEReceiver, ROLEReceiverOutput,
+    gilboa::{Receiver as Core, ReceiverError as CoreError},
+};
 use mpz_ot::rot::ROTReceiver;
 
 /// ROLE receiver wrapping a random OT receiver.

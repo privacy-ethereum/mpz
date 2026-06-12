@@ -7,7 +7,7 @@ use rand::Rng;
 
 use crate::dhim::{config::Config, rot::RotSenderSource};
 
-use super::{ring::Ring, wmult};
+use super::{ring::Ring, sampler, wmult};
 
 use super::{
     Round1Recv, Round1Send, Round2Recv, Round2Send, Round3Recv, Round3Send, random_bits,
@@ -117,6 +117,16 @@ impl<F: Field> OleSender<F> {
     /// Runs round 2 and returns a message to send.
     pub fn round2(&mut self, msg: &Round2Recv) -> Result<Round2Send, OleSenderError> {
         self.check_state(SenderState::Round2)?;
+
+        // Protocol 5.38 step 2 has the receiver send `r ←$ 𝒫_{s_r}\{q}` in the
+        // clear; unlike Protocol 5.14 there is no `Cmt&ModRvl`
+        // functionality to fence the domain, so the **sender** must
+        // reject an out-of-domain `r`.
+        if !sampler::is_valid_consistency_prime(&msg.r, self.config.params.s_r_bits, self.config.q)
+        {
+            self.state = SenderState::Failed;
+            return Err(OleSenderError::InvalidConsistencyPrime);
+        }
 
         let basis = self.config.crt;
 
@@ -250,6 +260,8 @@ pub enum OleSenderError {
     Wmult(wmult::SenderError),
     /// The mod-`p` consistency check (step 8a) failed.
     ConsistencyCheck,
+    /// The receiver-supplied consistency prime `r` was not in `𝒫_{s_r}\{q}`.
+    InvalidConsistencyPrime,
 }
 
 impl From<wmult::SenderError> for OleSenderError {
@@ -274,6 +286,12 @@ impl std::fmt::Display for OleSenderError {
             OleSenderError::Pack(e) => write!(f, "OLE round-1 message malformed: {e}"),
             OleSenderError::Wmult(e) => write!(f, "OLE Wmult failed: {e}"),
             OleSenderError::ConsistencyCheck => write!(f, "OLE consistency check failed"),
+            OleSenderError::InvalidConsistencyPrime => {
+                write!(
+                    f,
+                    "OLE consistency prime r is out of domain (not in 𝒫_{{s_r}}\\{{q}})"
+                )
+            }
         }
     }
 }
@@ -296,6 +314,7 @@ mod tests {
         rot::{BlockToZpReceiver, BlockToZpSender},
         test_utils::{preflushed_ideal_rot, rots_per_ole},
     };
+    use crypto_bigint::Resize;
     use mpz_core::commit::HashCommit;
     use mpz_fields::p256::P256;
     use rand::SeedableRng;
@@ -504,6 +523,82 @@ mod tests {
                 .round3(P256::zero(), P256::zero(), &m5_bad)
                 .unwrap_err(),
             OleSenderError::ConsistencyCheck
+        );
+    }
+
+    /// Drives an honest sender+receiver to the point where the sender is poised
+    /// at `round2`, returning that sender together with the receiver's genuine
+    /// flight-3 [`Round2Recv`] (so a test can tamper only the field it
+    /// targets).
+    fn drive_sender_to_round2(seed: u64) -> (OleSender<P256>, Round2Recv) {
+        let cfg = crate::dhim::config::p256::config();
+        let count = rots_per_ole(cfg);
+        let (s_inner, r_inner) = preflushed_ideal_rot([seed as u8; 16], count);
+        let mut s_rot = BlockToZpSender::new(s_inner);
+        let mut r_rot = BlockToZpReceiver::new(r_inner);
+        let mut srng = ChaCha20Rng::seed_from_u64(1000 + seed);
+        let mut rrng = ChaCha20Rng::seed_from_u64(2000 + seed);
+
+        let mut sender = OleSender::<P256>::new(cfg, &mut srng);
+        let mut receiver = OleReceiver::<P256>::new(cfg, &mut rrng);
+        sender.alloc(&mut s_rot).expect("sender alloc");
+        receiver.alloc(&mut r_rot).expect("receiver alloc");
+
+        let m1 = receiver.round1(&mut r_rot).expect("receiver round1");
+        let m2 = sender.round1(&mut s_rot, &m1).expect("sender round1");
+        let m3 = receiver.round2(&m2).expect("receiver round2");
+        (sender, m3)
+    }
+
+    /// Malicious-receiver key-recovery defense (Protocol 5.38 step 2): a
+    /// receiver that sends `r = q` instead of an `s_r`-bit prime is
+    /// rejected. Without the domain check the sender would return `a' mod
+    /// q`, which the receiver combines with `δ_a = a − a' mod q` (flight 6)
+    /// to recover the sender's secret `a`. `q` is `|q|`-bit (256), so it
+    /// fails the `s_r`-bit (143) length arm of the test. The abort poisons
+    /// the sender.
+    #[test]
+    fn round2_rejects_r_equal_to_q() {
+        let (mut sender, m3) = drive_sender_to_round2(42);
+        let cfg = crate::dhim::config::p256::config();
+
+        let bad = Round2Recv {
+            r: cfg.q.clone(),
+            commitment: m3.commitment,
+            tau_seed: m3.tau_seed,
+        };
+        assert_eq!(
+            sender.round2(&bad).unwrap_err(),
+            OleSenderError::InvalidConsistencyPrime
+        );
+        // Poisoned: any retry is rejected as out-of-order.
+        assert_eq!(
+            sender.round2(&bad).unwrap_err(),
+            OleSenderError::OutOfOrder {
+                expected: "round2",
+                found: "failed",
+            }
+        );
+    }
+
+    /// The domain test also rejects a *composite* `r` of the correct
+    /// bit-length, exercising the primality arm (not just the length arm).
+    /// `(honest prime) − 1` is even — hence composite — and still `s_r`
+    /// bits.
+    #[test]
+    fn round2_rejects_non_prime_r() {
+        let (mut sender, m3) = drive_sender_to_round2(43);
+        let prec = m3.r.bits_precision();
+        let composite = m3.r.wrapping_sub(BoxedUint::from(1u64).resize(prec));
+
+        let bad = Round2Recv {
+            r: composite,
+            commitment: m3.commitment,
+            tau_seed: m3.tau_seed,
+        };
+        assert_eq!(
+            sender.round2(&bad).unwrap_err(),
+            OleSenderError::InvalidConsistencyPrime
         );
     }
 }
