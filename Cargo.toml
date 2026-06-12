@@ -83,6 +83,13 @@ rand_core_06 = { package = "rand_core", version = "0.6" }
 rand_08 = { package = "rand", version = "0.8" }
 
 # crypto
+crypto-bigint = { version = "0.7", default-features = false, features = [
+    "rand_core",
+    "hybrid-array",
+    "alloc",
+    "serde",
+] }
+crypto-primes = "0.7"
 cipher = "0.5.0-rc.1"
 sha2 = "0.10"
 blake3 = "1.8.2"
