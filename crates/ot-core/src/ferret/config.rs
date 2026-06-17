@@ -21,6 +21,10 @@ pub struct FerretConfig {
     /// Whether to reserve bootstrap COTs.
     #[builder(default = "true")]
     reserve_bootstrap: bool,
+    /// Whether to serve small demands directly from the base COT instead of
+    /// running a full Ferret iteration. See [`FerretConfig::direct_passthrough`].
+    #[builder(default = "true")]
+    direct_passthrough: bool,
     #[builder(setter(custom), default = "Arc::new(default_parameter_selector)")]
     param_selector: Arc<dyn Fn(usize, usize) -> LpnParameters + Send + Sync + 'static>,
 }
@@ -29,6 +33,7 @@ impl Debug for FerretConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("FerretConfig")
             .field("reserve_bootstrap", &self.reserve_bootstrap)
+            .field("direct_passthrough", &self.direct_passthrough)
             .finish_non_exhaustive()
     }
 }
@@ -37,6 +42,7 @@ impl Default for FerretConfig {
     fn default() -> Self {
         Self {
             reserve_bootstrap: true,
+            direct_passthrough: true,
             param_selector: Arc::new(default_parameter_selector),
         }
     }
@@ -69,6 +75,16 @@ impl FerretConfig {
     /// Returns `true` if bootstrap COTs should be reserved.
     pub fn reserve_bootstrap(&self) -> bool {
         self.reserve_bootstrap
+    }
+
+    /// Returns `true` if small demands should be served directly from the base
+    /// COT.
+    ///
+    /// While Ferret is cold, a demand below the bootstrap cost is cheaper to
+    /// satisfy from the base COT than by running a full Ferret iteration, which
+    /// has a large fixed cost and produces a correspondingly large surplus.
+    pub fn direct_passthrough(&self) -> bool {
+        self.direct_passthrough
     }
 
     /// Returns the cost of a bootstrap iteration.

@@ -91,16 +91,60 @@ where
         self.available() < self.alloc
     }
 
-    /// Allocates COTs for bootstrapping.
+    /// Allocates base COTs for the next bootstrap.
     pub fn alloc_bootstrap(&self) -> Result<()> {
-        let missing = self.config.bootstrap_cost().saturating_sub(self.macs.len());
         self.cot
             .try_lock()
             .map_err(|_| ErrorRepr::MutexLocked)?
-            .alloc(missing)
+            .alloc(self.bootstrap_count())
             .map_err(Error::bootstrap)?;
 
         Ok(())
+    }
+
+    /// Pulls the allocated base COTs into the buffer.
+    ///
+    /// When the demand is small enough that a full Ferret iteration would be
+    /// wasteful, this serves it directly from the base COT (see
+    /// [`FerretConfig::direct_passthrough`]); otherwise it seeds the next
+    /// extension.
+    pub fn bootstrap(&mut self) -> Result<()> {
+        let count = self.bootstrap_count();
+        let RCOTReceiverOutput {
+            msgs: macs,
+            choices,
+            ..
+        } = self
+            .cot
+            .try_lock()
+            .map_err(|_| ErrorRepr::MutexLocked)?
+            .try_recv_rcot(count)
+            .map_err(|e| ErrorRepr::Bootstrap(Box::new(e)))?;
+
+        self.macs.extend(macs.iter().map(|&mac| Gf2_128::from(mac)));
+        self.choices.extend_from_slice(&choices);
+
+        // If the buffer now satisfies the demand, the base COTs are the output
+        // and no extension is needed.
+        if self.alloc.saturating_sub(self.available()) == 0 {
+            self.alloc = 0;
+            self.process_queue();
+        }
+
+        Ok(())
+    }
+
+    /// Returns the number of base COTs to pull on the next bootstrap: just the
+    /// outstanding demand when it is below the bootstrap cost (served directly),
+    /// otherwise a full bootstrap batch.
+    fn bootstrap_count(&self) -> usize {
+        let missing = self.alloc.saturating_sub(self.available());
+        if self.config.direct_passthrough() && missing > 0 && missing < self.config.bootstrap_cost()
+        {
+            missing
+        } else {
+            self.config.bootstrap_cost().saturating_sub(self.macs.len())
+        }
     }
 
     /// Starts extension.
@@ -108,24 +152,6 @@ where
         let State::Extend = self.state.take() else {
             return Err(ErrorRepr::State("not in extend state".to_string()).into());
         };
-
-        // If available COTs are insufficient, we bootstrap from the inner COT instance.
-        if self.wants_bootstrap() {
-            let missing = self.config.bootstrap_cost() - self.macs.len();
-            let RCOTReceiverOutput {
-                msgs: macs,
-                choices,
-                ..
-            } = self
-                .cot
-                .try_lock()
-                .map_err(|_| ErrorRepr::MutexLocked)?
-                .try_recv_rcot(missing)
-                .map_err(|e| ErrorRepr::Bootstrap(Box::new(e)))?;
-
-            self.macs.extend(macs.iter().map(|&mac| Gf2_128::from(mac)));
-            self.choices.extend_from_slice(&choices);
-        }
 
         let missing = self.alloc.saturating_sub(self.available());
         let params = self.config.select_params(self.macs.len(), missing);
@@ -342,8 +368,10 @@ where
 
     fn available(&self) -> usize {
         let len = self.macs.len() - self.pending;
-        if self.config.reserve_bootstrap() {
-            len.saturating_sub(self.config.bootstrap_cost())
+        // Reserve a bootstrap batch only once we hold at least that many, so
+        // that directly-served base COTs (a smaller buffer) stay available.
+        if self.config.reserve_bootstrap() && len >= self.config.bootstrap_cost() {
+            len - self.config.bootstrap_cost()
         } else {
             len
         }
