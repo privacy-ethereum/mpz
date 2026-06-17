@@ -6,6 +6,7 @@
 //! used as a reference, in particular for the correlated GGM tree construction
 //! and its composition with the consistency check.
 
+mod cggm;
 mod config;
 mod mpcot;
 mod receiver;
@@ -28,7 +29,10 @@ use crate::Derandomize;
 /// blocks for the RCOT interface.
 fn split_off_blocks(buffer: &mut Vec<Gf2_128>, count: usize) -> Vec<Block> {
     let start = buffer.len() - count;
-    let blocks = buffer[start..].iter().map(|&x| Block::from(x)).collect();
+    // `Gf2_128` and `Block` share a little-endian 16-byte layout, so the tail
+    // reinterprets as `[Block]` and copies out in bulk.
+    let blocks: &[Block] = zerocopy::transmute_ref!(&buffer[start..]);
+    let blocks = blocks.to_vec();
     buffer.truncate(start);
 
     blocks
@@ -37,7 +41,7 @@ fn split_off_blocks(buffer: &mut Vec<Gf2_128>, count: usize) -> Vec<Block> {
 /// Extend message sent from sender to receiver.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SenderExtend {
-    cs: Vec<Block>,
+    cs: Vec<Gf2_128>,
     /// The sender's contribution to the LPN seed coin-toss.
     lpn_seed_share: cointoss_msgs::ReceiverPayload,
 }

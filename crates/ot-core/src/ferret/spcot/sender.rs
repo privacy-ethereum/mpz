@@ -5,7 +5,9 @@ use rand::Rng;
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
 
-use mpz_core::{Block, bitvec::BitVec, cggm, utils::slices_from_lengths_mut};
+use mpz_core::{Block, bitvec::BitVec, utils::slices_from_lengths_mut};
+
+use crate::ferret::cggm;
 use mpz_fields::{Field, gf2_128::Gf2_128};
 use zerocopy::IntoBytes;
 
@@ -21,13 +23,13 @@ type Result<T, E = Error> = core::result::Result<T, E>;
 pub(crate) struct SPCOTSender {
     /// Total length of the SPCOT vectors pending the consistency check.
     pending: usize,
-    delta: Block,
+    delta: Gf2_128,
     transcript: Hasher,
 }
 
 impl SPCOTSender {
     /// Creates a new SPCOT sender.
-    pub(crate) fn new(delta: Block) -> Self {
+    pub(crate) fn new(delta: Gf2_128) -> Self {
         Self {
             pending: 0,
             delta,
@@ -37,7 +39,7 @@ impl SPCOTSender {
 
     #[cfg(test)]
     pub(crate) fn delta(&self) -> Block {
-        self.delta
+        Block::from(self.delta)
     }
 
     #[cfg(test)]
@@ -45,28 +47,22 @@ impl SPCOTSender {
         self.pending != 0
     }
 
-    /// Computes multiple SPCOTs, writing the SPCOT vectors to `vs`.
+    /// Derandomizes the COT keys into the per-tree cGGM corrections.
     ///
-    /// Returns the cGGM tree corrections. `vs` must be presented to the
-    /// consistency check unmodified.
+    /// Split from [`SPCOTSender::expand`] so the caller can reuse the keys'
+    /// buffer space for the output `vs` in between — this only reads `keys`.
     ///
     /// # Arguments
     ///
     /// * `log2_lengths` - log2 length of the SPCOT vectors.
     /// * `keys` - COT keys.
     /// * `masks` - Derandomized COT choices bits from the receiver.
-    /// * `vs` - Output buffer for the SPCOT vectors. The vectors are stored as
-    ///   field elements; the cGGM expansion reinterprets them as raw blocks
-    ///   (`Gf2_128` is little-endian, matching `Block`'s byte order on all
-    ///   supported, little-endian, targets).
-    pub(crate) fn extend<R: Rng>(
-        &mut self,
-        rng: &mut R,
+    pub(crate) fn derandomize(
+        &self,
         log2_lengths: &[usize],
         keys: &[Gf2_128],
         masks: &BitVec,
-        vs: &mut [Gf2_128],
-    ) -> Result<Vec<Block>> {
+    ) -> Result<Vec<Gf2_128>> {
         let len_sum: usize = log2_lengths.iter().sum();
         if keys.len() != len_sum {
             return Err(ErrorRepr::KeyCount {
@@ -82,6 +78,50 @@ impl SPCOTSender {
             .into());
         }
 
+        // After expansion these become the per-level corrections
+        // c_i = K[r_i] ⊕ b_i * Δ ⊕ K_i^0, where K_i^0 is the left-node sum at
+        // level i of the cGGM tree (Fig. 4 Step 3 of the Half-Tree paper,
+        // https://eprint.iacr.org/2022/1431).
+        let delta = self.delta;
+        Ok(keys
+            .iter()
+            .zip(masks.iter().by_vals())
+            .map(|(&key, b)| if b { key + delta } else { key })
+            .collect())
+    }
+
+    /// Expands the cGGM trees into `vs`, consuming the corrections from
+    /// [`SPCOTSender::derandomize`].
+    ///
+    /// Returns the cGGM tree corrections. `vs` must be presented to the
+    /// consistency check unmodified.
+    ///
+    /// # Arguments
+    ///
+    /// * `log2_lengths` - log2 length of the SPCOT vectors.
+    /// * `cs` - Derandomized corrections from [`SPCOTSender::derandomize`].
+    /// * `masks` - Derandomized COT choices bits from the receiver.
+    /// * `vs` - Output buffer for the SPCOT vectors. The vectors are stored as
+    ///   field elements; the cGGM expansion reinterprets them as raw blocks
+    ///   (`Gf2_128` is little-endian, matching `Block`'s byte order on all
+    ///   supported, little-endian, targets).
+    pub(crate) fn expand<R: Rng>(
+        &mut self,
+        rng: &mut R,
+        log2_lengths: &[usize],
+        mut cs: Vec<Gf2_128>,
+        masks: &BitVec,
+        vs: &mut [Gf2_128],
+    ) -> Result<Vec<Gf2_128>> {
+        let len_sum: usize = log2_lengths.iter().sum();
+        if cs.len() != len_sum {
+            return Err(ErrorRepr::KeyCount {
+                expected: len_sum,
+                actual: cs.len(),
+            }
+            .into());
+        }
+
         let len: usize = log2_lengths.iter().map(|length| 1 << length).sum();
         if vs.len() != len {
             return Err(ErrorRepr::OutputLength {
@@ -91,20 +131,9 @@ impl SPCOTSender {
             .into());
         }
 
-        // Derandomize the COT keys. After expansion these become the per-level
-        // corrections c_i = K[r_i] ⊕ b_i * Δ ⊕ K_i^0, where K_i^0 is the
-        // left-node sum at level i of the cGGM tree (Fig. 4 Step 3 of the
-        // Half-Tree paper, https://eprint.iacr.org/2022/1431).
         let delta = self.delta;
-        let delta_f = Gf2_128::from(delta);
-        let mut cs: Vec<Block> = keys
-            .iter()
-            .zip(masks.iter().by_vals())
-            .map(|(&key, b)| Block::from(if b { key + delta_f } else { key }))
-            .collect();
-
         let spcot_lengths: Vec<_> = log2_lengths.iter().map(|length| 1 << length).collect();
-        let seeds: Vec<[u8; 16]> = (0..log2_lengths.len()).map(|_| rng.random()).collect();
+        let seeds: Vec<Gf2_128> = (0..log2_lengths.len()).map(|_| rng.random()).collect();
         let vs = slices_from_lengths_mut(vs, &spcot_lengths);
         let cs_trees = slices_from_lengths_mut(&mut cs, log2_lengths);
 
@@ -120,18 +149,17 @@ impl SPCOTSender {
 
         iter.zip(cs_trees).zip(seeds).for_each(|((v, cs), seed)| {
             // Generate the SPCOT vector from the cGGM leaves. The leaves of
-            // every tree XOR to delta, which carries the punctured-point
+            // every tree sum to delta, which carries the punctured-point
             // correlation for free.
             //
             // The sums buffer lives on the stack: a tree deeper than 64
             // levels is impossible, as its leaves could not be allocated.
-            let v: &mut [[u8; 16]] = zerocopy::transmute_mut!(v);
-            let mut sums = [[0u8; 16]; 64];
+            let mut sums = [Gf2_128::ZERO; 64];
             let sums = &mut sums[..cs.len()];
-            cggm::expand(delta.to_bytes(), seed, v, sums);
+            cggm::expand(delta, seed, v, sums);
 
-            for (c, sum) in cs.iter_mut().zip(sums) {
-                *c ^= Block::from(*sum);
+            for (c, sum) in cs.iter_mut().zip(&*sums) {
+                *c = *c + *sum;
             }
         });
 
@@ -183,7 +211,7 @@ impl SPCOTSender {
         // is Σᵢ y*ᵢ ⋅ Xⁱ + x' ⋅ Δ, where x' is the choice bits packed into a
         // field element.
         let x = Gf2_128::from_lsb0_iter(masks.iter().by_vals());
-        let y = Gf2_128::inner_product(keys, MONOMIAL) + Gf2_128::from(self.delta) * x;
+        let y = Gf2_128::inner_product(keys, MONOMIAL) + self.delta * x;
 
         // Computes V = Y + Σₐ χₐ ⋅ vₐ
         let seed = *self.transcript.finalize().as_bytes();

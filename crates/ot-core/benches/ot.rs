@@ -85,7 +85,7 @@ fn kos(c: &mut Criterion) {
 
 fn ferret(c: &mut Criterion) {
     let mut group = c.benchmark_group("ferret");
-    for n in [262144, 1_000_000] {
+    for n in [262144, 1_000_000, 10_000_000] {
         let mut rng = ChaCha12Rng::seed_from_u64(0);
         let delta = Block::random(&mut rng);
         let config = FerretConfig::builder().build().unwrap();
