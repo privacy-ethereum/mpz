@@ -85,6 +85,7 @@ impl Distribution<Gf2_128> for StandardUniform {
 impl Add for Gf2_128 {
     type Output = Self;
 
+    #[inline]
     #[allow(clippy::suspicious_arithmetic_impl)]
     fn add(self, rhs: Self) -> Self::Output {
         Self(self.0 ^ rhs.0)
@@ -94,6 +95,7 @@ impl Add for Gf2_128 {
 impl Sub for Gf2_128 {
     type Output = Self;
 
+    #[inline]
     #[allow(clippy::suspicious_arithmetic_impl)]
     fn sub(self, rhs: Self) -> Self::Output {
         Self(self.0 ^ rhs.0)
@@ -123,6 +125,7 @@ impl Mul for Gf2_128 {
 impl Neg for Gf2_128 {
     type Output = Self;
 
+    #[inline]
     fn neg(self) -> Self::Output {
         self
     }

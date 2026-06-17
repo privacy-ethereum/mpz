@@ -47,6 +47,11 @@ pub struct Receiver<COT> {
     /// Converted to blocks only when correlations leave through the RCOT
     /// interface.
     macs: Vec<Gf2_128>,
+    /// Reusable scratch holding the seed MACs an extension consumes from the
+    /// tail (LPN input followed by consistency-check MACs), copied out so the
+    /// extension can reuse the tail for its output. Persists across the
+    /// extend/finish sequence; refilled each extension.
+    seed: Vec<Gf2_128>,
     /// Number of in-progress correlations at the tail of the buffer, not yet
     /// finalized by the current extension.
     pending: usize,
@@ -69,6 +74,7 @@ where
             prg: Prg::from_seed(seed),
             config,
             macs: Vec::new(),
+            seed: Vec::new(),
             choices: Vec::new(),
             pending: 0,
             state: State::Extend,
@@ -156,6 +162,10 @@ where
         let missing = self.alloc.saturating_sub(self.available());
         let params = self.config.select_params(self.macs.len(), missing);
 
+        // Pre-size the buffer for the whole demand so the per-iteration
+        // `resize` does not repeatedly reallocate and copy across extensions.
+        self.macs.reserve(missing);
+
         let err = sample_error_indices(&mut self.prg, params.n, params.t);
 
         let (spcot_lengths, spcot_idxs) = mpcot::spcot_queries(&err, params.n)?;
@@ -219,38 +229,46 @@ where
             .into());
         }
 
-        // Pop the COT MACs consumed by this extension off the tail: the
-        // SPCOT MACs, the consistency check MACs and choices, and the LPN
-        // input. This frees the tail of the MACs buffer so the SPCOT vectors
-        // can be expanded directly into their final place.
-        let spcot_macs = self.macs.split_off(self.macs.len() - spcot_count);
-        let check_macs = self.macs.split_off(self.macs.len() - CSP);
-        let check_masks = self.choices.split_off(self.choices.len() - CSP);
-        let lpn_macs = self.macs.split_off(self.macs.len() - params.k);
+        // The seed this extension consumes sits at the tail, laid out
+        // `[ LPN input (k) | check MACs (CSP) | SPCOT MACs ]`.
+        let len = self.macs.len();
 
-        // For regular indices, the MPCOT output is the concatenation of the
-        // SPCOT vectors (Step 5 in Figure 7), which the SPCOT writes
-        // directly into the tail of the MACs buffer.
+        // Decrypt the off-path sums from the SPCOT MACs in place: this is their
+        // only read, so we avoid copying them out and reuse their buffer space
+        // for the output.
+        let sums = self
+            .spcot
+            .decrypt(&spcot_lengths, &self.macs[len - spcot_count..], &cs)?;
+
+        // The LPN input and check MACs must survive into `start_check`/`finish`,
+        // where the SPCOT output overwrites their old location, so copy them
+        // into the reusable scratch buffer.
+        self.seed.clear();
+        self.seed
+            .extend_from_slice(&self.macs[len - cost..len - spcot_count]);
+
+        // Drop the whole seed tail; the SPCOT vectors (the MPCOT output, Step 5
+        // in Figure 7) are then expanded directly into the freed tail.
+        self.macs.truncate(len - cost);
         let start = self.macs.len();
         self.macs.resize(start + params.n, Gf2_128::ZERO);
         self.pending = params.n;
 
-        self.spcot.extend(
-            &spcot_lengths,
-            &spcot_idxs,
-            &spcot_macs,
-            &cs,
-            &mut self.macs[start..],
-        )?;
+        self.spcot
+            .expand(&spcot_lengths, &spcot_idxs, sums, &cs, &mut self.macs[start..])?;
 
-        let derandomize = self
-            .spcot
-            .start_check(&check_macs, &check_masks, &self.macs[start..])?;
+        // The check MACs follow the LPN input in the scratch buffer; the check
+        // masks are the tail of the choices buffer.
+        let check_macs = &self.seed[params.k..];
+        let clen = self.choices.len();
+        let derandomize =
+            self.spcot
+                .start_check(check_macs, &self.choices[clen - CSP..], &self.macs[start..])?;
+        self.choices.truncate(clen - CSP);
 
         self.state = State::Finish(Finish {
             params,
             err,
-            lpn_macs,
             lpn_seed,
         });
 
@@ -271,7 +289,6 @@ where
         let State::Finish(Finish {
             params,
             err,
-            lpn_macs,
             lpn_seed,
         }) = self.state.take()
         else {
@@ -299,14 +316,16 @@ where
 
         // Compute z = A * w + r and x = A * u + e in one pass, the former
         // in-place over the SPCOT vectors at the tail of the MACs buffer,
-        // which then directly hold the extended correlations.
+        // which then directly hold the extended correlations. The LPN input
+        // `r` is the leading scratch region.
+        let lpn_macs = &self.seed[..params.k];
         let start = self.macs.len() - params.n;
         let z = &mut self.macs[start..];
         encoder.compute_with_bits(
             lpn_seed,
             zerocopy::transmute_mut!(z),
             &mut x,
-            zerocopy::transmute_ref!(lpn_macs.as_slice()),
+            zerocopy::transmute_ref!(lpn_macs),
             &u,
         );
         self.pending = 0;
@@ -439,7 +458,6 @@ struct Extending {
 struct Finish {
     params: LpnParameters,
     err: Vec<usize>,
-    lpn_macs: Vec<Gf2_128>,
     lpn_seed: Block,
 }
 

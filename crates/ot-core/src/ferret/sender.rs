@@ -44,12 +44,17 @@ pub struct Sender<COT> {
     queue: VecDeque<Queued>,
     transfer_id: TransferId,
     prg: Prg,
-    delta: Block,
+    delta: Gf2_128,
     config: FerretConfig,
     /// COT keys, stored as field elements for the SPCOT consistency check.
     /// Converted to blocks only when correlations leave through the RCOT
     /// interface.
     keys: Vec<Gf2_128>,
+    /// Reusable scratch holding the seed keys an extension consumes from the
+    /// tail (LPN input followed by consistency-check keys), copied out so the
+    /// extension can reuse the tail for its output. Persists across the
+    /// extend/check/finish sequence; refilled each extension.
+    seed: Vec<Gf2_128>,
     /// Number of in-progress correlations at the tail of the buffer, not yet
     /// finalized by the current extension.
     pending: usize,
@@ -63,7 +68,8 @@ where
 {
     /// Creates a new sender.
     pub fn new(seed: Block, config: FerretConfig, cot: COT) -> Self {
-        let delta = cot.delta();
+        // The inner COT hands `delta` across the RCOT boundary as a `Block`.
+        let delta = Gf2_128::from(cot.delta());
         Self {
             cot: Arc::new(Mutex::new(cot)),
             alloc: 0,
@@ -73,6 +79,7 @@ where
             delta,
             config,
             keys: Vec::new(),
+            seed: Vec::new(),
             pending: 0,
             state: State::Extend,
             spcot: SPCOTSender::new(delta),
@@ -154,6 +161,10 @@ where
         let missing = self.alloc.saturating_sub(self.available());
         let params = self.config.select_params(self.keys.len(), missing);
 
+        // Pre-size the buffer for the whole demand so the per-iteration
+        // `resize` does not repeatedly reallocate and copy across extensions.
+        self.keys.reserve(missing);
+
         let spcot_lengths = mpcot::spcot_lengths(params.t, params.n)?;
 
         self.state = State::Extending(Extending {
@@ -193,25 +204,34 @@ where
             .into());
         }
 
-        // Pop the COT keys consumed by this extension off the tail: the
-        // SPCOT keys, the consistency check keys, and the LPN input. This
-        // frees the tail of the keys buffer so the SPCOT vectors can be
-        // expanded directly into their final place.
-        let spcot_keys = self.keys.split_off(self.keys.len() - spcot_count);
-        let check_keys = self.keys.split_off(self.keys.len() - CSP);
-        let lpn_keys = self.keys.split_off(self.keys.len() - params.k);
+        // The seed this extension consumes sits at the tail, laid out
+        // `[ LPN input (k) | check keys (CSP) | SPCOT keys ]`.
+        let len = self.keys.len();
 
-        // For regular indices, the MPCOT output is the concatenation of the
-        // SPCOT vectors (Step 5 in Figure 7), which the SPCOT writes
-        // directly into the tail of the keys buffer.
+        // Derandomize the SPCOT keys in place: this is their only read, so we
+        // avoid copying them out and reuse their buffer space for the output.
+        let cs = self
+            .spcot
+            .derandomize(&spcot_lengths, &self.keys[len - spcot_count..], &derandomize.flip)?;
+
+        // The LPN input and check keys must survive into `check`/`finish`,
+        // where the SPCOT output overwrites their old location, so copy them
+        // into the reusable scratch buffer.
+        self.seed.clear();
+        self.seed
+            .extend_from_slice(&self.keys[len - cost..len - spcot_count]);
+
+        // Drop the whole seed tail; the SPCOT vectors (the MPCOT output, Step 5
+        // in Figure 7) are then expanded directly into the freed tail.
+        self.keys.truncate(len - cost);
         let start = self.keys.len();
         self.keys.resize(start + params.n, Gf2_128::ZERO);
         self.pending = params.n;
 
-        let cs = self.spcot.extend(
+        let cs = self.spcot.expand(
             &mut self.prg,
             &spcot_lengths,
-            &spcot_keys,
+            cs,
             &derandomize.flip,
             &mut self.keys[start..],
         )?;
@@ -222,12 +242,7 @@ where
         let (cointoss, lpn_seed_share) =
             CointossReceiver::new(vec![self.prg.random()]).reveal(lpn_seed_commitment)?;
 
-        self.state = State::Check(Check {
-            params,
-            check_keys,
-            lpn_keys,
-            cointoss,
-        });
+        self.state = State::Check(Check { params, cointoss });
 
         Ok(SenderExtend { cs, lpn_seed_share })
     }
@@ -243,38 +258,25 @@ where
             lpn_seed_decommitment,
         } = msg;
 
-        let State::Check(Check {
-            params,
-            check_keys,
-            lpn_keys,
-            cointoss,
-        }) = self.state.take()
-        else {
+        let State::Check(Check { params, cointoss }) = self.state.take() else {
             return Err(ErrorRepr::State("not in check state".to_string()).into());
         };
 
         let lpn_seed = cointoss.finalize(lpn_seed_decommitment)?[0];
 
+        // The check keys follow the LPN input in the scratch buffer.
+        let check_keys = &self.seed[params.k..];
         let vs = &self.keys[self.keys.len() - params.n..];
-        let hashed_v = self.spcot.check(&check_keys, &derandomize.flip, vs)?;
+        let hashed_v = self.spcot.check(check_keys, &derandomize.flip, vs)?;
 
-        self.state = State::Finish(Finish {
-            params,
-            lpn_keys,
-            lpn_seed,
-        });
+        self.state = State::Finish(Finish { params, lpn_seed });
 
         Ok(SenderCheck { hashed_v })
     }
 
     /// Finishes the extension.
     pub fn finish_extend(&mut self) -> Result<()> {
-        let State::Finish(Finish {
-            params,
-            lpn_keys,
-            lpn_seed,
-        }) = self.state.take()
-        else {
+        let State::Finish(Finish { params, lpn_seed }) = self.state.take() else {
             return Err(ErrorRepr::State("not in finish state".to_string()).into());
         };
 
@@ -283,13 +285,14 @@ where
 
         // Compute y = A * v + s, in-place over the SPCOT vectors at the tail
         // of the keys buffer, which then directly hold the extended
-        // correlations.
+        // correlations. The LPN input `s` is the leading scratch region.
+        let lpn_keys = &self.seed[..params.k];
         let start = self.keys.len() - params.n;
         let y = &mut self.keys[start..];
         encoder.compute(
             lpn_seed,
             zerocopy::transmute_mut!(y),
-            zerocopy::transmute_ref!(lpn_keys.as_slice()),
+            zerocopy::transmute_ref!(lpn_keys),
         );
         self.pending = 0;
 
@@ -344,7 +347,7 @@ where
     }
 
     fn delta(&self) -> Block {
-        self.delta
+        Block::from(self.delta)
     }
 
     fn try_send_rcot(&mut self, count: usize) -> Result<RCOTSenderOutput<Block>, Self::Error> {
@@ -402,14 +405,11 @@ struct Extending {
 
 struct Check {
     params: LpnParameters,
-    check_keys: Vec<Gf2_128>,
-    lpn_keys: Vec<Gf2_128>,
     cointoss: CointossReceiver<cointoss_state::Received>,
 }
 
 struct Finish {
     params: LpnParameters,
-    lpn_keys: Vec<Gf2_128>,
     lpn_seed: Block,
 }
 

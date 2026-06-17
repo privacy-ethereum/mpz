@@ -219,10 +219,12 @@ mod tests {
         let keys: Vec<Gf2_128> = keys.iter().map(|&key| key.into()).collect();
         let macs: Vec<Gf2_128> = macs.iter().map(|&mac| mac.into()).collect();
 
+        let cs = sender.derandomize(lengths, &keys, &derandomize.flip).unwrap();
         let cs = sender
-            .extend(rng, lengths, &keys, &derandomize.flip, &mut vs)
+            .expand(rng, lengths, cs, &derandomize.flip, &mut vs)
             .unwrap();
-        receiver.extend(lengths, idxs, &macs, &cs, &mut ws).unwrap();
+        let sums = receiver.decrypt(lengths, &macs, &cs).unwrap();
+        receiver.expand(lengths, idxs, sums, &cs, &mut ws).unwrap();
 
         assert!(sender.wants_check());
         assert!(receiver.wants_check());

@@ -7,7 +7,6 @@ use rayon::prelude::*;
 use mpz_core::{
     Block,
     bitvec::BitVec,
-    cggm,
     utils::{slices_from_lengths, slices_from_lengths_mut},
 };
 use mpz_fields::{Field, gf2_128::Gf2_128};
@@ -16,6 +15,7 @@ use zerocopy::IntoBytes;
 use crate::{
     Derandomize,
     ferret::{
+        cggm,
         config::CSP,
         spcot::{MONOMIAL, fold_chis},
     },
@@ -100,36 +100,24 @@ impl SPCOTReceiver {
         Ok(Derandomize { flip })
     }
 
-    /// Computes multiple SPCOTs, writing the SPCOT vectors to `ws`.
+    /// Decrypts the off-path sibling sums from the COT MACs and corrections.
     ///
-    /// `ws` must be presented to the consistency check unmodified.
+    /// Split from [`SPCOTReceiver::expand`] so the caller can reuse the MACs'
+    /// buffer space for the output `ws` in between — this only reads `macs`.
     ///
     /// # Arguments
     ///
     /// * `log2_lengths` - log2 length of the SPCOT vectors.
-    /// * `idxs` - Chosen SPCOT indices.
     /// * `macs` - COT MACs used to decrypt the cGGM tree corrections.
     /// * `cs` - cGGM tree corrections from the sender.
-    /// * `ws` - Output buffer for the SPCOT vectors. The vectors are stored as
-    ///   field elements; the cGGM expansion reinterprets them as raw blocks
-    ///   (`Gf2_128` is little-endian, matching `Block`'s byte order on all
-    ///   supported, little-endian, targets).
-    pub(crate) fn extend(
-        &mut self,
+    pub(crate) fn decrypt(
+        &self,
         log2_lengths: &[usize],
-        idxs: &[usize],
         macs: &[Gf2_128],
-        cs: &[Block],
-        ws: &mut [Gf2_128],
-    ) -> Result<()> {
+        cs: &[Gf2_128],
+    ) -> Result<Vec<Gf2_128>> {
         let len_sum: usize = log2_lengths.iter().sum();
-        if idxs.len() != log2_lengths.len() {
-            return Err(ErrorRepr::IndexCount {
-                expected: log2_lengths.len(),
-                actual: idxs.len(),
-            }
-            .into());
-        } else if macs.len() != len_sum {
+        if macs.len() != len_sum {
             return Err(ErrorRepr::MacCount {
                 expected: len_sum,
                 actual: macs.len(),
@@ -143,6 +131,49 @@ impl SPCOTReceiver {
             .into());
         }
 
+        // Decrypt the off-path sibling sums: M[r_i] + c_i = !α_i * Δ + K_i^0
+        // (Fig. 4 Step 4 of the Half-Tree paper).
+        Ok(macs.iter().zip(cs).map(|(&mac, &c)| mac + c).collect())
+    }
+
+    /// Expands the punctured cGGM trees into `ws`, consuming the sums from
+    /// [`SPCOTReceiver::decrypt`].
+    ///
+    /// `ws` must be presented to the consistency check unmodified.
+    ///
+    /// # Arguments
+    ///
+    /// * `log2_lengths` - log2 length of the SPCOT vectors.
+    /// * `idxs` - Chosen SPCOT indices.
+    /// * `sums` - Off-path sibling sums from [`SPCOTReceiver::decrypt`].
+    /// * `cs` - cGGM tree corrections from the sender.
+    /// * `ws` - Output buffer for the SPCOT vectors. The vectors are stored as
+    ///   field elements; the cGGM expansion reinterprets them as raw blocks
+    ///   (`Gf2_128` is little-endian, matching `Block`'s byte order on all
+    ///   supported, little-endian, targets).
+    pub(crate) fn expand(
+        &mut self,
+        log2_lengths: &[usize],
+        idxs: &[usize],
+        sums: Vec<Gf2_128>,
+        cs: &[Gf2_128],
+        ws: &mut [Gf2_128],
+    ) -> Result<()> {
+        let len_sum: usize = log2_lengths.iter().sum();
+        if idxs.len() != log2_lengths.len() {
+            return Err(ErrorRepr::IndexCount {
+                expected: log2_lengths.len(),
+                actual: idxs.len(),
+            }
+            .into());
+        } else if sums.len() != len_sum {
+            return Err(ErrorRepr::MacCount {
+                expected: len_sum,
+                actual: sums.len(),
+            }
+            .into());
+        }
+
         let len: usize = log2_lengths.iter().map(|length| 1 << length).sum();
         if ws.len() != len {
             return Err(ErrorRepr::OutputLength {
@@ -151,14 +182,6 @@ impl SPCOTReceiver {
             }
             .into());
         }
-
-        // Decrypt the off-path sibling sums: M[r_i] ⊕ c_i = !α_i * Δ ⊕ K_i^0
-        // (Fig. 4 Step 4 of the Half-Tree paper).
-        let sums: Vec<[u8; 16]> = macs
-            .iter()
-            .zip(cs)
-            .map(|(&mac, &c)| (mac + Gf2_128::from(c)).to_inner().to_le_bytes())
-            .collect();
 
         let spcot_lengths: Vec<_> = log2_lengths.iter().map(|length| 1 << length).collect();
         let sums = slices_from_lengths(&sums, log2_lengths);
@@ -175,15 +198,11 @@ impl SPCOTReceiver {
         };
 
         iter.zip(sums).zip(idxs).for_each(|((w, sums), &idx)| {
-            let w: &mut [[u8; 16]] = zerocopy::transmute_mut!(w);
             cggm::expand_punctured(idx, sums, w);
 
-            // The leaves of the sender's tree XOR to delta, so folding the
-            // punctured leaves recovers w[idx] = v[idx] ⊕ delta.
-            w[idx] = w
-                .iter()
-                .fold(0u128, |acc, x| acc ^ u128::from_ne_bytes(*x))
-                .to_ne_bytes();
+            // The leaves of the sender's tree sum to delta, so folding the
+            // punctured leaves recovers w[idx] = v[idx] + delta.
+            w[idx] = w.iter().fold(Gf2_128::ZERO, |acc, &x| acc + x);
         });
 
         self.transcript.update(cs.as_bytes());

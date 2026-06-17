@@ -5,7 +5,6 @@
 pub mod aes;
 pub mod bitvec;
 pub mod block;
-pub mod cggm;
 pub mod commit;
 pub mod hash;
 pub mod lpn;

@@ -44,10 +44,6 @@ name = "aes"
 harness = false
 
 [[bench]]
-name = "cggm"
-harness = false
-
-[[bench]]
 name = "prg"
 harness = false
 
