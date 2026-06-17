@@ -17,7 +17,7 @@ use serio::{SinkExt, stream::IoStreamExt};
 use std::ops::Range;
 
 use crate::{
-    ChunkOutcome, ProofMessage, VOPE_BITS,
+    ChunkOutcome, DEFAULT_CHUNK_CAP, ProofMessage, VOPE_BITS,
     capture::{self, ChunkCapture, Role},
     commit::{self, PendingIo, ProverTape, prepare_params},
     error::ZkVmError,
@@ -68,7 +68,7 @@ impl<T> Prover<T> {
             pending_reveal: RangeSet::default(),
             reveal_state: host::RevealState::default(),
             auth,
-            chunk_cap: None,
+            chunk_cap: Some(DEFAULT_CHUNK_CAP),
             segment_cost: None,
         })
     }
@@ -78,7 +78,8 @@ impl<T> Prover<T> {
     ///
     /// A value of `Some(cap)` bounds each chunk to at most `cap` operations,
     /// trading proof granularity against memory use. `None` places no bound and
-    /// lets a chunk run until the program completes or traps.
+    /// lets a chunk run until the program completes or traps. Defaults to
+    /// [`Some(DEFAULT_CHUNK_CAP)`](crate::DEFAULT_CHUNK_CAP).
     pub fn with_chunk_cap(mut self, cap: Option<usize>) -> Self {
         self.chunk_cap = cap;
         self

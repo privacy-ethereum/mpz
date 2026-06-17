@@ -18,7 +18,7 @@ use mpz_vm_memory::{AuthState, Bit, Registers};
 use mpz_zk_core::{Commitment, MAC_ONE, MAC_ZERO, verifier_wire, vope_sender};
 
 use crate::{
-    ChunkOutcome, ProofMessage, VOPE_BITS,
+    ChunkOutcome, DEFAULT_CHUNK_CAP, ProofMessage, VOPE_BITS,
     capture::{self, ChunkCapture, Role},
     commit::{self, PendingIo, VerifierTape, prepare_params},
     error::ZkVmError,
@@ -79,7 +79,7 @@ where
             reveal_state: host::RevealState::default(),
             auth,
             delta,
-            chunk_cap: None,
+            chunk_cap: Some(DEFAULT_CHUNK_CAP),
             segment_cost: None,
         })
     }
@@ -89,7 +89,8 @@ where
     ///
     /// A value of `Some(cap)` bounds each chunk to at most `cap` operations,
     /// trading proof granularity against memory use; `None` places no bound.
-    /// This must match the prover's setting for the two sides to agree.
+    /// Defaults to [`Some(DEFAULT_CHUNK_CAP)`](crate::DEFAULT_CHUNK_CAP). This
+    /// must match the prover's setting for the two sides to agree.
     pub fn with_chunk_cap(mut self, cap: Option<usize>) -> Self {
         self.chunk_cap = cap;
         self
