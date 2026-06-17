@@ -102,6 +102,8 @@ fn ferret(c: &mut Criterion) {
             receiver.alloc_bootstrap().unwrap();
             sender.acquire_cot().flush().unwrap();
             receiver.acquire_cot().flush().unwrap();
+            sender.bootstrap().unwrap();
+            receiver.bootstrap().unwrap();
             sender.alloc(n).unwrap();
             receiver.alloc(n).unwrap();
 

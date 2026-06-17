@@ -92,6 +92,8 @@ mod tests {
 
         let mut builder = FerretConfig::builder();
 
+        // Disable passthrough so a small count still exercises the protocol.
+        builder.direct_passthrough(false);
         builder.param_selector(|_, _| TEST_PARAMS);
 
         let config = builder.build().unwrap();
@@ -108,6 +110,9 @@ mod tests {
 
         sender.acquire_cot().flush().unwrap();
         receiver.acquire_cot().flush().unwrap();
+
+        sender.bootstrap().unwrap();
+        receiver.bootstrap().unwrap();
 
         sender.alloc(count).unwrap();
         receiver.alloc(count).unwrap();
@@ -129,5 +134,94 @@ mod tests {
         let RCOTReceiverOutput { choices, msgs, .. } = receiver.try_recv_rcot(count).unwrap();
 
         assert_cot(delta, &choices, &keys, &msgs);
+    }
+
+    #[test]
+    fn test_ferret_direct() {
+        use rand::Rng;
+
+        let mut rng = StdRng::seed_from_u64(0);
+        let delta = rng.random();
+        let cot = IdealRCOT::new(rng.random(), delta);
+
+        let config = FerretConfig::default();
+
+        // A small demand is served straight from the base COT, skipping Ferret.
+        let count = 1_000;
+        assert!(count < config.bootstrap_cost());
+
+        let mut sender = Sender::new(rng.random(), config.clone(), cot.clone());
+        let mut receiver = Receiver::new(rng.random(), config, cot);
+
+        sender.alloc(count).unwrap();
+        receiver.alloc(count).unwrap();
+
+        assert!(sender.wants_bootstrap());
+        assert!(receiver.wants_bootstrap());
+
+        sender.alloc_bootstrap().unwrap();
+        receiver.alloc_bootstrap().unwrap();
+
+        sender.acquire_cot().flush().unwrap();
+        receiver.acquire_cot().flush().unwrap();
+
+        sender.bootstrap().unwrap();
+        receiver.bootstrap().unwrap();
+
+        // The demand is satisfied directly, so no extension is needed.
+        assert!(!sender.wants_extend());
+        assert!(!receiver.wants_extend());
+
+        let RCOTSenderOutput { keys, .. } = sender.try_send_rcot(count).unwrap();
+        let RCOTReceiverOutput { choices, msgs, .. } = receiver.try_recv_rcot(count).unwrap();
+
+        assert_cot(delta, &choices, &keys, &msgs);
+    }
+
+    #[test]
+    fn test_ferret_direct_multi_round() {
+        use rand::Rng;
+
+        let mut rng = StdRng::seed_from_u64(0);
+        let delta = rng.random();
+        let cot = IdealRCOT::new(rng.random(), delta);
+
+        let config = FerretConfig::default();
+        let count = 1_000;
+        assert!(count < config.bootstrap_cost());
+
+        let mut sender = Sender::new(rng.random(), config.clone(), cot.clone());
+        let mut receiver = Receiver::new(rng.random(), config, cot);
+
+        // alloc -> consume, repeated. Each round is served directly and drains
+        // the buffer back to empty, so the next round starts cold.
+        for _ in 0..3 {
+            sender.alloc(count).unwrap();
+            receiver.alloc(count).unwrap();
+
+            assert!(sender.wants_bootstrap());
+            assert!(receiver.wants_bootstrap());
+
+            sender.alloc_bootstrap().unwrap();
+            receiver.alloc_bootstrap().unwrap();
+
+            sender.acquire_cot().flush().unwrap();
+            receiver.acquire_cot().flush().unwrap();
+
+            sender.bootstrap().unwrap();
+            receiver.bootstrap().unwrap();
+
+            assert!(!sender.wants_extend());
+            assert!(!receiver.wants_extend());
+
+            let RCOTSenderOutput { keys, .. } = sender.try_send_rcot(count).unwrap();
+            let RCOTReceiverOutput { choices, msgs, .. } = receiver.try_recv_rcot(count).unwrap();
+
+            assert_cot(delta, &choices, &keys, &msgs);
+
+            // Drained back to empty: still cold, never warmed into Ferret.
+            assert_eq!(sender.available(), 0);
+            assert_eq!(receiver.available(), 0);
+        }
     }
 }

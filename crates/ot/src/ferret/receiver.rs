@@ -80,6 +80,7 @@ where
                 .flush(ctx)
                 .await
                 .map_err(Error::bootstrap)?;
+            self.core.bootstrap()?;
         }
 
         while self.core.wants_extend() {
