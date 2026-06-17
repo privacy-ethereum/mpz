@@ -39,6 +39,15 @@ pub use verifier::Verifier;
 
 pub(crate) const VOPE_BITS: usize = 128;
 
+/// Default per-chunk op-cost cap, sized to sit within the net correlations one
+/// Ferret extension can deliver. A single round of the largest regular-LPN
+/// params ([`mpz_ot_core::ferret::REGULAR_PARAMS`]) yields `n` correlations but
+/// must reserve `t·log2(n/t) + k + CSP` of them as seed for the next iteration,
+/// so the usable yield is `n - iteration_cost = 15_015_684`. Capping below that
+/// keeps a chunk's sVOLE demand serviceable by one extension round, with margin
+/// left for the per-chunk commit and VOPE overhead.
+pub const DEFAULT_CHUNK_CAP: usize = 15_000_000;
+
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub(crate) struct ProofMessage {
     pub(crate) output: Option<Value>,
@@ -54,4 +63,33 @@ pub(crate) struct ChunkOutcome {
     /// verifier merges these before capturing so it can resolve the reveals in
     /// lockstep; replay then opens each against its committed wires.
     pub(crate) revealed: BTreeMap<u32, RevealPayload>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::DEFAULT_CHUNK_CAP;
+
+    /// `DEFAULT_CHUNK_CAP` must stay within the net correlations one Ferret
+    /// extension delivers — its output `n` less the `t·log2(n/t) + k + CSP`
+    /// seed it reserves for the next iteration — so a chunk's sVOLE demand fits
+    /// a single extension round. Guards against a future params change that
+    /// would shrink the net yield below the cap.
+    #[test]
+    fn default_chunk_cap_fits_ferret_iteration() {
+        // Ferret's computational security parameter (`config::CSP`), inlined
+        // since it is private to `mpz_ot_core`.
+        const CSP: usize = 128;
+        let net = mpz_ot_core::ferret::REGULAR_PARAMS
+            .iter()
+            .map(|p| {
+                let iteration_cost = p.t * (p.n / p.t).ilog2() as usize + p.k + CSP;
+                p.n - iteration_cost
+            })
+            .max()
+            .expect("Ferret defines at least one LPN parameter set");
+        assert!(
+            DEFAULT_CHUNK_CAP <= net,
+            "DEFAULT_CHUNK_CAP {DEFAULT_CHUNK_CAP} exceeds Ferret net yield {net}"
+        );
+    }
 }
