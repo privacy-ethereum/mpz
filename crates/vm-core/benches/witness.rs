@@ -115,9 +115,8 @@ fn bench_witness_sha256(c: &mut Criterion) {
     ];
 
     // Validate once: the witnessed run must produce a correct SHA-256 digest
-    // (the prover evaluates the private computation concretely). The guest
-    // writes the digest 4 KiB into the buffer, clobbering those message bytes,
-    // so restage before timing.
+    // (the prover evaluates the private computation concretely). `hash` returns
+    // the address of the digest it wrote to its own freshly allocated buffer.
     {
         let mut thread = Thread::new();
         thread
@@ -130,14 +129,16 @@ fn bench_witness_sha256(c: &mut Criterion) {
                 },
             )
             .unwrap();
-        execute(&module, &mut global, &mut thread, &mut Vec::new());
-        let digest = global.memory().unwrap().read_bytes(ptr + 4096, 32).unwrap();
+        let digest_ptr = match execute(&module, &mut global, &mut thread, &mut Vec::new()) {
+            Some(Value::I32(p)) => p as u32,
+            other => panic!("hash returned {other:?}"),
+        };
+        let digest = global.memory().unwrap().read_bytes(digest_ptr, 32).unwrap();
         assert_eq!(
             digest,
             Sha256::digest(&msg).as_slice(),
             "witness must encode a correct SHA-256 of the private message"
         );
-        stage(&mut global);
     }
 
     let mut group = c.benchmark_group("vm-core/witness");
