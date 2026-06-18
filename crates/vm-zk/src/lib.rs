@@ -89,29 +89,6 @@ pub(crate) fn effective_segment_cost(
     }
 }
 
-/// Records the parallel-pass timing profile of `times` (one busy-duration per
-/// segment worker) onto the current span's `segments`, `worker_max_us`, and
-/// `worker_sum_us` fields.
-///
-/// `worker_max_us` is the critical path (the slowest worker bounds the pass);
-/// `worker_sum_us` is the total work across all workers. Their ratio over
-/// `segments` reports achieved core utilization. A no-op when no subscriber
-/// records those fields.
-pub(crate) fn record_worker_times(times: &[std::time::Duration]) {
-    use std::time::Duration;
-
-    let span = tracing::Span::current();
-    span.record("segments", times.len());
-    span.record(
-        "worker_max_us",
-        times.iter().max().copied().unwrap_or_default().as_micros() as u64,
-    );
-    span.record(
-        "worker_sum_us",
-        times.iter().sum::<Duration>().as_micros() as u64,
-    );
-}
-
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub(crate) struct ProofMessage {
     pub(crate) output: Option<Value>,

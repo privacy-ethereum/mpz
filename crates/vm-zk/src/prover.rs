@@ -15,7 +15,6 @@ use rangeset::set::RangeSet;
 use rayon::prelude::*;
 use serio::{SinkExt, stream::IoStreamExt};
 use std::ops::Range;
-use std::time::Instant;
 use tracing::Instrument;
 
 use crate::{
@@ -123,12 +122,7 @@ where
     #[tracing::instrument(
         level = "debug",
         name = "commit",
-        skip_all,
-        fields(
-            segments = tracing::field::Empty,
-            worker_max_us = tracing::field::Empty,
-            worker_sum_us = tracing::field::Empty
-        )
+        skip_all
     )]
     #[allow(clippy::too_many_arguments)]
     fn commit_pass(
@@ -195,13 +189,11 @@ where
         let gate_masks = gate_mask_slices(seg_masks, &plan.segments);
         let module = &self.module;
         let auth_base = &self.auth;
-        let times = plan
-            .segments
+        plan.segments
             .par_iter()
             .zip(gate_masks)
             .enumerate()
-            .map(|(j, (seg, gmasks))| -> Result<std::time::Duration, ZkVmError> {
-                let start = Instant::now();
+            .map(|(j, (seg, gmasks))| -> Result<(), ZkVmError> {
                 let mut auth = auth_base.clone();
                 for (prev_seg, prev_wires) in plan.segments.iter().zip(&ptr_wires).take(j) {
                     let prev = prev_seg
@@ -223,10 +215,9 @@ where
                 )?;
                 ctx.finish()
                     .map_err(|e| ZkVmError::Internal(e.to_string()))?;
-                Ok(start.elapsed())
+                Ok(())
             })
-            .collect::<Result<Vec<_>, ZkVmError>>()?;
-        crate::record_worker_times(&times);
+            .collect::<Result<(), ZkVmError>>()?;
 
         Ok(boundary_bits)
     }
@@ -237,12 +228,7 @@ where
     #[tracing::instrument(
         level = "debug",
         name = "accumulate",
-        skip_all,
-        fields(
-            segments = tracing::field::Empty,
-            worker_max_us = tracing::field::Empty,
-            worker_sum_us = tracing::field::Empty
-        )
+        skip_all
     )]
     #[allow(clippy::too_many_arguments)]
     fn accumulate_pass(
@@ -276,12 +262,11 @@ where
         let memory = self.global.memory();
         let last = plan.segments.len() - 1;
 
-        let results: Vec<(Gf2_128, Gf2_128, [u8; 32], Option<LastOut>, std::time::Duration)> = plan
+        let results: Vec<(Gf2_128, Gf2_128, [u8; 32], Option<LastOut>)> = plan
             .segments
             .par_iter()
             .enumerate()
             .map(|(j, seg)| -> Result<_, ZkVmError> {
-                let start = Instant::now();
                 let mut auth = auth_base.clone();
                 for (prev_seg, prev_wires) in plan.segments.iter().zip(&boundary_wires).take(j) {
                     let prev = prev_seg
@@ -346,18 +331,15 @@ where
                 let (u, v, assertions) = ctx
                     .finish()
                     .map_err(|e| ZkVmError::Internal(e.to_string()))?;
-                Ok((u, v, assertions, last_out, start.elapsed()))
+                Ok((u, v, assertions, last_out))
             })
             .collect::<Result<_, _>>()?;
-
-        let times: Vec<_> = results.iter().map(|r| r.4).collect();
-        crate::record_worker_times(&times);
 
         let mut u = Gf2_128::new(0);
         let mut v = Gf2_128::new(0);
         let mut hasher = blake3::Hasher::new();
         let mut final_out = None;
-        for (u_j, v_j, h_j, last_out, _) in results {
+        for (u_j, v_j, h_j, last_out) in results {
             u = u + u_j;
             v = v + v_j;
             hasher.update(&h_j);
