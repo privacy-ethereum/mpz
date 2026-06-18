@@ -232,6 +232,11 @@ impl Scan {
 /// A trace the scan cannot mirror (e.g. one that replay will reject anyway)
 /// also degrades to a single sequential segment, so the proving pass surfaces
 /// the same error at the same protocol point on both sides.
+#[tracing::instrument(
+    level = "debug",
+    skip_all,
+    fields(segments = tracing::field::Empty, tape_len = tracing::field::Empty)
+)]
 pub(crate) fn plan(
     chunk: &ChunkCapture,
     module: &Module,
@@ -239,16 +244,21 @@ pub(crate) fn plan(
     params: &[Param],
     root_reg_base: Reg,
 ) -> Plan {
-    if chunk.marks.is_empty() {
-        return single_segment(chunk);
-    }
-    match scan_plan(chunk, module, auth, params, root_reg_base) {
-        Ok(plan) => plan,
-        Err(e) => {
-            tracing::warn!(error = %e, "segment scan failed; falling back to one segment");
-            single_segment(chunk)
+    let plan = if chunk.marks.is_empty() {
+        single_segment(chunk)
+    } else {
+        match scan_plan(chunk, module, auth, params, root_reg_base) {
+            Ok(plan) => plan,
+            Err(e) => {
+                tracing::warn!(error = %e, "segment scan failed; falling back to one segment");
+                single_segment(chunk)
+            }
         }
-    }
+    };
+    let span = tracing::Span::current();
+    span.record("segments", plan.segments.len());
+    span.record("tape_len", plan.tape_len);
+    plan
 }
 
 fn single_segment(chunk: &ChunkCapture) -> Plan {

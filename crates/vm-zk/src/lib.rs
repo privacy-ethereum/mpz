@@ -20,6 +20,7 @@ use mpz_zk_core::Proof;
 
 pub(crate) mod capture;
 pub(crate) mod commit;
+pub(crate) mod config;
 pub(crate) mod cost;
 pub(crate) mod error;
 pub(crate) mod finalize;
@@ -33,6 +34,7 @@ mod verifier;
 
 use host::RevealPayload;
 
+pub use config::{Config, ConfigBuilder};
 pub use error::ZkVmError;
 pub use prover::Prover;
 pub use verifier::Verifier;
@@ -62,7 +64,7 @@ pub const DEFAULT_CHUNK_CAP: usize = 15_000_000;
 pub(crate) const TARGET_SEGMENTS: usize = 64;
 
 /// Floor on the auto-derived per-segment gate-bit cost, so a small
-/// [`chunk_cap`](Prover::with_chunk_cap) never produces segments too tiny to
+/// [`chunk_cap`](ConfigBuilder::chunk_cap) never produces segments too tiny to
 /// amortize their boundary commitment ("a segment for every gate").
 pub(crate) const MIN_SEGMENT_COST: usize = 50_000;
 
@@ -70,7 +72,7 @@ pub(crate) const MIN_SEGMENT_COST: usize = 50_000;
 /// place segment marks.
 ///
 /// `Some(cost)` is honored verbatim — an explicit
-/// [`with_segment_cost`](Prover::with_segment_cost) override. `None`
+/// [`segment_cost`](ConfigBuilder::segment_cost) override. `None`
 /// auto-derives a target from the shared `chunk_cap` so a full chunk splits
 /// into about [`TARGET_SEGMENTS`] segments: workload-proportional, and
 /// identical on both sides because it depends only on protocol-shared values,
@@ -85,6 +87,29 @@ pub(crate) fn effective_segment_cost(
         Some(cost) => Some(cost),
         None => chunk_cap.map(|cap| (cap / TARGET_SEGMENTS).max(MIN_SEGMENT_COST)),
     }
+}
+
+/// Records the parallel-pass timing profile of `times` (one busy-duration per
+/// segment worker) onto the current span's `segments`, `worker_max_us`, and
+/// `worker_sum_us` fields.
+///
+/// `worker_max_us` is the critical path (the slowest worker bounds the pass);
+/// `worker_sum_us` is the total work across all workers. Their ratio over
+/// `segments` reports achieved core utilization. A no-op when no subscriber
+/// records those fields.
+pub(crate) fn record_worker_times(times: &[std::time::Duration]) {
+    use std::time::Duration;
+
+    let span = tracing::Span::current();
+    span.record("segments", times.len());
+    span.record(
+        "worker_max_us",
+        times.iter().max().copied().unwrap_or_default().as_micros() as u64,
+    );
+    span.record(
+        "worker_sum_us",
+        times.iter().sum::<Duration>().as_micros() as u64,
+    );
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]

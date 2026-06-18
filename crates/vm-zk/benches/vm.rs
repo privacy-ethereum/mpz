@@ -194,6 +194,33 @@ fn prove_sha256(module: &Module, msg: &[u8], session: &mut Session) -> Vec<u8> {
     verifier.read(digest_ptr, DIGEST_LEN).unwrap().to_vec()
 }
 
+/// Installs a tracing subscriber when `RUST_LOG` is set that prints, on each
+/// span's close, its `time.busy`/`time.idle` wall-clock alongside the full
+/// span scope (`chunk:allocate:ferret.flush`, etc.) and recorded fields — the
+/// per-stage proving profile. A no-op (no subscriber, zero span cost) when
+/// `RUST_LOG` is unset, so a plain `cargo bench` measures undisturbed
+/// throughput.
+///
+/// For a profile run:
+/// `RUST_LOG=mpz_vm_zk=debug,mpz_ot=debug cargo bench -p mpz-vm-zk --bench vm`.
+/// The prover and verifier run on separate threads into one subscriber; their
+/// close lines carry the `role`/target so the two sides stay distinguishable,
+/// or narrow to one with a target filter (e.g. `mpz_vm_zk::prover=debug`).
+/// Absolute throughput numbers should be read from a run with `RUST_LOG` unset.
+fn init_tracing() {
+    use tracing_subscriber::{EnvFilter, fmt::format::FmtSpan};
+
+    let Ok(filter) = EnvFilter::try_from_default_env() else {
+        return;
+    };
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(filter)
+        .with_span_events(FmtSpan::CLOSE)
+        .with_target(true)
+        .with_writer(std::io::stderr)
+        .try_init();
+}
+
 /// Message sizes (bytes) to benchmark SHA-256 over. The headline is 4 KiB.
 const SHA256_SIZES: &[usize] = &[4096, 16384];
 
@@ -201,6 +228,7 @@ const SHA256_SIZES: &[usize] = &[4096, 16384];
 /// against a reference SHA-256 (proving the guest + VM + reveal are correct)
 /// before being timed.
 fn bench_sha256(c: &mut Criterion) {
+    init_tracing();
     let wasm = include_bytes!("guests/sha256.wasm");
     let module = Module::parse(wasm).unwrap();
 

@@ -111,7 +111,7 @@ pub(crate) struct ChunkCapture {
     pub(crate) marks: Vec<SegmentMark>,
 }
 
-#[tracing::instrument(level = "trace", skip_all, fields(?limits, ?role, announced_trap))]
+#[tracing::instrument(level = "debug", name = "capture", skip_all, fields(?role))]
 pub(crate) fn capture_chunk(
     module: &Module,
     global: &mut Global,

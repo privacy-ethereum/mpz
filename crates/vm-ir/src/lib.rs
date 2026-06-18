@@ -261,6 +261,22 @@ impl Module {
         &self.function_names
     }
 
+    /// Returns a human-readable name for the function at `func_idx`, if known.
+    ///
+    /// Prefers the WASM name section
+    /// ([`function_names`](Self::function_names)), falling back to the
+    /// function's export name. Returns `None` for a function that is neither
+    /// named nor exported.
+    pub fn func_name(&self, func_idx: u32) -> Option<&str> {
+        if let Some(name) = self.function_names.get(&func_idx) {
+            return Some(name.as_str());
+        }
+        self.exports.iter().find_map(|e| match e.kind {
+            ExportKind::Func(idx) if idx == func_idx => Some(e.name.as_str()),
+            _ => None,
+        })
+    }
+
     /// Returns the start function index if defined.
     pub fn start(&self) -> Option<u32> {
         self.start

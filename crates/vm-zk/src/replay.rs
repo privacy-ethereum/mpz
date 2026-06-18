@@ -120,7 +120,7 @@ impl ReplayState {
     }
 }
 
-#[tracing::instrument(level = "debug", skip_all, fields(events = trace.len()))]
+#[tracing::instrument(level = "trace", skip_all, fields(events = trace.len()))]
 pub(crate) fn replay<C>(
     trace: &[Directive],
     reveal_actions: &[RevealEvent],

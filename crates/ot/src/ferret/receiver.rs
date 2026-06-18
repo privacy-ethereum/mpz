@@ -72,6 +72,7 @@ where
         self.core.wants_extend()
     }
 
+    #[tracing::instrument(level = "debug", skip_all, name = "ferret.flush")]
     async fn flush(&mut self, ctx: &mut Context) -> Result<(), Self::Error> {
         if self.core.wants_bootstrap() {
             self.core.alloc_bootstrap()?;

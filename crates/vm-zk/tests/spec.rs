@@ -13,7 +13,7 @@ use mpz_ot::ideal::rcot::{IdealRCOTReceiver, IdealRCOTSender, ideal_rcot};
 use mpz_vm_core::{Param, Vm, value::Value};
 use mpz_vm_ir::Module;
 use mpz_vm_test_harness::{SpecConfig, SpecVm, run_suite, suites};
-use mpz_vm_zk::{Prover, Verifier, ZkVmError};
+use mpz_vm_zk::{Config, Prover, Verifier, ZkVmError};
 use rand::{Rng, SeedableRng, rngs::StdRng};
 
 /// A prover/verifier pair wired over ideal sVOLE.
@@ -52,14 +52,14 @@ impl SpecVm for ZkPair {
         let mut delta: Block = rng.random();
         delta.set_lsb(true);
         let (svole_sender, svole_receiver) = ideal_rcot(rng.random(), delta);
-        let prover = Prover::new(module.clone(), svole_receiver)
-            .map_err(|e| format!("{:?}", e))?
-            .with_chunk_cap(cap)
-            .with_segment_cost(segment_cost);
-        let verifier = Verifier::new(module.clone(), svole_sender)
-            .map_err(|e| format!("{:?}", e))?
-            .with_chunk_cap(cap)
-            .with_segment_cost(segment_cost);
+        let config = Config::builder()
+            .chunk_cap(cap)
+            .segment_cost(segment_cost)
+            .build();
+        let prover = Prover::new_with_config(module.clone(), svole_receiver, config.clone())
+            .map_err(|e| format!("{:?}", e))?;
+        let verifier = Verifier::new_with_config(module.clone(), svole_sender, config)
+            .map_err(|e| format!("{:?}", e))?;
         Ok(Self { prover, verifier })
     }
 
