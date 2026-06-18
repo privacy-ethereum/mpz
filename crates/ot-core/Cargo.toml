@@ -46,6 +46,7 @@ zerocopy = { workspace = true, features = ["derive"] }
 rstest.workspace = true
 criterion.workspace = true
 pretty_assertions.workspace = true
+bincode.workspace = true
 
 [[bench]]
 name = "ot"

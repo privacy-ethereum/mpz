@@ -5,9 +5,9 @@ use mpz_ot_core::{
     chou_orlandi,
     ferret::{self, FerretConfig},
     ideal::rcot::IdealRCOT,
-    kos,
     ot::{OTReceiver, OTSender},
     rcot::{RCOTReceiver, RCOTSender},
+    softspoken,
 };
 use rand::{Rng, SeedableRng};
 use rand_chacha::ChaCha12Rng;
@@ -40,11 +40,12 @@ fn chou_orlandi(c: &mut Criterion) {
     }
 }
 
-fn kos(c: &mut Criterion) {
-    let mut group = c.benchmark_group("kos");
-    for n in [1024, 262144] {
+fn softspoken(c: &mut Criterion) {
+    let mut group = c.benchmark_group("softspoken");
+    let n = 262144;
+    for k in [2usize, 4, 8] {
         group.throughput(Throughput::Elements(n as u64));
-        group.bench_with_input(BenchmarkId::from_parameter(n), &n, |b, &n| {
+        group.bench_with_input(BenchmarkId::new("k", k), &k, |b, &k| {
             let mut rng = ChaCha12Rng::seed_from_u64(0);
             let delta = Block::random(&mut rng);
 
@@ -58,12 +59,15 @@ fn kos(c: &mut Criterion) {
                 .try_into()
                 .unwrap();
 
-            b.iter(|| {
-                let sender = kos::Sender::new(kos::SenderConfig::default(), delta);
-                let receiver = kos::Receiver::new(kos::ReceiverConfig::default());
+            let sender_config = softspoken::SenderConfig::builder().k(k).build().unwrap();
+            let receiver_config = softspoken::ReceiverConfig::builder().k(k).build().unwrap();
 
-                let mut sender = sender.setup(sender_seeds);
-                let mut receiver = receiver.setup(receiver_seeds);
+            b.iter(|| {
+                let sender = softspoken::Sender::new(sender_config.clone(), delta);
+                let receiver = softspoken::Receiver::new(receiver_config.clone());
+
+                let (mut receiver, corrections) = receiver.setup(receiver_seeds).corrections();
+                let mut sender = sender.setup(sender_seeds).corrections(corrections);
 
                 sender.alloc(n).unwrap();
                 receiver.alloc(n).unwrap();
@@ -170,9 +174,9 @@ criterion_group! {
 }
 
 criterion_group! {
-    name = kos_benches;
+    name = softspoken_benches;
     config = Criterion::default().sample_size(50);
-    targets = kos
+    targets = softspoken
 }
 
 criterion_group! {
@@ -181,4 +185,4 @@ criterion_group! {
     targets = ferret
 }
 
-criterion_main!(chou_orlandi_benches, kos_benches, ferret_benches,);
+criterion_main!(chou_orlandi_benches, softspoken_benches, ferret_benches,);

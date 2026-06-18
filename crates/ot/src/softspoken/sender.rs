@@ -3,7 +3,7 @@ use itybity::IntoBits;
 use mpz_common::{Context, ContextError, Flush, future::MaybeDone};
 use mpz_core::Block;
 use mpz_ot_core::{
-    kos::{Sender as Core, SenderConfig, SenderError as CoreError, sender_state as state},
+    softspoken::{Sender as Core, SenderConfig, SenderError as CoreError, sender_state as state},
     ot::{OTReceiver, OTReceiverOutput},
     rcot::{RCOTSender, RCOTSenderOutput},
 };
@@ -27,20 +27,15 @@ impl<BaseOT> State<BaseOT> {
     }
 }
 
-/// KOS sender.
+/// SoftSpoken sender.
 #[derive(Debug)]
 pub struct Sender<BaseOT> {
     state: State<BaseOT>,
 }
 
 impl<BaseOT> Sender<BaseOT> {
-    /// Creates a new Sender
-    ///
-    /// # Arguments
-    ///
-    /// * `config` - The Sender's configuration.
-    /// * `delta` - Global COT correlation.
-    /// * `base_ot` - Base OT.
+    /// Creates a new Sender with the given config, global COT correlation
+    /// `delta`, and base OT.
     pub fn new(config: SenderConfig, delta: Block, base_ot: BaseOT) -> Self {
         Self {
             state: State::Initialized {
@@ -125,7 +120,9 @@ where
 
                 let seeds = seeds.try_into().expect("seeds should be 128 long");
 
-                sender.setup(seeds)
+                let sender = sender.setup(seeds);
+                let corrections = ctx.io_mut().expect_next().await?;
+                sender.corrections(corrections)
             }
             State::Extension(sender) => sender,
             State::Error => return Err(Error::state("can not flush, sender in error state")),

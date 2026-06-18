@@ -31,7 +31,7 @@ This crate implements Oblivious Transfer Extension using ideas from:
  - [CO15](https://eprint.iacr.org/2015/267.pdf)
  - [IKNP03](https://www.iacr.org/archive/crypto2003/27290145/27290145.pdf)
  - [ALSZ13](https://eprint.iacr.org/2013/552.pdf)
- - [KOS15](https://eprint.iacr.org/2015/546.pdf)
+ - [SoftSpokenOT](https://eprint.iacr.org/2022/192.pdf)
 
 ### Existing Works
 
