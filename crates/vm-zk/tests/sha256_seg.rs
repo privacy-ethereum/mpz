@@ -8,7 +8,7 @@ use mpz_core::Block;
 use mpz_ot::ideal::rcot::ideal_rcot;
 use mpz_vm_core::{Param, Vm, Write, value::Value};
 use mpz_vm_ir::{ExportKind, Module};
-use mpz_vm_zk::{Prover, Verifier};
+use mpz_vm_zk::{Config, Prover, Verifier};
 use rand::{Rng, SeedableRng, rngs::StdRng};
 use sha2::{Digest, Sha256};
 
@@ -36,12 +36,10 @@ fn sha256_segmented() {
     let mut delta: Block = rng.random();
     delta.set_lsb(true);
     let (svole_sender, svole_receiver) = ideal_rcot(rng.random(), delta);
-    let mut prover = Prover::new(module.clone(), svole_receiver)
-        .unwrap()
-        .with_segment_cost(Some(5_000));
-    let mut verifier = Verifier::new(module.clone(), svole_sender)
-        .unwrap()
-        .with_segment_cost(Some(5_000));
+    let config = Config::builder().segment_cost(Some(5_000)).build();
+    let mut prover =
+        Prover::new_with_config(module.clone(), svole_receiver, config.clone()).unwrap();
+    let mut verifier = Verifier::new_with_config(module.clone(), svole_sender, config).unwrap();
 
     // Allocate the input buffer in-guest, mirroring the bench.
     let realloc = func_idx(&module, "cabi_realloc");

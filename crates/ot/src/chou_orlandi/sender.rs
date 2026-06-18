@@ -87,6 +87,7 @@ impl Flush for Sender {
         }
     }
 
+    #[tracing::instrument(level = "debug", skip_all, name = "base_ot.flush")]
     async fn flush(&mut self, ctx: &mut Context) -> Result<(), Self::Error> {
         let mut sender = match self.state.take() {
             State::Initialized(sender) => {

@@ -15,9 +15,11 @@ use rangeset::set::RangeSet;
 use rayon::prelude::*;
 use serio::{SinkExt, stream::IoStreamExt};
 use std::ops::Range;
+use std::time::Instant;
+use tracing::Instrument;
 
 use crate::{
-    ChunkOutcome, DEFAULT_CHUNK_CAP, ProofMessage, VOPE_BITS,
+    ChunkOutcome, Config, ProofMessage, VOPE_BITS,
     capture::{self, ChunkCapture, Role},
     commit::{self, PendingIo, ProverTape, prepare_params},
     error::ZkVmError,
@@ -46,18 +48,27 @@ pub struct Prover<T> {
     pending_reveal: RangeSet<u32>,
     reveal_state: host::RevealState,
     auth: AuthState,
-    chunk_cap: Option<usize>,
-    segment_cost: Option<usize>,
+    config: Config,
 }
 
 impl<T> Prover<T> {
     /// Creates a new prover for `module`, drawing its correlated randomness
-    /// from `svole`.
+    /// from `svole`, with the default [`Config`].
     ///
     /// # Errors
     ///
     /// Returns a [`ZkVmError`] if state for `module` cannot be initialized.
     pub fn new(module: Module, svole: T) -> Result<Self, ZkVmError> {
+        Self::new_with_config(module, svole, Config::default())
+    }
+
+    /// Creates a new prover for `module`, drawing its correlated randomness
+    /// from `svole` and configured by `config`.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`ZkVmError`] if state for `module` cannot be initialized.
+    pub fn new_with_config(module: Module, svole: T, config: Config) -> Result<Self, ZkVmError> {
         let global = Global::new(&module)?;
         let auth = AuthState::new(Bit(MAC_ZERO), Bit(MAC_ONE));
         Ok(Self {
@@ -68,37 +79,8 @@ impl<T> Prover<T> {
             pending_reveal: RangeSet::default(),
             reveal_state: host::RevealState::default(),
             auth,
-            chunk_cap: Some(DEFAULT_CHUNK_CAP),
-            segment_cost: None,
+            config,
         })
-    }
-
-    /// Sets the maximum number of operations executed per chunk, returning the
-    /// updated prover.
-    ///
-    /// A value of `Some(cap)` bounds each chunk to at most `cap` operations,
-    /// trading proof granularity against memory use. `None` places no bound and
-    /// lets a chunk run until the program completes or traps. Defaults to
-    /// [`Some(DEFAULT_CHUNK_CAP)`](crate::DEFAULT_CHUNK_CAP).
-    pub fn with_chunk_cap(mut self, cap: Option<usize>) -> Self {
-        self.chunk_cap = cap;
-        self
-    }
-
-    /// Sets the gate-cost target per proving segment, returning the updated
-    /// prover.
-    ///
-    /// A value of `Some(cost)` splits each chunk's trace into segments of
-    /// roughly `cost` gate bits, which are committed and folded by parallel
-    /// workers and stitched together with boundary commitments. `None` (the
-    /// default) auto-derives the target from the chunk cap so a full chunk
-    /// splits into about [`TARGET_SEGMENTS`](crate::TARGET_SEGMENTS) segments,
-    /// scaling the parallelism to the workload; an unbounded chunk cap proves
-    /// each chunk as a single segment. This must match the verifier's setting
-    /// for the two sides to agree.
-    pub fn with_segment_cost(mut self, cost: Option<usize>) -> Self {
-        self.segment_cost = cost;
-        self
     }
 }
 
@@ -138,6 +120,16 @@ where
     ///
     /// `commit_bits` is the input-commit prefix length; the segment region
     /// (gates, advice, and boundary commitments) follows it.
+    #[tracing::instrument(
+        level = "debug",
+        name = "commit",
+        skip_all,
+        fields(
+            segments = tracing::field::Empty,
+            worker_max_us = tracing::field::Empty,
+            worker_sum_us = tracing::field::Empty
+        )
+    )]
     #[allow(clippy::too_many_arguments)]
     fn commit_pass(
         &mut self,
@@ -203,11 +195,13 @@ where
         let gate_masks = gate_mask_slices(seg_masks, &plan.segments);
         let module = &self.module;
         let auth_base = &self.auth;
-        plan.segments
+        let times = plan
+            .segments
             .par_iter()
             .zip(gate_masks)
             .enumerate()
-            .try_for_each(|(j, (seg, gmasks))| -> Result<(), ZkVmError> {
+            .map(|(j, (seg, gmasks))| -> Result<std::time::Duration, ZkVmError> {
+                let start = Instant::now();
                 let mut auth = auth_base.clone();
                 for (prev_seg, prev_wires) in plan.segments.iter().zip(&ptr_wires).take(j) {
                     let prev = prev_seg
@@ -229,8 +223,10 @@ where
                 )?;
                 ctx.finish()
                     .map_err(|e| ZkVmError::Internal(e.to_string()))?;
-                Ok(())
-            })?;
+                Ok(start.elapsed())
+            })
+            .collect::<Result<Vec<_>, ZkVmError>>()?;
+        crate::record_worker_times(&times);
 
         Ok(boundary_bits)
     }
@@ -238,6 +234,16 @@ where
     /// The parallel per-segment accumulate pass. Returns the combined
     /// `(u, v, assertions)`, the opened reveal cleartext, and the chunk-final
     /// authenticated state to persist.
+    #[tracing::instrument(
+        level = "debug",
+        name = "accumulate",
+        skip_all,
+        fields(
+            segments = tracing::field::Empty,
+            worker_max_us = tracing::field::Empty,
+            worker_sum_us = tracing::field::Empty
+        )
+    )]
     #[allow(clippy::too_many_arguments)]
     fn accumulate_pass(
         &self,
@@ -270,11 +276,12 @@ where
         let memory = self.global.memory();
         let last = plan.segments.len() - 1;
 
-        let results: Vec<(Gf2_128, Gf2_128, [u8; 32], Option<LastOut>)> = plan
+        let results: Vec<(Gf2_128, Gf2_128, [u8; 32], Option<LastOut>, std::time::Duration)> = plan
             .segments
             .par_iter()
             .enumerate()
             .map(|(j, seg)| -> Result<_, ZkVmError> {
+                let start = Instant::now();
                 let mut auth = auth_base.clone();
                 for (prev_seg, prev_wires) in plan.segments.iter().zip(&boundary_wires).take(j) {
                     let prev = prev_seg
@@ -339,15 +346,18 @@ where
                 let (u, v, assertions) = ctx
                     .finish()
                     .map_err(|e| ZkVmError::Internal(e.to_string()))?;
-                Ok((u, v, assertions, last_out))
+                Ok((u, v, assertions, last_out, start.elapsed()))
             })
             .collect::<Result<_, _>>()?;
+
+        let times: Vec<_> = results.iter().map(|r| r.4).collect();
+        crate::record_worker_times(&times);
 
         let mut u = Gf2_128::new(0);
         let mut v = Gf2_128::new(0);
         let mut hasher = blake3::Hasher::new();
         let mut final_out = None;
-        for (u_j, v_j, h_j, last_out) in results {
+        for (u_j, v_j, h_j, last_out, _) in results {
             u = u + u_j;
             v = v + v_j;
             hasher.update(&h_j);
@@ -500,7 +510,7 @@ where
     /// local function. Returns a [`ZkVmError`] if proving fails or
     /// communication over `io` fails, and [`ZkVmError::Trap`] if execution
     /// is proven to trap.
-    #[tracing::instrument(level = "info", skip(self, io, params), fields(func_idx, num_params = params.len(), chunk_cap = ?self.chunk_cap))]
+    #[tracing::instrument(level = "info", skip_all, fields(id = ?self.config.id(), role = "prover", func = self.module.func_name(func_idx).unwrap_or("?")))]
     async fn call(
         &mut self,
         io: &mut Context,
@@ -557,8 +567,11 @@ where
                 &mut self.global,
                 &mut thread,
                 capture::Limits {
-                    chunk_cap: self.chunk_cap,
-                    segment_cost: crate::effective_segment_cost(self.segment_cost, self.chunk_cap),
+                    chunk_cap: self.config.chunk_cap(),
+                    segment_cost: crate::effective_segment_cost(
+                        self.config.segment_cost(),
+                        self.config.chunk_cap(),
+                    ),
                 },
                 Role::Prover,
                 None,
@@ -655,22 +668,24 @@ where
 
             // The whole execute tape's adjust witness (commit prefix, gates,
             // and boundary commitments) ships in one Commitment message, sent
-            // before the prover learns the verifier's challenge.
+            // before the prover learns the verifier's challenge. The verifier
+            // samples its challenge only after holding the commitment, so the
+            // prover cannot tailor its witness to it.
             let commitment = Commitment {
                 adjust: exec_masks.iter().copied().collect(),
             };
-            io.io_mut()
-                .send(commitment)
-                .await
-                .map_err(|e| ZkVmError::IoSend(e.to_string()))?;
-
-            // The verifier samples its challenge only after holding the
-            // commitment, so the prover cannot tailor its witness to it.
-            let chi: [u8; 32] = io
-                .io_mut()
-                .expect_next()
-                .await
-                .map_err(|e| ZkVmError::IoRecv(e.to_string()))?;
+            let chi: [u8; 32] = async {
+                io.io_mut()
+                    .send(commitment)
+                    .await
+                    .map_err(|e| ZkVmError::IoSend(e.to_string()))?;
+                io.io_mut()
+                    .expect_next()
+                    .await
+                    .map_err(|e| ZkVmError::IoRecv(e.to_string()))
+            }
+            .instrument(tracing::debug_span!("exchange"))
+            .await?;
 
             // ---- Accumulate pass: parallel proof folding ----
             let seg_macs = &exec_macs[exec_macs.len() - plan.tape_len..];
@@ -758,7 +773,7 @@ where
     ///
     /// Returns a [`ZkVmError`] if proving fails or communication over `io`
     /// fails.
-    #[tracing::instrument(level = "info", skip(self, io))]
+    #[tracing::instrument(level = "info", skip_all, fields(id = ?self.config.id(), role = "prover"))]
     async fn commit(&mut self, io: &mut Context) -> Result<(), ZkVmError> {
         let commit_bits = self.pending_io.cost_bits();
         let reveal_ranges: Vec<Range<u32>> = self.pending_reveal.iter().collect();

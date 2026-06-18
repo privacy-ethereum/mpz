@@ -35,6 +35,7 @@ serde = { workspace = true, optional = true }
 serio.workspace = true
 cfg-if.workspace = true
 tokio = { workspace = true, features = ["sync"] }
+tracing.workspace = true
 
 [dev-dependencies]
 mpz-common = { workspace = true, features = [

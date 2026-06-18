@@ -106,6 +106,7 @@ where
         }
     }
 
+    #[tracing::instrument(level = "debug", skip_all, name = "softspoken.flush")]
     async fn flush(&mut self, ctx: &mut Context) -> Result<(), Self::Error> {
         let mut sender = match self.state.take() {
             State::Initialized {

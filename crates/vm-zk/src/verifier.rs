@@ -13,12 +13,14 @@ use rangeset::set::RangeSet;
 use rayon::prelude::*;
 use serio::{SinkExt, stream::IoStreamExt};
 use std::ops::Range;
+use std::time::Instant;
+use tracing::Instrument;
 
 use mpz_vm_memory::{AuthState, Bit, Registers};
 use mpz_zk_core::{Commitment, MAC_ONE, MAC_ZERO, verifier_wire, vope_sender};
 
 use crate::{
-    ChunkOutcome, DEFAULT_CHUNK_CAP, ProofMessage, VOPE_BITS,
+    ChunkOutcome, Config, ProofMessage, VOPE_BITS,
     capture::{self, ChunkCapture, Role},
     commit::{self, PendingIo, VerifierTape, prepare_params},
     error::ZkVmError,
@@ -47,21 +49,32 @@ pub struct Verifier<T> {
     reveal_state: host::RevealState,
     auth: AuthState,
     delta: Gf2_128,
-    chunk_cap: Option<usize>,
-    segment_cost: Option<usize>,
+    config: Config,
 }
 
 impl<T> Verifier<T>
 where
     T: RCOTSender<Block>,
 {
-    /// Creates a verifier for `module` backed by `svole`.
+    /// Creates a verifier for `module` backed by `svole`, with the default
+    /// [`Config`].
     ///
     /// # Errors
     ///
     /// Returns [`ZkVmError`] if state for `module` cannot be initialized, or if
     /// `svole` provides a correlation that the protocol cannot use.
     pub fn new(module: Module, svole: T) -> Result<Self, ZkVmError> {
+        Self::new_with_config(module, svole, Config::default())
+    }
+
+    /// Creates a verifier for `module` backed by `svole` and configured by
+    /// `config`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ZkVmError`] if state for `module` cannot be initialized, or if
+    /// `svole` provides a correlation that the protocol cannot use.
+    pub fn new_with_config(module: Module, svole: T, config: Config) -> Result<Self, ZkVmError> {
         let global = Global::new(&module)?;
         let delta: Gf2_128 = zerocopy::transmute!(svole.delta());
         // Pointer-bit convention: delta.lsb must be 1 so the per-wire
@@ -79,33 +92,8 @@ where
             reveal_state: host::RevealState::default(),
             auth,
             delta,
-            chunk_cap: Some(DEFAULT_CHUNK_CAP),
-            segment_cost: None,
+            config,
         })
-    }
-
-    /// Sets the maximum number of operations executed per chunk, returning the
-    /// updated verifier.
-    ///
-    /// A value of `Some(cap)` bounds each chunk to at most `cap` operations,
-    /// trading proof granularity against memory use; `None` places no bound.
-    /// Defaults to [`Some(DEFAULT_CHUNK_CAP)`](crate::DEFAULT_CHUNK_CAP). This
-    /// must match the prover's setting for the two sides to agree.
-    pub fn with_chunk_cap(mut self, cap: Option<usize>) -> Self {
-        self.chunk_cap = cap;
-        self
-    }
-
-    /// Sets the gate-cost target per proving segment, returning the updated
-    /// verifier.
-    ///
-    /// Splits each chunk into segments folded by parallel workers; `None` (the
-    /// default) auto-derives the target from the chunk cap. See
-    /// [`Prover::with_segment_cost`](crate::Prover::with_segment_cost). This
-    /// must match the prover's setting for the two sides to agree.
-    pub fn with_segment_cost(mut self, cost: Option<usize>) -> Self {
-        self.segment_cost = cost;
-        self
     }
 }
 
@@ -136,6 +124,16 @@ where
     /// The parallel per-segment accumulate pass: checks the prover's
     /// commitment by folding every segment with the sampled challenge.
     /// Returns the combined `(w, assertions)` and the chunk-final state.
+    #[tracing::instrument(
+        level = "debug",
+        name = "accumulate",
+        skip_all,
+        fields(
+            segments = tracing::field::Empty,
+            worker_max_us = tracing::field::Empty,
+            worker_sum_us = tracing::field::Empty
+        )
+    )]
     #[allow(clippy::too_many_arguments)]
     fn accumulate_pass(
         &self,
@@ -169,11 +167,12 @@ where
         let last = plan.segments.len() - 1;
         let pub_bit = move |b: bool| if b { MAC_ONE + delta } else { MAC_ZERO };
 
-        let results: Vec<(Gf2_128, [u8; 32], Option<AuthState>)> = plan
+        let results: Vec<(Gf2_128, [u8; 32], Option<AuthState>, std::time::Duration)> = plan
             .segments
             .par_iter()
             .enumerate()
             .map(|(j, seg)| -> Result<_, ZkVmError> {
+                let start = Instant::now();
                 let mut auth = auth_base.clone();
                 for (prev_seg, prev_wires) in plan.segments.iter().zip(&boundary_wires).take(j) {
                     let prev = prev_seg
@@ -237,14 +236,17 @@ where
                 let (w, assertions) = ctx
                     .finish()
                     .map_err(|e| ZkVmError::Internal(e.to_string()))?;
-                Ok((w, assertions, last_auth))
+                Ok((w, assertions, last_auth, start.elapsed()))
             })
             .collect::<Result<_, _>>()?;
+
+        let times: Vec<_> = results.iter().map(|r| r.3).collect();
+        crate::record_worker_times(&times);
 
         let mut w = Gf2_128::new(0);
         let mut hasher = blake3::Hasher::new();
         let mut final_auth = None;
-        for (w_j, h_j, last_auth) in results {
+        for (w_j, h_j, last_auth, _) in results {
             w = w + w_j;
             hasher.update(&h_j);
             if let Some(auth) = last_auth {
@@ -356,7 +358,7 @@ where
     /// function. Returns [`ZkVmError::Trap`] if the proven computation traps
     /// (e.g. divide by zero). Returns a [`ZkVmError`] if verification fails or
     /// communication over `io` fails.
-    #[tracing::instrument(level = "info", skip(self, io, params), fields(func_idx, num_params = params.len(), chunk_cap = ?self.chunk_cap))]
+    #[tracing::instrument(level = "info", skip_all, fields(id = ?self.config.id(), role = "verifier", func = self.module.func_name(func_idx).unwrap_or("?")))]
     async fn call(
         &mut self,
         io: &mut Context,
@@ -434,8 +436,11 @@ where
                 &mut self.global,
                 &mut thread,
                 capture::Limits {
-                    chunk_cap: self.chunk_cap,
-                    segment_cost: crate::effective_segment_cost(self.segment_cost, self.chunk_cap),
+                    chunk_cap: self.config.chunk_cap(),
+                    segment_cost: crate::effective_segment_cost(
+                        self.config.segment_cost(),
+                        self.config.chunk_cap(),
+                    ),
                 },
                 Role::Verifier,
                 outcome.trap_at.zip(outcome.trap.clone()),
@@ -499,24 +504,29 @@ where
             // Receive the prover's commitment to the whole execute tape
             // (commit prefix, gates, and boundary commitments), then sample
             // and send the challenge.
-            let commitment: Commitment = io
-                .io_mut()
-                .expect_next()
-                .await
-                .map_err(|e| ZkVmError::IoRecv(e.to_string()))?;
-            let adjust: Vec<bool> = commitment.adjust.iter().by_vals().collect();
-            if adjust.len() != execute_bits {
-                return Err(ZkVmError::Internal(format!(
-                    "commit adjust short: got {} want {}",
-                    adjust.len(),
-                    execute_bits
-                )));
+            let (adjust, chi): (Vec<bool>, [u8; 32]) = async {
+                let commitment: Commitment = io
+                    .io_mut()
+                    .expect_next()
+                    .await
+                    .map_err(|e| ZkVmError::IoRecv(e.to_string()))?;
+                let adjust: Vec<bool> = commitment.adjust.iter().by_vals().collect();
+                if adjust.len() != execute_bits {
+                    return Err(ZkVmError::Internal(format!(
+                        "commit adjust short: got {} want {}",
+                        adjust.len(),
+                        execute_bits
+                    )));
+                }
+                let chi: [u8; 32] = rand::rng().random();
+                io.io_mut()
+                    .send(chi)
+                    .await
+                    .map_err(|e| ZkVmError::IoSend(e.to_string()))?;
+                Ok((adjust, chi))
             }
-            let chi: [u8; 32] = rand::rng().random();
-            io.io_mut()
-                .send(chi)
-                .await
-                .map_err(|e| ZkVmError::IoSend(e.to_string()))?;
+            .instrument(tracing::debug_span!("exchange"))
+            .await?;
 
             let ProofMessage {
                 output,
@@ -648,7 +658,7 @@ where
     ///
     /// Returns a [`ZkVmError`] if verification fails or communication over `io`
     /// fails.
-    #[tracing::instrument(level = "info", skip(self, io))]
+    #[tracing::instrument(level = "info", skip_all, fields(id = ?self.config.id(), role = "verifier"))]
     async fn commit(&mut self, io: &mut Context) -> Result<(), ZkVmError> {
         let commit_bits = self.pending_io.cost_bits();
         let reveal_ranges: Vec<Range<u32>> = self.pending_reveal.iter().collect();

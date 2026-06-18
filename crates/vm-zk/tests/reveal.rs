@@ -12,7 +12,7 @@ use mpz_common::context::test_st_context;
 use mpz_ot::ideal::rcot::ideal_rcot;
 use mpz_vm_core::{Param, Vm, value::Value};
 use mpz_vm_ir::{ExportKind, Module, ValType};
-use mpz_vm_zk::{Prover, Verifier};
+use mpz_vm_zk::{Config, Prover, Verifier};
 use rand::{SeedableRng, rngs::StdRng};
 
 fn func_idx(module: &Module, name: &str) -> u32 {
@@ -49,12 +49,10 @@ fn run(wat: &str, func: &str, inputs: &[Value], expected: Value, chunk_cap: Opti
     delta.set_lsb(true);
     let (svole_sender, svole_receiver) = ideal_rcot(rand::Rng::random(&mut rng), delta);
 
-    let mut prover = Prover::new(module.clone(), svole_receiver)
-        .unwrap()
-        .with_chunk_cap(chunk_cap);
-    let mut verifier = Verifier::new(module, svole_sender)
-        .unwrap()
-        .with_chunk_cap(chunk_cap);
+    let config = Config::builder().chunk_cap(chunk_cap).build();
+    let mut prover =
+        Prover::new_with_config(module.clone(), svole_receiver, config.clone()).unwrap();
+    let mut verifier = Verifier::new_with_config(module, svole_sender, config).unwrap();
 
     let (mut ctx_p, mut ctx_v) = test_st_context(1024 * 1024);
 
