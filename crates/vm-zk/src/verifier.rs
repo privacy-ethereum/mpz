@@ -13,7 +13,6 @@ use rangeset::set::RangeSet;
 use rayon::prelude::*;
 use serio::{SinkExt, stream::IoStreamExt};
 use std::ops::Range;
-use std::time::Instant;
 use tracing::Instrument;
 
 use mpz_vm_memory::{AuthState, Bit, Registers};
@@ -127,12 +126,7 @@ where
     #[tracing::instrument(
         level = "debug",
         name = "accumulate",
-        skip_all,
-        fields(
-            segments = tracing::field::Empty,
-            worker_max_us = tracing::field::Empty,
-            worker_sum_us = tracing::field::Empty
-        )
+        skip_all
     )]
     #[allow(clippy::too_many_arguments)]
     fn accumulate_pass(
@@ -167,12 +161,11 @@ where
         let last = plan.segments.len() - 1;
         let pub_bit = move |b: bool| if b { MAC_ONE + delta } else { MAC_ZERO };
 
-        let results: Vec<(Gf2_128, [u8; 32], Option<AuthState>, std::time::Duration)> = plan
+        let results: Vec<(Gf2_128, [u8; 32], Option<AuthState>)> = plan
             .segments
             .par_iter()
             .enumerate()
             .map(|(j, seg)| -> Result<_, ZkVmError> {
-                let start = Instant::now();
                 let mut auth = auth_base.clone();
                 for (prev_seg, prev_wires) in plan.segments.iter().zip(&boundary_wires).take(j) {
                     let prev = prev_seg
@@ -236,17 +229,14 @@ where
                 let (w, assertions) = ctx
                     .finish()
                     .map_err(|e| ZkVmError::Internal(e.to_string()))?;
-                Ok((w, assertions, last_auth, start.elapsed()))
+                Ok((w, assertions, last_auth))
             })
             .collect::<Result<_, _>>()?;
-
-        let times: Vec<_> = results.iter().map(|r| r.3).collect();
-        crate::record_worker_times(&times);
 
         let mut w = Gf2_128::new(0);
         let mut hasher = blake3::Hasher::new();
         let mut final_auth = None;
-        for (w_j, h_j, last_auth, _) in results {
+        for (w_j, h_j, last_auth) in results {
             w = w + w_j;
             hasher.update(&h_j);
             if let Some(auth) = last_auth {
