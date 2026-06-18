@@ -28,7 +28,7 @@ pub mod chou_orlandi;
 pub mod cot;
 pub mod ferret;
 pub mod ideal;
-pub mod kos;
+pub mod softspoken;
 pub mod ot;
 pub mod rcot;
 pub mod rot;

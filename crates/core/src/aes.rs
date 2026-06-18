@@ -110,6 +110,38 @@ impl FixedKeyAes {
         }
     }
 
+    /// Matyas–Meyer–Oseas correlation-robust hash, `H(x) = π(x) ⊕ x`.
+    ///
+    /// The result is written back into `block`.
+    #[inline]
+    pub fn mmo(&self, block: &mut [u8; 16]) {
+        let mut h = *block;
+        self.aes.encrypt_block(as_array(&mut h));
+        *block = xor(*block, h);
+    }
+
+    /// MMO hash `H(x) = π(x) ⊕ x` of each block in `src`, written to `dst`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `src` and `dst` have different lengths.
+    #[inline]
+    pub fn mmo_blocks_to(&self, src: &[[u8; 16]], dst: &mut [[u8; 16]]) {
+        assert_eq!(src.len(), dst.len(), "src and dst must have equal length");
+
+        const N: usize = 64;
+
+        let mut buf = [[0u8; 16]; N];
+        for (src, dst) in src.chunks(N).zip(dst.chunks_mut(N)) {
+            let m = src.len();
+            buf[..m].copy_from_slice(src);
+            self.aes.encrypt_blocks(as_array_slice(&mut buf[..m]));
+            for (d, (s, h)) in dst.iter_mut().zip(src.iter().zip(&buf)) {
+                *d = xor(*s, *h);
+            }
+        }
+    }
+
     /// Tweakable circular correlation-robust hash function instantiated
     /// using fixed-key AES.
     ///
@@ -239,6 +271,23 @@ fn ccr_blocks_to_test() {
 
     let mut hashes = vec![[0u8; 16]; blocks.len()];
     FIXED_KEY_AES.ccr_blocks_to(&blocks, &mut hashes);
+    assert_eq!(hashes, expected);
+}
+
+#[test]
+fn mmo_blocks_to_test() {
+    let blocks: Vec<[u8; 16]> = (0u8..67).map(|i| [i.wrapping_mul(3); 16]).collect();
+    let expected: Vec<[u8; 16]> = blocks
+        .iter()
+        .map(|block| {
+            let mut block = *block;
+            FIXED_KEY_AES.mmo(&mut block);
+            block
+        })
+        .collect();
+
+    let mut hashes = vec![[0u8; 16]; blocks.len()];
+    FIXED_KEY_AES.mmo_blocks_to(&blocks, &mut hashes);
     assert_eq!(hashes, expected);
 }
 

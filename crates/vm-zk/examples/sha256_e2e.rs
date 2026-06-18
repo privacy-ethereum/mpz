@@ -1,7 +1,7 @@
 //! Isolated end-to-end sha256 runs for profiling.
 //!
 //! Does exactly what one iteration of the `vm` bench measures — build the
-//! full crypto stack (base OT, KOS, Ferret), allocate the guest buffer, stage
+//! full crypto stack (base OT, SoftSpoken, Ferret), allocate the guest buffer, stage
 //! the message, prove the hash, check the revealed digest — without
 //! criterion, cross-variant validation runs, or per-iteration worker-pool
 //! churn. The executor pair (the session) is created once, like a long-lived
@@ -20,15 +20,15 @@ use std::time::Instant;
 use futures::executor::block_on;
 use mpz_common::{Context, context::test_mt_context};
 use mpz_core::Block;
-use mpz_ot::{chou_orlandi, ferret, kos};
+use mpz_ot::{chou_orlandi, ferret, softspoken};
 use mpz_vm_core::{Param, Vm, Write, value::Value};
 use mpz_vm_ir::{ExportKind, Module};
 use mpz_vm_zk::{Prover, Verifier};
 use rand::{Rng, SeedableRng, rngs::StdRng};
 use sha2::{Digest, Sha256};
 
-type ProverSvole = ferret::Receiver<kos::Receiver<chou_orlandi::Sender>>;
-type VerifierSvole = ferret::Sender<kos::Sender<chou_orlandi::Receiver>>;
+type ProverSvole = ferret::Receiver<softspoken::Receiver<chou_orlandi::Sender>>;
+type VerifierSvole = ferret::Sender<softspoken::Sender<chou_orlandi::Receiver>>;
 
 fn rcot_stack(seed: u64) -> (VerifierSvole, ProverSvole) {
     let mut rng = StdRng::seed_from_u64(seed);
@@ -38,8 +38,8 @@ fn rcot_stack(seed: u64) -> (VerifierSvole, ProverSvole) {
     let verifier = ferret::Sender::new(
         ferret::FerretConfig::default(),
         rng.random(),
-        kos::Sender::new(
-            kos::SenderConfig::default(),
+        softspoken::Sender::new(
+            softspoken::SenderConfig::default(),
             delta,
             chou_orlandi::Receiver::new(),
         ),
@@ -47,7 +47,7 @@ fn rcot_stack(seed: u64) -> (VerifierSvole, ProverSvole) {
     let prover = ferret::Receiver::new(
         ferret::FerretConfig::default(),
         rng.random(),
-        kos::Receiver::new(kos::ReceiverConfig::default(), chou_orlandi::Sender::new()),
+        softspoken::Receiver::new(softspoken::ReceiverConfig::default(), chou_orlandi::Sender::new()),
     );
     (verifier, prover)
 }

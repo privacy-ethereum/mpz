@@ -5,7 +5,7 @@ use serio::{SinkExt as _, stream::IoStreamExt};
 use mpz_common::{Context, ContextError, Flush, future::MaybeDone};
 use mpz_core::Block;
 use mpz_ot_core::{
-    kos::{Receiver as Core, ReceiverConfig, ReceiverError as CoreError, receiver_state as state},
+    softspoken::{Receiver as Core, ReceiverConfig, ReceiverError as CoreError, receiver_state as state},
     ot::OTSender,
     rcot::{RCOTReceiver, RCOTReceiverOutput},
 };
@@ -28,19 +28,14 @@ impl<BaseOT> State<BaseOT> {
     }
 }
 
-/// KOS receiver.
+/// SoftSpoken receiver.
 #[derive(Debug)]
 pub struct Receiver<BaseOT> {
     state: State<BaseOT>,
 }
 
 impl<BaseOT> Receiver<BaseOT> {
-    /// Creates a new Receiver
-    ///
-    /// # Arguments
-    ///
-    /// * `config` - The Receiver's configuration.
-    /// * `base_ot` - Base OT.
+    /// Creates a new Receiver with the given config and base OT.
     pub fn new(config: ReceiverConfig, base_ot: BaseOT) -> Self {
         Self {
             state: State::Initialized {
@@ -123,6 +118,9 @@ where
 
                 _ = base_ot.queue_send_ot(&seeds).map_err(Error::base_ot)?;
                 base_ot.flush(ctx).await.map_err(Error::base_ot)?;
+
+                let (receiver, corrections) = receiver.corrections();
+                ctx.io_mut().send(corrections).await?;
 
                 receiver
             }

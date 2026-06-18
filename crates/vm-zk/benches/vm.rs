@@ -2,7 +2,7 @@
 //!
 //! Each measured iteration runs a wasm module end to end through the
 //! [`Prover`]/[`Verifier`] pair, with correlated randomness drawn from a real
-//! `CO15 -> KOS -> Ferret` RCOT stack (Chou-Orlandi base OT, KOS extension,
+//! `CO15 -> SoftSpoken -> Ferret` RCOT stack (Chou-Orlandi base OT, SoftSpoken extension,
 //! Ferret expansion) rather than an ideal functionality — so the measurement
 //! reflects the cost of the actual protocol, including OT/VOLE generation.
 //!
@@ -14,24 +14,24 @@ use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_m
 use futures::executor::block_on;
 use mpz_common::{Context, context::test_mt_context, executor::Executor};
 use mpz_core::Block;
-use mpz_ot::{chou_orlandi, ferret, kos};
+use mpz_ot::{chou_orlandi, ferret, softspoken};
 use mpz_vm_core::{Param, Vm, Write, value::Value};
 use mpz_vm_ir::{ExportKind, Module};
 use mpz_vm_zk::{Prover, Verifier};
 use rand::{Rng, SeedableRng, rngs::StdRng};
 use sha2::{Digest, Sha256};
 
-/// The prover's RCOT receiver: Ferret over KOS over a Chou-Orlandi base OT.
-type ProverSvole = ferret::Receiver<kos::Receiver<chou_orlandi::Sender>>;
-/// The verifier's RCOT sender: Ferret over KOS over a Chou-Orlandi base OT.
-type VerifierSvole = ferret::Sender<kos::Sender<chou_orlandi::Receiver>>;
+/// The prover's RCOT receiver: Ferret over SoftSpoken over a Chou-Orlandi base OT.
+type ProverSvole = ferret::Receiver<softspoken::Receiver<chou_orlandi::Sender>>;
+/// The verifier's RCOT sender: Ferret over SoftSpoken over a Chou-Orlandi base OT.
+type VerifierSvole = ferret::Sender<softspoken::Sender<chou_orlandi::Receiver>>;
 
 /// Builds the real RCOT stack for both parties from `seed`.
 ///
 /// The verifier is the RCOT sender and holds the correlation `delta` (its lsb
 /// forced to 1, as the zk-vm requires); the prover is the RCOT receiver. The
-/// base-OT roles are swapped relative to the extension: the verifier's KOS
-/// sender is bootstrapped by a Chou-Orlandi receiver, the prover's KOS receiver
+/// base-OT roles are swapped relative to the extension: the verifier's SoftSpoken
+/// sender is bootstrapped by a Chou-Orlandi receiver, the prover's SoftSpoken receiver
 /// by a Chou-Orlandi sender.
 fn rcot_stack(seed: u64) -> (VerifierSvole, ProverSvole) {
     let mut rng = StdRng::seed_from_u64(seed);
@@ -41,8 +41,8 @@ fn rcot_stack(seed: u64) -> (VerifierSvole, ProverSvole) {
     let verifier = ferret::Sender::new(
         ferret::FerretConfig::default(),
         rng.random(),
-        kos::Sender::new(
-            kos::SenderConfig::default(),
+        softspoken::Sender::new(
+            softspoken::SenderConfig::default(),
             delta,
             chou_orlandi::Receiver::new(),
         ),
@@ -50,7 +50,7 @@ fn rcot_stack(seed: u64) -> (VerifierSvole, ProverSvole) {
     let prover = ferret::Receiver::new(
         ferret::FerretConfig::default(),
         rng.random(),
-        kos::Receiver::new(kos::ReceiverConfig::default(), chou_orlandi::Sender::new()),
+        softspoken::Receiver::new(softspoken::ReceiverConfig::default(), chou_orlandi::Sender::new()),
     );
     (verifier, prover)
 }
@@ -122,7 +122,7 @@ fn func_idx(module: &Module, name: &str) -> u32 {
 /// The long-lived transport between the parties: a multithreaded executor
 /// pair and one context per side. Created once and reused across iterations
 /// so worker-pool spawn/teardown stays out of the measurement; everything
-/// cryptographic (base OT, KOS, Ferret, prover/verifier state) is rebuilt
+/// cryptographic (base OT, SoftSpoken, Ferret, prover/verifier state) is rebuilt
 /// inside each iteration so the measured time stays end-to-end.
 struct Session {
     exec_p: Executor,
