@@ -75,7 +75,6 @@ struct Workload {
     /// cover scratch the guest writes past the input (e.g. the digest).
     input: Option<(Vec<u8>, u32)>,
     args: Vec<Arg>,
-    chunk_cap: Option<usize>,
 }
 
 impl Workload {
@@ -86,7 +85,6 @@ impl Workload {
             func,
             input: None,
             args: Vec::new(),
-            chunk_cap: None,
         }
     }
 
@@ -176,12 +174,8 @@ fn run_reading(
     session: &mut Session,
 ) -> (Option<Value>, Option<Vec<u8>>) {
     let (v_svole, p_svole) = rcot_stack(0);
-    let mut prover = Prover::new(wl.module.clone(), p_svole)
-        .unwrap()
-        .with_chunk_cap(wl.chunk_cap);
-    let mut verifier = Verifier::new(wl.module.clone(), v_svole)
-        .unwrap()
-        .with_chunk_cap(wl.chunk_cap);
+    let mut prover = Prover::new(wl.module.clone(), p_svole).unwrap();
+    let mut verifier = Verifier::new(wl.module.clone(), v_svole).unwrap();
 
     let Session { ctx_p, ctx_v, .. } = session;
 
