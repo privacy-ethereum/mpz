@@ -90,7 +90,10 @@ impl<T> Prover<T> {
     ///
     /// A value of `Some(cost)` splits each chunk's trace into segments of
     /// roughly `cost` gate bits, which are committed and folded by parallel
-    /// workers and stitched together with boundary commitments. `None` proves
+    /// workers and stitched together with boundary commitments. `None` (the
+    /// default) auto-derives the target from the chunk cap so a full chunk
+    /// splits into about [`TARGET_SEGMENTS`](crate::TARGET_SEGMENTS) segments,
+    /// scaling the parallelism to the workload; an unbounded chunk cap proves
     /// each chunk as a single segment. This must match the verifier's setting
     /// for the two sides to agree.
     pub fn with_segment_cost(mut self, cost: Option<usize>) -> Self {
@@ -555,7 +558,7 @@ where
                 &mut thread,
                 capture::Limits {
                     chunk_cap: self.chunk_cap,
-                    segment_cost: self.segment_cost,
+                    segment_cost: crate::effective_segment_cost(self.segment_cost, self.chunk_cap),
                 },
                 Role::Prover,
                 None,

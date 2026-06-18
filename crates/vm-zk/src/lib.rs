@@ -48,6 +48,45 @@ pub(crate) const VOPE_BITS: usize = 128;
 /// left for the per-chunk commit and VOPE overhead.
 pub const DEFAULT_CHUNK_CAP: usize = 15_000_000;
 
+/// Number of proving segments a full chunk is split into when the per-segment
+/// cost is auto-derived (the default).
+///
+/// Segments are committed and folded by independent rayon workers, so the
+/// count sets the available intra-chunk parallelism. Chosen to comfortably
+/// oversubscribe a typical core count (≈4× a 16-core host) for good
+/// work-stealing balance, while staying small enough that the per-segment
+/// boundary overhead — each worker re-seeds from every prior boundary, an
+/// O(segments²) cost — stays well below the linear replay work. The actual
+/// segment count scales down for chunks smaller than the cap, since the target
+/// is derived from the shared [`DEFAULT_CHUNK_CAP`].
+pub(crate) const TARGET_SEGMENTS: usize = 64;
+
+/// Floor on the auto-derived per-segment gate-bit cost, so a small
+/// [`chunk_cap`](Prover::with_chunk_cap) never produces segments too tiny to
+/// amortize their boundary commitment ("a segment for every gate").
+pub(crate) const MIN_SEGMENT_COST: usize = 50_000;
+
+/// Resolves the effective per-segment gate-bit target both parties use to
+/// place segment marks.
+///
+/// `Some(cost)` is honored verbatim — an explicit
+/// [`with_segment_cost`](Prover::with_segment_cost) override. `None`
+/// auto-derives a target from the shared `chunk_cap` so a full chunk splits
+/// into about [`TARGET_SEGMENTS`] segments: workload-proportional, and
+/// identical on both sides because it depends only on protocol-shared values,
+/// never on local core count (which may differ between prover and verifier).
+/// An unbounded chunk (`chunk_cap = None`) has no basis to divide and proves
+/// as a single segment.
+pub(crate) fn effective_segment_cost(
+    segment_cost: Option<usize>,
+    chunk_cap: Option<usize>,
+) -> Option<usize> {
+    match segment_cost {
+        Some(cost) => Some(cost),
+        None => chunk_cap.map(|cap| (cap / TARGET_SEGMENTS).max(MIN_SEGMENT_COST)),
+    }
+}
+
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub(crate) struct ProofMessage {
     pub(crate) output: Option<Value>,

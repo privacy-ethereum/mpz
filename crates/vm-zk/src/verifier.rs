@@ -99,7 +99,8 @@ where
     /// Sets the gate-cost target per proving segment, returning the updated
     /// verifier.
     ///
-    /// Splits each chunk into segments folded by parallel workers; see
+    /// Splits each chunk into segments folded by parallel workers; `None` (the
+    /// default) auto-derives the target from the chunk cap. See
     /// [`Prover::with_segment_cost`](crate::Prover::with_segment_cost). This
     /// must match the prover's setting for the two sides to agree.
     pub fn with_segment_cost(mut self, cost: Option<usize>) -> Self {
@@ -434,7 +435,7 @@ where
                 &mut thread,
                 capture::Limits {
                     chunk_cap: self.chunk_cap,
-                    segment_cost: self.segment_cost,
+                    segment_cost: crate::effective_segment_cost(self.segment_cost, self.chunk_cap),
                 },
                 Role::Verifier,
                 outcome.trap_at.zip(outcome.trap.clone()),

@@ -96,6 +96,8 @@ fn main() {
     let len = arg("--len", 4096);
     let segment_cost = arg("--segment-cost", 0);
     let segment_cost = (segment_cost > 0).then_some(segment_cost);
+    let chunk_cap = arg("--chunk-cap", 0);
+    let chunk_cap = (chunk_cap > 0).then_some(chunk_cap);
     let iters = arg("--iters", 1);
 
     let wasm = include_bytes!("../benches/guests/sha256.wasm");
@@ -123,13 +125,20 @@ fn main() {
         let mut verifier = Verifier::new(module.clone(), v_svole)
             .unwrap()
             .with_segment_cost(segment_cost);
+        if let Some(cap) = chunk_cap {
+            prover = prover.with_chunk_cap(Some(cap));
+            verifier = verifier.with_chunk_cap(Some(cap));
+        }
 
+        // The buffer must hold the message [0, len) and the digest the guest
+        // writes at [4096, 4128); 4 KiB was the original hard-coded design point.
+        let buf_size = len.max(4128) as i32;
         let alloc_args = || {
             vec![
                 Param::Public(Value::I32(0)),
                 Param::Public(Value::I32(0)),
                 Param::Public(Value::I32(1)),
-                Param::Public(Value::I32(4128)),
+                Param::Public(Value::I32(buf_size)),
             ]
         };
         let (rp, rv) = call_both(

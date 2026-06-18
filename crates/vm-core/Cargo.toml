@@ -18,6 +18,12 @@ wat = { workspace = true }
 futures = { workspace = true }
 mpz-common = { workspace = true, features = ["test-utils"] }
 aes = { workspace = true }
+criterion = { workspace = true }
+sha2 = { workspace = true }
+
+[[bench]]
+name = "witness"
+harness = false
 
 [lints]
 workspace = true
