@@ -30,9 +30,7 @@ fn sha256_segmented() {
 
     let len: usize = 64;
     let msg: Vec<u8> = (0..len).map(|i| i as u8).collect();
-    // The guest writes the digest at a fixed `ptr + 4096`, past the (up to
-    // 4 KiB) message region.
-    let alloc = 4096 + 32_u32;
+    let alloc = len as u32;
 
     let mut rng = StdRng::seed_from_u64(0);
     let mut delta: Block = rng.random();
@@ -84,7 +82,11 @@ fn sha256_segmented() {
     .unwrap();
     assert_eq!(rp, rv);
 
-    // The guest reveals the digest at ptr + 4096.
-    let digest = verifier.read(ptr + 4096, 32).unwrap().to_vec();
+    // `hash` returns the address of the revealed digest.
+    let digest_ptr = match rp {
+        Some(Value::I32(p)) => p as u32,
+        other => panic!("hash returned {other:?}"),
+    };
+    let digest = verifier.read(digest_ptr, 32).unwrap().to_vec();
     assert_eq!(digest.as_slice(), Sha256::digest(&msg).as_slice());
 }
