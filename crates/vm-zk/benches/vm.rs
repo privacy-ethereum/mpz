@@ -76,7 +76,6 @@ struct Workload {
     input: Option<(Vec<u8>, u32)>,
     args: Vec<Arg>,
     chunk_cap: Option<usize>,
-    segment_cost: Option<usize>,
 }
 
 impl Workload {
@@ -88,7 +87,6 @@ impl Workload {
             input: None,
             args: Vec::new(),
             chunk_cap: None,
-            segment_cost: None,
         }
     }
 
@@ -99,11 +97,6 @@ impl Workload {
 
     fn args(mut self, args: Vec<Arg>) -> Self {
         self.args = args;
-        self
-    }
-
-    fn segment_cost(mut self, cost: Option<usize>) -> Self {
-        self.segment_cost = cost;
         self
     }
 }
@@ -185,12 +178,10 @@ fn run_reading(
     let (v_svole, p_svole) = rcot_stack(0);
     let mut prover = Prover::new(wl.module.clone(), p_svole)
         .unwrap()
-        .with_chunk_cap(wl.chunk_cap)
-        .with_segment_cost(wl.segment_cost);
+        .with_chunk_cap(wl.chunk_cap);
     let mut verifier = Verifier::new(wl.module.clone(), v_svole)
         .unwrap()
-        .with_chunk_cap(wl.chunk_cap)
-        .with_segment_cost(wl.segment_cost);
+        .with_chunk_cap(wl.chunk_cap);
 
     let Session { ctx_p, ctx_v, .. } = session;
 
@@ -298,44 +289,31 @@ fn bench_sha256(c: &mut Criterion) {
     let wasm = include_bytes!("guests/sha256.wasm");
     let module = Module::parse(wasm).unwrap();
 
-    // Segment-cost variants: None proves each chunk sequentially; the others
-    // split it into parallel segments of roughly that many gate bits.
-    const SEGMENT_COSTS: &[(Option<usize>, &str)] = &[
-        (None, "seq"),
-        (Some(400_000), "seg400k"),
-        (Some(100_000), "seg100k"),
-        (Some(25_000), "seg25k"),
-    ];
-
     let mut session = Session::new();
     let mut group = c.benchmark_group("zk-vm/sha256");
     group.sample_size(10);
     for &len in SHA256_SIZES {
         let msg: Vec<u8> = (0..len).map(|i| i as u8).collect();
-        for &(cost, tag) in SEGMENT_COSTS {
-            // Allocate a 4 KiB message region plus the 32-byte digest; the
-            // harness prepends the buffer pointer, so `hash` receives
-            // `(ptr, len)`.
-            let wl = Workload::new(module.clone(), "hash")
-                .input(msg.clone(), 4128)
-                .args(vec![Arg::Public(Value::I32(len as i32))])
-                .segment_cost(cost);
+        // Allocate a 4 KiB message region plus the 32-byte digest; the
+        // harness prepends the buffer pointer, so `hash` receives `(ptr, len)`.
+        let wl = Workload::new(module.clone(), "hash")
+            .input(msg.clone(), 4128)
+            .args(vec![Arg::Public(Value::I32(len as i32))]);
 
-            // Validate: the revealed digest (4 KiB into the buffer) must match
-            // a reference SHA-256.
-            let (_, digest) = run_reading(&wl, Some((4096, 32)), &mut session);
-            let expected = Sha256::digest(&msg);
-            assert_eq!(
-                digest.as_deref(),
-                Some(expected.as_slice()),
-                "revealed digest must match reference SHA-256 for {len} bytes"
-            );
+        // Validate: the revealed digest (4 KiB into the buffer) must match
+        // a reference SHA-256.
+        let (_, digest) = run_reading(&wl, Some((4096, 32)), &mut session);
+        let expected = Sha256::digest(&msg);
+        assert_eq!(
+            digest.as_deref(),
+            Some(expected.as_slice()),
+            "revealed digest must match reference SHA-256 for {len} bytes"
+        );
 
-            group.throughput(Throughput::Bytes(len as u64));
-            group.bench_with_input(BenchmarkId::new(tag, len), &wl, |b, wl| {
-                b.iter(|| run(wl, &mut session))
-            });
-        }
+        group.throughput(Throughput::Bytes(len as u64));
+        group.bench_with_input(BenchmarkId::from_parameter(len), &wl, |b, wl| {
+            b.iter(|| run(wl, &mut session))
+        });
     }
     group.finish();
 }
