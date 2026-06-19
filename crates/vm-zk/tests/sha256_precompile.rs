@@ -1,4 +1,4 @@
-//! Integration tests for the `precompile::sha256_compress` host call: the VM
+//! Integration tests for the `crypto::sha256_compress` host call: the VM
 //! runs the SHA-256 compression circuit directly instead of replaying guest
 //! gates. Covers the authenticated path (committed inputs, output committed and
 //! revealed for the check), the public fast-path (all inputs public, no gates),
@@ -20,7 +20,7 @@ use rand::{Rng, SeedableRng, rngs::StdRng};
 /// reads the state (public IV, then the committed prior output) and the block
 /// and writes the new state back over `$state` atomically.
 const GUEST: &str = r#"(module
-    (import "precompile" "sha256_compress" (func $compress (param i32 i32)))
+    (import "crypto" "sha256_compress" (func $compress (param i32 i32)))
     (memory (export "mem") 2)
     (func (export "compress_once") (param $state i32) (param $block i32)
         (call $compress (local.get $state) (local.get $block)))
@@ -42,15 +42,17 @@ fn func_idx(module: &Module, name: &str) -> u32 {
         .expect("function should be exported")
 }
 
-/// Reference SHA-256 compression of `blocks` into the big-endian `state`.
+/// Reference SHA-256 compression of `blocks` into `state`. The state is the
+/// precompile's `[u32; 8]`, little-endian in linear memory; the blocks are raw
+/// bytes parsed as big-endian SHA-256 words.
 fn reference(state: &[u8; 32], blocks: &[[u8; 64]]) -> [u8; 32] {
     let mut h: [u32; 8] =
-        core::array::from_fn(|i| u32::from_be_bytes(state[4 * i..4 * i + 4].try_into().unwrap()));
+        core::array::from_fn(|i| u32::from_le_bytes(state[4 * i..4 * i + 4].try_into().unwrap()));
     let blocks: Vec<_> = blocks.iter().map(|b| (*b).into()).collect();
     sha2::compress256(&mut h, &blocks);
     let mut out = [0u8; 32];
     for (i, word) in h.iter().enumerate() {
-        out[4 * i..4 * i + 4].copy_from_slice(&word.to_be_bytes());
+        out[4 * i..4 * i + 4].copy_from_slice(&word.to_le_bytes());
     }
     out
 }

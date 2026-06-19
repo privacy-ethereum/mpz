@@ -139,11 +139,21 @@ fn slice_to_word<W: Copy>(s: &[W]) -> Word<W> {
     out
 }
 
-/// Boolean-circuit SHA-256 compression.
+/// Reverses the four byte lanes of an LSB-first word: a little-endian `u32` as
+/// it sits in memory becomes the big-endian word SHA-256's message schedule
+/// consumes. A pure wire permutation — no gates.
+fn byte_swap<W: Copy>(w: Word<W>) -> Word<W> {
+    core::array::from_fn(|i| w[(i % 8) + 8 * (3 - i / 8)])
+}
+
+/// Boolean-circuit SHA-256 compression for a little-endian VM.
 ///
-/// Input: `msg` (512 bits, 16 u32 words, LSB-first within each word),
-/// `state` (256 bits, 8 u32 words, LSB-first). Output has the same
-/// shape as `state`.
+/// `msg` (512 bits) and `state` (256 bits) are the 64 message bytes and 32
+/// state bytes as they sit in little-endian linear memory: 16 and 8
+/// little-endian `u32` words, LSB-first within each word. The message words are
+/// byte-swapped internally into the big-endian schedule words SHA-256 requires
+/// (FIPS 180-4); the state words are used as-is. The output has the same
+/// little-endian shape as `state`.
 pub fn compress<C: Context<Field = Gf2>>(
     ctx: &mut C,
     msg: [C::Wire; 512],
@@ -151,7 +161,9 @@ pub fn compress<C: Context<Field = Gf2>>(
 ) -> [C::Wire; 256] {
     let mut w: Vec<Word<C::Wire>> = Vec::with_capacity(64);
     for i in 0..16 {
-        w.push(slice_to_word(&msg[i * 32..(i + 1) * 32]));
+        // The message is little-endian (memory order); SHA-256 groups each
+        // schedule word big-endian, so swap the byte lanes (free).
+        w.push(byte_swap(slice_to_word(&msg[i * 32..(i + 1) * 32])));
     }
     for i in 16..64 {
         // σ0(x) = ROTR(x, 7) XOR ROTR(x, 18) XOR SHR(x, 3)
@@ -247,8 +259,10 @@ mod tests {
     use sha2::compress256;
 
     fn run_compress(block: &[u8; 64], state: &[u32; 8]) -> ([u32; 8], usize) {
+        // The gadget takes the block little-endian (memory order) and groups
+        // the big-endian schedule words itself, so feed the little-endian read.
         let msg_words: [u32; 16] = core::array::from_fn(|i| {
-            u32::from_be_bytes(block[i * 4..i * 4 + 4].try_into().unwrap())
+            u32::from_le_bytes(block[i * 4..i * 4 + 4].try_into().unwrap())
         });
         let msg: [Gf2; 512] = <[Gf2; 512]>::from_lsb0_iter(msg_words.iter_lsb0());
         let state_in: [Gf2; 256] = <[Gf2; 256]>::from_lsb0_iter(state.iter_lsb0());

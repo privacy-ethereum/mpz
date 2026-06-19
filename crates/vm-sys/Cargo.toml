@@ -5,5 +5,10 @@ edition = "2024"
 
 [dependencies]
 
+# Native clear-execution of the SHA-256 precompile (the wasm target imports it
+# from the host instead). `compress` exposes `compress256`.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+sha2 = { workspace = true, features = ["compress"] }
+
 [lints]
 workspace = true

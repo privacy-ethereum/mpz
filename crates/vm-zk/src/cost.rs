@@ -12,7 +12,7 @@ use mpz_vm_circuits as circ;
 use crate::error::{Result, unsupported_binary, unsupported_op, unsupported_unary};
 
 /// Tape entries (AND gates) committed by an authenticated
-/// `precompile::sha256_compress` call: exactly one `mul` per AND gate in the
+/// `crypto::sha256_compress` call: exactly one `mul` per AND gate in the
 /// compression circuit, with no advice. Capture and the segment planner both
 /// budget this so the gate tape and challenge offsets line up with replay's
 /// `mpz_circuits::sha256::compress` invocation.

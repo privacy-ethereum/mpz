@@ -1,5 +1,5 @@
 //! Servicing of guest host calls during capture: `vc::reveal_*` disclosures and
-//! the `precompile::*` circuit precompiles.
+//! the `crypto::*` circuit precompiles.
 //!
 //! When the thread blocks on such an import, the servicer records a
 //! [`HostCallEvent`] into the captured trace and returns the value to resolve
@@ -62,7 +62,7 @@ pub(crate) enum HostCallEvent {
     /// materializing the bytes) is applied to memory during capture, so replay
     /// has nothing to do. Recorded to stay 1:1 with the import directives.
     WaitBytes,
-    /// `precompile::sha256_compress(state_ptr, block_ptr)` with at least one
+    /// `crypto::sha256_compress(state_ptr, block_ptr)` with at least one
     /// tainted input byte: replay emits the SHA-256 compression circuit over
     /// the input wires and writes the committed output back over the
     /// 32-byte state at `state_ptr`. Inputs may mix committed and public
@@ -79,7 +79,7 @@ pub(crate) enum HostCallEvent {
         block_pub: [u8; 64],
         block_sym: u64,
     },
-    /// `precompile::sha256_compress` over fully public input: the digest is
+    /// `crypto::sha256_compress` over fully public input: the digest is
     /// computed in the clear during capture; replay writes it back as
     /// public-bit wires (no gates). `digest` holds the 32-byte result.
     Sha256CompressPublic { state_ptr: u32, digest: [u8; 32] },
@@ -247,7 +247,7 @@ pub(crate) fn service_reveal(
     }
 }
 
-/// Services a `precompile::sha256_compress(state_ptr, block_ptr)` host call
+/// Services a `crypto::sha256_compress(state_ptr, block_ptr)` host call
 /// surfaced during capture.
 ///
 /// Both pointers are public concrete operands. The output is committed iff any
@@ -356,13 +356,14 @@ fn write_state(global: &mut Global, state_ptr: u32, digest: &[u8; 32]) -> Result
     Ok(())
 }
 
-/// Computes one SHA-256 compression in the clear via the `sha2` crate.
-/// `state`/`block`/output are big-endian `u32` words, per standard SHA-256.
-/// Capture works in the clear; only the witness/replay phase needs the circuit
-/// representation.
+/// Computes one SHA-256 compression in the clear via the `sha2` crate. The
+/// `state` is eight native-endian `u32` words (the precompile's `[u32; 8]`
+/// state, little-endian in linear memory); the `block` is 16 big-endian `u32`
+/// words, per standard SHA-256. Capture works in the clear; only the
+/// witness/replay phase needs the circuit representation.
 fn compress_block(state: &[u8; 32], block: &[u8; 64]) -> [u8; 32] {
     let mut h: [u32; 8] = core::array::from_fn(|i| {
-        u32::from_be_bytes([
+        u32::from_le_bytes([
             state[4 * i],
             state[4 * i + 1],
             state[4 * i + 2],
@@ -372,7 +373,7 @@ fn compress_block(state: &[u8; 32], block: &[u8; 64]) -> [u8; 32] {
     sha2::compress256(&mut h, &[(*block).into()]);
     let mut digest = [0u8; 32];
     for (i, word) in h.iter().enumerate() {
-        digest[4 * i..4 * i + 4].copy_from_slice(&word.to_be_bytes());
+        digest[4 * i..4 * i + 4].copy_from_slice(&word.to_le_bytes());
     }
     digest
 }

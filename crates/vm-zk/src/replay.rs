@@ -756,7 +756,7 @@ where
 // ============================================================
 
 /// Emits the SHA-256 compression circuit for an authenticated
-/// `precompile::sha256_compress`: assembles the 256-bit state and 512-bit block
+/// `crypto::sha256_compress`: assembles the 256-bit state and 512-bit block
 /// wires (symbolic bytes from committed memory, public bytes as public-bit
 /// wires from the recorded plaintext), runs `mpz_circuits::sha256::compress`
 /// through the live circuit context (consuming exactly `AND_PER_BLOCK` gates),
@@ -776,10 +776,12 @@ where
     C: ZkExec,
     C::Error: core::fmt::Debug,
 {
+    // State and block are read in memory (little-endian) order; the SHA-256
+    // gadget groups the big-endian schedule words from the block itself.
     let state = read_mixed::<256, _>(exec, auth, state_ptr, state_pub, state_sym)?;
     let msg = read_mixed::<512, _>(exec, auth, block_ptr, block_pub, block_sym)?;
     let out = mpz_circuits::sha256::compress(exec, msg, state);
-    write_be_words(auth, state_ptr, &out);
+    write_words(auth, state_ptr, &out);
     Ok(())
 }
 
@@ -797,12 +799,13 @@ where
     }
 }
 
-/// Assembles `N` input wires (`N / 8` bytes = `N / 32` big-endian `u32` words)
-/// at `base` in the SHA-256 circuit's layout: each word is big-endian in memory
-/// (most-significant byte first), bits LSB-first within a word. A byte marked
-/// symbolic in `sym` (bit `i` = byte `i`) is read from committed memory (a
-/// `MemAuthMissing` error if absent); a public byte is materialized as
-/// public-bit wires from `public[i]` (no gates).
+/// Assembles `N` input wires from the `N / 8` bytes at `base` in memory order:
+/// bit `8*bo + k` of the output is bit `k` of memory byte `bo`. This is the
+/// little-endian `u32`-word layout the SHA-256 gadget expects (it groups the
+/// big-endian schedule words itself). A byte marked symbolic in `sym` (bit `i`
+/// = byte `i`) is read from committed memory (a `MemAuthMissing` error if
+/// absent); a public byte is materialized as public-bit wires from `public[i]`
+/// (no gates).
 fn read_mixed<const N: usize, C>(
     exec: &mut C,
     auth: &AuthState,
@@ -815,10 +818,6 @@ where
 {
     let mut out = [Gf2_128::new(0); N];
     for bo in 0..N / 8 {
-        // Byte `bo` is the `(3 - bo % 4)`-th byte from the LSB of word `bo / 4`,
-        // so its 8 bits occupy wires `[w*32 + bj*8, w*32 + bj*8 + 8)`.
-        let w = bo / 4;
-        let bj = 3 - (bo % 4);
         let bits: [Gf2_128; 8] = if (sym >> bo) & 1 != 0 {
             let off = base + bo as u32;
             let byte = auth
@@ -829,20 +828,18 @@ where
         } else {
             core::array::from_fn(|k| exec.public_bit((public[bo] >> k) & 1 != 0))
         };
-        out[w * 32 + bj * 8..w * 32 + bj * 8 + 8].copy_from_slice(&bits);
+        out[bo * 8..bo * 8 + 8].copy_from_slice(&bits);
     }
     Ok(out)
 }
 
-/// Writes `wires` (`wires.len() / 32` big-endian `u32` words, LSB-first within
-/// a word) back to memory at `base`, the inverse layout of [`read_mixed`].
-fn write_be_words(auth: &mut AuthState, base: u32, wires: &[Gf2_128]) {
-    for w in 0..wires.len() / 32 {
-        for bj in 0..4 {
-            let off = base + 4 * w as u32 + 3 - bj as u32;
-            let byte = Byte::new(core::array::from_fn(|k| Bit(wires[w * 32 + bj * 8 + k])));
-            auth.memory.set_byte(off, byte);
-        }
+/// Writes `wires` back to memory at `base` in memory order — bit `8*bo + k` of
+/// the wire stream is bit `k` of byte `bo` — the inverse layout of
+/// [`read_mixed`].
+fn write_words(auth: &mut AuthState, base: u32, wires: &[Gf2_128]) {
+    for bo in 0..wires.len() / 8 {
+        let byte = Byte::new(core::array::from_fn(|k| Bit(wires[bo * 8 + k])));
+        auth.memory.set_byte(base + bo as u32, byte);
     }
 }
 

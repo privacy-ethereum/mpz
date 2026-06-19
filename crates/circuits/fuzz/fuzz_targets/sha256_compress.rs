@@ -18,8 +18,10 @@ fuzz_target!(|data: &[u8]| {
         u32::from_be_bytes(data[64 + i * 4..64 + (i + 1) * 4].try_into().unwrap())
     });
 
+    // The gadget byte-swaps the message internally, so feed the little-endian
+    // (memory-order) read of the block bytes.
     let msg_words: [u32; 16] =
-        core::array::from_fn(|i| u32::from_be_bytes(block[i * 4..i * 4 + 4].try_into().unwrap()));
+        core::array::from_fn(|i| u32::from_le_bytes(block[i * 4..i * 4 + 4].try_into().unwrap()));
     let msg: [Gf2; 512] = <[Gf2; 512]>::from_lsb0_iter(msg_words.iter_lsb0());
     let state_in: [Gf2; 256] = <[Gf2; 256]>::from_lsb0_iter(state.iter_lsb0());
 

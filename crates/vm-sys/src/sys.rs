@@ -23,10 +23,10 @@ unsafe extern "C" {
 }
 
 // wasm32 target: the SHA-256 compression precompile, imported from the host
-// `precompile` module.
-#[link(wasm_import_module = "precompile")]
+// `crypto` module.
+#[link(wasm_import_module = "crypto")]
 unsafe extern "C" {
-    /// Compresses the 64-byte block at `block_ptr` into the 32-byte state at
-    /// `state_ptr`, in place: `*state = sha256_compress(*block, *state)`.
+    /// Compresses the 64-byte block at `block_ptr` into the 8-word (32-byte)
+    /// state at `state_ptr`, in place: `*state = sha256_compress(*block, *state)`.
     pub fn sha256_compress(state_ptr: i32, block_ptr: i32);
 }
