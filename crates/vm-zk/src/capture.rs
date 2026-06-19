@@ -30,13 +30,13 @@ pub(crate) fn is_import(module: &Module, func_idx: u32) -> bool {
     matches!(module.function(func_idx), Some(Function::Import(_)))
 }
 
-/// Returns whether `func_idx` names an import from the `precompile` host module
-/// (e.g. `precompile::sha256_compress`), serviced by the circuit precompile
+/// Returns whether `func_idx` names an import from the `crypto` host module
+/// (e.g. `crypto::sha256_compress`), serviced by the circuit precompile
 /// path rather than the `vc` reveal path.
 pub(crate) fn is_precompile(module: &Module, func_idx: u32) -> bool {
     matches!(
         module.function(func_idx),
-        Some(Function::Import(import)) if import.module() == "precompile"
+        Some(Function::Import(import)) if import.module() == "crypto"
     )
 }
 

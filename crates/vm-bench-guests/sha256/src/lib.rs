@@ -63,20 +63,18 @@ pub extern "C" fn hash(ptr: i32, len: i32) -> i32 {
 
 /// Like [`hash`], but compresses each block through the host `sha256_compress`
 /// precompile (via [`mpz_vm_sys`]) instead of the in-wasm [`compress`]. The
-/// running hash state lives in a 32-byte buffer (8 big-endian words); each
-/// padded block is staged in a 64-byte buffer and compressed into the state in
-/// place.
+/// running hash state lives in a `[u32; 8]` buffer; each padded block is staged
+/// in a 64-byte buffer and compressed into the state in place. The final state
+/// words are serialized big-endian into a fresh 32-byte digest buffer, the
+/// standard SHA-256 output, which is then revealed.
 #[no_mangle]
 pub extern "C" fn hash_precompile(ptr: i32, len: i32) -> i32 {
     let state_ptr = cabi_realloc(0, 0, 4, 32);
     let block_ptr = cabi_realloc(0, 0, 1, 64);
-    let state = unsafe { &mut *(state_ptr as *mut [u8; 32]) };
+    let state = unsafe { &mut *(state_ptr as *mut [u32; 8]) };
     let block = unsafe { &mut *(block_ptr as *mut [u8; 64]) };
 
-    // Initialize the state to the SHA-256 IV, big-endian.
-    for (i, word) in H0.iter().enumerate() {
-        state[i * 4..i * 4 + 4].copy_from_slice(&word.to_be_bytes());
-    }
+    *state = H0;
 
     let len = len as usize;
     let msg = unsafe { core::slice::from_raw_parts(ptr as *const u8, len) };
@@ -105,8 +103,14 @@ pub extern "C" fn hash_precompile(ptr: i32, len: i32) -> i32 {
         pos += 64;
     }
 
-    reveal(&state[..]).wait();
-    state_ptr
+    // Serialize the state words big-endian into the standard digest and reveal.
+    let digest_ptr = cabi_realloc(0, 0, 1, 32);
+    let digest = unsafe { &mut *(digest_ptr as *mut [u8; 32]) };
+    for (i, word) in state.iter().enumerate() {
+        digest[i * 4..i * 4 + 4].copy_from_slice(&word.to_be_bytes());
+    }
+    reveal(&digest[..]).wait();
+    digest_ptr
 }
 
 fn sha256(msg: *const u8, len: usize, out: *mut u8) {

@@ -43,13 +43,14 @@ pub fn reveal<T: Reveal>(v: T) -> T::Output {
 /// Compresses one 512-bit `block` into the 256-bit `state`, in place.
 ///
 /// Runs the host's SHA-256 compression precompile: `*state` becomes
-/// `sha256_compress(*block, *state)`, where `state` is 8 big-endian `u32` words
-/// and `block` is 16 big-endian `u32` words (standard SHA-256 byte order).
+/// `sha256_compress(*block, *state)`, where `state` holds the eight SHA-256
+/// state words `h[0..8]` and `block` is 16 big-endian `u32` words parsed from
+/// its 64 bytes (standard SHA-256 byte order).
 ///
 /// Off wasm the bindings compress in the clear; under the VM the host proves the
 /// compression directly through the circuit instead of replaying the guest's
 /// gates.
-pub fn sha256_compress(state: &mut [u8; 32], block: &[u8; 64]) {
+pub fn sha256_compress(state: &mut [u32; 8], block: &[u8; 64]) {
     unsafe { imp::sha256_compress(state.as_mut_ptr() as i32, block.as_ptr() as i32) }
 }
 
