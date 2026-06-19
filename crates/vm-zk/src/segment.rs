@@ -21,12 +21,10 @@
 //! verifier compute identical layouts. Only the boundary *values* are
 //! prover-side data, resolved from the capture [`Snapshot`]s.
 
-use std::collections::BTreeMap;
-use std::ops::Range;
+use std::{collections::BTreeMap, ops::Range};
 
 use mpz_circuits::Context;
-use mpz_fields::gf2::Gf2;
-use mpz_fields::gf2_128::Gf2_128;
+use mpz_fields::{gf2::Gf2, gf2_128::Gf2_128};
 use mpz_vm_core::{Directive, Op, Operand, Param, Reg, ValType, value::Value};
 use mpz_vm_ir::{BinaryOp, LoadKind, Module, UnaryOp};
 use mpz_vm_memory::{AuthState, AuthValue, Bit, Byte};
@@ -36,7 +34,7 @@ use crate::{
     commit::{ty_width, value_le_bits},
     cost,
     error::{Result, ZkVmError},
-    host::RevealEvent,
+    host::HostCallEvent,
     memlog::{self, ByteState, MemoryLog, Stored},
 };
 
@@ -330,6 +328,21 @@ fn scan_plan(
                         ZkVmError::Internal("reveal action missing for imported call".into())
                     })?;
                     reveal_cursor += 1;
+                    // Mirror capture's precompile accounting: budget the circuit
+                    // gates (authenticated variant only) and record the in-place
+                    // output stores so a boundary after the precompile commits
+                    // exactly those bytes.
+                    match action {
+                        HostCallEvent::Sha256Compress { .. } => {
+                            seg_bits += cost::SHA256_COMPRESS_COST;
+                            seg_gates += cost::SHA256_COMPRESS_COST;
+                            crate::capture::log_precompile_output(&mut scan.mem, action);
+                        }
+                        HostCallEvent::Sha256CompressPublic { .. } => {
+                            crate::capture::log_precompile_output(&mut scan.mem, action);
+                        }
+                        _ => {}
+                    }
                     scan_reveal(&mut scan, action);
                 } else {
                     for (k, arg) in args.iter().enumerate() {
@@ -474,18 +487,21 @@ fn scan_op(scan: &mut Scan, auth: &AuthState, op: &Op) -> Result<()> {
     Ok(())
 }
 
-fn scan_reveal(scan: &mut Scan, action: &RevealEvent) {
+fn scan_reveal(scan: &mut Scan, action: &HostCallEvent) {
     match action {
-        RevealEvent::OpenScalar { handle_dst, id, .. } => {
+        HostCallEvent::OpenScalar { handle_dst, id, .. } => {
             scan.set_reg(handle_dst.0, RegState::Pub(Value::I32(*id as i32)));
         }
-        RevealEvent::WaitScalar { dst, value } => {
+        HostCallEvent::WaitScalar { dst, value } => {
             scan.set_reg(dst.0, RegState::Pub(*value));
         }
-        RevealEvent::OpenBytes { handle_dst, id, .. } => {
+        HostCallEvent::OpenBytes { handle_dst, id, .. } => {
             scan.set_reg(handle_dst.0, RegState::Pub(Value::I32(*id as i32)));
         }
-        RevealEvent::WaitBytes => {}
+        HostCallEvent::WaitBytes => {}
+        // Precompiles write no register; their memory effect is recorded into
+        // `scan.mem` by the caller.
+        HostCallEvent::Sha256Compress { .. } | HostCallEvent::Sha256CompressPublic { .. } => {}
     }
 }
 

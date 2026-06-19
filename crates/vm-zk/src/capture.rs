@@ -16,18 +16,63 @@ use std::collections::BTreeMap;
 use mpz_vm_core::{
     Directive, Global, Operand, Pending, Reg, StepResult, Thread, Trap, value::Value,
 };
-use mpz_vm_ir::{Function, Module};
+use mpz_vm_ir::{Function, Module, StoreKind};
 
 use crate::{
     cost,
     error::{Result, ZkVmError},
-    host::{self, RevealEvent, RevealPayload, RevealState},
+    host::{self, HostCallEvent, RevealPayload, RevealState},
     memlog::{self, MemoryLog, Stored},
 };
 
 /// Returns whether `func_idx` names an imported (host) function.
 pub(crate) fn is_import(module: &Module, func_idx: u32) -> bool {
     matches!(module.function(func_idx), Some(Function::Import(_)))
+}
+
+/// Returns whether `func_idx` names an import from the `precompile` host module
+/// (e.g. `precompile::sha256_compress`), serviced by the circuit precompile
+/// path rather than the `vc` reveal path.
+pub(crate) fn is_precompile(module: &Module, func_idx: u32) -> bool {
+    matches!(
+        module.function(func_idx),
+        Some(Function::Import(import)) if import.module() == "precompile"
+    )
+}
+
+/// Records a `sha256_compress` precompile's 32-byte in-place output into `log`,
+/// matching the action's path: symbolic bytes for the authenticated variant,
+/// public bytes for the public variant. Shared by capture and the segment scan
+/// so both derive the identical written-byte view (hence identical boundary
+/// layout). Byte-granular so a boundary cut commits exactly these 32 bytes.
+pub(crate) fn log_precompile_output(log: &mut MemoryLog, action: &HostCallEvent) {
+    match action {
+        HostCallEvent::Sha256Compress { state_ptr, .. } => {
+            for i in 0..32u32 {
+                log.record_store(StoreKind::I32Store8, state_ptr + i, Stored::Symbolic);
+            }
+        }
+        HostCallEvent::Sha256CompressPublic { state_ptr, digest } => {
+            for (i, b) in digest.iter().enumerate() {
+                log.record_store(
+                    StoreKind::I32Store8,
+                    state_ptr + i as u32,
+                    Stored::Public(Value::I32(*b as i32)),
+                );
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Capture-side accounting for a precompile call: budget the circuit gates
+/// (only the authenticated variant has any) and log its in-place output stores.
+fn account_precompile(cost: &mut usize, log: &mut MemoryLog, action: Option<&HostCallEvent>) {
+    let Some(action) = action else { return };
+    if matches!(action, HostCallEvent::Sha256Compress { .. }) {
+        *cost += cost::SHA256_COMPRESS_COST;
+    }
+    log_precompile_output(log, action);
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -101,7 +146,7 @@ pub(crate) struct ChunkCapture {
     pub(crate) trap: Option<TrapPoint>,
     /// Reveal events, one per imported `Directive::Call` in `trace` and in the
     /// same order, that replay opens against the authenticated state.
-    pub(crate) reveal_actions: Vec<RevealEvent>,
+    pub(crate) reveal_actions: Vec<HostCallEvent>,
     /// Payloads newly disclosed by reveals in this chunk, to announce (prover)
     /// or already merged (verifier). Keyed by reveal id.
     pub(crate) reveals: BTreeMap<u32, RevealPayload>,
@@ -123,7 +168,7 @@ pub(crate) fn capture_chunk(
 ) -> Result<ChunkCapture> {
     let mut trace: Vec<Directive> = Vec::new();
     let mut cost: usize = 0;
-    let mut reveal_actions: Vec<RevealEvent> = Vec::new();
+    let mut reveal_actions: Vec<HostCallEvent> = Vec::new();
     let mut reveals: BTreeMap<u32, RevealPayload> = BTreeMap::new();
     let mut marks: Vec<SegmentMark> = Vec::new();
     // The chunk's memory accesses; each boundary snapshot reads the current
@@ -145,25 +190,41 @@ pub(crate) fn capture_chunk(
                 args,
                 ..
             }) if is_import(module, func_idx) => {
-                let (action, value, visibility) = host::service_reveal(
-                    role,
-                    reveal_state,
-                    &mut reveals,
-                    module,
-                    global,
-                    func_idx,
-                    dst,
-                    &args,
-                )?;
-                reveal_actions.push(action);
-                thread.resolve_host_call(value, visibility)?;
-                trace.push(Directive::Call {
-                    dst,
-                    func_idx,
-                    args,
-                    param_base: Reg(0),
-                });
-                continue;
+                if is_precompile(module, func_idx) {
+                    let (action, value, visibility) =
+                        host::service_sha256_compress(role, global, &args)?;
+                    reveal_actions.push(action);
+                    thread.resolve_host_call(value, visibility)?;
+                    // Fall through (do not `continue`) so the tail budgets the
+                    // precompile's gates, logs its output stores, and runs the
+                    // mark/chunk-cap checks.
+                    Directive::Call {
+                        dst,
+                        func_idx,
+                        args,
+                        param_base: Reg(0),
+                    }
+                } else {
+                    let (action, value, visibility) = host::service_reveal(
+                        role,
+                        reveal_state,
+                        &mut reveals,
+                        module,
+                        global,
+                        func_idx,
+                        dst,
+                        &args,
+                    )?;
+                    reveal_actions.push(action);
+                    thread.resolve_host_call(value, visibility)?;
+                    trace.push(Directive::Call {
+                        dst,
+                        func_idx,
+                        args,
+                        param_base: Reg(0),
+                    });
+                    continue;
+                }
             }
             // A could-trap op (e.g. div/rem with an unheld operand) emits as an
             // ordinary directive. `op_counter` was bumped past the op before
@@ -276,38 +337,47 @@ pub(crate) fn capture_chunk(
             }
         };
 
-        if let Directive::Op(op) = &directive {
-            cost += cost::op_cost(op)?;
-            // Log accesses leniently: an unsupported (symbolic) address is
-            // replay's error to surface, at its natural protocol point.
-            match op {
-                mpz_vm_core::Op::Store {
-                    kind,
-                    addr,
-                    val,
-                    memarg,
-                } => {
-                    if let Ok(eff) = memlog::eff_addr(addr, memarg) {
-                        let stored = match val {
-                            Operand::Concrete(v) => Stored::Public(*v),
-                            Operand::Symbol { .. } => Stored::Symbolic,
-                        };
-                        log.record_store(*kind, eff, stored);
+        match &directive {
+            Directive::Op(op) => {
+                cost += cost::op_cost(op)?;
+                // Log accesses leniently: an unsupported (symbolic) address is
+                // replay's error to surface, at its natural protocol point.
+                match op {
+                    mpz_vm_core::Op::Store {
+                        kind,
+                        addr,
+                        val,
+                        memarg,
+                    } => {
+                        if let Ok(eff) = memlog::eff_addr(addr, memarg) {
+                            let stored = match val {
+                                Operand::Concrete(v) => Stored::Public(*v),
+                                Operand::Symbol { .. } => Stored::Symbolic,
+                            };
+                            log.record_store(*kind, eff, stored);
+                        }
                     }
-                }
-                mpz_vm_core::Op::Load {
-                    kind,
-                    addr,
-                    memarg,
-                    symbolic_mask,
-                    ..
-                } => {
-                    if let Ok(eff) = memlog::eff_addr(addr, memarg) {
-                        log.record_load(*kind, eff, *symbolic_mask);
+                    mpz_vm_core::Op::Load {
+                        kind,
+                        addr,
+                        memarg,
+                        symbolic_mask,
+                        ..
+                    } => {
+                        if let Ok(eff) = memlog::eff_addr(addr, memarg) {
+                            log.record_load(*kind, eff, *symbolic_mask);
+                        }
                     }
+                    _ => {}
                 }
-                _ => {}
             }
+            // A precompile call carries no `Op` cost; budget its circuit gates
+            // and log the 32-byte in-place output so boundaries commit it. The
+            // just-pushed action carries the path (authenticated vs public).
+            Directive::Call { func_idx, .. } if is_precompile(module, *func_idx) => {
+                account_precompile(&mut cost, &mut log, reveal_actions.last());
+            }
+            _ => {}
         }
 
         trace.push(directive);

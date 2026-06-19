@@ -21,3 +21,12 @@ unsafe extern "C" {
     /// Blocks until the byte reveal for `handle` completes.
     pub fn reveal_bytes_wait(handle: i32);
 }
+
+// wasm32 target: the SHA-256 compression precompile, imported from the host
+// `precompile` module.
+#[link(wasm_import_module = "precompile")]
+unsafe extern "C" {
+    /// Compresses the 64-byte block at `block_ptr` into the 32-byte state at
+    /// `state_ptr`, in place: `*state = sha256_compress(*block, *state)`.
+    pub fn sha256_compress(state_ptr: i32, block_ptr: i32);
+}

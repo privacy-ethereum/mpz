@@ -125,12 +125,14 @@ const DIGEST_LEN: usize = 32;
 
 /// Proves SHA-256 over the private `msg` end to end and returns the revealed
 /// digest. Allocates the message buffer in-guest via `cabi_realloc`, stages the
-/// message privately, calls `hash`, and reads the digest back at the pointer
-/// `hash` returns. Panics if the two sides disagree.
+/// message privately, calls the guest export `func` (either `hash`, which
+/// compresses in wasm, or `hash_precompile`, which compresses through the host
+/// `sha256_compress` precompile), and reads the digest back at the pointer the
+/// call returns. Panics if the two sides disagree.
 ///
 /// The whole crypto stack is rebuilt here — only `session`'s executors and
 /// contexts are reused — so the measured time stays end-to-end.
-fn prove_sha256(module: &Module, msg: &[u8], session: &mut Session) -> Vec<u8> {
+fn prove_sha256(module: &Module, msg: &[u8], session: &mut Session, func: &str) -> Vec<u8> {
     let (v_svole, p_svole) = rcot_stack(0);
     let mut prover = Prover::new(module.clone(), p_svole).unwrap();
     let mut verifier = Verifier::new(module.clone(), v_svole).unwrap();
@@ -169,8 +171,8 @@ fn prove_sha256(module: &Module, msg: &[u8], session: &mut Session) -> Vec<u8> {
     prover.write(ptr, Write::Private(msg)).unwrap();
     verifier.write(ptr, Write::Blind(msg.len())).unwrap();
 
-    // `hash(ptr, len)` returns the address of the revealed digest.
-    let hash = func_idx(module, "hash");
+    // `func(ptr, len)` returns the address of the revealed digest.
+    let hash = func_idx(module, func);
     let hash_args = || {
         vec![
             Param::Public(Value::I32(ptr as i32)),
@@ -224,9 +226,15 @@ fn init_tracing() {
 /// Message sizes (bytes) to benchmark SHA-256 over. The headline is 4 KiB.
 const SHA256_SIZES: &[usize] = &[4096, 16384];
 
-/// Proves SHA-256 of a private message end to end. Each size is validated once
-/// against a reference SHA-256 (proving the guest + VM + reveal are correct)
-/// before being timed.
+/// SHA-256 proving variants: `wasm` compresses each block with guest
+/// instructions, `precompile` compresses through the host `sha256_compress`
+/// precompile (the per-block compression circuit, no guest gates).
+const SHA256_VARIANTS: &[(&str, &str)] = &[("wasm", "hash"), ("precompile", "hash_precompile")];
+
+/// Proves SHA-256 of a private message end to end, for both the wasm and
+/// precompile variants. Each (variant, size) is validated once against a
+/// reference SHA-256 (proving the guest + VM + reveal are correct) before being
+/// timed.
 fn bench_sha256(c: &mut Criterion) {
     init_tracing();
     let wasm = include_bytes!("guests/sha256.wasm");
@@ -237,19 +245,20 @@ fn bench_sha256(c: &mut Criterion) {
     group.sample_size(10);
     for &len in SHA256_SIZES {
         let msg: Vec<u8> = (0..len).map(|i| i as u8).collect();
+        for &(label, func) in SHA256_VARIANTS {
+            // Validate the revealed digest against a reference before timing.
+            let digest = prove_sha256(&module, &msg, &mut session, func);
+            assert_eq!(
+                digest,
+                Sha256::digest(&msg).as_slice(),
+                "{label} variant digest must match reference SHA-256 for {len} bytes"
+            );
 
-        // Validate the revealed digest against a reference SHA-256 before timing.
-        let digest = prove_sha256(&module, &msg, &mut session);
-        assert_eq!(
-            digest,
-            Sha256::digest(&msg).as_slice(),
-            "revealed digest must match reference SHA-256 for {len} bytes"
-        );
-
-        group.throughput(Throughput::Bytes(len as u64));
-        group.bench_with_input(BenchmarkId::from_parameter(len), &msg, |b, msg| {
-            b.iter(|| prove_sha256(&module, msg, &mut session))
-        });
+            group.throughput(Throughput::Bytes(len as u64));
+            group.bench_with_input(BenchmarkId::new(label, len), &msg, |b, msg| {
+                b.iter(|| prove_sha256(&module, msg, &mut session, func))
+            });
+        }
     }
     group.finish();
 }

@@ -1,10 +1,11 @@
-//! Servicing of guest VCI reveal host calls during capture.
+//! Servicing of guest host calls during capture: `vc::reveal_*` disclosures and
+//! the `precompile::*` circuit precompiles.
 //!
-//! When the thread blocks on a `vc::reveal_*` import, [`service_reveal`]
-//! records a [`RevealEvent`] into the captured trace and returns the value to
-//! resolve the call with. The event is opened in-order during replay against
-//! the live authenticated state, so a scalar's source register still holds its
-//! MAC at the reveal point (the free-list cannot have recycled it yet).
+//! When the thread blocks on such an import, the servicer records a
+//! [`HostCallEvent`] into the captured trace and returns the value to resolve
+//! the call with. The event is applied in-order during replay against the live
+//! authenticated state, so a reveal's source register still holds its MAC at
+//! the reveal point (the free-list cannot have recycled it yet).
 //!
 //! Disclosure is eager: a `reveal_*` call commits its value to the chunk's
 //! announced payloads immediately, keyed by a unique reveal id; the matching
@@ -36,7 +37,7 @@ pub(crate) enum RevealPayload {
 /// A serviced reveal host call, recorded in the trace so replay opens it
 /// in-order against the live authenticated state.
 #[derive(Clone, Debug)]
-pub(crate) enum RevealEvent {
+pub(crate) enum HostCallEvent {
     /// `vc::reveal_<ty>(value) -> handle`: open `src`'s MAC against `value`
     /// (skipped when the value was already public, i.e. `src` is `None`), and
     /// bind the public handle `id` into `handle_dst`.
@@ -61,6 +62,27 @@ pub(crate) enum RevealEvent {
     /// materializing the bytes) is applied to memory during capture, so replay
     /// has nothing to do. Recorded to stay 1:1 with the import directives.
     WaitBytes,
+    /// `precompile::sha256_compress(state_ptr, block_ptr)` with at least one
+    /// tainted input byte: replay emits the SHA-256 compression circuit over
+    /// the input wires and writes the committed output back over the
+    /// 32-byte state at `state_ptr`. Inputs may mix committed and public
+    /// bytes (e.g. a public IV / SHA padding), so each region carries its
+    /// public bytes (symbolic positions zeroed) and a per-byte symbolic
+    /// mask, mirroring `Op::Load`'s `concrete`/`symbolic_mask`: replay
+    /// reads symbolic bytes from committed memory and materializes public
+    /// bytes as public-bit wires.
+    Sha256Compress {
+        state_ptr: u32,
+        block_ptr: u32,
+        state_pub: [u8; 32],
+        state_sym: u64,
+        block_pub: [u8; 64],
+        block_sym: u64,
+    },
+    /// `precompile::sha256_compress` over fully public input: the digest is
+    /// computed in the clear during capture; replay writes it back as
+    /// public-bit wires (no gates). `digest` holds the 32-byte result.
+    Sha256CompressPublic { state_ptr: u32, digest: [u8; 32] },
 }
 
 /// Per-execution reveal state, owned by the prover/verifier across chunks.
@@ -120,7 +142,7 @@ pub(crate) fn service_reveal(
     func_idx: u32,
     dst: Option<Reg>,
     args: &[Operand],
-) -> Result<(RevealEvent, Option<Value>, Visibility)> {
+) -> Result<(HostCallEvent, Option<Value>, Visibility)> {
     let name = match module.function(func_idx) {
         Some(Function::Import(import)) if import.module() == "vc" => import.name(),
         _ => {
@@ -151,7 +173,7 @@ pub(crate) fn service_reveal(
                 state.disclose(new, id, RevealPayload::Scalar(value));
             }
             let handle_dst = handle_dst(dst)?;
-            let event = RevealEvent::OpenScalar {
+            let event = HostCallEvent::OpenScalar {
                 src,
                 value,
                 handle_dst,
@@ -165,7 +187,7 @@ pub(crate) fn service_reveal(
             let dst =
                 dst.ok_or_else(|| ZkVmError::Internal("reveal wait has no destination".into()))?;
             Ok((
-                RevealEvent::WaitScalar { dst, value },
+                HostCallEvent::WaitScalar { dst, value },
                 Some(value),
                 Visibility::Public,
             ))
@@ -195,7 +217,7 @@ pub(crate) fn service_reveal(
                 );
             }
             let handle_dst = handle_dst(dst)?;
-            let event = RevealEvent::OpenBytes {
+            let event = HostCallEvent::OpenBytes {
                 ptr,
                 bytes,
                 handle_dst,
@@ -217,12 +239,142 @@ pub(crate) fn service_reveal(
                     .map_err(ZkVmError::Trap)?;
             }
             global.set_memory_visibility(ptr, len as usize, Visibility::Public);
-            Ok((RevealEvent::WaitBytes, None, Visibility::Public))
+            Ok((HostCallEvent::WaitBytes, None, Visibility::Public))
         }
         other => Err(ZkVmError::Unsupported(format!(
             "zk-vm does not service reveal import `vc::{other}`"
         ))),
     }
+}
+
+/// Services a `precompile::sha256_compress(state_ptr, block_ptr)` host call
+/// surfaced during capture.
+///
+/// Both pointers are public concrete operands. The output is committed iff any
+/// of the 96 input bytes is tainted — a decision identical on both parties,
+/// since taint is identical on both. When all inputs are public, both parties
+/// compute the digest in the clear (public fast-path, no circuit). Otherwise
+/// the prover computes and writes the digest and marks the 32-byte output
+/// `Private`; the verifier only marks it `Blind`, and replay proves the
+/// compression circuit on both sides.
+pub(crate) fn service_sha256_compress(
+    role: Role,
+    global: &mut Global,
+    args: &[Operand],
+) -> Result<(HostCallEvent, Option<Value>, Visibility)> {
+    let state_ptr = arg_u32(args, 0)?;
+    let block_ptr = arg_u32(args, 1)?;
+
+    // Per-byte taint of each input region (identical on both parties), with the
+    // public bytes (symbolic positions zeroed) for replay's public-bit wires.
+    let (state_pub, state_sym) = masked_input::<32>(global, state_ptr)?;
+    let (block_pub, block_sym) = masked_input::<64>(global, block_ptr)?;
+
+    if state_sym == 0 && block_sym == 0 {
+        // Public fast-path: every input byte is public, so both parties hold the
+        // full input (the masked bytes are the whole input), compute the digest
+        // in the clear, write it back, and keep the output public. No circuit.
+        let digest = compress_block(&state_pub, &block_pub);
+        write_state(global, state_ptr, &digest)?;
+        global.set_memory_visibility(state_ptr, 32, Visibility::Public);
+        return Ok((
+            HostCallEvent::Sha256CompressPublic { state_ptr, digest },
+            None,
+            Visibility::Public,
+        ));
+    }
+
+    // Authenticated path: a tainted input means the whole output is committed.
+    match role {
+        Role::Prover => {
+            let (state, block) = read_inputs(global, state_ptr, block_ptr)?;
+            let digest = compress_block(&state, &block);
+            write_state(global, state_ptr, &digest)?;
+            global.set_memory_visibility(state_ptr, 32, Visibility::Private);
+        }
+        // The verifier cannot compute the digest; it only marks the output
+        // region committed-and-blind so its taint matches the prover's.
+        Role::Verifier => global.set_memory_visibility(state_ptr, 32, Visibility::Blind),
+    }
+    Ok((
+        HostCallEvent::Sha256Compress {
+            state_ptr,
+            block_ptr,
+            state_pub,
+            state_sym,
+            block_pub,
+            block_sym,
+        },
+        None,
+        Visibility::Public,
+    ))
+}
+
+/// Reads the `N`-byte input region at `ptr`, returning its public bytes (with
+/// symbolic positions zeroed) and a per-byte symbolic mask (bit `i` set means
+/// byte `i` is committed/symbolic). Both parties derive the same result: taint
+/// is identical across parties, public bytes match, and symbolic bytes are
+/// zeroed (their value comes from the committed wires at replay).
+fn masked_input<const N: usize>(global: &Global, ptr: u32) -> Result<([u8; N], u64)> {
+    debug_assert!(N <= 64, "symbolic mask is a u64");
+    let mem = global
+        .memory()
+        .ok_or(ZkVmError::Core(CoreError::MemoryNotDefined))?;
+    let raw = mem.read_bytes(ptr, N).map_err(ZkVmError::Trap)?;
+    let mut public = [0u8; N];
+    let mut sym = 0u64;
+    for (i, slot) in public.iter_mut().enumerate() {
+        if global.memory_tainted(ptr + i as u32, 1) {
+            sym |= 1u64 << i;
+        } else {
+            *slot = raw[i];
+        }
+    }
+    Ok((public, sym))
+}
+
+/// Reads the 32-byte state and 64-byte block from memory as owned arrays (so a
+/// subsequent mutable write-back doesn't alias the read borrow).
+fn read_inputs(global: &Global, state_ptr: u32, block_ptr: u32) -> Result<([u8; 32], [u8; 64])> {
+    let mem = global
+        .memory()
+        .ok_or(ZkVmError::Core(CoreError::MemoryNotDefined))?;
+    let mut state = [0u8; 32];
+    state.copy_from_slice(mem.read_bytes(state_ptr, 32).map_err(ZkVmError::Trap)?);
+    let mut block = [0u8; 64];
+    block.copy_from_slice(mem.read_bytes(block_ptr, 64).map_err(ZkVmError::Trap)?);
+    Ok((state, block))
+}
+
+/// Writes the 32-byte `digest` back over the state at `state_ptr`.
+fn write_state(global: &mut Global, state_ptr: u32, digest: &[u8; 32]) -> Result<()> {
+    global
+        .memory_mut()
+        .ok_or(ZkVmError::Core(CoreError::MemoryNotDefined))?
+        .write_bytes(state_ptr, digest)
+        .map_err(ZkVmError::Trap)?;
+    Ok(())
+}
+
+/// Computes one SHA-256 compression in the clear via the `sha2` crate.
+/// `state`/`block`/output are big-endian `u32` words, per standard SHA-256.
+/// Capture works in the clear; only the witness/replay phase needs the circuit
+/// representation.
+fn compress_block(state: &[u8; 32], block: &[u8; 64]) -> [u8; 32] {
+    let mut h: [u32; 8] = core::array::from_fn(|i| {
+        u32::from_be_bytes([
+            state[4 * i],
+            state[4 * i + 1],
+            state[4 * i + 2],
+            state[4 * i + 3],
+        ])
+    });
+    sha2::compress256(&mut h, &[(*block).into()]);
+    let mut digest = [0u8; 32];
+    for (i, word) in h.iter().enumerate() {
+        digest[4 * i..4 * i + 4].copy_from_slice(&word.to_be_bytes());
+    }
+    digest
 }
 
 fn scalar(payload: Option<&RevealPayload>, id: u32) -> Result<Value> {
