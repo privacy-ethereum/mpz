@@ -22,7 +22,7 @@ use mpz_vm_core::{Directive, Op, Operand, Reg, Trap, ValType, value::Value};
 use mpz_vm_ir::{BinaryOp, LoadKind, MemArg, Module, StoreKind, UnaryOp};
 use rand_chacha::ChaCha12Rng;
 
-use mpz_vm_memory::{AuthState, AuthValue, Bit, I32, I64};
+use mpz_vm_memory::{AuthState, AuthValue, Bit, Byte, I32, I64};
 
 use mpz_vm_circuits as circ;
 
@@ -30,7 +30,7 @@ use crate::{
     capture::is_import,
     error::{Result, ZkVmError, unsupported_binary, unsupported_op, unsupported_unary},
     finalize,
-    host::RevealEvent,
+    host::HostCallEvent,
 };
 
 // ============================================================
@@ -123,7 +123,7 @@ impl ReplayState {
 #[tracing::instrument(level = "trace", skip_all, fields(events = trace.len()))]
 pub(crate) fn replay<C>(
     trace: &[Directive],
-    reveal_actions: &[RevealEvent],
+    reveal_actions: &[HostCallEvent],
     module: &Module,
     auth: &mut AuthState,
     exec: &mut C,
@@ -203,14 +203,30 @@ where
                 ..
             } => {
                 if is_import(module, *func_idx) {
-                    // Imported calls carry a reveal, opened in-order: the source
-                    // register/byte MACs are still live at this point in the
-                    // trace.
+                    // Imported calls carry a per-call action, applied in-order:
+                    // a reveal opens live MACs, a precompile emits its circuit
+                    // over the input wires (or writes a public result).
                     let action = reveal_actions.get(reveal_cursor).ok_or_else(|| {
                         ZkVmError::Internal("reveal action missing for imported call".into())
                     })?;
                     reveal_cursor += 1;
-                    apply_reveal(action, auth, exec)?;
+                    match action {
+                        HostCallEvent::Sha256Compress {
+                            state_ptr,
+                            block_ptr,
+                            state_pub,
+                            state_sym,
+                            block_pub,
+                            block_sym,
+                        } => apply_sha256_compress(
+                            exec, auth, *state_ptr, state_pub, *state_sym, *block_ptr, block_pub,
+                            *block_sym,
+                        )?,
+                        HostCallEvent::Sha256CompressPublic { state_ptr, digest } => {
+                            write_public_bytes(exec, auth, *state_ptr, digest)
+                        }
+                        _ => apply_reveal(action, auth, exec)?,
+                    }
                 } else {
                     propagate_args(auth, *param_base, args);
                 }
@@ -687,13 +703,13 @@ where
 // Reveals, returns, traps
 // ============================================================
 
-fn apply_reveal<C>(event: &RevealEvent, auth: &mut AuthState, exec: &mut C) -> Result<()>
+fn apply_reveal<C>(event: &HostCallEvent, auth: &mut AuthState, exec: &mut C) -> Result<()>
 where
     C: ZkExec,
     C::Error: core::fmt::Debug,
 {
     match event {
-        RevealEvent::OpenScalar {
+        HostCallEvent::OpenScalar {
             src,
             value,
             handle_dst,
@@ -709,10 +725,10 @@ where
             set_public_reg(auth, exec, *handle_dst, &Value::I32(*id as i32))?;
         }
         // The wait binds the now-public revealed value into its destination.
-        RevealEvent::WaitScalar { dst, value } => {
+        HostCallEvent::WaitScalar { dst, value } => {
             set_public_reg(auth, exec, *dst, value)?;
         }
-        RevealEvent::OpenBytes {
+        HostCallEvent::OpenBytes {
             ptr,
             bytes,
             handle_dst,
@@ -724,9 +740,110 @@ where
             set_public_reg(auth, exec, *handle_dst, &Value::I32(*id as i32))?;
         }
         // The byte wait's effect was applied to memory during capture.
-        RevealEvent::WaitBytes => {}
+        HostCallEvent::WaitBytes => {}
+        // Precompile actions are dispatched before `apply_reveal`.
+        HostCallEvent::Sha256Compress { .. } | HostCallEvent::Sha256CompressPublic { .. } => {
+            return Err(ZkVmError::Internal(
+                "precompile action routed to apply_reveal".into(),
+            ));
+        }
     }
     Ok(())
+}
+
+// ============================================================
+// Precompiles
+// ============================================================
+
+/// Emits the SHA-256 compression circuit for an authenticated
+/// `precompile::sha256_compress`: assembles the 256-bit state and 512-bit block
+/// wires (symbolic bytes from committed memory, public bytes as public-bit
+/// wires from the recorded plaintext), runs `mpz_circuits::sha256::compress`
+/// through the live circuit context (consuming exactly `AND_PER_BLOCK` gates),
+/// and writes the 256-bit committed output back over the state in place.
+#[allow(clippy::too_many_arguments)]
+fn apply_sha256_compress<C>(
+    exec: &mut C,
+    auth: &mut AuthState,
+    state_ptr: u32,
+    state_pub: &[u8; 32],
+    state_sym: u64,
+    block_ptr: u32,
+    block_pub: &[u8; 64],
+    block_sym: u64,
+) -> Result<()>
+where
+    C: ZkExec,
+    C::Error: core::fmt::Debug,
+{
+    let state = read_mixed::<256, _>(exec, auth, state_ptr, state_pub, state_sym)?;
+    let msg = read_mixed::<512, _>(exec, auth, block_ptr, block_pub, block_sym)?;
+    let out = mpz_circuits::sha256::compress(exec, msg, state);
+    write_be_words(auth, state_ptr, &out);
+    Ok(())
+}
+
+/// Writes a public digest back over the 32-byte state as public-bit wires (no
+/// gates), for the public fast-path where all inputs were public.
+fn write_public_bytes<C>(exec: &mut C, auth: &mut AuthState, base: u32, digest: &[u8; 32])
+where
+    C: ZkExec,
+{
+    for (i, b) in digest.iter().enumerate() {
+        let byte = Byte::new(core::array::from_fn(|k| {
+            Bit(exec.public_bit((b >> k) & 1 != 0))
+        }));
+        auth.memory.set_byte(base + i as u32, byte);
+    }
+}
+
+/// Assembles `N` input wires (`N / 8` bytes = `N / 32` big-endian `u32` words)
+/// at `base` in the SHA-256 circuit's layout: each word is big-endian in memory
+/// (most-significant byte first), bits LSB-first within a word. A byte marked
+/// symbolic in `sym` (bit `i` = byte `i`) is read from committed memory (a
+/// `MemAuthMissing` error if absent); a public byte is materialized as
+/// public-bit wires from `public[i]` (no gates).
+fn read_mixed<const N: usize, C>(
+    exec: &mut C,
+    auth: &AuthState,
+    base: u32,
+    public: &[u8],
+    sym: u64,
+) -> Result<[Gf2_128; N]>
+where
+    C: ZkExec,
+{
+    let mut out = [Gf2_128::new(0); N];
+    for bo in 0..N / 8 {
+        // Byte `bo` is the `(3 - bo % 4)`-th byte from the LSB of word `bo / 4`,
+        // so its 8 bits occupy wires `[w*32 + bj*8, w*32 + bj*8 + 8)`.
+        let w = bo / 4;
+        let bj = 3 - (bo % 4);
+        let bits: [Gf2_128; 8] = if (sym >> bo) & 1 != 0 {
+            let off = base + bo as u32;
+            let byte = auth
+                .memory
+                .get_byte(off)
+                .ok_or(ZkVmError::MemAuthMissing { addr: off })?;
+            core::array::from_fn(|k| byte.bits()[k].0)
+        } else {
+            core::array::from_fn(|k| exec.public_bit((public[bo] >> k) & 1 != 0))
+        };
+        out[w * 32 + bj * 8..w * 32 + bj * 8 + 8].copy_from_slice(&bits);
+    }
+    Ok(out)
+}
+
+/// Writes `wires` (`wires.len() / 32` big-endian `u32` words, LSB-first within
+/// a word) back to memory at `base`, the inverse layout of [`read_mixed`].
+fn write_be_words(auth: &mut AuthState, base: u32, wires: &[Gf2_128]) {
+    for w in 0..wires.len() / 32 {
+        for bj in 0..4 {
+            let off = base + 4 * w as u32 + 3 - bj as u32;
+            let byte = Byte::new(core::array::from_fn(|k| Bit(wires[w * 32 + bj * 8 + k])));
+            auth.memory.set_byte(off, byte);
+        }
+    }
 }
 
 fn set_public_reg<C>(auth: &mut AuthState, exec: &mut C, reg: Reg, value: &Value) -> Result<()>

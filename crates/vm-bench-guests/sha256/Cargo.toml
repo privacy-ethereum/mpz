@@ -11,6 +11,9 @@ publish = false
 [lib]
 crate-type = ["cdylib"]
 
+[dependencies]
+mpz-vm-sys = { path = "../../vm-sys" }
+
 [profile.release]
 opt-level = 3
 lto = true

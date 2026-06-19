@@ -40,6 +40,19 @@ pub fn reveal<T: Reveal>(v: T) -> T::Output {
     v.reveal()
 }
 
+/// Compresses one 512-bit `block` into the 256-bit `state`, in place.
+///
+/// Runs the host's SHA-256 compression precompile: `*state` becomes
+/// `sha256_compress(*block, *state)`, where `state` is 8 big-endian `u32` words
+/// and `block` is 16 big-endian `u32` words (standard SHA-256 byte order).
+///
+/// Off wasm the bindings compress in the clear; under the VM the host proves the
+/// compression directly through the circuit instead of replaying the guest's
+/// gates.
+pub fn sha256_compress(state: &mut [u8; 32], block: &[u8; 64]) {
+    unsafe { imp::sha256_compress(state.as_mut_ptr() as i32, block.as_ptr() as i32) }
+}
+
 /// A pending reveal of a scalar value of type `T`.
 ///
 /// Produced by [`Reveal::reveal`] on a scalar; resolve it with

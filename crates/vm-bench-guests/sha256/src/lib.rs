@@ -26,11 +26,7 @@ const K: [u32; 64] = [
     0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
 ];
 
-#[link(wasm_import_module = "vc")]
-extern "C" {
-    fn reveal_bytes(ptr: i32, len: i32) -> i32;
-    fn reveal_bytes_wait(handle: i32);
-}
+use mpz_vm_sys::reveal;
 
 /// The Component Model canonical `realloc`:
 /// `cabi_realloc(old_ptr, old_size, align, new_size) -> ptr`.
@@ -60,11 +56,57 @@ pub extern "C" fn cabi_realloc(old_ptr: i32, old_size: i32, align: i32, new_size
 pub extern "C" fn hash(ptr: i32, len: i32) -> i32 {
     let digest_ptr = cabi_realloc(0, 0, 1, 32);
     sha256(ptr as *const u8, len as usize, digest_ptr as *mut u8);
-    unsafe {
-        let handle = reveal_bytes(digest_ptr, 32);
-        reveal_bytes_wait(handle);
-    }
+    let digest = unsafe { core::slice::from_raw_parts(digest_ptr as *const u8, 32) };
+    reveal(digest).wait();
     digest_ptr
+}
+
+/// Like [`hash`], but compresses each block through the host `sha256_compress`
+/// precompile (via [`mpz_vm_sys`]) instead of the in-wasm [`compress`]. The
+/// running hash state lives in a 32-byte buffer (8 big-endian words); each
+/// padded block is staged in a 64-byte buffer and compressed into the state in
+/// place.
+#[no_mangle]
+pub extern "C" fn hash_precompile(ptr: i32, len: i32) -> i32 {
+    let state_ptr = cabi_realloc(0, 0, 4, 32);
+    let block_ptr = cabi_realloc(0, 0, 1, 64);
+    let state = unsafe { &mut *(state_ptr as *mut [u8; 32]) };
+    let block = unsafe { &mut *(block_ptr as *mut [u8; 64]) };
+
+    // Initialize the state to the SHA-256 IV, big-endian.
+    for (i, word) in H0.iter().enumerate() {
+        state[i * 4..i * 4 + 4].copy_from_slice(&word.to_be_bytes());
+    }
+
+    let len = len as usize;
+    let msg = unsafe { core::slice::from_raw_parts(ptr as *const u8, len) };
+    let bitlen = (len as u64).wrapping_mul(8);
+    let mut total = len + 9;
+    if total % 64 != 0 {
+        total += 64 - (total % 64);
+    }
+
+    let mut pos = 0;
+    while pos < total {
+        for (i, b) in block.iter_mut().enumerate() {
+            let idx = pos + i;
+            *b = if idx < len {
+                msg[idx]
+            } else if idx == len {
+                0x80
+            } else if idx + 8 >= total {
+                let shift = (total - 1 - idx) * 8;
+                (bitlen >> shift) as u8
+            } else {
+                0
+            };
+        }
+        mpz_vm_sys::sha256_compress(state, block);
+        pos += 64;
+    }
+
+    reveal(&state[..]).wait();
+    state_ptr
 }
 
 fn sha256(msg: *const u8, len: usize, out: *mut u8) {

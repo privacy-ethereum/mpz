@@ -1,7 +1,8 @@
+use std::collections::BTreeMap;
+
 use mpz_fields::gf2_128::Gf2_128;
-use mpz_vm_core::{Error as CoreError, Global, Param, Reg, value::Value};
+use mpz_vm_core::{Param, Reg, value::Value};
 use rangeset::set::RangeSet;
-use std::ops::Range;
 
 use mpz_vm_memory::{AuthState, AuthValue, Bit, Byte};
 
@@ -10,6 +11,12 @@ use crate::error::{Result, ZkVmError};
 #[derive(Debug, Default)]
 pub(crate) struct PendingIo {
     write_private: RangeSet<u32>,
+    /// Prover-side snapshot of the staged private bytes, captured at stage time
+    /// so the commitment reflects the value as written — not whatever later
+    /// in-place execution leaves in memory (e.g. a precompile compressing a
+    /// region the host just staged). Keyed by address; empty on the verifier,
+    /// which commits blanks.
+    bytes: BTreeMap<u32, u8>,
 }
 
 impl PendingIo {
@@ -17,20 +24,34 @@ impl PendingIo {
         self.write_private.len() * 8
     }
 
+    /// Records a committed private range, tracking only its extent. The verifier
+    /// uses this directly; the prover snapshots the bytes via
+    /// [`stage_private`](Self::stage_private).
     pub(crate) fn write_private(&mut self, addr: u32, len: usize) {
         self.write_private.union_mut(addr..addr + len as u32);
+    }
+
+    /// Prover-side: records a committed private range and snapshots its bytes,
+    /// so the commitment is fixed at stage time regardless of later mutation.
+    pub(crate) fn stage_private(&mut self, addr: u32, data: &[u8]) {
+        self.write_private(addr, data.len());
+        for (i, &b) in data.iter().enumerate() {
+            self.bytes.insert(addr + i as u32, b);
+        }
     }
 
     pub(crate) fn addrs(&self) -> impl Iterator<Item = u32> + '_ {
         self.write_private.iter().flat_map(|r| r.start..r.end)
     }
 
-    pub(crate) fn ranges(&self) -> impl Iterator<Item = Range<u32>> + '_ {
-        self.write_private.iter()
+    /// The byte snapshotted at `addr` when it was staged (prover side).
+    fn staged_byte(&self, addr: u32) -> Option<u8> {
+        self.bytes.get(&addr).copied()
     }
 
     pub(crate) fn clear(&mut self) {
         self.write_private = RangeSet::default();
+        self.bytes.clear();
     }
 }
 
@@ -101,7 +122,6 @@ pub(crate) fn commit_prover(
     root_reg_base: Reg,
     params: &[Param],
     pending: &PendingIo,
-    global: &Global,
     tape: &mut ProverTape<'_>,
 ) -> Result<()> {
     for (i, p) in params.iter().enumerate() {
@@ -118,34 +138,25 @@ pub(crate) fn commit_prover(
             AuthValue::from_bits(ty, &auth_bits)?,
         );
     }
-    commit_memory_prover(auth, pending, global, tape)
+    commit_memory_prover(auth, pending, tape)
 }
 
 pub(crate) fn commit_memory_prover(
     auth: &mut AuthState,
     pending: &PendingIo,
-    global: &Global,
     tape: &mut ProverTape<'_>,
 ) -> Result<()> {
-    if pending.cost_bits() == 0 {
-        return Ok(());
-    }
-    let mem = global
-        .memory()
-        .ok_or(ZkVmError::Core(CoreError::MemoryNotDefined))?;
-    for range in pending.ranges() {
-        let len = (range.end - range.start) as usize;
-        let bytes = mem
-            .read_bytes(range.start, len)
-            .map_err(ZkVmError::Trap)?
-            .to_vec();
-        for (i, value) in bytes.into_iter().enumerate() {
-            let addr = range.start + i as u32;
-            let byte_bits = Byte::new(core::array::from_fn(|bit_idx| {
-                Bit(tape.bit((value >> bit_idx) & 1 != 0))
-            }));
-            auth.memory.set_byte(addr, byte_bits);
-        }
+    // Iterate addresses in ascending order (matching the verifier's tape order)
+    // and commit each byte from the stage-time snapshot, not live memory, so a
+    // region overwritten in place after staging still commits its staged value.
+    for addr in pending.addrs() {
+        let value = pending.staged_byte(addr).ok_or_else(|| {
+            ZkVmError::Internal(format!("no staged byte for committed input addr {addr:#x}"))
+        })?;
+        let byte_bits = Byte::new(core::array::from_fn(|bit_idx| {
+            Bit(tape.bit((value >> bit_idx) & 1 != 0))
+        }));
+        auth.memory.set_byte(addr, byte_bits);
     }
     Ok(())
 }

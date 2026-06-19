@@ -152,7 +152,6 @@ where
                 root_reg_base,
                 params,
                 &self.pending_io,
-                &self.global,
                 &mut tape,
             )?;
         }
@@ -422,7 +421,7 @@ where
         match w {
             Write::Private(data) => {
                 memory.write_bytes(ptr, data).map_err(ZkVmError::Trap)?;
-                self.pending_io.write_private(ptr, data.len());
+                self.pending_io.stage_private(ptr, data);
                 self.global
                     .set_memory_visibility(ptr, data.len(), Visibility::Private);
             }
@@ -783,12 +782,7 @@ where
                 macs: exec_macs,
                 cursor: 0,
             };
-            commit::commit_memory_prover(
-                &mut self.auth,
-                &self.pending_io,
-                &self.global,
-                &mut tape,
-            )?;
+            commit::commit_memory_prover(&mut self.auth, &self.pending_io, &mut tape)?;
         }
 
         let commitment = Commitment {
