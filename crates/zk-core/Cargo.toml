@@ -13,10 +13,12 @@ mpz-circuits = { workspace = true }
 mpz-fields = { workspace = true }
 
 blake3 = { workspace = true }
+hybrid-array = { workspace = true }
 itybity = { workspace = true }
 rand_core = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 thiserror = { workspace = true }
+typenum = { workspace = true }
 zerocopy = { workspace = true }
 
 [dev-dependencies]
@@ -28,6 +30,14 @@ sha2 = { workspace = true, features = ["compress"] }
 
 [[bench]]
 name = "sha256"
+harness = false
+
+[[bench]]
+name = "poly"
+harness = false
+
+[[bench]]
+name = "product_gf64"
 harness = false
 
 [lints]

@@ -7,9 +7,14 @@ use mpz_fields::{
     gf2_128::{Gf2_128, Gf2_128Accumulator},
 };
 use rand_core::RngCore;
-use zerocopy::IntoBytes;
 
-use crate::{Error, MAC_ONE, MAC_ZERO, Result, util::set_lsb};
+use typenum::{Max, Maximum, U0, U1};
+
+use crate::{
+    Error, MAC_ONE, MAC_ZERO, ProverOutput, Result,
+    poly::{Degree, Expr, PlainCoeffs, PolyContext, ProverCoeffs, ProverPoly},
+    util::{draw_chi, lsb, set_lsb},
+};
 
 /// The prover side of the zero-knowledge protocol.
 ///
@@ -19,7 +24,7 @@ use crate::{Error, MAC_ONE, MAC_ZERO, Result, util::set_lsb};
 /// installs the challenge stream via [`accumulate`](Self::accumulate) and
 /// re-evaluates the same circuits in the same order, folding every
 /// multiplication and assertion directly into the running proof state.
-/// [`finish`](Self::finish) yields `(u, v, assertions)`.
+/// [`finish`](Self::finish) yields a [`ProverOutput`].
 ///
 /// The caller masks `(u, v)` with the VOPE correlation
 /// ([`vope_receiver`](crate::vope_receiver)) before sending the proof.
@@ -101,6 +106,37 @@ impl<'a> Commit<'a> {
     }
 }
 
+impl PolyContext for Commit<'_> {
+    /// Plaintext evaluation: an expression is just its cleartext bit, so the
+    /// commit pass compiles polynomial gadgets down to bit operations.
+    type Coeffs = PlainCoeffs<Gf2>;
+
+    fn lift(&self, wire: Gf2_128) -> Expr<PlainCoeffs<Gf2>, U1> {
+        Expr::new(lsb(wire))
+    }
+
+    fn lift_const(&self, value: Gf2) -> Expr<PlainCoeffs<Gf2>, U0> {
+        Expr::new(value)
+    }
+
+    fn materialize<N>(&mut self, expr: Expr<PlainCoeffs<Gf2>, N>) -> Gf2_128
+    where
+        N: Degree + Max<U1>,
+        Maximum<N, U1>: Degree,
+    {
+        self.input(expr.plain().0)
+    }
+
+    fn assert_zero<N: Degree>(&mut self, expr: Expr<PlainCoeffs<Gf2>, N>) -> Result<()> {
+        // The check binding constraints into the proof is built during the
+        // accumulate pass; here the check only surfaces witness bugs early.
+        if expr.plain() != Gf2::ZERO {
+            return Err(Error::assert());
+        }
+        Ok(())
+    }
+}
+
 impl Context for Commit<'_> {
     type Error = Error;
     type Wire = Gf2_128;
@@ -159,6 +195,7 @@ pub struct Accumulate<R> {
     rng: R,
     u: Gf2_128Accumulator,
     v: Gf2_128Accumulator,
+    poly: ProverPoly,
 }
 
 impl<'a> Prover<'a, Committed> {
@@ -180,9 +217,12 @@ impl<'a> Prover<'a, Committed> {
 
     /// Begins the accumulate pass, drawing challenge weights from `rng`.
     ///
-    /// Each multiplication consumes 16 bytes of the stream, so `rng` must be
-    /// positioned to match the gates evaluated: the caller derives it from the
-    /// agreed challenge and seeks it when folding a sub-range of the trace.
+    /// Each multiplication and each polynomial constraint
+    /// ([`PolyContext::assert_zero`] of degree ≥ 1, or
+    /// [`PolyContext::materialize`]) consumes 16 bytes of the stream, so `rng`
+    /// must be positioned to match the trace evaluated: the caller derives it
+    /// from the agreed challenge and seeks it when folding a sub-range of the
+    /// trace.
     pub fn accumulate<R: RngCore>(self, rng: R) -> Prover<'a, Accumulate<R>> {
         Prover {
             macs: self.macs,
@@ -192,6 +232,7 @@ impl<'a> Prover<'a, Committed> {
                 rng,
                 u: Gf2_128Accumulator::zero(),
                 v: Gf2_128Accumulator::zero(),
+                poly: ProverPoly::default(),
             },
         }
     }
@@ -222,25 +263,28 @@ impl<'a, R> Prover<'a, Accumulate<R>> {
         if bit { MAC_ONE } else { MAC_ZERO }
     }
 
-    /// Completes the accumulate phase, yielding `(u, v, assertions)`.
+    /// Completes the accumulate phase, yielding a [`ProverOutput`].
     ///
     /// The caller masks `(u, v)` with the VOPE correlation
-    /// ([`vope_receiver`](crate::vope_receiver)) before sending the proof.
+    /// ([`vope_receiver`](crate::vope_receiver)) and the polynomial check
+    /// coefficients ([`ProverPoly::coefficients`]) with the degree-`d_max`
+    /// VOPE coefficients before sending the proof.
     ///
     /// # Errors
     ///
     /// Returns [`Error`] if the number of consumed tape entries does not match
     /// the tape length, indicating the circuits drew fewer inputs and AND
     /// gates than the tape provides.
-    pub fn finish(self) -> Result<(Gf2_128, Gf2_128, [u8; 32])> {
+    pub fn finish(self) -> Result<ProverOutput> {
         if self.cursor != self.macs.len() {
             return Err(Error::tape_unconsumed(self.cursor, self.macs.len()));
         }
-        Ok((
-            self.state.u.reduce(),
-            self.state.v.reduce(),
-            *self.state.assertions.finalize().as_bytes(),
-        ))
+        Ok(ProverOutput {
+            u: self.state.u.reduce(),
+            v: self.state.v.reduce(),
+            poly: self.state.poly,
+            assertions: *self.state.assertions.finalize().as_bytes(),
+        })
     }
 }
 
@@ -268,8 +312,7 @@ impl<R: RngCore> Context for Prover<'_, Accumulate<R>> {
         set_lsb(&mut mac, x & y);
         self.cursor = i + 1;
 
-        let mut chi = Gf2_128::new(0);
-        self.state.rng.fill_bytes(chi.as_mut_bytes());
+        let chi = draw_chi(&mut self.state.rng);
 
         // `a_10 = b if lsb(a) else 0`, `a_11 = a if lsb(b) else 0`,
         // expressed as `a · mask` with `mask ∈ {0, u128::MAX}` so there
@@ -298,5 +341,38 @@ impl<R: RngCore> Context for Prover<'_, Accumulate<R>> {
         self.state.assertions.update(&v.to_inner().to_le_bytes());
 
         Ok(())
+    }
+}
+
+impl<R: RngCore> PolyContext for Prover<'_, Accumulate<R>> {
+    type Coeffs = ProverCoeffs<Gf2>;
+
+    fn lift(&self, wire: Gf2_128) -> Expr<ProverCoeffs<Gf2>, U1> {
+        // The wire's LSB carries its committed bit, so the top is read off it.
+        Expr::<ProverCoeffs<Gf2>, U1>::lift_wire(wire, lsb(wire))
+    }
+
+    fn lift_const(&self, value: Gf2) -> Expr<ProverCoeffs<Gf2>, U0> {
+        Expr::<ProverCoeffs<Gf2>, U0>::constant(value)
+    }
+
+    fn materialize<N>(&mut self, expr: Expr<ProverCoeffs<Gf2>, N>) -> Gf2_128
+    where
+        N: Degree + Max<U1>,
+        Maximum<N, U1>: Degree,
+    {
+        let wire = self.input(expr.value().0);
+        // Pin the fresh wire to the expression: `expr - wire == 0`. The
+        // constraint's top coefficient is `expr.value + lsb(wire) = 0` by
+        // construction, so it folds without a witness check.
+        let constraint = expr - self.lift(wire);
+        let chi = draw_chi(&mut self.state.rng);
+        self.state.poly.fold_expr(&constraint, chi);
+        wire
+    }
+
+    fn assert_zero<N: Degree>(&mut self, expr: Expr<ProverCoeffs<Gf2>, N>) -> Result<()> {
+        let Self { state, .. } = self;
+        state.poly.assert_expr(&expr, || draw_chi(&mut state.rng))
     }
 }

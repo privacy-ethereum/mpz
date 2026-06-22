@@ -11,7 +11,9 @@ use std::ops::{Add, Mul, Neg, Sub};
 
 use mpz_core::Block;
 
-use crate::{ExtensionField, Field, FieldError, gf2::Gf2};
+use std::sync::LazyLock;
+
+use crate::{ExtensionField, Field, FieldError, gf2::Gf2, gf2_64::Gf2_64};
 
 /// A type for holding field elements of Gf(2^128).
 #[derive(
@@ -293,6 +295,59 @@ impl ExtensionField<Gf2_128> for Gf2_128 {
     }
 }
 
+/// A root in GF(2^128) of `Gf2_64`'s modulus `q(x) = x^64 + x^4 + x^3 + x + 1`,
+/// i.e. the image of the `Gf2_64` generator `x` under the subfield embedding
+/// GF(2^64) ↪ GF(2^128). Derived once by the `derive_gf2_64_embedding` test.
+const GF2_64_EMBED_ROOT: u128 = 0xb2fa_452a_ba89_6b2a_bf36_31f0_bfe3_992a;
+
+/// The embedding map as a basis `[r^0, r^1, …, r^63]`: `embed(b) = Σ bᵢ·rⁱ`,
+/// the GF(2)-linear extension of `x ↦ r`. Built once from
+/// [`GF2_64_EMBED_ROOT`].
+static GF2_64_EMBED_BASIS: LazyLock<[Gf2_128; 64]> = LazyLock::new(|| {
+    let r = Gf2_128::new(GF2_64_EMBED_ROOT);
+    let mut basis = [Gf2_128::ONE; 64];
+    for i in 1..64 {
+        basis[i] = basis[i - 1] * r;
+    }
+    basis
+});
+
+/// Monomial basis `[1, x]` of GF(2^128) as a degree-2 extension of the
+/// embedded GF(2^64): `x = Gf2_128::new(2)` lies outside the subfield, so
+/// `{1, x}` is a GF(2^64)-basis (verified in `derive_gf2_64_embedding`).
+static MONOMIAL_BASIS_GF2_64: [Gf2_128; 2] = [Gf2_128::new(1), Gf2_128::new(2)];
+
+impl ExtensionField<Gf2_64> for Gf2_128 {
+    const MONOMIAL_BASIS: &'static [Self] = &MONOMIAL_BASIS_GF2_64;
+
+    /// The subfield injection GF(2^64) ↪ GF(2^128): the GF(2)-linear extension
+    /// of `x ↦ r` (a root of GF(2^64)'s modulus), which is a field
+    /// homomorphism.
+    ///
+    /// Constant-time masked XOR: each basis term is gated by
+    /// `acc ^= basis[i] & mask_from_bit(i)` — no data-dependent branches, so
+    /// witness values stay branch-free on the prover hot path (reached via
+    /// [`scale_by_subfield`](Self::scale_by_subfield)).
+    #[inline]
+    fn embed(base: Gf2_64) -> Self {
+        let bits = base.0;
+        let basis = &*GF2_64_EMBED_BASIS;
+        let mut acc = 0u128;
+        for (i, &b) in basis.iter().enumerate() {
+            // `(bits >> i) & 1` is 0 or 1; `wrapping_neg()` gives 0 or
+            // `u128::MAX`, zeroing the term when bit `i` is unset.
+            let mask = (((bits >> i) & 1) as u128).wrapping_neg();
+            acc ^= b.to_inner() & mask;
+        }
+        Gf2_128::new(acc)
+    }
+
+    #[inline]
+    fn scale_by_subfield(self, base: Gf2_64) -> Self {
+        self * Self::embed(base)
+    }
+}
+
 cfg_select! {
     target_arch = "x86_64" => {
         // Dispatch to the PCLMULQDQ backend via runtime detection, falling
@@ -392,7 +447,7 @@ impl FromBitIterator for Gf2_128 {
 mod tests {
     use super::Gf2_128;
     use crate::{
-        Field,
+        ExtensionField, Field,
         gf2::Gf2,
         tests::{
             test_extension_field_subfield_inner_product, test_field_accumulator,
@@ -402,6 +457,184 @@ mod tests {
             test_field_set_bit_msb0, test_field_square,
         },
     };
+
+    /// One-time derivation of the GF(2^64) ↪ GF(2^128) embedding constant: a
+    /// root in GF(2^128) of `Gf2_64`'s modulus `q(x) = x^64 + x^4 + x^3 + x +
+    /// 1`. Run with `--nocapture` and bake the printed value as a constant.
+    ///
+    /// Cantor equal-degree root finding: `q` splits into 64 distinct linear
+    /// factors over GF(2^128); the trace map `Tr(a·x) = Σ_{i<128} (a·x)^(2^i)`
+    /// down to GF(2) splits the factors by `Tr(a·root) ∈ {0,1}`, and repeated
+    /// gcds isolate one linear factor.
+    #[test]
+    #[ignore = "one-time derivation; prints the embedding constant"]
+    fn derive_gf2_64_embedding() {
+        use rand::{Rng, SeedableRng, rngs::StdRng};
+
+        type P = Vec<Gf2_128>; // coeffs low→high, no trailing zeros
+
+        fn norm(mut p: P) -> P {
+            while p.last() == Some(&Gf2_128::ZERO) {
+                p.pop();
+            }
+            p
+        }
+        fn deg(p: &P) -> isize {
+            p.len() as isize - 1
+        }
+        fn add(a: &P, b: &P) -> P {
+            let n = a.len().max(b.len());
+            norm(
+                (0..n)
+                    .map(|i| {
+                        *a.get(i).unwrap_or(&Gf2_128::ZERO) + *b.get(i).unwrap_or(&Gf2_128::ZERO)
+                    })
+                    .collect(),
+            )
+        }
+        fn scale(a: &P, s: Gf2_128) -> P {
+            norm(a.iter().map(|&c| c * s).collect())
+        }
+        fn mul(a: &P, b: &P) -> P {
+            if a.is_empty() || b.is_empty() {
+                return vec![];
+            }
+            let mut out = vec![Gf2_128::ZERO; a.len() + b.len() - 1];
+            for (i, &x) in a.iter().enumerate() {
+                for (j, &y) in b.iter().enumerate() {
+                    out[i + j] = out[i + j] + x * y;
+                }
+            }
+            norm(out)
+        }
+        // Remainder of `a` modulo monic-able `m` (leading coeff inverted).
+        fn rem(a: &P, m: &P) -> P {
+            let mut a = norm(a.clone());
+            let lead_inv = m.last().unwrap().inverse().unwrap();
+            while deg(&a) >= deg(m) && !a.is_empty() {
+                let shift = (deg(&a) - deg(m)) as usize;
+                let factor = *a.last().unwrap() * lead_inv;
+                let mut sub = vec![Gf2_128::ZERO; shift];
+                sub.extend(m.iter().map(|&c| c * factor));
+                a = add(&a, &sub);
+            }
+            a
+        }
+        fn gcd(mut a: P, mut b: P) -> P {
+            a = norm(a);
+            b = norm(b);
+            while !b.is_empty() {
+                let r = rem(&a, &b);
+                a = b;
+                b = r;
+            }
+            if let Some(&lead) = a.last() {
+                let inv = lead.inverse().unwrap();
+                a = scale(&a, inv);
+            }
+            a
+        }
+
+        // q(x) = x^64 + x^4 + x^3 + x + 1.
+        let mut q = vec![Gf2_128::ZERO; 65];
+        for i in [0usize, 1, 3, 4, 64] {
+            q[i] = Gf2_128::ONE;
+        }
+
+        // x^(2^i) mod q for i = 0..128.
+        let mut xpow = vec![vec![Gf2_128::ZERO, Gf2_128::ONE]]; // x
+        for i in 1..128 {
+            let sq = mul(&xpow[i - 1], &xpow[i - 1]);
+            xpow.push(rem(&sq, &q));
+        }
+
+        // Split `f` until a linear factor (one root) is isolated.
+        fn split(f: &P, xpow: &[P], q: &P, rng: &mut StdRng) -> Gf2_128 {
+            if deg(f) == 1 {
+                // f = c1·x + c0  ⇒  root = c0 / c1.
+                return f[0] * f[1].inverse().unwrap();
+            }
+            loop {
+                let a = Gf2_128::new(rng.random());
+                // Tr(a·x) mod q = Σ_i a^(2^i) · x^(2^i).
+                let mut tr: P = vec![];
+                let mut apow = a;
+                for xq in xpow.iter() {
+                    tr = add(&tr, &scale(xq, apow));
+                    apow = apow * apow;
+                }
+                let g = gcd(f.clone(), rem(&tr, q));
+                if deg(&g) >= 1 && deg(&g) < deg(f) {
+                    return split(&g, xpow, q, rng);
+                }
+            }
+        }
+
+        let mut rng = StdRng::seed_from_u64(0x6420_1128);
+        let r = split(&q, &xpow, &q, &mut rng);
+
+        // Verify q(r) = 0.
+        let mut acc = Gf2_128::ZERO;
+        let mut rp = Gf2_128::ONE;
+        for &qi in &q {
+            if qi != Gf2_128::ZERO {
+                acc = acc + rp;
+            }
+            rp = rp * r;
+        }
+        assert_eq!(acc, Gf2_128::ZERO, "r must be a root of q");
+
+        // A monomial-basis second element θ ∉ subfield (θ^(2^64) ≠ θ).
+        let frob64 = |mut z: Gf2_128| {
+            for _ in 0..64 {
+                z = z * z;
+            }
+            z
+        };
+        let x = Gf2_128::new(2);
+        assert_ne!(frob64(x), x, "x must lie outside GF(2^64) for the basis");
+
+        println!("GF2_64 embedding root r = 0x{:032x}", r.to_inner());
+    }
+
+    /// The GF(2^64) ↪ GF(2^128) embedding is a ring homomorphism: it preserves
+    /// `1`, addition, and multiplication, so authenticating GF(2^64) values
+    /// with GF(2^128) MACs is consistent.
+    #[test]
+    fn gf2_64_embedding_is_homomorphism() {
+        use crate::gf2_64::Gf2_64;
+        use rand::{Rng, SeedableRng, rngs::StdRng};
+
+        let mut rng = StdRng::seed_from_u64(0x6420_1129);
+        assert_eq!(
+            <Gf2_128 as ExtensionField<Gf2_64>>::embed(Gf2_64::ONE),
+            Gf2_128::ONE,
+        );
+        assert_eq!(
+            <Gf2_128 as ExtensionField<Gf2_64>>::embed(Gf2_64::ZERO),
+            Gf2_128::ZERO,
+        );
+        for _ in 0..512 {
+            let a = Gf2_64(rng.random());
+            let b = Gf2_64(rng.random());
+            let ea = <Gf2_128 as ExtensionField<Gf2_64>>::embed(a);
+            let eb = <Gf2_128 as ExtensionField<Gf2_64>>::embed(b);
+            assert_eq!(
+                <Gf2_128 as ExtensionField<Gf2_64>>::embed(a + b),
+                ea + eb,
+                "additive",
+            );
+            assert_eq!(
+                <Gf2_128 as ExtensionField<Gf2_64>>::embed(a * b),
+                ea * eb,
+                "multiplicative",
+            );
+            // `scale_by_subfield` agrees with embed-then-multiply.
+            let m = Gf2_128::new(rng.random());
+            assert_eq!(m.scale_by_subfield(a), m * ea);
+        }
+    }
+
     #[test]
     fn test_gf2_128_basic() {
         test_field_basic::<Gf2_128>();
