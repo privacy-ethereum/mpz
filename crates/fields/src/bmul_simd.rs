@@ -128,13 +128,14 @@ pub(crate) fn bmul128_full(a: u128, b: u128) -> (u128, u128) {
     let b_lo = b as u64;
     let b_hi = (b >> 64) as u64;
 
+    // Karatsuba: the middle partial p01^p10 = p_mid ^ p00 ^ p11, where
+    // p_mid = (a_lo+a_hi)(b_lo+b_hi) — three bmul64_full instead of four.
     let (p00_lo, p00_hi) = bmul64_full(a_lo, b_lo);
     let (p11_lo, p11_hi) = bmul64_full(a_hi, b_hi);
-    let (p01_lo, p01_hi) = bmul64_full(a_lo, b_hi);
-    let (p10_lo, p10_hi) = bmul64_full(a_hi, b_lo);
+    let (pm_lo, pm_hi) = bmul64_full(a_lo ^ a_hi, b_lo ^ b_hi);
 
-    let mid_lo = p01_lo ^ p10_lo;
-    let mid_hi = p01_hi ^ p10_hi;
+    let mid_lo = pm_lo ^ p00_lo ^ p11_lo;
+    let mid_hi = pm_hi ^ p00_hi ^ p11_hi;
 
     let p00 = ((p00_hi as u128) << 64) | (p00_lo as u128);
     let p11 = ((p11_hi as u128) << 64) | (p11_lo as u128);

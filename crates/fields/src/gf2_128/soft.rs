@@ -1,6 +1,6 @@
 //! Portable software backend for GF(2¹²⁸) — uses BearSSL-style
-//! constant-time `bmul128_full` (four `bmul64_full` calls) to avoid
-//! schoolbook's per-bit u128 loop, and amortises reduction across the
+//! constant-time `bmul128_full` (Karatsuba: three `bmul64_full` calls) to
+//! avoid schoolbook's per-bit u128 loop, and amortises reduction across the
 //! inner-product accumulator.
 
 use crate::{bmul::bmul128_full, spread::bit_spread_u32};

@@ -1,9 +1,9 @@
 //! WASM `simd128` backend for GF(2¹²⁸).
 //!
-//! Uses `bmul_simd::bmul128_full` (four `bmul64_full`s, each of which
-//! runs its forward and reversed halves in v128 parallel), then reduces
-//! mod p(x) = x¹²⁸+x⁷+x²+x+1 with the same shift/XOR chain as the soft
-//! backend.
+//! Uses `bmul_simd::bmul128_full` (Karatsuba: three `bmul64_full`s, each
+//! of which runs its forward and reversed halves in v128 parallel), then
+//! reduces mod p(x) = x¹²⁸+x⁷+x²+x+1 with the same shift/XOR chain as the
+//! soft backend.
 
 use std::arch::wasm32::*;
 
@@ -68,20 +68,24 @@ pub(super) fn inner_product(a: &[Gf2_128], b: &[Gf2_128]) -> u128 {
         let b_lo = y.0 as u64;
         let b_hi = (y.0 >> 64) as u64;
 
+        // Karatsuba: three products instead of four. The middle partial
+        // p01^p10 = p_mid ^ p00 ^ p11 is recovered after the loop — both the
+        // recovery and the XOR merge are linear over GF(2), so they defer.
         let p00 = bmul64_raw(a_lo, b_lo);
         let p11 = bmul64_raw(a_hi, b_hi);
-        let p01 = bmul64_raw(a_lo, b_hi);
-        let p10 = bmul64_raw(a_hi, b_lo);
+        let p_mid = bmul64_raw(a_lo ^ a_hi, b_lo ^ b_hi);
 
         acc00 = v128_xor(acc00, p00);
         acc11 = v128_xor(acc11, p11);
-        acc_mid = v128_xor(acc_mid, v128_xor(p01, p10));
+        acc_mid = v128_xor(acc_mid, p_mid);
     }
 
-    // One-time recovery + Karatsuba merge.
+    // One-time recovery, then the Karatsuba merge mid = p_mid ^ p00 ^ p11.
     let (p00_lo, p00_hi) = recover_raw(acc00);
     let (p11_lo, p11_hi) = recover_raw(acc11);
     let (mid_lo, mid_hi) = recover_raw(acc_mid);
+    let mid_lo = mid_lo ^ p00_lo ^ p11_lo;
+    let mid_hi = mid_hi ^ p00_hi ^ p11_hi;
 
     let p00 = ((p00_hi as u128) << 64) | (p00_lo as u128);
     let p11 = ((p11_hi as u128) << 64) | (p11_lo as u128);
@@ -111,19 +115,21 @@ pub(super) fn double_inner_product(a: &[Gf2_128], b: &[Gf2_128], c: &[Gf2_128]) 
         let b_lo = z.0 as u64;
         let b_hi = (z.0 >> 64) as u64;
 
+        // Karatsuba: three products; middle recovered after the loop.
         let p00 = bmul64_raw(a_lo, b_lo);
         let p11 = bmul64_raw(a_hi, b_hi);
-        let p01 = bmul64_raw(a_lo, b_hi);
-        let p10 = bmul64_raw(a_hi, b_lo);
+        let p_mid = bmul64_raw(a_lo ^ a_hi, b_lo ^ b_hi);
 
         acc00 = v128_xor(acc00, p00);
         acc11 = v128_xor(acc11, p11);
-        acc_mid = v128_xor(acc_mid, v128_xor(p01, p10));
+        acc_mid = v128_xor(acc_mid, p_mid);
     }
 
     let (p00_lo, p00_hi) = recover_raw(acc00);
     let (p11_lo, p11_hi) = recover_raw(acc11);
     let (mid_lo, mid_hi) = recover_raw(acc_mid);
+    let mid_lo = mid_lo ^ p00_lo ^ p11_lo;
+    let mid_hi = mid_hi ^ p00_hi ^ p11_hi;
 
     let p00 = ((p00_hi as u128) << 64) | (p00_lo as u128);
     let p11 = ((p11_hi as u128) << 64) | (p11_lo as u128);
